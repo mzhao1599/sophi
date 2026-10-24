@@ -16,6 +16,9 @@ const FAILURES: FakeFailure[] = [
   "unavailable",
 ];
 
+/** The demo script's spoken lines (docs/demo/walker-script.md), for a Talk press on the fake walker. */
+const TALK_LINES = ["What can you help me with?", "Stop buzzing me, use short sounds instead.", "Can you pick up my keys?"];
+
 /**
  * Development only: plays the walker's side of the development fake, so every state of the page can be
  * reached by keyboard in the browser. Never rendered with the real API.
@@ -53,6 +56,11 @@ export function FakeControls({ controls, onChange }: { controls: FakeWalkerContr
         >
           Walker: Talk press while offline
         </button>
+        {TALK_LINES.map((line) => (
+          <button key={line} type="button" onClick={act("Talk on the walker", () => controls.walkerTalks(line))}>
+            Walker: Talk, &ldquo;{line}&rdquo;
+          </button>
+        ))}
         <button type="button" onClick={act("Confirm on the walker", () => controls.confirmOnWalker())}>
           Walker: press Confirm
         </button>

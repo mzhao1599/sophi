@@ -22,6 +22,7 @@ import {
   secondsLeft,
   zoneRows,
 } from "@/lib/walkerView";
+import { BehindTheScenes } from "./BehindTheScenes";
 import { ContourField } from "./ContourField";
 import { FakeControls } from "./FakeWalkerControls";
 import { LiveWalkerDiagram } from "./LiveWalkerDiagram";
@@ -287,6 +288,8 @@ function Paired({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }
       <div className={styles.talk}>
         <WalkerConversation page={page} walker={walker} />
       </div>
+
+      <BehindTheScenes page={page} walker={walker} />
 
       {/* Dimmed while Steady's server can't be reached, so old readings don't look current. */}
       <section className={styles.walker} data-stale={live ? undefined : ""} aria-label="What the walker reports">

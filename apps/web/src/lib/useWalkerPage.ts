@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { WalkerStatusView } from "@walker/contracts";
+import type { WalkerActivityView, WalkerStatusView } from "@walker/contracts";
+import { FAST_POLL_MS, anyInFlight } from "./behindTheScenes";
 import { WalkerApiError, type WalkerFailure, type WalkerPageApi } from "./walkerApi";
 import {
   CONNECTION_BACK,
@@ -42,6 +43,10 @@ export interface WalkerModel {
   answerError: string | null;
   /** The words being sent, shown as "You typed" until the answer arrives. */
   sending: string | null;
+  /** The client_turn_id of the words being sent, so the page can tell its own turn in flight. */
+  sendingTurnId: string | null;
+  /** What the server measured of each walker's turns, from the last poll applied (page only; may be empty). */
+  activity: WalkerActivityView[];
   sendError: string | null;
   forgetting: boolean;
   forgetError: string | null;
@@ -80,6 +85,8 @@ const START: WalkerModel = {
   answering: null,
   answerError: null,
   sending: null,
+  sendingTurnId: null,
+  activity: [],
   sendError: null,
   forgetting: false,
   forgetError: null,
@@ -107,7 +114,8 @@ function newId(): string {
 }
 
 /**
- * The "Your walker" page's state: polls the owner's walkers every POLL_MS while the tab is visible,
+ * The "Your walker" page's state: polls the owner's walkers every POLL_MS while the tab is visible
+ * (FAST_POLL_MS while a poll lists a fresh turn in flight, back to POLL_MS on any failure),
  * and runs the page's four actions (get a pairing code, send a typed question, answer a proposal,
  * forget the walker). Polls never overlap, and a poll that started before an action's answer arrived is
  * dropped, so an older status never replaces a newer one.
@@ -120,6 +128,8 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
   const epoch = useRef(0);
   const retry = useRef<{ device: string; text: string; id: string } | null>(null);
   const pollRef = useRef<() => void>(() => undefined);
+  // Poll faster while a turn is in flight and polls succeed, so each step shows soon after it happens.
+  const fast = useRef(false);
 
   const update = useCallback((patch: Partial<WalkerModel> | ((m: WalkerModel) => Partial<WalkerModel>)) => {
     const m = model.current;
@@ -214,6 +224,7 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
         walkers: [],
         selectedId: null,
         card: null,
+        activity: [],
         lastOkAtMs: Date.now(),
         pollFailure: null,
         notice: wasPaired ? errorMessage("unauthenticated") : model.current.notice,
@@ -248,7 +259,7 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
 
     const schedule = () => {
       clearTimeout(timer);
-      if (!stopped && !document.hidden) timer = setTimeout(run, POLL_MS);
+      if (!stopped && !document.hidden) timer = setTimeout(run, fast.current ? FAST_POLL_MS : POLL_MS);
     };
     async function run() {
       clearTimeout(timer);
@@ -257,15 +268,19 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
       const mine = new AbortController();
       controller = mine;
       try {
-        const walkers = await api.listWalkers(mine.signal);
+        const { walkers, activity } = await api.listWalkers(mine.signal);
         if (stopped || mine.signal.aborted) return;
         const back = model.current.disconnected ? [CONNECTION_BACK] : [];
         update({ lastOkAtMs: Date.now(), pollFailure: null, disconnected: false });
+        fast.current = anyInFlight(activity, serverNow());
         // Read before this poll's news, so the news can't overwrite it.
-        if (started === epoch.current) applyList(walkers, undefined, back);
-        else if (back.length) update((m) => announce(m, back));
+        if (started === epoch.current) {
+          update({ activity });
+          applyList(walkers, undefined, back);
+        } else if (back.length) update((m) => announce(m, back));
       } catch (e) {
         if (stopped || mine.signal.aborted) return;
+        fast.current = false;
         const code = codeOf(e);
         if (code === "unauthenticated") signedOut(model.current.phase === "paired");
         // Before the first answer the page can't know whether there is a walker, so it stays on
@@ -298,7 +313,7 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
       document.removeEventListener("visibilitychange", onVisibility);
       pollRef.current = () => undefined;
     };
-  }, [api, applyList, signedOut, update]);
+  }, [api, applyList, signedOut, update, serverNow]);
 
   // ---- Actions ----
 
@@ -323,17 +338,18 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
       if (!w || m.sending !== null || !words) return false;
       // The same words again after a failure keep their id, so a reply that did arrive isn't run twice.
       const same = retry.current?.device === w.device_id && retry.current.text === words;
-      update({ sending: words, sendError: null });
+      update({ sending: words, sendingTurnId: null, sendError: null });
       try {
         const id = same ? retry.current!.id : newId();
         retry.current = { device: w.device_id, text: words, id };
+        update({ sendingTurnId: id });
         const r = await api.sendTurn(w.device_id, id, words);
         retry.current = null;
-        update({ sending: null });
+        update({ sending: null, sendingTurnId: null });
         applyStatus(r.status);
         return true;
       } catch (e) {
-        update({ sending: null, sendError: common(e, w.name) });
+        update({ sending: null, sendingTurnId: null, sendError: common(e, w.name) });
         return false;
       }
     },

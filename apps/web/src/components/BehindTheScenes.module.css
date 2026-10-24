@@ -1,0 +1,395 @@
+/*
+ * "Behind the scenes" (BehindTheScenes.tsx): the latest turn drawn as a survey traverse on the page's
+ * paper. Each step is a trig point (a triangle with a dot), the pen inks the line between them, the step
+ * being waited on is in signal green, and the annotations are set in the mono face like the drawing's.
+ * Across the page from 880px of panel width; narrower (phones, 200% zoom) it runs down the page.
+ * Lines draw with stroke-dashoffset transitions only. Every effect has a reduced-motion branch.
+ */
+
+.panel {
+  grid-area: bts;
+  container: bts / inline-size;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 16px;
+  padding: 12px 22px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-tile);
+}
+
+.panel:focus {
+  outline: none;
+}
+
+.panel:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 16px;
+}
+
+.title {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.meta {
+  color: var(--text-meta);
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.empty {
+  color: var(--text-meta);
+  font-size: 16px;
+}
+
+.caption {
+  margin-left: auto;
+  color: var(--text-meta);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ---- The traverse: down the page by default ---- */
+
+.traverse {
+  --gap: 14px;
+  display: grid;
+  gap: var(--gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.station {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+.mark {
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+
+.words {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  opacity: 0;
+  transition: opacity 280ms var(--ease-out) 260ms;
+}
+
+.station[data-inked] .words {
+  opacity: 1;
+}
+
+.label {
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.station[data-state="live"] .label {
+  color: var(--live);
+}
+
+.figure {
+  color: var(--text-body);
+  font-size: 15px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The line to the next station: from under this mark to the top of the next one. */
+.segment {
+  position: absolute;
+  top: 28px;
+  bottom: calc(4px - var(--gap));
+  left: 0;
+  width: 24px;
+  pointer-events: none;
+}
+
+.across,
+.down {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.across {
+  display: none;
+}
+
+.line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.segment[data-style="dashed"] .line {
+  stroke: var(--live);
+  stroke-dasharray: 6 5;
+}
+
+.segment[data-style="dotted"] .line {
+  stroke: var(--text-meta);
+  stroke-width: 2.2;
+  stroke-dasharray: 0.1 5;
+}
+
+/* The mask's stroke runs from 1 to 0, revealing the line as the pen goes. */
+.reveal {
+  stroke: white;
+  stroke-width: 12;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 300ms linear;
+}
+
+.segment[data-drawn] .reveal {
+  stroke-dashoffset: 0;
+}
+
+/* The pen's nib rides the line as it draws, then lifts. */
+.nib {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 1.5px var(--paper);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+.segment[data-style="dashed"] .nib {
+  background: var(--live);
+  box-shadow: 0 0 0 1.5px var(--paper), 0 0 6px var(--live-glow);
+}
+
+.segment[data-drawn] .nib {
+  animation: nib-down 300ms linear forwards;
+}
+
+/* ---- The trig point ---- */
+
+.trig {
+  fill: var(--card);
+  stroke: var(--ink);
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition:
+    stroke-dashoffset 240ms linear 240ms,
+    stroke 300ms var(--ease-out),
+    fill 300ms var(--ease-out);
+}
+
+.station[data-first] .trig {
+  transition-delay: 0s, 0s, 0s;
+}
+
+.station[data-inked] .trig {
+  stroke-dashoffset: 0;
+}
+
+.dot {
+  fill: var(--ink);
+  opacity: 0;
+  transition:
+    opacity 200ms var(--ease-out) 440ms,
+    fill 300ms var(--ease-out);
+}
+
+.station[data-inked] .dot {
+  opacity: 1;
+}
+
+.station[data-state="live"] .trig {
+  stroke: var(--live);
+  fill: var(--live-wash);
+}
+
+.station[data-state="live"] .dot {
+  fill: var(--live);
+}
+
+.station[data-state="live"] .mark {
+  filter: drop-shadow(0 0 3px var(--live-glow));
+}
+
+/* An end: a hollow mark with no dot, in the meta tone; the words say how it ended. */
+.station[data-state="end"] .trig {
+  stroke: var(--text-meta);
+  fill: none;
+}
+
+/* The step being waited on breathes. */
+.ring {
+  fill: none;
+  stroke: var(--live);
+  stroke-width: 1.2;
+  opacity: 0;
+  transform-origin: 12px 14px;
+}
+
+.station[data-inked] .ring {
+  animation: pulse 1.6s var(--ease-out) 500ms infinite;
+}
+
+/* ---- Across the page, where there's room ---- */
+
+@container bts (min-width: 880px) {
+  .traverse {
+    --gap: 12px;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    column-gap: var(--gap);
+    row-gap: 0;
+  }
+  .station {
+    grid-template-columns: none;
+    grid-template-rows: 24px auto;
+    row-gap: 8px;
+  }
+  .segment {
+    top: 0;
+    bottom: auto;
+    left: 28px;
+    width: calc(100% + var(--gap) - 32px);
+    height: 24px;
+  }
+  .across {
+    display: block;
+  }
+  .down {
+    display: none;
+  }
+  .nib {
+    top: 50%;
+    left: 0;
+  }
+  .segment[data-drawn] .nib {
+    animation-name: nib-across;
+  }
+}
+
+@keyframes nib-down {
+  0% {
+    top: 0;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes nib-across {
+  0% {
+    left: 0;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+/* Reduced motion: each step appears whole, at once; no pen, no pulse. */
+.traverse[data-reduced] .reveal,
+.traverse[data-reduced] .trig,
+.traverse[data-reduced] .dot,
+.traverse[data-reduced] .words {
+  transition: none;
+}
+
+.traverse[data-reduced] .nib,
+.traverse[data-reduced] .ring {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .trig,
+  .dot,
+  .words {
+    transition: none;
+  }
+  .nib,
+  .ring {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .panel {
+    border: 1px solid CanvasText;
+  }
+  .line,
+  .segment[data-style="dotted"] .line,
+  .trig,
+  .station[data-state="end"] .trig {
+    stroke: CanvasText;
+    fill: Canvas;
+  }
+  .dot {
+    fill: CanvasText;
+  }
+  .segment[data-style="dashed"] .line,
+  .station[data-state="live"] .trig {
+    stroke: Highlight;
+  }
+  .station[data-state="live"] .dot {
+    fill: Highlight;
+  }
+  .line {
+    fill: none;
+  }
+  .nib {
+    display: none;
+  }
+}

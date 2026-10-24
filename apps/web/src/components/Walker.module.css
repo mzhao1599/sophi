@@ -11,8 +11,9 @@
   grid-template-columns: minmax(0, 470px) minmax(0, 1fr);
   grid-template-areas:
     "talk head"
-    "talk walker";
-  grid-template-rows: auto 1fr;
+    "talk walker"
+    "bts bts";
+  grid-template-rows: auto 1fr auto;
   gap: 0 48px;
   max-width: 1360px;
   margin: 0 auto;
@@ -36,7 +37,8 @@
 
 .walker {
   grid-area: walker;
-  --canvas-h: clamp(240px, calc(100dvh - 500px), 520px);
+  /* 100dvh less the head, the cards and "Behind the scenes" under both columns. */
+  --canvas-h: clamp(240px, calc(100dvh - 575px), 520px);
   container: side / inline-size;
   display: grid;
   align-content: start;
@@ -363,6 +365,14 @@
 .chatHeight {
   height: clamp(480px, calc(100dvh - 110px), 820px);
   margin-top: 0;
+}
+
+/* Two columns: leave room under the conversation and the walker for "Behind the scenes", so the whole
+ * page still fits one 1440 x 900 screen. */
+@media (min-width: 1000px) {
+  .main .chatHeight {
+    height: clamp(400px, calc(100dvh - 300px), 740px);
+  }
 }
 
 .turn {
@@ -748,6 +758,7 @@
     grid-template-areas:
       "head"
       "talk"
+      "bts"
       "walker";
     grid-template-rows: auto;
     gap: 20px;

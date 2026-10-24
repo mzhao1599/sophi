@@ -7,6 +7,7 @@ import {
   type AnswerProposalResponse,
   type PairingCodeResponse,
   type ProposalView,
+  type WalkerActivityView,
   type WalkerErrorCode,
   type WalkerStatusView,
   type WalkerTurnResponse,
@@ -19,8 +20,11 @@ import type { z } from "zod";
  * the development fake (`walkerFake.ts`) can stand in for the real fetch below with nothing else changed.
  */
 export interface WalkerPageApi {
-  /** Every walker this browser owns. A browser without the owner cookie gets `unauthenticated`. */
-  listWalkers(signal?: AbortSignal): Promise<WalkerStatusView[]>;
+  /**
+   * Every walker this browser owns, and what the server measured of their turns (`activity`: page only,
+   * empty when the server sent none). A browser without the owner cookie gets `unauthenticated`.
+   */
+  listWalkers(signal?: AbortSignal): Promise<WalkerList>;
   /** A one-time pairing code for `walker pair`; sets the owner cookie if the browser has none. */
   createPairingCode(): Promise<PairingCodeResponse>;
   /** A typed question. Reusing `clientTurnId` gets the stored answer back and runs nothing again. */
@@ -30,6 +34,12 @@ export interface WalkerPageApi {
   forgetWalker(deviceId: string): Promise<void>;
   /** The server's clock minus this browser's, in milliseconds: 0 until a response says otherwise. */
   clockOffsetMs(): number;
+}
+
+/** The list response as the page uses it: `activity` is optional in the contract, so it defaults to none. */
+export interface WalkerList {
+  walkers: WalkerStatusView[];
+  activity: WalkerActivityView[];
 }
 
 /**
@@ -144,7 +154,8 @@ export function createWalkerApi(fetchImpl: typeof fetch = (...args) => fetch(...
 
   return {
     async listWalkers(signal) {
-      return (await call(BASE, { method: "GET", signal }, WalkerListResponseSchema, DEADLINE_MS.poll)).walkers;
+      const list = await call(BASE, { method: "GET", signal }, WalkerListResponseSchema, DEADLINE_MS.poll);
+      return { walkers: list.walkers, activity: list.activity ?? [] };
     },
     createPairingCode() {
       return call(`${BASE}/pairing-codes`, { method: "POST" }, PairingCodeResponseSchema, DEADLINE_MS.action);

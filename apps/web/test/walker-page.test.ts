@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PROPOSAL_TTL_MS,
   WALKER_SETUP,
@@ -377,13 +377,21 @@ describe("real API client", () => {
       calls.push({ url: String(url), init: init! });
       return answers.shift()!;
     });
-    expect((await api.listWalkers()).map((w) => w.name)).toEqual(["Steady walker"]);
+    expect(((await api.listWalkers()).walkers).map((w) => w.name)).toEqual(["Steady walker"]);
     await api.forgetWalker(id(1));
     expect(calls.map((c) => [c.init.method, c.url])).toEqual([
       ["GET", "/api/v1/walkers"],
       ["DELETE", `/api/v1/walkers/${id(1)}`],
     ]);
     expect(calls[0]!.init.credentials).toBe("same-origin");
+  });
+
+  it("passes the activity view through, and reads a server without one as no activity", async () => {
+    const activity = { device_id: id(1), in_flight: [], traces: [] };
+    const answers = [json(200, { walkers: [status()], activity: [activity] }), json(200, { walkers: [status()] })];
+    const api = createWalkerApi(async () => answers.shift()!);
+    expect((await api.listWalkers()).activity).toEqual([activity]);
+    expect((await api.listWalkers()).activity).toEqual([]);
   });
 
   it("turns errors into codes, keeps a closed proposal, and reads anything else as unavailable", async () => {
@@ -431,9 +439,9 @@ describe("development fake", () => {
     const { api, controls, tick } = setup();
     await expect(api.listWalkers()).rejects.toMatchObject({ code: "unauthenticated" });
     await api.createPairingCode();
-    expect(await api.listWalkers()).toEqual([]);
+    expect((await api.listWalkers()).walkers).toEqual([]);
     expect(controls.pairFromWalker()).toBe(true);
-    const [w] = await api.listWalkers();
+    const [w] = (await api.listWalkers()).walkers;
     expect([w!.online, w!.simulator, w!.walker_said.map((e) => e.text)]).toEqual([true, true, ["Steady is on."]]);
 
     const asked = await api.sendTurn(w!.device_id, id(900), "Stop buzzing me, use short sounds instead.");
@@ -448,37 +456,91 @@ describe("development fake", () => {
       proposal: { state: "confirmed" },
     });
     tick(3_000);
-    expect(appliedState((await api.listWalkers())[0]!)).toBe("applied");
+    expect(appliedState(((await api.listWalkers()).walkers)[0]!)).toBe("applied");
   });
 
   it("expires proposals on time and when the walker goes offline, and delivers offline lines on reconnect", async () => {
     const { api, controls, tick } = setup();
     await api.createPairingCode();
     controls.pairFromWalker();
-    const [w] = await api.listWalkers();
+    const [w] = (await api.listWalkers()).walkers;
     const first = await api.sendTurn(w!.device_id, id(901), "No more buzzing please");
     tick(PROPOSAL_TTL_MS);
-    expect((await api.listWalkers())[0]!.open_proposal).toBeNull();
+    expect(((await api.listWalkers()).walkers)[0]!.open_proposal).toBeNull();
     await expect(api.answerProposal(w!.device_id, first.proposal!.proposal_id, "confirm")).rejects.toMatchObject({ proposal: { state: "expired" } });
 
     await api.sendTurn(w!.device_id, id(902), "No more buzzing please");
     controls.setOnline(false);
-    const offline = (await api.listWalkers())[0]!;
+    const offline = ((await api.listWalkers()).walkers)[0]!;
     expect([offline.online, offline.open_proposal, offline.parts.every((p) => p.health === "unavailable")]).toEqual([false, null, true]);
     expect(offline.zones.every((z) => z.reading.status === "unknown")).toBe(true);
     controls.walkerSays("I'm offline right now. Your alerts still work.", "local_reply");
-    expect((await api.listWalkers())[0]!.walker_said.map((e) => e.text)).not.toContain("I'm offline right now. Your alerts still work.");
+    expect(((await api.listWalkers()).walkers)[0]!.walker_said.map((e) => e.text)).not.toContain("I'm offline right now. Your alerts still work.");
     tick(5_000);
     controls.setOnline(true);
-    const back = (await api.listWalkers())[0]!;
+    const back = ((await api.listWalkers()).walkers)[0]!;
     expect(back.walker_said.map((e) => e.kind)).toEqual(["notice", "local_reply", "notice"]);
+  });
+
+  it("reports each turn in flight, then its trace, like the server", async () => {
+    const { api, controls } = setup();
+    await api.createPairingCode();
+    controls.pairFromWalker();
+    const [w] = (await api.listWalkers()).walkers;
+    expect(controls.walkerTalks("Can you pick up my keys?")).toBe(true);
+    // Without delays the fake's pauses end on the next tick: let the Talk press finish first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const typed = await api.sendTurn(w!.device_id, id(907), "Stop buzzing me, use short sounds instead.");
+    const { activity } = await api.listWalkers();
+    const traces = activity[0]!.traces;
+    expect(traces.map((t) => [t.input, t.rule, t.answered_by, t.proposal_opened, t.voiced_by, t.model_ran])).toEqual([
+      ["audio", "arms", "fixed", false, "cartesia", true],
+      ["text", null, "model", true, null, true],
+    ]);
+    expect(traces[0]!.clip_ms).toBeGreaterThan(0);
+    expect(traces[1]!.turn_id).toBe(typed.turn.turn_id);
+    // The offer names the turn that made it, as the server's does.
+    expect(typed.proposal?.client_turn_id).toBe(id(907));
+    expect(activity[0]!.in_flight).toEqual([]);
+    controls.setOnline(false);
+    expect(controls.walkerTalks("What can you help me with?")).toBe(false);
+  });
+
+  it("holds a Talk press in flight, hearing then voicing, until it's saved", async () => {
+    vi.useFakeTimers({ now: T0 });
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      const { api, controls } = createFakeWalker(Date.now, true);
+      const list = async () => {
+        const p = api.listWalkers();
+        await vi.advanceTimersByTimeAsync(120);
+        return p;
+      };
+      const code = api.createPairingCode();
+      await vi.advanceTimersByTimeAsync(300);
+      await code;
+      controls.pairFromWalker();
+      controls.walkerTalks("What can you help me with?");
+      const hearing = (await list()).activity[0]!.in_flight;
+      expect(hearing.map((f) => [f.input, f.stage, f.clip_ms !== null])).toEqual([["audio", "hearing", true]]);
+      await vi.advanceTimersByTimeAsync(1_600);
+      expect((await list()).activity[0]!.in_flight.map((f) => f.stage)).toEqual(["voicing"]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const done = await list();
+      expect(done.activity[0]!.in_flight).toEqual([]);
+      expect(done.activity[0]!.traces.map((t) => [t.model_ms, t.voice_ms])).toEqual([[1_600, 650]]);
+      expect(done.walkers[0]!.turns.map((t) => [t.source, t.heard_by, t.voiced_by])).toEqual([["walker", "gemini", "cartesia"]]);
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
   });
 
   it("answers a replaced proposal with 409 and the proposal as it stands, like the server", async () => {
     const { api, controls } = setup();
     await api.createPairingCode();
     controls.pairFromWalker();
-    const [w] = await api.listWalkers();
+    const [w] = (await api.listWalkers()).walkers;
     const first = await api.sendTurn(w!.device_id, id(905), "no more buzzing");
     await api.sendTurn(w!.device_id, id(906), "no more buzzing, really");
     await expect(api.answerProposal(w!.device_id, first.proposal!.proposal_id, "confirm")).rejects.toMatchObject({
@@ -493,15 +555,15 @@ describe("development fake", () => {
     await expect(api.createPairingCode()).rejects.toMatchObject({ code: "pairing_locked", status: 429 });
     await api.createPairingCode();
     controls.pairFromWalker();
-    const [w] = await api.listWalkers();
+    const [w] = (await api.listWalkers()).walkers;
     controls.failNext("network");
-    expect(await api.listWalkers()).toHaveLength(1);
+    expect((await api.listWalkers()).walkers).toHaveLength(1);
     await expect(api.sendTurn(w!.device_id, id(904), "hello")).rejects.toMatchObject({ code: "network" });
     controls.setServerDown(true);
     await expect(api.listWalkers()).rejects.toMatchObject({ code: "network" });
     controls.setServerDown(false);
     await api.forgetWalker(w!.device_id);
-    expect(await api.listWalkers()).toEqual([]);
+    expect((await api.listWalkers()).walkers).toEqual([]);
     await expect(api.sendTurn(w!.device_id, id(903), "hello")).rejects.toMatchObject({ code: "not_found" });
     controls.clearCookie();
     await expect(api.listWalkers()).rejects.toMatchObject({ code: "unauthenticated" });

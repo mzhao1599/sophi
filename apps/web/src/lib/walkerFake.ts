@@ -4,7 +4,9 @@ import {
   PROPOSAL_TTL_MS,
   RECENT_TURNS,
   WALKER_ERROR_STATUS,
+  WALKER_HISTORY_RETENTION_MS,
   WALKER_SETUP,
+  WalkerActivityViewSchema,
   WalkerStatusViewSchema,
   checkCuesChange,
   type Cue,
@@ -14,7 +16,10 @@ import {
   type WalkerConfiguration,
   type WalkerErrorCode,
   type WalkerEventView,
+  type WalkerActivityView,
   type WalkerStatusView,
+  type WalkerTurnInFlight,
+  type WalkerTurnTrace,
   type WalkerTurnView,
   type ZoneView,
 } from "@walker/contracts";
@@ -27,7 +32,8 @@ import { cueList } from "./walkerView";
  * contract-valid shapes (each status is checked against `WalkerStatusViewSchema`). Its replies are
  * canned, not a model's: the page shows a "Fake walker" banner whenever it's in use, and it's only
  * reachable in development (`/walker?fake=1`). `controls` plays the walker's side: pairing, its own
- * lines, going offline, its Confirm button, and failures.
+ * lines, a Talk press, going offline, its Confirm button, and failures. Like the server, it reports each
+ * turn's progress (`activity`: in flight, then a trace), with times measured from its own canned pauses.
  */
 
 export type FakeFailure = WalkerErrorCode | "network";
@@ -41,6 +47,11 @@ export interface FakeWalkerControls {
   setSimulator(simulator: boolean): void;
   /** Unplugs (or plugs back) the obstacle sensors. */
   setSensorsPlugged(plugged: boolean): void;
+  /**
+   * A Talk press on the walker with these words (as if Gemini heard them from a clip): in flight while
+   * "hearing" and "voicing", then saved with a trace. False while the walker is offline (it answers on its own then).
+   */
+  walkerTalks(words: string): boolean;
   /** The walker's own Confirm button. */
   confirmOnWalker(): boolean;
   /** Brings the open proposal's expiry to a few seconds from now. */
@@ -73,11 +84,15 @@ interface FakeWalker {
   proposal: ProposalView | null;
   /** Proposals a newer one replaced, so answering one gets `409 proposal_closed` like the server. */
   replaced: ProposalView[];
+  inFlight: WalkerTurnInFlight[];
+  traces: WalkerTurnTrace[];
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const APPLY_DELAY_MS = 2_500;
+/** A canned pause of about `ms`, a little different each time, as a real model's would be. */
+const jitter = (ms: number) => Math.round(ms * (0.8 + 0.4 * Math.random()));
 
 function fail(code: FakeFailure, proposal?: ProposalView): never {
   if (code === "network") throw new WalkerApiError("network", "Couldn't reach the server.", 0);
@@ -111,6 +126,11 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
     const cutoff = t - 60 * 60_000;
     w.turns = w.turns.filter((turn) => Date.parse(turn.created_at) >= cutoff);
     w.said = w.said.filter((e) => Date.parse(e.at) >= cutoff);
+    w.traces = w.traces.filter((tr) => Date.parse(tr.at) >= t - WALKER_HISTORY_RETENTION_MS).slice(-RECENT_TURNS);
+  }
+
+  function activity(w: FakeWalker): WalkerActivityView {
+    return WalkerActivityViewSchema.parse({ device_id: w.device_id, in_flight: w.inFlight.slice(-4), traces: w.traces });
   }
 
   function parts(w: FakeWalker): PartView[] {
@@ -192,9 +212,17 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
   }
 
   /** Canned replies by topic. Not a model: the banner says so. */
-  function reply(w: FakeWalker, text: string): { reply: string; answered_by: "model" | "fixed"; proposal: ProposalView | null } {
+  function reply(w: FakeWalker, text: string): { reply: string; answered_by: "model" | "fixed"; rule: string | null; proposal: ProposalView | null } {
     const lower = text.toLowerCase();
     const cues = current(w).cues;
+    if (/(turn|switch) off (all |the |my )?alerts|no alerts|silence/.test(lower)) {
+      return {
+        reply: "While the obstacle sensors are on, your alerts keep buzzing or short sounds, so I'll leave them as they are.",
+        answered_by: "fixed",
+        rule: "cues_alerts_off",
+        proposal: null,
+      };
+    }
     if (/buzz|vibrat|short sound/.test(lower)) {
       const next: Cue[] = cues.includes("vibration") ? cues.map((c) => (c === "vibration" ? "sound" : c)) : cues.map((c) => (c === "sound" ? "vibration" : c));
       if (checkCuesChange(cues, next, current(w).selected_module_ids) === null) {
@@ -212,27 +240,86 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
           expires_at: iso(t + PROPOSAL_TTL_MS),
           configuration_version: null,
         };
-        if (w.proposal?.state === "open") w.replaced.push({ ...w.proposal, state: "superseded" });
-        w.proposal = proposal;
         return {
           reply: `I can switch your alerts from ${cues.includes("vibration") ? "buzzing to short sounds" : "short sounds to buzzing"}. Press Confirm to do it.`,
           answered_by: "model",
+          rule: null,
           proposal,
         };
       }
     }
-    if (/arm|pick|keys/.test(lower)) return { reply: "The robot arms aren't on this walker, so I can't pick things up.", answered_by: "fixed", proposal: null };
+    if (/arm|pick|keys/.test(lower)) return { reply: "The robot arms aren't on this walker, so I can't pick things up.", answered_by: "fixed", rule: "arms", proposal: null };
     if (/front|obstacle|anything|ahead/.test(lower)) {
       const front = zones(w, now()).find((z) => z.zone === "front");
       const measured = front?.reading.status === "measured" ? `about ${Math.round(front.reading.mm / 10)} centimetres, measured just now` : "unknown right now";
       const sim = front?.simulated ? " These readings are simulated." : "";
-      return { reply: `Your front sensor reads ${measured}.${sim}`, answered_by: "model", proposal: null };
+      return { reply: `Your front sensor reads ${measured}.${sim}`, answered_by: "model", rule: null, proposal: null };
     }
     return {
       reply: "I can tell you what's in front of you, which parts are working, and change how alerts reach you.",
       answered_by: "model",
+      rule: null,
       proposal: null,
     };
+  }
+
+  /**
+   * One turn as the server runs it: in flight while the model "hears" (and, for a walker clip, while the
+   * voice is made), then saved with its trace. The times are the fake's own pauses, measured.
+   */
+  async function runTurn(w: FakeWalker, clientTurnId: string, words: string, source: "walker" | "page") {
+    const audio = source === "walker";
+    const accepted = now();
+    const clip_ms = audio ? Math.min(15_000, 900 + words.length * 45) : null;
+    const flight: WalkerTurnInFlight = { client_turn_id: clientTurnId, input: audio ? "audio" : "text", since: iso(accepted), clip_ms, stage: "hearing" };
+    w.inFlight.push(flight);
+    try {
+      await pause(jitter(audio ? 1_600 : 800));
+      const model_ms = now() - accepted;
+      const r = reply(w, words);
+      let voice_ms: number | null = null;
+      if (audio) {
+        flight.stage = "voicing";
+        const voicing = now();
+        await pause(jitter(650));
+        voice_ms = now() - voicing;
+      }
+      if (r.proposal) {
+        if (w.proposal?.state === "open") w.replaced.push({ ...w.proposal, state: "superseded" });
+        // Like the server, the offer names the turn that made it.
+        w.proposal = { ...r.proposal, client_turn_id: clientTurnId, created_at: iso(now()), expires_at: iso(now() + PROPOSAL_TTL_MS) };
+      }
+      const turn: WalkerTurnView = {
+        turn_id: crypto.randomUUID(),
+        client_turn_id: clientTurnId,
+        source,
+        heard: words.trim(),
+        heard_by: audio ? "gemini" : "typed",
+        reply: r.reply,
+        answered_by: r.answered_by,
+        voiced_by: audio ? "cartesia" : null,
+        created_at: iso(now()),
+      };
+      w.turns.push(turn);
+      w.traces.push({
+        turn_id: turn.turn_id,
+        client_turn_id: clientTurnId,
+        at: turn.created_at,
+        input: flight.input,
+        clip_ms,
+        model_ran: true,
+        model_ms,
+        rule: r.rule,
+        answered_by: r.answered_by,
+        proposal_opened: r.proposal !== null,
+        voiced_by: turn.voiced_by,
+        voice_ms,
+        total_ms: now() - accepted,
+      });
+      return { turn, proposal: r.proposal ? w.proposal : null };
+    } finally {
+      w.inFlight = w.inFlight.filter((f) => f !== flight);
+    }
   }
 
   const seen = new Map<string, { turn: WalkerTurnView; proposal: ProposalView | null }>();
@@ -242,7 +329,7 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
       await pause(120);
       if (down) fail("network");
       if (!owner) fail("unauthenticated");
-      return walkers.map(status);
+      return { walkers: walkers.map(status), activity: walkers.map(activity) };
     },
     async createPairingCode() {
       await pause(300);
@@ -253,26 +340,14 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
       return code;
     },
     async sendTurn(deviceId, clientTurnId, text) {
-      await pause(900);
+      await pause(100);
       takeFailure();
       const w = find(deviceId);
       const replay = seen.get(clientTurnId);
       if (replay) return { turn: replay.turn, proposal: replay.proposal, speech: null, status: status(w) };
-      const r = reply(w, text);
-      const turn: WalkerTurnView = {
-        turn_id: crypto.randomUUID(),
-        client_turn_id: clientTurnId,
-        source: "page",
-        heard: text.trim(),
-        heard_by: "typed",
-        reply: r.reply,
-        answered_by: r.answered_by,
-        voiced_by: null,
-        created_at: iso(now()),
-      };
-      w.turns.push(turn);
-      seen.set(clientTurnId, { turn, proposal: r.proposal });
-      return { turn, proposal: r.proposal, speech: null, status: status(w) };
+      const done = await runTurn(w, clientTurnId, text, "page");
+      seen.set(clientTurnId, done);
+      return { ...done, speech: null, status: status(w) };
     },
     async answerProposal(deviceId, proposalId, answer) {
       await pause(300);
@@ -317,6 +392,8 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
         queued: [],
         proposal: null,
         replaced: [],
+        inFlight: [],
+        traces: [],
       });
       return true;
     },
@@ -352,6 +429,12 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
     setSensorsPlugged(plugged) {
       const w = live();
       if (w) w.sensorsPlugged = plugged;
+    },
+    walkerTalks(words) {
+      const w = live();
+      if (!w || !w.online) return false;
+      void runTurn(w, crypto.randomUUID(), words, "walker");
+      return true;
     },
     confirmOnWalker() {
       const w = live();
