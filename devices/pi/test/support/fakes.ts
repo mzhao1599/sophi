@@ -157,6 +157,8 @@ export function captureLogger(): Logger & { lines: string[] } {
 type Recorded = { [K in keyof BusEvents]: { name: K; payload: BusEvents[K] } }[keyof BusEvents];
 
 export interface HarnessOptions {
+  /** The Pi's GPIO buttons, as the manifest sees them (absent in the simulator). */
+  gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
   paired?: boolean;
   cues?: Cue[];
   withHand?: boolean;
@@ -192,6 +194,8 @@ export function makeHarness(options: HarnessOptions = {}) {
     speaker,
     simulator: true,
     audioInstanceId: "test-audio",
+    coordinatorInstanceId: "sim-coordinator",
+    ...(options.gpioButtons ? { gpioButtons: options.gpioButtons } : {}),
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, "0")}`,
     makeCloud: (file) => {
       const client = new FakeCloudClient(fake, file.device_id, file.credential);

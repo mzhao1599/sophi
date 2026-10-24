@@ -139,6 +139,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     speaker,
     simulator: true,
     audioInstanceId: "sim-audio",
+    coordinatorInstanceId: "sim-coordinator",
     makeCloud: (credential) => new HttpCloudClient(credential.server_url, credential.device_id, credential.credential),
   });
   service.start();

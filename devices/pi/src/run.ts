@@ -27,6 +27,8 @@ export interface PiConfig {
   talkPin: number;
   confirmPin: number;
   gpiomon: GpiomonFlavor;
+  /** The installer says Talk and Confirm are wired to the GPIO pins (WALKER_GPIO_BUTTONS=wired). */
+  gpioWired: boolean;
   serialDir: string;
 }
 
@@ -47,6 +49,9 @@ export function readPiConfig(env: NodeJS.ProcessEnv): PiConfig {
   }
   const gpiomon = env.WALKER_GPIOMON ?? "v1";
   if (gpiomon !== "v1" && gpiomon !== "v2") throw new Error("WALKER_GPIOMON must be v1 or v2.");
+  // A typo must not silently leave the buttons unwatched (Talk would do nothing).
+  const gpioButtons = env.WALKER_GPIO_BUTTONS ?? "";
+  if (gpioButtons !== "" && gpioButtons !== "wired") throw new Error("WALKER_GPIO_BUTTONS must be wired, or left unset when no buttons are wired.");
   return {
     stateDir: env.WALKER_STATE_DIR || DEFAULT_STATE_DIR,
     captureDevice,
@@ -56,6 +61,7 @@ export function readPiConfig(env: NodeJS.ProcessEnv): PiConfig {
     talkPin: pin(env.WALKER_GPIO_TALK, 17, "WALKER_GPIO_TALK"),
     confirmPin: pin(env.WALKER_GPIO_CONFIRM, 27, "WALKER_GPIO_CONFIRM"),
     gpiomon,
+    gpioWired: gpioButtons === "wired",
     serialDir: env.WALKER_SERIAL_DIR || SERIAL_BY_ID_DIR,
   };
 }
@@ -70,10 +76,13 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   const cues = writeCueSounds(join(config.stateDir, "cues"));
   const modules = new ModuleManager({ clock, log, bus });
   const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir });
-  const buttons = new GpioButtons(
-    { flavor: config.gpiomon, chip: config.gpioChip, pins: { talk: config.talkPin, confirm: config.confirmPin } },
-    { clock, log, bus },
-  );
+  // The Pi can't sense a button, so it watches (and reports) the GPIO buttons only when declared wired.
+  const buttons = config.gpioWired
+    ? new GpioButtons(
+        { flavor: config.gpiomon, chip: config.gpioChip, pins: { talk: config.talkPin, confirm: config.confirmPin } },
+        { clock, log, bus },
+      )
+    : null;
   const speaker = new PiSpeaker(
     // Synthesized replies go to the service's runtime folder in memory (systemd RuntimeDirectory, /run), never the SD
     // card. Run by hand (no RUNTIME_DIRECTORY), a fresh private temp folder stands in, never a shared fixed name.
@@ -96,11 +105,20 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
     speaker,
     simulator: false,
     audioInstanceId: "pi-usb-audio",
+    coordinatorInstanceId: "pi-coordinator",
+    ...(buttons ? { gpioButtons: buttons } : {}),
     makeCloud: (credential) => new HttpCloudClient(credential.server_url, credential.device_id, credential.credential),
   });
-  log.info("starting", { mic: config.captureDevice, speaker: speaker.label, gpio: config.gpioChip, state: config.stateDir });
+  // Report the buttons the moment they count as watched, not at the next 5 s tick.
+  if (buttons) buttons.onWatching = () => service.reportSoon();
+  log.info("starting", {
+    mic: config.captureDevice,
+    speaker: speaker.label,
+    gpio: buttons ? config.gpioChip : "not declared wired (WALKER_GPIO_BUTTONS)",
+    state: config.stateDir,
+  });
   scanner.start();
-  buttons.start();
+  buttons?.start();
   service.start();
   const signal = await new Promise<string>((resolve) => {
     process.once("SIGTERM", () => resolve("SIGTERM"));
@@ -108,7 +126,7 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   });
   log.info("stopping", { signal });
   service.stop();
-  buttons.stop();
+  buttons?.stop();
   scanner.stop();
   modules.stop();
   return 0;

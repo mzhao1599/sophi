@@ -37,6 +37,8 @@ export const OBSTACLE_HAPTIC_MS = 400;
 
 // ---- Buttons ----
 
+/** Placeholder, not measured: gpiomon must stay up this long before the GPIO buttons count as watched. */
+export const GPIOMON_SETTLE_MS = 1000;
 /** Placeholder, not measured: a GPIO button must hold a level this long before the Pi believes it. */
 export const GPIO_DEBOUNCE_MS = 30;
 

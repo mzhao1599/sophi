@@ -465,6 +465,7 @@ describe("reports", () => {
     expect(manifest.simulator).toBe(true);
     expect(manifest.device_configuration_version).toBe(1);
     expect(manifest.modules.map((m) => [m.module_id, m.instance_id, m.protocol_version, m.health, m.simulated])).toEqual([
+      ["base.walker", "sim-coordinator", null, "ok", true],
       ["controls.hand", "hand-left-01", 1, "ok", true],
       ["perception.tof", "tof-front-01", 1, "ok", true],
       ["voice", "test-audio", null, "ok", true],
@@ -508,7 +509,10 @@ describe("reports", () => {
     h.tof!.hang();
     await h.clock.advance(10_000);
     expect(h.spoken("notice").filter((t) => t.includes("stopped responding"))).toEqual(["Your obstacle sensor stopped responding."]);
-    expect(h.device()!.lastHeartbeat!.manifest.modules[0]).toMatchObject({ health: "unavailable", faults: ["heartbeat_timeout"] });
+    expect(h.device()!.lastHeartbeat!.manifest.modules.find((m) => m.instance_id === "tof-front-01")).toMatchObject({
+      health: "unavailable",
+      faults: ["heartbeat_timeout"],
+    });
   });
 
   it("C1/C11: vibration config buzzes the hand; turns, proposals and confirms never cue on their own", async () => {

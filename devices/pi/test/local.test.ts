@@ -163,6 +163,18 @@ describe("state store", () => {
   });
 });
 
+describe("Pi settings", () => {
+  it("S20: the GPIO buttons count as wired only when the installer says so", async () => {
+    const { readPiConfig } = await import("../src/run");
+    const base = { WALKER_ALSA_CAPTURE: "plughw:CARD=Mic,DEV=0", WALKER_ALSA_PLAYBACK: "default:CARD=Bar" };
+    expect(readPiConfig(base).gpioWired).toBe(false);
+    expect(readPiConfig({ ...base, WALKER_GPIO_BUTTONS: "wired" }).gpioWired).toBe(true);
+    expect(() => readPiConfig({ ...base, WALKER_GPIO_BUTTONS: "yes" })).toThrow(/WALKER_GPIO_BUTTONS must be wired/);
+    expect(() => readPiConfig({ ...base, WALKER_GPIO_BUTTONS: "Wired" })).toThrow(/WALKER_GPIO_BUTTONS must be wired/);
+    expect(readPiConfig({ ...base, WALKER_GPIO_BUTTONS: "" }).gpioWired).toBe(false);
+  });
+});
+
 describe("misc", () => {
   it("plain http is refused except to this machine", () => {
     expect(() => checkServerUrl("http://walker.example.test")).toThrow(/https/);

@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Bus, ButtonName } from "./bus";
 import type { Cancel, Clock } from "./clock";
-import { GPIO_DEBOUNCE_MS } from "./constants";
+import { GPIOMON_SETTLE_MS, GPIO_DEBOUNCE_MS } from "./constants";
 import type { Logger } from "./log";
 import { signalChild } from "./process";
 
@@ -87,8 +87,17 @@ export interface GpioButtonsOptions {
 
 /** Runs gpiomon, debounces each line and emits Talk and Confirm edges. Restarts gpiomon if it exits. */
 export class GpioButtons {
+  /** How the manifest names these buttons (the `controls.hand` part, when no ESP32 hand board is known). */
+  readonly instanceId = "pi-gpio-buttons";
   private child: ChildProcess | null = null;
   private stopped = false;
+  /** True once gpiomon has stayed up GPIOMON_SETTLE_MS. "ok" means "being watched", not "wired". */
+  private watching = false;
+  /** True from each start until gpiomon settles or ends. */
+  private starting = false;
+  private cancelSettle: Cancel | null = null;
+  /** Called once each time the buttons become watched, so the walker can report it at once. */
+  onWatching: () => void = () => {};
   private readonly debouncers = new Map<number, Debouncer>();
   private cancelRestart: Cancel | null = null;
 
@@ -117,6 +126,7 @@ export class GpioButtons {
     const { command, args } = gpiomonCommand(this.options.flavor, this.options.chip, [...this.debouncers.keys()]);
     const child = (this.deps.spawnChild ?? spawn)(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     this.child = child;
+    this.starting = true;
     createInterface({ input: child.stdout! }).on("line", (line) => this.handleLine(line));
     let stderr = "";
     child.stderr?.on("data", (data: Buffer) => {
@@ -127,6 +137,10 @@ export class GpioButtons {
     const restart = (why: string) => {
       if (ended || this.stopped) return;
       ended = true;
+      this.watching = false;
+      this.starting = false;
+      this.cancelSettle?.();
+      this.cancelSettle = null;
       this.deps.log.error("gpiomon stopped; restarting in 5 s", { why, stderr: stderr.trim().slice(0, 200) });
       // A held button's release can't be seen now: drop that belief (and any recording it started).
       for (const debouncer of this.debouncers.values()) debouncer.reset();
@@ -135,11 +149,32 @@ export class GpioButtons {
     };
     child.once("error", (error) => restart(`couldn't start: ${error.message}`));
     child.once("close", (code) => restart(`exit ${code}`));
+    // One that exits at once (a wrong chip name) must never read "ok", so it counts only after it has held.
+    child.once("spawn", () => {
+      if (this.child !== child || this.stopped) return;
+      this.cancelSettle?.();
+      this.cancelSettle = this.deps.clock.setTimeout(() => {
+        this.cancelSettle = null;
+        if (this.child !== child || ended || this.stopped) return;
+        this.watching = true;
+        this.starting = false;
+        this.onWatching();
+      }, GPIOMON_SETTLE_MS);
+    });
     this.deps.log.info("watching GPIO buttons", { chip: this.options.chip, talk: this.options.pins.talk, confirm: this.options.pins.confirm });
+  }
+
+  status(): { health: "ok" | "unavailable"; faults: string[] } {
+    if (this.watching) return { health: "ok", faults: [] };
+    return { health: "unavailable", faults: [this.starting ? "gpiomon_starting" : "gpiomon_stopped"] };
   }
 
   stop(): void {
     this.stopped = true;
+    this.watching = false;
+    this.starting = false;
+    this.cancelSettle?.();
+    this.cancelSettle = null;
     this.cancelRestart?.();
     if (this.child) signalChild(this.child, "SIGTERM");
   }

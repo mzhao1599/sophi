@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { CapabilityManifestSchema } from "@walker/contracts";
 import { describe, expect, it } from "vitest";
 import { PiSpeaker } from "../src/audio/speech";
 import { Bus } from "../src/bus";
@@ -10,7 +11,9 @@ import { GpioButtons } from "../src/buttons";
 import { CuePolicy } from "../src/cues";
 import { LINES } from "../src/notices";
 import { sttyArgs } from "../src/serial/port";
+import { SimulatedPort } from "../src/sim/fakeModules";
 import { StateStore } from "../src/store";
+import { SERVICE_VERSION } from "../src/version";
 import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from "./support/fakes";
 
 /** Rows added from the break-it review (test/EXPECTED.md, marked "review"). */
@@ -400,4 +403,145 @@ it("S17: a known hand whose seq goes back on a heartbeat (its boot hello lost) c
   expect(h.spoken("local_reply")).toEqual([LINES.stoppedListening]);
   const asked = h.hand!.port.received.slice(sentBefore).map((line) => JSON.parse(line));
   expect(asked).toEqual([expect.objectContaining({ type: "hello.request", module_id: "hand-left-01" })]);
+});
+
+describe("reported parts (S19-S21)", () => {
+  const gpio = (health: "ok" | "unavailable") => ({
+    instanceId: "pi-gpio-buttons",
+    status: () => (health === "ok" ? { health, faults: [] } : { health, faults: ["gpiomon_stopped"] }),
+  });
+  const parts = (h: Harness) => h.service.manifest().modules.map((m) => `${m.module_id} ${m.instance_id} ${m.health} ${m.simulated}`);
+
+  it("S19: the coordinator reports itself as the walker frame, simulated only in the simulator", async () => {
+    const h = makeHarness();
+    await boot(h);
+    const frame = h.service.manifest().modules[0]!;
+    expect(frame).toMatchObject({
+      module_id: "base.walker",
+      instance_id: "sim-coordinator",
+      firmware_version: SERVICE_VERSION,
+      protocol_version: null,
+      health: "ok",
+      faults: [],
+      simulated: true,
+    });
+    // The server's status view then shows the frame healthy, not "unavailable".
+    await h.clock.advance(5000);
+    const status = h.fake.status(h.device()!);
+    expect(status.parts.find((p) => p.module_id === "base.walker")).toMatchObject({ instance_id: "sim-coordinator", health: "ok", simulated: true });
+  });
+
+  it("S20: declared GPIO buttons are reported as hand controls, alongside any ESP32 hand, ok only while watched", async () => {
+    const watched = makeHarness({ gpioButtons: gpio("ok"), withTof: true });
+    await boot(watched);
+    expect(parts(watched)).toContain("controls.hand pi-gpio-buttons ok false");
+    const stopped = makeHarness({ gpioButtons: gpio("unavailable") });
+    await boot(stopped);
+    expect(stopped.service.manifest().modules.find((m) => m.instance_id === "pi-gpio-buttons")).toMatchObject({
+      health: "unavailable",
+      faults: ["gpiomon_stopped"],
+    });
+    const withBoard = makeHarness({ gpioButtons: gpio("ok"), withHand: true });
+    await boot(withBoard);
+    expect(parts(withBoard).filter((p) => p.startsWith("controls.hand"))).toEqual([
+      "controls.hand hand-left-01 ok true",
+      "controls.hand pi-gpio-buttons ok false",
+    ]);
+    // Not declared wired: no GPIO part at all, even with no ESP32 hand.
+    const undeclared = makeHarness();
+    await boot(undeclared);
+    expect(parts(undeclared).some((p) => p.includes("pi-gpio-buttons"))).toBe(false);
+  });
+
+  it("S21: past 32 parts, ESP32 modules are cut first; the coordinator, GPIO buttons and voice stay", async () => {
+    const h = makeHarness({ gpioButtons: gpio("ok") });
+    await boot(h);
+    for (let i = 0; i < 40; i += 1) {
+      const port = new SimulatedPort(`p${i}`);
+      h.modules.attach(port);
+      port.sendLine({ v: 1, type: "hello", module_id: `tof-${i}`, seq: 0, module_type: "perception", capabilities: [] });
+    }
+    await flush();
+    // A live hand that said hello after 40 sensors went silent is kept; old unavailable sensors are cut first.
+    await h.clock.advance(4000);
+    const live = new SimulatedPort("live");
+    h.modules.attach(live);
+    live.sendLine({ v: 1, type: "hello", module_id: "hand-late-01", seq: 0, module_type: "hand", capabilities: [] });
+    await flush();
+    const manifest = h.service.manifest();
+    expect(manifest.modules.map((m) => m.instance_id)).toContain("hand-late-01");
+    expect(manifest.modules).toHaveLength(32);
+    expect(manifest.modules.map((m) => m.instance_id)).toEqual(expect.arrayContaining(["sim-coordinator", "pi-gpio-buttons", "test-audio"]));
+    expect(CapabilityManifestSchema.safeParse(manifest).success).toBe(true);
+  });
+
+  it("S21: every part once, and nothing the walker doesn't have", async () => {
+    const sim = makeHarness({ withHand: true, withTof: true });
+    await boot(sim);
+    expect(parts(sim)).toEqual([
+      "base.walker sim-coordinator ok true",
+      "controls.hand hand-left-01 ok true",
+      "perception.tof tof-front-01 ok true",
+      "voice test-audio ok true",
+    ]);
+    const bare = makeHarness();
+    await boot(bare);
+    expect(parts(bare)).toEqual(["base.walker sim-coordinator ok true", "voice test-audio ok true"]);
+    expect(CapabilityManifestSchema.safeParse(sim.service.manifest()).success).toBe(true);
+  });
+
+  it("S20: GpioButtons says ok once gpiomon has started, and unavailable once it stops", async () => {
+    const clock = new FakeClock();
+    const children: EventEmitter[] = [];
+    const spawnChild = (() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        pid: 88,
+        exitCode: null,
+        signalCode: null,
+        kill: () => true,
+      });
+      children.push(child);
+      return child;
+    }) as never;
+    const buttons = new GpioButtons({ flavor: "v1", chip: "gpiochip0", pins: { talk: 17, confirm: 27 } }, { clock, log: captureLogger(), bus: new Bus(), spawnChild });
+    let watched = 0;
+    buttons.onWatching = () => (watched += 1);
+    expect(buttons.status().health).toBe("unavailable");
+    buttons.start();
+    children[0]!.emit("spawn");
+    await clock.advance(999);
+    expect(buttons.status()).toEqual({ health: "unavailable", faults: ["gpiomon_starting"] }); // not yet held for 1 s
+    await clock.advance(1);
+    expect(buttons.status()).toEqual({ health: "ok", faults: [] });
+    expect(watched).toBe(1);
+    children[0]!.emit("close", 1);
+    expect(buttons.status()).toEqual({ health: "unavailable", faults: ["gpiomon_stopped"] });
+    // A gpiomon that exits at once (a wrong chip) never reads ok, through any number of restarts.
+    for (let i = 1; i <= 3; i += 1) {
+      await clock.advance(5000);
+      children[i]!.emit("spawn");
+      await clock.advance(10);
+      children[i]!.emit("close", 1);
+      await clock.advance(2000);
+      expect(buttons.status().health).toBe("unavailable");
+    }
+    await clock.advance(5000);
+    buttons.stop();
+    children[4]!.emit("spawn"); // a spawn that lands after stop changes nothing
+    await clock.advance(2000);
+    expect(buttons.status()).toEqual({ health: "unavailable", faults: ["gpiomon_stopped"] });
+    expect(watched).toBe(1);
+  });
+});
+
+it("S20: once the GPIO buttons count as watched, the walker reports it at once, not at the next tick", async () => {
+  const h = makeHarness();
+  await boot(h);
+  await h.clock.advance(1000);
+  const before = h.client.calls.filter((c) => c === "heartbeat").length;
+  h.service.reportSoon();
+  await h.clock.advance(0);
+  expect(h.client.calls.filter((c) => c === "heartbeat").length).toBe(before + 1);
 });

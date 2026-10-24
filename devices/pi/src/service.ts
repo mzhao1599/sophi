@@ -44,6 +44,10 @@ export interface ServiceDeps {
   simulator: boolean;
   /** The Pi's own USB microphone and speaker, reported as the `voice` part. */
   audioInstanceId: string;
+  /** The coordinator itself (the Pi, or the Mac under `walker simulate`), reported as the `base.walker` part. */
+  coordinatorInstanceId: string;
+  /** The Pi's own GPIO Talk and Confirm buttons, only when the installer declared them wired (never in the simulator). */
+  gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
   newId?: () => string;
 }
 
@@ -529,6 +533,11 @@ export class WalkerService {
 
   // ---- Cloud link ----
 
+  /** Sends a heartbeat now rather than at the next tick, when a part's state changed (the GPIO buttons settled). */
+  reportSoon(): void {
+    if (!this.heartbeatInFlight) this.scheduleHeartbeat(0);
+  }
+
   private scheduleHeartbeat(delayMs: number): void {
     if (this.stopped) return;
     this.cancelHeartbeat?.();
@@ -673,9 +682,42 @@ export class WalkerService {
 
   // ---- Reports ----
 
+  /**
+   * Every part the walker has, each once: the coordinator itself, each ESP32 module by its id, the Pi's GPIO
+   * buttons when the installer declared them wired (the Pi can't sense a button), and the USB mic and
+   * speaker. Nothing it doesn't have. Past 32, ESP32 modules are cut first, never the Pi's own parts.
+   */
   manifest(): CapabilityManifest {
     const now = this.deps.clock.now();
-    const modules: CapabilityManifest["modules"] = this.deps.modules.modules().map((module) => ({
+    const serial = this.deps.modules.modules();
+    const coordinator: CapabilityManifest["modules"][number] = {
+      module_id: "base.walker",
+      instance_id: this.deps.coordinatorInstanceId,
+      firmware_version: SERVICE_VERSION,
+      protocol_version: null,
+      health: "ok",
+      faults: [],
+      observed_at: iso(now),
+      simulated: this.deps.simulator,
+    };
+    const gpio = this.deps.gpioButtons;
+    const gpioPart: CapabilityManifest["modules"] = gpio
+      ? [
+            {
+              module_id: "controls.hand",
+              instance_id: gpio.instanceId,
+              firmware_version: null,
+              protocol_version: null,
+              ...gpio.status(),
+              observed_at: iso(now),
+              simulated: false,
+            },
+          ]
+      : [];
+    const room = 32 - 2 - gpioPart.length; // the coordinator, voice and the GPIO buttons always fit
+    // Available modules first (in hello order), so a cut drops an old unavailable board before a live one.
+    const ranked = [...serial.filter((m) => m.health !== "unavailable"), ...serial.filter((m) => m.health === "unavailable")];
+    const modules: CapabilityManifest["modules"] = ranked.slice(0, room).map((module) => ({
       module_id: module.catalogId,
       instance_id: module.instanceId,
       firmware_version: module.firmwareVersion,
@@ -685,6 +727,8 @@ export class WalkerService {
       observed_at: iso(module.observedAt),
       simulated: module.simulated,
     }));
+    modules.unshift(coordinator);
+    modules.push(...gpioPart);
     modules.push({
       module_id: "voice",
       instance_id: this.deps.audioInstanceId,
@@ -699,7 +743,7 @@ export class WalkerService {
       device_configuration_version: this.configuration?.version ?? null,
       generated_at: iso(now),
       simulator: this.deps.simulator,
-      modules: modules.slice(0, 32),
+      modules,
     };
   }
 
