@@ -208,7 +208,7 @@ export function makeHarness(options: HarnessOptions = {}) {
   let tof: SimulatedTof | null = null;
   if (options.withHand) {
     const port = new SimulatedPort("sim:hand");
-    hand = new SimulatedHand(port, "hand-left-01", clock);
+    hand = new SimulatedHand(port, "hand-right-01", clock);
     modules.attach(port);
     hand.start();
   }

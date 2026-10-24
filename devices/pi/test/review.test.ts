@@ -153,9 +153,9 @@ describe("S12: serial writes", () => {
     const h = makeHarness({ withHand: true });
     await boot(h);
     h.hand!.port.busy = true;
-    expect(h.modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(false);
+    expect(h.modules.sendHaptic("hand-right-01", "near_obstacle", 400)).toBe(false);
     h.hand!.port.busy = false;
-    expect(h.modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(true);
+    expect(h.modules.sendHaptic("hand-right-01", "near_obstacle", 400)).toBe(true);
     // seq 0 was the hello.request sent on opening; the dropped haptic took no number.
     expect(h.hand!.port.received.map((line) => [JSON.parse(line).type, JSON.parse(line).seq])).toEqual([
       ["hello.request", 0],
@@ -267,7 +267,7 @@ describe("second review", () => {
   function soundPolicy(clock: FakeClock, sent: boolean, cues: ("vibration" | "sound")[] = ["sound"]) {
     const at: number[] = [];
     const hand = {
-      instanceId: "hand-left-01",
+      instanceId: "hand-right-01",
       type: "hand" as const,
       catalogId: "controls.hand" as const,
       capabilities: ["haptic"],
@@ -367,7 +367,7 @@ describe("S16: a re-hello from a known module (hello.request, PR #28)", () => {
     const hellos = () => h.log.lines.filter((line) => line.includes("module said hello")).length;
     const before = hellos();
     // The Pi asks again (as after the module came back); the module answers with seq still running.
-    h.hand!.port.onPiLine(JSON.stringify({ v: 1, type: "hello.request", module_id: "hand-left-01", seq: 9 }));
+    h.hand!.port.onPiLine(JSON.stringify({ v: 1, type: "hello.request", module_id: "hand-right-01", seq: 9 }));
     await flush();
     expect(hellos()).toBe(before + 1);
     expect(h.service.talk).toBe("recording");
@@ -396,13 +396,13 @@ it("S17: a known hand whose seq goes back on a heartbeat (its boot hello lost) c
   await h.clock.advance(1000);
   expect(h.service.talk).toBe("recording");
   const sentBefore = h.hand!.port.received.length;
-  h.hand!.port.sendLine({ v: 1, type: "heartbeat", module_id: "hand-left-01", seq: 0, uptime_ms: 40, health: "ok" });
+  h.hand!.port.sendLine({ v: 1, type: "heartbeat", module_id: "hand-right-01", seq: 0, uptime_ms: 40, health: "ok" });
   await flush();
   expect(h.service.talk).toBe("idle");
   expect(h.client.calls).not.toContain("turn");
   expect(h.spoken("local_reply")).toEqual([LINES.stoppedListening]);
   const asked = h.hand!.port.received.slice(sentBefore).map((line) => JSON.parse(line));
-  expect(asked).toEqual([expect.objectContaining({ type: "hello.request", module_id: "hand-left-01" })]);
+  expect(asked).toEqual([expect.objectContaining({ type: "hello.request", module_id: "hand-right-01" })]);
 });
 
 describe("reported parts (S19-S21)", () => {
@@ -444,7 +444,7 @@ describe("reported parts (S19-S21)", () => {
     const withBoard = makeHarness({ gpioButtons: gpio("ok"), withHand: true });
     await boot(withBoard);
     expect(parts(withBoard).filter((p) => p.startsWith("controls.hand"))).toEqual([
-      "controls.hand hand-left-01 ok true",
+      "controls.hand hand-right-01 ok true",
       "controls.hand pi-gpio-buttons ok false",
     ]);
     // Not declared wired: no GPIO part at all, even with no ESP32 hand.
@@ -480,7 +480,7 @@ describe("reported parts (S19-S21)", () => {
     await boot(sim);
     expect(parts(sim)).toEqual([
       "base.walker sim-coordinator ok true",
-      "controls.hand hand-left-01 ok true",
+      "controls.hand hand-right-01 ok true",
       "perception.tof tof-front-01 ok true",
       "voice test-audio ok true",
     ]);

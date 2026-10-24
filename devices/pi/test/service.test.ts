@@ -468,7 +468,7 @@ describe("reports", () => {
     expect(manifest.device_configuration_version).toBe(1);
     expect(manifest.modules.map((m) => [m.module_id, m.instance_id, m.protocol_version, m.health, m.simulated])).toEqual([
       ["base.walker", "sim-coordinator", null, "ok", true],
-      ["controls.hand", "hand-left-01", 1, "ok", true],
+      ["controls.hand", "hand-right-01", 1, "ok", true],
       ["perception.tof", "tof-front-01", 1, "ok", true],
       ["voice", "test-audio", null, "ok", true],
     ]);
@@ -538,7 +538,7 @@ describe("reports", () => {
     await boot(h);
     h.tof!.readings.front_left = { mm: 300 };
     await h.clock.advance(200);
-    expect(h.named("haptic")).toEqual([{ instanceId: "hand-left-01", pattern: "near_obstacle", durationMs: 400 }]);
+    expect(h.named("haptic")).toEqual([{ instanceId: "hand-right-01", pattern: "near_obstacle", durationMs: 400 }]);
     expect(h.speaker.cues).not.toContain("obstacle");
   });
 

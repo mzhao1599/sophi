@@ -48,7 +48,7 @@ Example lines, printed by the firmware's own code in the scripted session on a c
 
 ### Physical side assignment
 
-The ESP32 tested on the Mac is the **left** board and is provisioned as `hand-left-01`. The other ESP32 is for the **right** handle and should be provisioned as `hand-right-01` when flashed. The intended physical **Talk** control is on the **right** handle. Current firmware still reports a GPIO32 press as `button: "talk"` on either board; the left board's connected control produced that wire event in the bench test. Decide and implement the left control's final action before treating the wire event as the finished handle layout. Keep each board labeled with its provisioned ID rather than identifying it by USB port order.
+The ESP32 tested on the Mac is the **left** board and is provisioned as `hand-left-01`. The other ESP32 is for the **right** handle and should be provisioned as `hand-right-01` when flashed. The physical **Talk** control is on the **right** handle. Shared ESP32 firmware reports a GPIO32 press as `button: "talk"` on either board; the Pi maps that wire event from `hand-left-*` to **Confirm** while keeping the right side as Talk. This Pi change still needs a physical two-handle check. Keep each board labeled with its provisioned ID rather than identifying it by USB port order.
 
 ### Parts (from [hardware/current-build.md](../hardware/current-build.md))
 
@@ -61,7 +61,7 @@ The ESP32 tested on the Mac is the **left** board and is provisioned as `hand-le
 
 | ESP32 pin | Goes to | Why |
 | --- | --- | --- |
-| GPIO32 | Talk button, other leg to GND | The ESP32's internal pull-up holds the pin high; pressing pulls it low. No resistor needed. |
+| GPIO32 | Handle control, other leg to GND | Firmware reports `talk` on the wire. The Pi interprets it as Confirm for `hand-left-*` and Talk for the right handle. The internal pull-up holds the pin high; pressing pulls it low. No resistor needed. |
 | GPIO33 | Confirm button, other leg to GND | Same. |
 | GPIO21 (SDA) | DRV2605L SDA | The core's default I2C data pin. |
 | GPIO22 (SCL) | DRV2605L SCL | The core's default I2C clock pin. |
@@ -195,7 +195,7 @@ Set the monitor's line ending to **Newline** if using a graphical monitor. Send 
 
 An `ack` with `"result":"accepted"` means the firmware accepted the command. It does not prove the motor moved; feel or observe the motor to confirm that separately. The other allowed patterns are `recording`, `near_obstacle`, and `error`; duration must be 1–1000 ms. Use a new `request_id` for each command. Press Ctrl-C to close the terminal monitor before another program opens the port. Later, the Pi sends these same contract messages over USB.
 
-The planned P32 Talk input expects a momentary contact to GND, with the internal pull-up enabled. It is not yet a general capacitive-touch interface. If the eventual touch sensor has an active-high digital output, update and verify the input handling before connecting it.
+The GPIO32 handle input expects a momentary contact to GND, with the internal pull-up enabled. The Pi decides whether that wire event means left Confirm or right Talk. This is not yet a general capacitive-touch interface. If the eventual touch sensor has an active-high digital output, update and verify the input handling before connecting it.
 
 For a **press → buzz bench test**, close any serial monitor and run this from the repository root after reconnecting the board:
 
@@ -217,7 +217,7 @@ The script's framing and press-to-cue behavior can be checked without a board us
 - Serial: a `hello.request` received a `hello` advertising `button.talk`, `button.confirm`, and `haptic`; subsequent heartbeats reported `health: ok`. A 150 ms `confirmation` request received `ack` `accepted`.
 - Haptic feel: the owner felt the 1000 ms `near_obstacle` cue when P32 was touched to GND. After the no-pause `near_obstacle` firmware was flashed, the owner reported that it felt stronger. The computer loopback received press events and `accepted` acknowledgements; the serial session was then stopped.
 - Motor: the owner identified the [VAKTOK 10 mm coin motor listing](https://www.amazon.com/dp/B0CC4LXNMZ), which advertises a 3 V rating. The DRV2605L's peak drive setting was not raised. Measure actual motor voltage, current, and temperature before sustained use; the listing does not establish those operating values in this wiring.
-- Still unverified: motor voltage/current/temperature, all other cue patterns and durations on this Mac bench, the exact final left-control wiring and action, P33 Confirm input, and reconnect behavior. The DRV2605L responded to firmware initialization, but its breakout revision was not recorded.
+- Still unverified: motor voltage/current/temperature, all other cue patterns and durations on this Mac bench, the exact final left-control wiring, P33 Confirm input, reconnect behavior, and the Pi's new left-to-Confirm mapping on both physical handles. The DRV2605L responded to firmware initialization, but its breakout revision was not recorded.
 
 ## Tests
 

@@ -71,7 +71,7 @@ const CATALOG_ID: Record<SerialModuleType, ModuleId> = {
   voice: "voice",
 };
 
-/** Same names everywhere (the design's button map): a hand module declares `button.talk` and `button.confirm`. */
+/** Raw names declared by the hand firmware; physical roles are resolved with the module ID below. */
 const HAND_BUTTONS: Record<string, ButtonName> = { talk: "talk", confirm: "confirm" };
 
 interface Port {
@@ -276,7 +276,10 @@ export class ModuleManager {
           return;
         }
         {
-          const button = HAND_BUTTONS[message.button];
+          // Both ESP32s run the same firmware. The left handle's GPIO32 is its Confirm control even
+          // though serial v1 calls that pin "talk"; the right handle keeps GPIO32 as Talk.
+          const button = record.instanceId.startsWith("hand-left-") && message.button === "talk"
+            ? "confirm" : HAND_BUTTONS[message.button];
           if (button) this.deps.bus.emit("button", { button, edge: message.edge, source: "esp32", detail: record.instanceId });
         }
         return;

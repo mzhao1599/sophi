@@ -158,7 +158,7 @@ describe("module manager", () => {
     expect(log.lines.some((line) => line.includes("hasn't said hello"))).toBe(true);
   });
 
-  it("B12: hand buttons count only when declared in the hello; trigger-only lines are not buttons", async () => {
+  it("B12: the left hand maps its GPIO32 talk wire event to Confirm; undeclared inputs are ignored", async () => {
     const { clock, modules, buttons } = manager();
     const port = new SimulatedPort("p1");
     modules.attach(port);
@@ -170,7 +170,7 @@ describe("module manager", () => {
     port.sendLine({ v: 1, type: "hand.input", module_id: "hand-left-01", seq: 50, uptime_ms: 1, trigger: 0.4 });
     port.sendLine({ v: 1, type: "hand.input", module_id: "hand-left-01", seq: 51, uptime_ms: 1, button: "primary", edge: "pressed" });
     await clock.advance(10);
-    expect(buttons).toEqual(["esp32 talk pressed", "esp32 talk released", "esp32 confirm pressed"]);
+    expect(buttons).toEqual(["esp32 confirm pressed", "esp32 confirm released", "esp32 confirm pressed"]);
 
     const other = new SimulatedPort("p2");
     modules.attach(other);

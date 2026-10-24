@@ -116,9 +116,9 @@ export async function simulate(options: SimulateOptions): Promise<number> {
 
   // ---- Simulated modules ----
   const modules = new ModuleManager({ clock, log, bus });
-  const handPort = new SimulatedPort("sim:hand-left");
+  const handPort = new SimulatedPort("sim:hand-right");
   const tofPort = new SimulatedPort("sim:tof-front");
-  const hand = new SimulatedHand(handPort, "hand-left-sim", clock);
+  const hand = new SimulatedHand(handPort, "hand-right-sim", clock);
   const tof = new SimulatedTof(tofPort, "tof-front-sim", clock);
   hand.onHaptic = (pattern, ms) => log.info("SIMULATED handle buzz", { pattern, ms });
   modules.attach(handPort);
