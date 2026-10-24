@@ -11,15 +11,34 @@
 # power button that ignores a short press. Those four were set by hand on the Pi on 2026-10-24 with the
 # same contents, then this script installed them over those on the same Pi (2026-10-24, 23:28). It does not pair the walker or
 # start the service.
+# With --screen (sudo ./scripts/install-pi.sh --screen dist/walker.mjs, in either order) it then also sets up
+# the walker's 800x480 HDMI touch screen with scripts/install-screen.sh (README, "The screen"), after the
+# walker service is installed and enabled. If that fails, it says "Screen not installed: <reason>" and the
+# walker install still stands. Without --screen it never touches display settings. The --screen part was
+# written 2026-10-23 and has not been run on the Pi yet.
+# WALKER_BOOT_DIR and WALKER_SCREEN_BIN_DIR are changed only by test/screen-kiosk.test.ts.
 set -euo pipefail
 
-bundle="${1:-}"
-here="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ -z "$bundle" || ! -f "$bundle" ]]; then
-  echo "Usage: sudo $0 <path to dist/walker.mjs>" >&2
+usage() {
+  echo "Usage: sudo $0 [--screen] <path to dist/walker.mjs>" >&2
   exit 2
+}
+screen=0
+bundle=""
+for arg in "$@"; do
+  case "$arg" in
+    --screen) screen=1 ;;
+    -*) echo "Unknown option: $arg" >&2; usage ;;
+    *) if [[ -n "$bundle" ]]; then echo "Unexpected argument: $arg" >&2; usage; fi; bundle="$arg" ;;
+  esac
+done
+here="$(cd "$(dirname "$0")/.." && pwd)"
+boot="${WALKER_BOOT_DIR:-/boot/firmware}"
+bin_dir="${WALKER_SCREEN_BIN_DIR:-/usr/bin}"
+if [[ -z "$bundle" || ! -f "$bundle" ]]; then
+  usage
 fi
-if [[ $EUID -ne 0 ]]; then
+if [[ "$(id -u)" != 0 ]]; then
   echo "Run this with sudo." >&2
   exit 1
 fi
@@ -39,6 +58,19 @@ done
 if (( ${#missing[@]} > 0 )); then
   echo "Missing: ${missing[*]}. Install with: sudo apt install alsa-utils gpiod espeak-ng" >&2
   exit 1
+fi
+if (( screen )); then
+  # The paths sophi-screen.service runs, checked before anything is changed.
+  for tool in "$bin_dir/cage" "$bin_dir/chromium"; do
+    if [[ ! -x "$tool" ]]; then
+      echo "Missing: $tool, needed for --screen. Install with: sudo apt install cage chromium curl" >&2
+      exit 1
+    fi
+  done
+  if ! command -v curl >/dev/null; then
+    echo "Missing: curl, needed for --screen. Install with: sudo apt install cage chromium curl" >&2
+    exit 1
+  fi
 fi
 
 id -u steady >/dev/null 2>&1 || useradd --system --home-dir /var/lib/steady-walker --shell /usr/sbin/nologin steady
@@ -78,14 +110,26 @@ install -m 0755 "$here/scripts/walker-wifi-import.sh" /opt/steady-walker/walker-
 install -m 0755 "$here/scripts/walker-wifi-add.sh" /opt/steady-walker/walker-wifi-add.sh
 ln -sf /opt/steady-walker/walker-wifi-add.sh /usr/local/sbin/walker-wifi-add.sh
 install -m 0644 "$here/systemd/walker-wifi.service" /etc/systemd/system/walker-wifi.service
-if [[ ! -d /boot/firmware ]]; then
-  echo "Note: no /boot/firmware on this system, so no wifi.txt was put on the card." >&2
-elif [[ ! -f /boot/firmware/wifi.txt ]]; then
+if [[ ! -d "$boot" ]]; then
+  echo "Note: no $boot on this system, so no wifi.txt was put on the card." >&2
+elif [[ ! -f "$boot/wifi.txt" ]]; then
   # Plain cp: the boot partition is FAT, which can't take the file modes `install` would set.
-  cp "$here/systemd/wifi.txt.example" /boot/firmware/wifi.txt
-  echo "Wrote /boot/firmware/wifi.txt: add Wi-Fi networks there from any computer (README, \"Wi-Fi on any network\")."
+  cp "$here/systemd/wifi.txt.example" "$boot/wifi.txt"
+  echo "Wrote $boot/wifi.txt: add Wi-Fi networks there from any computer (README, \"Wi-Fi on any network\")."
 fi
 
 systemctl daemon-reload
 systemctl enable walker-wifi.service steady-walker.service
 echo "Installed and enabled (not started). Next: edit /etc/steady-walker.env, pair, then sudo systemctl start steady-walker."
+
+# The screen (only with --screen), after the walker is installed and enabled, so a screen problem never
+# leaves the walker half-installed. It runs as its own process, which stops at its own first failure.
+if (( screen )); then
+  if output="$(WALKER_SCREEN_BIN_DIR="$bin_dir" "$here/scripts/install-screen.sh" "$boot" 2>&1)"; then
+    printf '%s\n' "$output"
+  else
+    printf '%s\n' "$output"
+    echo "Screen not installed: $(printf '%s\n' "$output" | grep -v '^[[:space:]]*$' | tail -n 1)" >&2
+    echo "The walker service is installed. Fix that, then run: sudo ./scripts/install-screen.sh" >&2
+  fi
+fi

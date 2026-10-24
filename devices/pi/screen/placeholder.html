@@ -1,0 +1,67 @@
+<!doctype html>
+<!--
+  The walker screen's placeholder, shown by sophi-screen.service until the walker service serves the real
+  screen page (a later change). Installed as /opt/steady-walker/screen/placeholder.html. It only says what is
+  true: the panel works and the screen itself isn't there yet. Sized for the 800x480 panel at about 65 cm
+  (the screen design: main line 88 px, nothing under 40 px), in the web app's light colours, which it keeps
+  even if the system asks for dark. Nothing moves. Not yet seen on the panel (2026-10-23).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Sophi</title>
+<style>
+  :root {
+    --paper: #f1f4f2;
+    --ink: #14201c;
+    --text-body: #3a4541;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, sans-serif;
+    /* A touch screen: no pointer, no text selection, no double-tap zoom. */
+    cursor: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    overflow: hidden;
+  }
+  main {
+    box-sizing: border-box;
+    height: 100%;
+    padding: 40px 48px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 24px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 88px;
+    line-height: 1;
+    font-weight: 700;
+  }
+  p {
+    margin: 0;
+    font-size: 48px;
+    line-height: 1.2;
+  }
+  p.more {
+    font-size: 40px;
+    color: var(--text-body);
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sophi</h1>
+  <p>Screen connected.</p>
+  <p class="more">The walker's screen starts when the walker service is updated.</p>
+</main>
+</body>
+</html>

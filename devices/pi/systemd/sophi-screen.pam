@@ -1,0 +1,9 @@
+# Installed as /etc/pam.d/sophi-screen by `install-pi.sh --screen`. sophi-screen.service (PAMName=) opens a
+# login session with it, so logind registers a seat session on tty1 and lets cage use the display and touch.
+# It is cage's own documented minimal stack (github.com/cage-kiosk/cage/wiki, "Starting Cage on boot with
+# systemd"). systemd never asks for a password here, and the sophi-screen user's password is locked (useradd's
+# default for a system user), so nobody can log in as it with this stack. Not yet run on the Pi (2026-10-23).
+auth     required pam_unix.so nullok
+account  required pam_unix.so
+session  required pam_unix.so
+session  required pam_systemd.so

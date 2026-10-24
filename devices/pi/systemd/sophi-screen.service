@@ -1,0 +1,86 @@
+# The walker's screen: Chromium full screen on the 800x480 panel, inside cage (a Wayland "kiosk" compositor
+# that shows one app and nothing else). Installed by `install-pi.sh --screen`. Written 2026-10-23; NOT YET
+# RUN ON THE PI. devices/pi/README.md ("The screen") has the install, check and troubleshooting steps.
+#
+# It is independent of the walker service: steady-walker.service never waits for it, and nothing here waits
+# for or stops steady-walker. With no screen plugged in, or no page yet, sophi-screen-wait.sh (the main
+# command, so boot never waits for it) keeps waiting, then starts cage; the walker keeps working either way.
+[Unit]
+Description=Sophi walker screen (cage and Chromium, full screen)
+# A seat session needs logind (and D-Bus to reach it); log in after normal logins are allowed.
+Wants=dbus.socket systemd-logind.service
+After=dbus.socket systemd-logind.service systemd-user-sessions.service
+# Take over the first text console from its login prompt.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+ConditionPathExists=/dev/tty1
+# Never give up restarting.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Its own user, so the browser can't read the walker's credential (/var/lib/steady-walker is 0700 steady).
+User=sophi-screen
+Group=sophi-screen
+# video and render: the display and GPU. input: the touch panel. (logind also hands cage these devices.)
+SupplementaryGroups=video render input
+# A login session on tty1 (the console the screen shows), which cage needs to drive the display and read
+# touch. /etc/pam.d/sophi-screen registers it with logind.
+PAMName=sophi-screen
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+# The page to show. Until the walker service serves the real screen, a placeholder on the Pi. To change it:
+# `sudo systemctl edit sophi-screen` and add [Service] then Environment=SOPHI_SCREEN_URL=... (local pages only).
+Environment=SOPHI_SCREEN_URL=file:///opt/steady-walker/screen/placeholder.html
+# Everything the browser writes (profile, cache) is in memory under /run/sophi-screen and deleted when the
+# unit stops, so each start is a fresh profile: no "restore pages?" bubble, no first-run screens.
+RuntimeDirectory=sophi-screen
+RuntimeDirectoryMode=0700
+Environment=HOME=/run/sophi-screen
+Environment=XDG_CONFIG_HOME=/run/sophi-screen/config
+Environment=XDG_CACHE_HOME=/run/sophi-screen/cache
+# sophi-screen-wait.sh waits for a connected screen and an answering page, then runs (exec) the rest.
+# cage: -d no window decorations, -s allows switching consoles, so Ctrl+Alt+F2 on a keyboard is expected to
+# give a login prompt for fixing things (not tried).
+# Chromium: --kiosk full screen with no browser controls; Wayland; the profile in /run; no first-run, crash,
+# error or permission prompts; no keyring prompt (--password-store=basic); no translate offer; no pinch zoom
+# or swipe-back; 1 CSS pixel per screen pixel (800x480); no background downloads.
+ExecStart=/opt/steady-walker/screen/sophi-screen-wait.sh /usr/bin/cage -d -s -- /usr/bin/chromium \
+  --kiosk \
+  --ozone-platform=wayland \
+  --user-data-dir=/run/sophi-screen/chromium \
+  --no-first-run \
+  --no-default-browser-check \
+  --noerrdialogs \
+  --disable-infobars \
+  --hide-crash-restore-bubble \
+  --deny-permission-prompts \
+  --password-store=basic \
+  --disable-features=Translate \
+  --disable-pinch \
+  --overscroll-history-navigation=0 \
+  --force-device-scale-factor=1 \
+  --disable-background-networking \
+  --disable-component-update \
+  ${SOPHI_SCREEN_URL}
+# When Chromium exits, cage exits too, and the whole screen starts again: after 5 s, then backing off over 6
+# restarts to at most every 2 minutes if it keeps failing at once (systemd 254 or newer; trixie has 257).
+Restart=always
+RestartSec=5
+RestartSteps=6
+RestartMaxDelaySec=120
+# If memory runs out, the kernel stops the browser before the walker service (whose score stays 0), and the
+# walker gets the processor first when both are busy.
+OOMScoreAdjust=800
+CPUWeight=50
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

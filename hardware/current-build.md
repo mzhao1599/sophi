@@ -8,6 +8,21 @@ This page is the working inventory for the Cal Hacks prototype. Record substitut
 
 The Raspberry Pi 5, 4 GB, from the compute row below ran on the official 27 W USB-C supply with Raspberry Pi OS Lite image "2026-10-06" (Debian 13 trixie, aarch64), and `vcgencmd get_throttled` read `0x0` (no undervoltage or throttling flagged since boot). Later that night the Pi ran the walker service with the USB gooseneck mic (SF-558, USB id `1b3f:0906`, ALSA card `SF558`), the USB soundbar (USB id `5a47:5858`, named `Speaker` by a udev rule) and the first hand ESP32 (`hand-left-01`, CP2102 `10c4:ea60`), and one spoken turn went through them end to end. Plugging those in while the Pi ran caused no shutdown; one hard power loss at 23:19 coincided with the soundbar dropping off USB (likely a knocked cable, unproven). Power draw, the hub and a battery or power bank aren't measured. What the Pi service did at each step is in [devices/pi/README.md](../devices/pi/README.md#set-up-the-pi).
 
+## The screen: an ELECROW 5-inch HDMI touch panel (not yet fitted or measured)
+
+**From the vendor's documents (2026-10-23), not checked on our unit:** model DIS05490T (Amazon B0CYKXCM8J), 800x480, capacitive touch, 137 x 80 x 14 mm, 140 g, with a power switch, a 3.5 mm headphone jack and a 4-pin speaker socket. Elecrow's [manual](https://www.elecrow.com/download/product/DIS05490T/5inch_HDMI_Display_User_Manual.pdf) connects it to a Pi 5 with an HDMI cable (plus the included micro-HDMI adapter) for the picture and a USB-C-to-USB-A cable for "touch function and power supply"; both cables and the adapter are in the box, screws aren't. The listing calls it "driver-free", says 60 Hz, and says touch is five-point on Windows but single-point on Raspberry Pi OS; its title says TN and one bullet says IPS. Elecrow's product page lists a 5 V 2 A supply.
+
+**Not yet known:** whether its EDID reports 800x480, its USB ids and how its touch shows up in Linux, its current draw from the Pi's USB (the Pi 5 gives 1.6 A to all its USB ports together on the official 5 A supply, and only 600 mA on a supply that doesn't offer 5 A), how readable it is off-axis on the walker, and how long it takes to show the page after power-on. The software side (`install-pi.sh --screen`) is in [devices/pi/README.md](../devices/pi/README.md#the-screen), also not yet run on the Pi.
+
+**To do: measure Chromium's memory next to Piper on the 4 GB Pi 5.** Not measured; nothing here is a result. With the screen showing its page and the walker service running with Piper (`WALKER_PIPER_MODEL` set):
+
+1. `free -m` before the screen starts (`sudo systemctl stop sophi-screen`) and again a minute after it starts (`sudo systemctl start sophi-screen`): the change in "used" and "available" is roughly what the screen costs.
+2. `systemd-cgtop -m -n 5 -d 2` while both run: the Memory column for `sophi-screen.service` and `steady-walker.service` (and `user-<uid>.slice` for the screen user's session). `systemctl show -p MemoryCurrent,MemoryPeak sophi-screen steady-walker` gives the same per service.
+3. Make the walker speak with Piper while the screen runs (hold Talk with the server unreachable, so the local line is spoken; or `echo test | piper ...` as in the Piper section) and repeat step 2 during the line; note Piper's time per line against the 3.3 to 3.8 s measured without the screen.
+4. Afterwards, `journalctl -k -b | grep -i -E 'out of memory|oom'` should print nothing.
+
+Write the numbers here with the date, the Chromium and cage versions (`chromium --version`, `cage -v`), and whether the walker's replies were slower.
+
 ## Purchased inventory
 
 | Area | Item and quantity | Integration note |
