@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SerialHapticPlaySchema } from "@walker/contracts";
+import { CONFIRM_PRESS_HAPTIC_MS, TALK_PRESS_HAPTIC_MS } from "../src/constants";
 import { boot, flush, makeHarness, type Harness } from "./support/fakes";
 
 /** The haptic.play lines the Pi actually wrote to the simulated hand, as "pattern ms". */
@@ -32,9 +33,9 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     await boot(h);
     h.hand!.press("talk", "pressed");
     await flush();
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150"]);
-    expect(felt).toEqual(["recording 150"]);
-    expect(h.named("haptic")).toEqual([{ instanceId: "hand-left-01", pattern: "recording", durationMs: 150 }]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`]);
+    expect(felt).toEqual([`recording ${TALK_PRESS_HAPTIC_MS}`]);
+    expect(h.named("haptic")).toEqual([{ instanceId: "hand-left-01", pattern: "recording", durationMs: TALK_PRESS_HAPTIC_MS }]);
     expect(h.speaker.cues).toEqual(["listening"]);
     expect(h.capture.starts).toBe(1);
     expect(h.service.talk).toBe("recording");
@@ -42,7 +43,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     h.hand!.press("talk", "released");
     await flush();
     // The release doesn't buzz; the turn goes out as usual.
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150"]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`]);
     expect(h.client.calls.filter((c) => c === "turn")).toHaveLength(1);
     expect(h.named("turn").map((t) => t.outcome)).toEqual(["answered"]);
   });
@@ -52,7 +53,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     await boot(h);
     h.hand!.press("talk", "pressed");
     await flush();
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150"]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`]);
     expect(h.capture.starts).toBe(0);
   });
 
@@ -67,8 +68,8 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     await h.clock.advance(1000);
     expect(h.service.configuration?.cues).toEqual(["sound"]);
     expect(h.speaker.cues).toContain("done");
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150", "hand-left-01 confirmation 250"]);
-    expect(felt).toEqual(["recording 150", "confirmation 250"]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`, `hand-left-01 confirmation ${CONFIRM_PRESS_HAPTIC_MS}`]);
+    expect(felt).toEqual([`recording ${TALK_PRESS_HAPTIC_MS}`, `confirmation ${CONFIRM_PRESS_HAPTIC_MS}`]);
   });
 
   it("B25: Confirm on the hand with nothing open buzzes error, with the usual sound and line", async () => {
@@ -76,7 +77,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     await boot(h);
     h.hand!.press("confirm", "pressed");
     await flush();
-    expect(handLines(h)).toEqual(["hand-left-01 error 250"]);
+    expect(handLines(h)).toEqual([`hand-left-01 error ${CONFIRM_PRESS_HAPTIC_MS}`]);
     expect(h.speaker.cues).toEqual(["nothing_to_confirm"]);
     expect(h.client.calls.filter((c) => c.startsWith("answer:"))).toEqual([]);
   });
@@ -88,7 +89,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     await flush();
     h.hand!.press("confirm", "pressed");
     await flush();
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150", "hand-left-01 error 250"]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`, `hand-left-01 error ${CONFIRM_PRESS_HAPTIC_MS}`]);
     expect(h.service.talk).toBe("recording");
     expect(h.capture.aborts).toBe(0);
   });
@@ -101,7 +102,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     expect(h.service.link).toBe("offline");
     h.hand!.press("confirm", "pressed");
     await flush();
-    expect(handLines(h)).toEqual(["hand-left-01 error 250"]);
+    expect(handLines(h)).toEqual([`hand-left-01 error ${CONFIRM_PRESS_HAPTIC_MS}`]);
   });
 
   it("B26: GPIO and keyboard presses never buzz, even with a hand board attached", async () => {
@@ -153,7 +154,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     await boot(h);
     h.hand!.press("talk", "pressed");
     await flush();
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150"]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`]);
     h.tof!.readings.front_left = { mm: 300 };
     await h.clock.advance(200);
     expect(h.speaker.cues).toContain("obstacle");
@@ -168,6 +169,6 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     h.tof!.readings.front_left = { mm: 300 };
     await h.clock.advance(200);
     expect(h.named("haptic").map((e) => e.pattern)).toEqual(["recording", "near_obstacle"]);
-    expect(handLines(h)).toEqual(["hand-left-01 recording 150", "hand-left-01 near_obstacle 400"]);
+    expect(handLines(h)).toEqual([`hand-left-01 recording ${TALK_PRESS_HAPTIC_MS}`, "hand-left-01 near_obstacle 400"]);
   });
 });

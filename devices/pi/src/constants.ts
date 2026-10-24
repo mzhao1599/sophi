@@ -38,9 +38,9 @@ export const OBSTACLE_HAPTIC_MS = 400;
  * Placeholder, not bench-tested: the buzz a Talk press gives on the hand that pressed it (`recording`).
  * Button feedback, not an obstacle alert; see `pressBuzz` in service.ts.
  */
-export const TALK_PRESS_HAPTIC_MS = 150;
-/** Placeholder, not bench-tested: the buzz a Confirm press gives on its hand (`confirmation` or `error`). */
-export const CONFIRM_PRESS_HAPTIC_MS = 250;
+export const TALK_PRESS_HAPTIC_MS = 300;
+/** Placeholder: the buzz a Confirm press gives on its hand (`confirmation` or `error`); long enough for two or three strong buzzes. */
+export const CONFIRM_PRESS_HAPTIC_MS = 700;
 
 // ---- Buttons ----
 

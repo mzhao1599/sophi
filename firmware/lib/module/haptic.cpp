@@ -9,10 +9,13 @@ constexpr uint8_t pause(uint32_t ms) { return static_cast<uint8_t>(0x80 | (ms / 
 // Effect numbers from the datasheet's list (ERM libraries). Each sequence ends with a pause so a
 // repeated pattern stays readable as separate pulses.
 const HapticSequence kSequences[kPatternCount] = {
-    {{10, pause(200), 0}},  // confirmation: "Double Click - 100%", then 200 ms of quiet
-    {{7, pause(300), 0}},   // recording: "Soft Bump - 100%", then 300 ms
-    {{14, 0}},              // near_obstacle: repeat Strong Buzz with no added quiet interval
-    {{12, pause(200), 0}},  // error: "Triple Click - 100%", then 200 ms
+    // The clicks and the soft bump first used here (effects 10, 7, 12) couldn't be felt on these coin
+    // motors at the Pi (2026-10-24); only Strong Buzz could. So every pattern is built from Strong Buzz,
+    // told apart by count and gaps.
+    {{14, pause(120), 14, pause(250), 0}},  // confirmation: two strong buzzes, then quiet
+    {{14, pause(300), 0}},                  // recording: one strong buzz, then quiet
+    {{14, 0}},                              // near_obstacle: repeat Strong Buzz with no added quiet interval
+    {{14, pause(60), 14, pause(60), 14, pause(250), 0}},  // error: three quick strong buzzes
 };
 
 }  // namespace

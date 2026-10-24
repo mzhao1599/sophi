@@ -7,7 +7,7 @@
 # the service. It also installs the Wi-Fi helpers (walker-wifi.service reads the SD card's wifi.txt at
 # boot; `sudo walker-wifi-add.sh` adds a network over SSH) and puts the instructions file on the card if
 # it has none. It also installs four small system settings from systemd/ (README, "Set up the Pi"): the
-# soundbar's udev name, its full volume at each service start, a journal kept across power-offs, and a
+# soundbar's udev name, its volume (75%) at each service start, a journal kept across power-offs, and a
 # power button that ignores a short press. Those four were set by hand on the Pi on 2026-10-24 with the
 # same contents, then this script installed them over those on the same Pi (2026-10-24, 23:28). It does not pair the walker or
 # start the service.
@@ -54,7 +54,7 @@ if [[ ! -f /etc/steady-walker.env ]]; then
   echo "Wrote /etc/steady-walker.env from the example: edit the ALSA names and pins before starting."
 fi
 install -m 0644 "$here/systemd/steady-walker.service" /etc/systemd/system/steady-walker.service
-# Our soundbar at full volume each time the service starts (it came up at 30%).
+# Our soundbar at 75% volume each time the service starts (it came up at 30%; Max chose 75%).
 install -d -m 0755 /etc/systemd/system/steady-walker.service.d
 install -m 0644 "$here/systemd/steady-walker.service.d/10-volume.conf" /etc/systemd/system/steady-walker.service.d/10-volume.conf
 
