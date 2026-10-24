@@ -26,7 +26,7 @@ Then open <http://localhost:3000>. Other commands, from the repository root:
 
 No environment variables are needed for the default, deterministic onboarding with sessions in server memory. Every variable is listed, names only, in [`.env.example`](.env.example); copy it to `.env.local` (git-ignored) to set them.
 
-- **Onboarding agent:** `ONBOARDING_ENGINE=agent` and `ANTHROPIC_API_KEY`; `ONBOARDING_AGENT_MODEL` is optional. Server only. What the agent does and how it falls back is in [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent).
+- **Onboarding agent:** `ONBOARDING_ENGINE=agent` and either `ANTHROPIC_API_KEY` (Claude) or `GEMINI_API_KEY` (Google's Gemini); `ONBOARDING_AGENT_PROVIDER` and `ONBOARDING_AGENT_MODEL` are optional. Server only. What the agent does and how it falls back is in [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent).
 - **Sessions in Postgres:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`. All three or none. The secret key is server only and must never get a `NEXT_PUBLIC_` name.
 - **Mock purchase:** `STRIPE_SECRET_KEY`, a Stripe **test** secret key (`sk_test_…`) only. Server only. See [Mock purchase](#mock-purchase-stripe-test-mode-only).
 
@@ -79,7 +79,7 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 - The **first send** creates a session in **Postgres** when Supabase is configured, otherwise in **server memory**. The one-line notice under the text box (answers are deleted after an hour; leave out names and medical details) is on screen before that, and starting means `consent: { demo_data_notice: true }`. The session id goes in this tab's `sessionStorage`; the secret that proves you started it is an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding`. Postgres stores only the secret's hash. The id alone can't read anything, so it may appear in URLs.
 - Answers are deleted an hour after the last change (within five minutes of expiring, by a database job), or immediately with **Start over**. The memory store also loses them when the server restarts.
 - The in-memory store is for local demos. On a host with several instances (Vercel), two requests can land on different instances and lose the session, so production refuses to start onboarding without Supabase unless `ONBOARDING_ALLOW_MEMORY_STORE=true` (see [`services/cloud-api`](../../services/cloud-api/README.md#supabase-store)).
-- With the onboarding agent on, each answer is also sent to Anthropic's API, and the notice under the text box says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
+- With the onboarding agent on, each answer is also sent to the model provider's API (Anthropic or Google), and the notice under the text box names it before the session starts. A turn the model can't handle in time falls back to the fixed questions.
 
 ## Sign-in
 
@@ -151,7 +151,7 @@ Connecting the GitHub repository (Settings → Git) makes every pull request a p
 
 ### 3. Environment variables
 
-Set them in **Settings → Environment Variables**, or one at a time with `npx vercel@62.2.0 env add <NAME> <environment>`. Names only here; values come from the Supabase dashboard (step 1.6) and your Anthropic account.
+Set them in **Settings → Environment Variables**, or one at a time with `npx vercel@62.2.0 env add <NAME> <environment>`. Names only here; values come from the Supabase dashboard (step 1.6) and your Anthropic or Google AI Studio account.
 
 | Name | Production | Preview | Notes |
 | --- | --- | --- | --- |
@@ -159,7 +159,7 @@ Set them in **Settings → Environment Variables**, or one at a time with `npx v
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key | As above | Public; row-level security is what protects data |
 | `SUPABASE_SECRET_KEY` | Secret key | As above | Mark it **Sensitive**. Server only: never give it a `NEXT_PUBLIC_` name |
 | `ENABLE_EXPERIMENTAL_COREPACK` | `1` | `1` | Makes Vercel use pnpm 11.20.0 from `packageManager` directly. Without it Vercel starts pnpm 9 or 10 from the lockfile version; pnpm 10 then switches itself to 11.20.0 (checked locally with 10.18.3), pnpm 9 may not |
-| `ONBOARDING_ENGINE`, `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_MODEL` | Optional | Optional | The onboarding agent (see above). Mark the API key **Sensitive** |
+| `ONBOARDING_ENGINE`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, `ONBOARDING_AGENT_PROVIDER`, `ONBOARDING_AGENT_MODEL` | Optional | Optional | The onboarding agent (see above). Mark the API key **Sensitive** |
 | `ONBOARDING_ALLOW_MEMORY_STORE` | Leave unset | Leave unset | Without Supabase, onboarding refuses to start on Vercel, on purpose |
 | `STRIPE_SECRET_KEY` | Optional, `sk_test_…` only | Optional, `sk_test_…` only | The mock purchase (below). Live and restricted keys are refused and leave the button off. Mark it **Sensitive** |
 

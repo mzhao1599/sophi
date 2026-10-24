@@ -17,4 +17,13 @@ export { QUESTIONS } from "./onboarding/questions";
 export { deterministicEngine, openingQuestion, type TurnEngine } from "./onboarding/engine";
 export { createAgentEngine, type AgentEvent, type AgentModel, type AgentReply, type AgentRequest } from "./onboarding/agent";
 export { createAnthropicModel, DEFAULT_AGENT_MODEL } from "./onboarding/anthropic";
-export { engineFromEnv, storeBackendFromEnv, type StoreBackend } from "./onboarding/config";
+export { createGeminiModel, DEFAULT_GEMINI_MODEL } from "./onboarding/gemini";
+export {
+  AGENT_PROVIDER_NAMES,
+  agentNoticeClause,
+  agentProviderFromEnv,
+  engineFromEnv,
+  storeBackendFromEnv,
+  type AgentProvider,
+  type StoreBackend,
+} from "./onboarding/config";

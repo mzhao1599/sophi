@@ -2,7 +2,7 @@
 
 Owns onboarding sessions, the onboarding conversation and its recommendations, and (later) assistant runs, typed tools and the device API. For now it is a TypeScript package that the Next.js route handlers in `apps/web` call; it has no HTTP server of its own. Read [cloud agents](../../docs/subsystems/cloud-agents.md) and the [runtime blueprint](../../docs/agent-runtime.md).
 
-**Status:** the onboarding service works with a **deterministic engine** and two stores: **in memory** (local demos, the default) and **Supabase Postgres** with row-level security, tested against a local Supabase stack but **not yet against a hosted project**. An **LLM onboarding agent** (Claude, through the Anthropic TypeScript SDK) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, **not yet against the real model**. There is no device API yet.
+**Status:** the onboarding service works with a **deterministic engine** and two stores: **in memory** (local demos, the default) and **Supabase Postgres** with row-level security, tested against a local Supabase stack but **not yet against a hosted project**. An **LLM onboarding agent** (Claude through the Anthropic TypeScript SDK, or Google's Gemini over its REST API) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, and live on Gemini (`gemini-3.7-flash`, 2026-10-23); **not yet live on Claude**. There is no device API yet.
 
 ## What's here
 
@@ -13,12 +13,13 @@ Owns onboarding sessions, the onboarding conversation and its recommendations, a
 | `src/onboarding/recommend.ts` | Facts → a recommendation for every catalog module, each reason pointing at the fact it came from. Robot arms are only ever "worth considering". |
 | `src/onboarding/engine.ts` | Pure session transitions. The current question is derived from the answers, so a restored session resumes where it left off; the one stored exception is the agent's next question (`pending`). `TurnEngine` is the interface both engines implement. `openingQuestion()` is the question every session opens with, so the web page can show it before a session exists. |
 | `src/onboarding/agent.ts` | The onboarding agent: the prompt, the reply schema, the checks on a reply, one retry, and the fallback to the deterministic engine. |
-| `src/onboarding/anthropic.ts` | The model client: one Messages API call with structured output. The default model is `DEFAULT_AGENT_MODEL` here. |
+| `src/onboarding/anthropic.ts` | The Claude client: one Messages API call with structured output. The default model is `DEFAULT_AGENT_MODEL` here. |
+| `src/onboarding/gemini.ts` | The Gemini client: one `generateContent` call over `fetch`, with the reply constrained to the same JSON schema. The default model is `DEFAULT_GEMINI_MODEL` here. |
 | `src/onboarding/service.ts` | Ownership (demo token or signed-in user), expiry, revision checks, idempotent turns by `client_turn_id`, and errors with stable codes. |
 | `src/onboarding/store.ts` | `SessionStore` interface, session owners, and the in-memory store. |
 | `src/onboarding/supabase-store.ts` | `SupabaseSessionStore`: the same interface over Postgres ([`supabase/migrations/`](../../supabase/migrations)). |
 | `src/onboarding/setups.ts` | Account reads through the user's own client: their saved setups (checked against the contract) and their latest unfinished session. |
-| `src/onboarding/config.ts` | `engineFromEnv` and `storeBackendFromEnv`: pick the engine and the store from environment variables. |
+| `src/onboarding/config.ts` | `engineFromEnv` and `storeBackendFromEnv`: pick the engine (and the agent's model provider) and the store from environment variables. `agentProviderFromEnv` names the provider for the first screen's notice. |
 
 ```bash
 pnpm --filter @walker/cloud-api test
@@ -75,7 +76,7 @@ The tests cover the matcher, a full conversation, skipped and revisited question
 | Deleted by | **Delete my answers** (now); the `delete-expired-onboarding-sessions` `pg_cron` job every 5 minutes; the server also refuses an expired session | **Delete my answers** while unfinished; **Delete setup** in Your setups (the setup and its session); **Delete my account** there, which deletes the auth user and so every row; the same job for unfinished ones |
 | Access | Server only, by token hash | The owner, through row-level security |
 
-With the onboarding agent on, answers are also sent to Anthropic, whatever the store; see below.
+With the onboarding agent on, answers are also sent to the model provider (Anthropic or Google), whatever the store; see below.
 
 ## Onboarding agent
 
@@ -84,12 +85,13 @@ With the onboarding agent on, answers are also sent to Anthropic, whatever the s
 | Variable | Meaning |
 | --- | --- |
 | `ONBOARDING_ENGINE` | `deterministic` (default) or `agent` |
-| `ANTHROPIC_API_KEY` | Needed for `agent`. Without it the deterministic engine runs, exactly as before, and the server logs a warning. |
-| `ONBOARDING_AGENT_MODEL` | Optional. Overrides `DEFAULT_AGENT_MODEL`; the model must support structured outputs and the effort setting. |
+| `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` | The model provider's key, needed for `agent`. Without one the deterministic engine runs, exactly as before, and the server logs a warning. |
+| `ONBOARDING_AGENT_PROVIDER` | Optional: `anthropic` (Claude) or `gemini` (Google). Unset, the agent uses Claude when `ANTHROPIC_API_KEY` is set and otherwise Gemini. Set to a provider whose key is missing, it runs the deterministic engine and warns. |
+| `ONBOARDING_AGENT_MODEL` | Optional. Overrides the chosen provider's default (`DEFAULT_AGENT_MODEL` for Claude, `DEFAULT_GEMINI_MODEL` for Gemini). The model must support structured output; for Claude, also the effort setting. |
 
-The key is read only on the server. The browser never sees it, and the first screen says when answers are sent to Anthropic. **Open before a public demo:** once sent, answers are outside this server, and **Delete my answers** can't recall them. How long Anthropic keeps API inputs depends on the API account's data-retention terms; confirm them and say so on the first screen.
+The key is read only on the server. The browser never sees it, and the first screen's notice names who reads the answers and who may keep them (`agentNoticeClause`, for example "Google's Gemini reads them to choose each question, and Google may keep a copy"). **Open before a public demo:** once sent, answers are outside this server, and **Delete my answers** can't recall them. How long the provider keeps API inputs depends on the account's terms; confirm them and say so on the first screen. With Gemini, check the key's project (Google's Gemini API Additional Terms, read 2026-10-23). On the free (Unpaid Services) tier, Google uses prompts and responses to improve its products, human reviewers may read them, and the terms say not to submit sensitive, confidential or personal information. Free-tier apps may serve only users 18 or older, and users in the EEA, Switzerland or the UK only through Paid Services. On a paid (billing-enabled) project, Google doesn't use prompts or responses to improve its products and keeps them for a limited time to detect abuse. A person's mobility needs can reveal disability, so use the free tier only with scripted, fictional answers (a rehearsed demo), and a paid key before real people type their own needs.
 
-**What the model does, and what it doesn't.** For a `text` or `answer` turn, one model call gets the rules (the system prompt, cached) and a JSON document describing the turn: the current question, the chosen options, the user's typed words, the facts so far and each topic's status. It returns, as schema-checked JSON:
+**What the model does, and what it doesn't.** For a `text` or `answer` turn, one model call gets the rules (the system prompt, cached on Claude) and a JSON document describing the turn: the current question, the chosen options, the user's typed words, the facts so far and each topic's status. It returns, as schema-checked JSON:
 
 - `tags` and `declined_tags` for the user's typed words, from the `NeedTag` list only. The fact still quotes the user's own words; the model never writes a fact's text.
 - `covered`: other topics those words already answered ("at home" answers places). A topic counts only if one of the fact's tags belongs to it, and it opens again if that fact is removed or reworded so the tag is gone.
@@ -99,11 +101,11 @@ The key is read only on the server. The browser never sees it, and the first scr
 
 Chosen options, recommendations (`recommend.ts`), the robot arms' "consider only" rule, and the review and confirm steps don't involve the model. It never sees the catalog and can't pick modules. Skips, "skip the rest" and revisits stay deterministic.
 
-**When a reply is no good.** The schema puts the tag, topic and option lists into the API request, so the model can't produce other values. The server then checks the rest: lengths, a tag both wanted and declined, a topic that doesn't apply or was already answered, a follow-up on a single-choice topic or a third ask, options from another topic, `done` with topics left. A refusal or a broken rule gets one retry with a short server note saying why (built from rule names and ids, never the user's words). A second failure, an API error, or the 15-second deadline (`AGENT_TIMEOUT_MS`) sends that turn to the deterministic engine, and the next turn tries the model again. On a policy decline the API first retries on its default fallback model inside the same call (`fallbacks: "default"`).
+**When a reply is no good.** The schema puts the tag, topic and option lists into the API request, so the model can't produce other values. The server then checks the rest: lengths, a tag both wanted and declined, a topic that doesn't apply or was already answered, a follow-up on a single-choice topic or a third ask, options from another topic, `done` with topics left. A refusal or a broken rule gets one retry with a short server note saying why (built from rule names and ids, never the user's words). A second failure, an API error, or the 15-second deadline (`AGENT_TIMEOUT_MS`) sends that turn to the deterministic engine, and the next turn tries the model again. With Claude, on a policy decline the API first retries on its default fallback model inside the same call (`fallbacks: "default"`). With Gemini, a blocked prompt or a safety finish counts as a refusal.
 
 **Logs.** One line per agent turn: `[onboarding-agent] outcome=agent|fallback attempts=N reason=… ms=…`. No user words, ids or keys.
 
-**Request settings** (in `anthropic.ts`): effort `low`, since a turn is a short conversational step and has to finish in a few seconds; adaptive thinking is the model's default; `max_tokens` 4096; one SDK retry. These are starting values to tune from a live run.
+**Request settings.** In `anthropic.ts`: effort `low`, since a turn is a short conversational step and has to finish in a few seconds; adaptive thinking is the model's default; `max_tokens` 4096; one SDK retry. In `gemini.ts`: `responseMimeType: "application/json"` with `responseJsonSchema` set to the reply schema; `maxOutputTokens` 4096; thinking kept low (`thinkingLevel: "low"` on Gemini 3 and later, `thinkingBudget: 0` on 2.5 Flash, see `thinkingFor`); one retry on a `5xx`, and none on `429`, because a used-up quota fails again at once; a model name may be given as `models/gemini-…`. A model override that doesn't start with the chosen provider's prefix (`claude-`, `gemini-`) logs a warning at startup. Measured on 2026-10-23 over full conversations with new wording: `gemini-3.7-flash` (the default) took about 2.5 s a turn with no fallbacks, and read "at home" out of "my hallway" and "the kitchen shelf" to skip that question; with its default thinking it took about 5 s and hit the deadline on 2 of 7 turns. `gemini-3.5-flash-lite` and `gemini-2.5-flash` answered in about 1 s with no fallbacks but asked more of the questions. Errors are reported by status code only, because Google's error text can echo the request. These are starting values to tune from a live run.
 
 ## Next steps
 

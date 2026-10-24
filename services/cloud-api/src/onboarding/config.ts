@@ -2,28 +2,76 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createAgentEngine } from "./agent";
 import { createAnthropicModel } from "./anthropic";
 import { deterministicEngine, type TurnEngine } from "./engine";
+import { createGeminiModel } from "./gemini";
 import { MemorySessionStore } from "./store";
+
+const PROVIDER_KEYS = { anthropic: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY" } as const;
+export type AgentProvider = keyof typeof PROVIDER_KEYS;
+
+/** Who reads the user's words when the agent runs, and who may keep a copy, as the first screen's notice names them. */
+export const AGENT_PROVIDER_NAMES: Record<AgentProvider, { model: string; company: string }> = {
+  anthropic: { model: "Anthropic's Claude", company: "Anthropic" },
+  gemini: { model: "Google's Gemini", company: "Google" },
+};
+
+/** The notice's clause for the agent: who reads the answers and who may keep them, under its own terms. */
+export function agentNoticeClause(provider: AgentProvider): string {
+  const { model, company } = AGENT_PROVIDER_NAMES[provider];
+  return `${model} reads them to choose each question, and ${company} may keep a copy`;
+}
+
+const MODEL_PREFIX: Record<AgentProvider, string> = { anthropic: "claude-", gemini: "gemini-" };
+
+type AgentChoice = { provider: AgentProvider; apiKey: string } | { problem: string } | null;
+
+/** The agent the environment asks for, or why it can't run, or null for the deterministic engine. */
+function chooseAgent(env: Record<string, string | undefined>): AgentChoice {
+  const choice = env.ONBOARDING_ENGINE?.trim() || "deterministic";
+  if (choice === "deterministic") return null;
+  if (choice !== "agent") return { problem: `ONBOARDING_ENGINE=${JSON.stringify(choice)} isn't "deterministic" or "agent"` };
+  const keyFor = (provider: AgentProvider) => env[PROVIDER_KEYS[provider]]?.trim() || undefined;
+  const asked = env.ONBOARDING_AGENT_PROVIDER?.trim() || undefined;
+  if (asked !== undefined && asked !== "anthropic" && asked !== "gemini") {
+    return { problem: `ONBOARDING_AGENT_PROVIDER=${JSON.stringify(asked)} isn't "anthropic" or "gemini"` };
+  }
+  const provider = asked ?? (keyFor("anthropic") ? "anthropic" : keyFor("gemini") ? "gemini" : undefined);
+  const apiKey = provider && keyFor(provider);
+  if (!provider || !apiKey) {
+    return { problem: `ONBOARDING_ENGINE=agent but ${provider ? PROVIDER_KEYS[provider] : "ANTHROPIC_API_KEY or GEMINI_API_KEY"} isn't set` };
+  }
+  return { provider, apiKey };
+}
 
 /**
  * Chooses the onboarding engine from the server's environment:
  *
  * - ONBOARDING_ENGINE: `deterministic` (the default) or `agent`.
- * - ANTHROPIC_API_KEY: needed for `agent`. Without it the deterministic engine runs, exactly as before.
- * - ONBOARDING_AGENT_MODEL: optional model override for `agent`.
+ * - ONBOARDING_AGENT_PROVIDER: optional, `anthropic` or `gemini`. Unset, the agent uses Claude when
+ *   ANTHROPIC_API_KEY is set and otherwise Gemini when GEMINI_API_KEY is set.
+ * - ANTHROPIC_API_KEY or GEMINI_API_KEY: the chosen provider's key. Without it the deterministic
+ *   engine runs, exactly as before.
+ * - ONBOARDING_AGENT_MODEL: optional model override for the chosen provider.
  */
 export function engineFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void = console.warn): TurnEngine {
-  const choice = env.ONBOARDING_ENGINE?.trim() || "deterministic";
-  if (choice === "deterministic") return deterministicEngine;
-  if (choice !== "agent") {
-    warn(`[onboarding] ONBOARDING_ENGINE=${JSON.stringify(choice)} isn't "deterministic" or "agent"; using the deterministic engine.`);
+  const chosen = chooseAgent(env);
+  if (!chosen) return deterministicEngine;
+  if ("problem" in chosen) {
+    warn(`[onboarding] ${chosen.problem}; using the deterministic engine.`);
     return deterministicEngine;
   }
-  const apiKey = env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) {
-    warn("[onboarding] ONBOARDING_ENGINE=agent but ANTHROPIC_API_KEY isn't set; using the deterministic engine.");
-    return deterministicEngine;
+  const { provider, apiKey } = chosen;
+  const model = env.ONBOARDING_AGENT_MODEL?.trim() || undefined;
+  // One override serves both providers, so a model name left over from the other one would fail every turn.
+  if (model && !model.replace(/^models\//, "").startsWith(MODEL_PREFIX[provider])) {
+    warn(`[onboarding] ONBOARDING_AGENT_MODEL=${JSON.stringify(model)} doesn't look like a ${provider} model; check ONBOARDING_AGENT_PROVIDER.`);
   }
-  return createAgentEngine({ model: createAnthropicModel({ apiKey, model: env.ONBOARDING_AGENT_MODEL?.trim() || undefined }) });
+  return createAgentEngine({ model: provider === "gemini" ? createGeminiModel({ apiKey, model }) : createAnthropicModel({ apiKey, model }) });
+}
+
+/** The provider engineFromEnv runs the agent with, or null when it runs the deterministic engine. */
+export function agentProviderFromEnv(env: Record<string, string | undefined>): AgentProvider | null {
+  const chosen = chooseAgent(env);
+  return chosen && "provider" in chosen ? chosen.provider : null;
 }
 
 /** Where sessions are kept, chosen by storeBackendFromEnv. */

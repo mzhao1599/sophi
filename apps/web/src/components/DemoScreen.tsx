@@ -36,19 +36,23 @@ export interface ScreenAccess {
 interface ScreenProps {
   /** The engine's first question, shown before a session exists. */
   opening: Question;
-  /** The server runs the onboarding agent, so the notice says answers also go to the model provider. */
-  agent?: boolean;
+  /**
+   * When the server runs the onboarding agent, the notice's clause naming who reads the answers and who
+   * may keep them ("Google's Gemini reads them to choose each question, and Google may keep a copy");
+   * null with the deterministic engine.
+   */
+  agentNotice?: string | null;
 }
 
-export function DemoScreen({ opening, agent = false, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
+export function DemoScreen({ opening, agentNotice = null, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
   const o = useOnboarding({ notice: account ? "account" : "demo", resumeId });
-  return <DemoView o={o} opening={opening} agent={agent} account={account} />;
+  return <DemoView o={o} opening={opening} agentNotice={agentNotice} account={account} />;
 }
 
 /** The one line under the text box that says where answers go. Sending the first answer starts on it. */
-function noticeLine(agent: boolean, account: AccountSummary | null): string {
+function noticeLine(agentNotice: string | null, account: AccountSummary | null): string {
   const where = account ? "Signed in: your answers are saved to your account" : "Demo: your answers are deleted here after an hour";
-  const model = agent ? ", and Anthropic's Claude reads them to choose each question" : "";
+  const model = agentNotice ? `, and ${agentNotice}` : "";
   return `${where}${model}. Please leave out names and medical details.`;
 }
 
@@ -58,7 +62,7 @@ function noticeLine(agent: boolean, account: AccountSummary | null): string {
  * walker?" — the chat folds into a short summary and the walker takes the stage, where each module can
  * be opened and switched, then saved and ordered (Stripe test mode).
  */
-export function DemoView({ o, opening, agent = false, account = null }: { o: Onboarding } & ScreenProps & Pick<ScreenAccess, "account">) {
+export function DemoView({ o, opening, agentNotice = null, account = null }: { o: Onboarding } & ScreenProps & Pick<ScreenAccess, "account">) {
   const s = o.session;
   const recs = s?.recommendations ?? [];
   const review = s?.state === "review" || s?.state === "confirmed";
@@ -188,7 +192,7 @@ export function DemoView({ o, opening, agent = false, account = null }: { o: Onb
             <Heard session={s} busy={o.busy} locked={Boolean(saved)} onChange={change} />
           ) : (
             <div className={styles.chatArea}>
-              <Chat o={o} opening={opening} notice={noticeLine(agent, account)} focusRequest={focusRequest} />
+              <Chat o={o} opening={opening} notice={noticeLine(agentNotice, account)} focusRequest={focusRequest} />
             </div>
           )}
 

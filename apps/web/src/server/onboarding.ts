@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import {
   OnboardingService,
   SupabaseSessionStore,
+  agentNoticeClause,
+  agentProviderFromEnv,
   engineFromEnv,
   isOnboardingError,
   latestOpenSessionId,
@@ -33,11 +35,13 @@ const globalForStore = globalThis as unknown as { __walkerStoreBackend?: StoreBa
 function storeBackend(): StoreBackend {
   return (globalForStore.__walkerStoreBackend ??= storeBackendFromEnv(process.env));
 }
-// ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY turns on the onboarding agent; otherwise the
-// deterministic engine runs. These variables and the Supabase secret key are read here, on the
-// server, and never sent to the browser.
+// ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY or GEMINI_API_KEY turns on the onboarding agent;
+// otherwise the deterministic engine runs. These variables and the Supabase secret key are read here,
+// on the server, and never sent to the browser.
 const engine = engineFromEnv(process.env);
-export const engineKind = engine.kind;
+const agentProvider = agentProviderFromEnv(process.env);
+/** The notice's clause for the agent (who reads the answers, who may keep them); null without the agent. */
+export const agentNotice: string | null = agentProvider ? agentNoticeClause(agentProvider) : null;
 
 /** True when sessions are kept in Supabase, so account features (resume, saved setups) can work. */
 export function accountsAvailable(): boolean {
