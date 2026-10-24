@@ -6,6 +6,17 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@walker/web", "dev"],
       "port": 3000
+    },
+    {
+      "name": "web-memory",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_SUPABASE_URL=",
+        "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=",
+        "SUPABASE_SECRET_KEY=",
+        "pnpm", "--filter", "@walker/web", "dev"
+      ],
+      "port": 3000
     }
   ]
 }

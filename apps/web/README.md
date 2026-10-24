@@ -46,6 +46,12 @@ pnpm supabase status
 
 Copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into `apps/web/.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`, and restart `pnpm dev`. Studio is at <http://127.0.0.1:55423>. `pnpm supabase db reset` re-applies the migrations to an empty database; `pnpm supabase stop` stops the stack. The database tests: `pnpm test:db` (see [`services/cloud-api`](../../services/cloud-api/README.md)).
 
+With the Supabase variables in `.env.local` but the stack stopped, sessions can't be saved. To demo with server memory instead, without editing the file, blank the three variables for one run; values already in the environment win over `.env.local`. The `web-memory` entry in [`.claude/launch.json`](../../.claude/launch.json) does the same for Claude Code's preview.
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= pnpm dev
+```
+
 ## Routes
 
 | Route | Purpose |
@@ -86,7 +92,9 @@ Use the throwaway address `walker-tester@example.test` (also noted in `.env.exam
 
 ## Deploy on Vercel
 
-**Not deployed yet.** These are the steps for whoever owns the accounts; nothing here creates them. The repository is a pnpm workspace, so the Vercel project's **Root Directory is `apps/web`**, and Vercel installs the whole workspace from the repository root, where `pnpm-lock.yaml` is. No `vercel.json` is needed: the defaults (Next.js preset, `pnpm install`, `pnpm run build`, which is `next build`) are right. A clean clone builds this way: `pnpm install --frozen-lockfile` and `pnpm build`, both run inside `apps/web`.
+**Deployed as a demo without Supabase** (2026-10-23): <https://assistive-walker.vercel.app>, from the Vercel project `assistive-walker`, deployed with the CLI (no Git connection yet). Production has only `ENABLE_EXPERIMENTAL_COREPACK=1`, `ONBOARDING_ALLOW_MEMORY_STORE=true` and a Stripe test key, so onboarding, review and the mock purchase work, while sign-in and saved setups are off. Sessions live in one server instance's memory: one can be lost if a request reaches another instance, and all are lost on redeploy. Moving to Supabase means steps 1 and 3 below, removing `ONBOARDING_ALLOW_MEMORY_STORE`, and redeploying.
+
+These are the steps for whoever owns the accounts; nothing here creates them. The repository is a pnpm workspace, so the Vercel project's **Root Directory is `apps/web`**, and Vercel installs the whole workspace from the repository root, where `pnpm-lock.yaml` is. No `vercel.json` is needed: the defaults (Next.js preset, `pnpm install`, `pnpm run build`, which is `next build`) are right. A clean clone builds this way: `pnpm install --frozen-lockfile` and `pnpm build`, both run inside `apps/web`.
 
 ### 1. The hosted Supabase project (once)
 
