@@ -13,6 +13,7 @@ import {
   errorMessage,
   goneMessage,
   nextCard,
+  readingOrder,
   type Heard,
   type ProposalCard,
 } from "./walkerView";
@@ -138,11 +139,11 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
   const applyList = useCallback(
     (walkers: WalkerStatusView[], card?: { for: string; card: ProposalCard }, first: string[] = []) => {
       update((m) => {
-        const lines: string[] = [...first];
+        const news: string[] = [];
         const knew = new Set(m.walkers.map((w) => w.device_id));
         const added = m.phase === "loading" ? undefined : walkers.find((w) => !knew.has(w.device_id));
         let selectedId = added?.device_id ?? (walkers.some((w) => w.device_id === m.selectedId) ? m.selectedId : (walkers[0]?.device_id ?? null));
-        if (added) lines.push(`Paired with ${added.name}.`);
+        if (added) news.push(`Paired with ${added.name}.`);
         const selected = walkers.find((w) => w.device_id === selectedId) ?? null;
         if (!selected) selectedId = null;
 
@@ -152,7 +153,7 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
           if (!before && m.phase === "loading") w.turns.forEach((t) => oldTurns.add(t.turn_id));
           const said = announcements(before, w);
           heard.current.set(w.device_id, said.heard);
-          if (w.device_id === selectedId) lines.push(...said.lines);
+          if (w.device_id === selectedId) news.push(...said.lines);
         }
         const sameWalker = selectedId === m.selectedId;
         // An action's card applies only to the walker it was for, and only if that walker is still the one shown.
@@ -160,9 +161,10 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
         const nextProposal = selected ? (own ?? nextCard(sameWalker ? m.card : null, selected, serverNow())) : null;
         const newOffer = nextProposal?.proposal.proposal_id !== m.card?.proposal.proposal_id;
         // The shown offer closed elsewhere: read how, unless focus is in the card, whose heading says it.
-        // (An answer from this page brings its own line in `first`.)
+        // (An answer from this page brings its own line in `first`.) It's read before the walker's news,
+        // which it may have caused ("Confirmed. …" before "Your walker applied the new alerts.").
         const closed = !own && !newOffer && m.card?.outcome === null && nextProposal?.outcome;
-        if (closed && !focusInOffer()) lines.push(closed);
+        const lines = readingOrder(first, closed && !focusInOffer() ? closed : null, news);
         return {
           phase: walkers.length ? "paired" : "none",
           walkers,

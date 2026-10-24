@@ -471,3 +471,15 @@ export function announcements(before: Heard | undefined, status: WalkerStatusVie
   if (heard.applied && (!before.applied || before.version !== heard.version) && heard.version > 1) lines.push("Your walker applied the new alerts.");
   return { lines, heard };
 }
+
+/**
+ * The live region's lines for one status, in reading order: `first` (a connection line, or an action's
+ * own line), then how the shown offer closed, then the walker's other news. A closing comes before the
+ * news it caused, so a confirm reads "Confirmed. Switching your alerts to … Your walker applied the new
+ * alerts." even when both arrive in one poll.
+ */
+export const readingOrder = (first: readonly string[], closing: string | null | undefined, news: readonly string[]): string[] => [
+  ...first,
+  ...(closing ? [closing] : []),
+  ...news,
+];

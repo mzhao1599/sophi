@@ -10,6 +10,7 @@ import {
 import { WalkerApiError, createWalkerApi, nextClockOffset } from "@/lib/walkerApi";
 import { createFakeWalker } from "@/lib/walkerFake";
 import {
+  CONNECTION_BACK,
   OUT_OF_TIME,
   TYPED_NOTICE,
   ZONE_MAX_SHOWN_AGE_MS,
@@ -28,6 +29,7 @@ import {
   partRows,
   presence,
   proposalOutcome,
+  readingOrder,
   secondsLeft,
   zoneRows,
 } from "@/lib/walkerView";
@@ -301,6 +303,24 @@ describe("announcements", () => {
     expect(w.lines).toEqual([]);
     const applied = status({ configuration: { ...v2, cues: [...v2.cues] }, applied_configuration_version: 2, turns: next.turns, walker_said: next.walker_said });
     expect(announcements(w.heard, applied).lines).toEqual(["Your walker applied the new alerts."]);
+  });
+
+  it("reads an offer's closing before the news it caused, when both come in one poll", () => {
+    // The walker's Confirm: the offer closes and the walker applies v2 before the page's next poll.
+    const open = status({ open_proposal: proposal() });
+    const loaded = announcements(undefined, status());
+    const offered = announcements(loaded.heard, open);
+    const v2 = { version: 2, ...WALKER_SETUP, cues: ["sound", "spoken"] as const, created_at: iso(T0 + 5_000) };
+    const done = status({ configuration: { ...v2, cues: [...v2.cues] }, applied_configuration_version: 2 });
+    const news = announcements(offered.heard, done).lines;
+    const closing = closedOutcome(proposal(), done, T0 + 6_000);
+    expect(news).toEqual(["Your walker applied the new alerts."]);
+    expect(readingOrder([], closing, news).join(" ")).toBe(
+      "Confirmed. Switching your alerts to short sounds and spoken messages. Your walker applied the new alerts.",
+    );
+    // A connection line still comes first; no closing (or focus on the card) leaves the rest as it was.
+    expect(readingOrder([CONNECTION_BACK], closing, news)).toEqual([CONNECTION_BACK, closing, ...news]);
+    expect(readingOrder([CONNECTION_BACK], null, news)).toEqual([CONNECTION_BACK, ...news]);
   });
 
   it("says a walker is online the first time, and back online after that", () => {
