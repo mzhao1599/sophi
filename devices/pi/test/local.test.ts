@@ -177,6 +177,12 @@ describe("misc", () => {
       { kind: "absent", event: "haptic", match: "", forMs: 500, line: 4 },
       { kind: "wait", forMs: 100, line: 5 },
     ]);
+    expect(parseScript("expect 60000 link offline")).toEqual([
+      { kind: "expect", event: "link", match: "offline", timeoutMs: 60_000, line: 1 },
+    ]);
+    expect(() => parseScript("expect 0 link offline")).toThrow(/1 to 600000/);
+    expect(() => parseScript("expect 9999999999 link offline")).toThrow(/1 to 600000/);
+    expect(parseScript("expect spoke 5 steps")).toEqual([{ kind: "expect", event: "spoke", match: "5 steps", timeoutMs: 20_000, line: 1 }]);
     expect(() => parseScript("expect nonsense")).toThrow(/unknown event/);
     expect(() => parseScript("press t")).toThrow(/can't read/);
   });

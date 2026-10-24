@@ -1,0 +1,46 @@
+# The walker against the REAL server (piece 2; turns are piece 3 and not on it yet). Run it with
+# scripts/real-server-check.sh, which pairs, plants configuration 2, and drives what a script can't: it
+# pauses and resumes the server and forgets the walker while steps 4-6 wait.
+
+# 1. Boot and reach the real server. The runner planted configuration 2 "from an earlier pairing", so the
+#    heartbeat's version 1 differs and the walker fetches configuration 1 from the server.
+expect spoke Steady is on.
+expect link online
+expect heartbeat ok
+expect config 1
+
+# 2. Configuration 1 (vibration) is in force: an obstacle buzzes the simulated handle.
+key n
+expect haptic near_obstacle
+key f
+wait 300
+
+# 3. A Talk turn: the server has no turns route yet, so the walker says its fixed server-trouble line.
+key t
+expect talk recording
+wait 1200
+key t
+expect turn failed
+expect spoke Something went wrong on the server.
+# Confirm with nothing open: the short sound, no request.
+key c
+expect cue nothing_to_confirm
+
+# 4. The runner pauses the dev server (SIGSTOP): its requests hang, so the walker goes offline within
+#    two heartbeats. Obstacle cues keep working.
+expect 60000 link offline
+expect spoke I'm offline right now. Your vibration alerts still work.
+key n
+expect haptic near_obstacle
+key f
+
+# 5. The runner resumes it (SIGCONT): the next heartbeat gets through and the walker says so.
+expect 60000 link online
+expect spoke I'm back online.
+
+# 6. The runner forgets the walker on the server (DELETE /api/v1/walkers/{id}): 401, "pair me again".
+expect 60000 link unauthorized
+expect spoke I need to be paired again.
+key t
+expect spoke I need to be paired again.
+key q

@@ -18,6 +18,11 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 | P7 | A credential file whose server isn't https (or http to this machine), or one the service can't read *(review)* | Treated as no credential ("I'm not paired yet"), with the reason logged; the service keeps running instead of crashing in a loop. |
 | P8 | Saving a fetched configuration fails (read-only SD card) *(review)* | The new configuration still applies in memory; the failure is logged. |
 | P9 | A credential appears while running with none before it (for example after fixing its permissions) *(review 2)* | The configuration is read again from disk, and a server version that differs from the local one, lower as well as higher, is fetched. |
+| P10 | `walker pair` against a server that is asleep or starting *(contract notes, PR #33)* | It says "Waking the server…" and calls `GET /api/v1/health`, retrying every 2 s through refused connections and 503s, for up to 90 s in all. It claims the code only after a 200 whose body says `"status": "ok"` (an HTML or other 200 is not awake). A server that never wakes, or holds the health request open, gets "The server didn't wake up within 90 seconds…", and the code is never sent. |
+| P14 | `--server` isn't https (or http to this machine) *(review)* | Fails at once with "The server must use https://", before "Waking the server…" and without waiting. |
+| P11 | The pairing request itself *(contract notes)* | Sent once: a code works once, so a pairing that fails or times out (20 s, *placeholder*) is never retried. Every failure after the code may have been spent (a timeout, a dropped connection, a server error, an unreadable answer, a failed save) says the code may have been used and to get a new one. |
+| P12 | Health says `walker_store: "off"` *(contract notes)* | Stops before claiming the code: "This server has walkers turned off." |
+| P13 | Pairing returns configuration 1 *(contract notes)* | The walker adopts it, replacing any configuration from an earlier pairing, even one with a higher version. |
 | P6 | Heartbeat and turn snapshot *(contract)* | `null` when no obstacle sensor has said hello; otherwise the fresh zones. The manifest says `simulator` and each part's `simulated`. |
 
 ## Buttons (the design's button map)

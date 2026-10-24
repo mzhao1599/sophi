@@ -5,6 +5,7 @@ import type { Bus, BusEvents } from "../bus";
  *
  *   key t                      press a simulator key (same keys as the interactive keyboard)
  *   expect spoke Steady is on. wait (up to 20 s) for an event, here a spoken line containing that text
+ *   expect 60000 link offline  the same, waiting up to 60,000 ms (for steps outside the script's control)
  *   absent 1500 haptic         fail if a matching event happens within 1,500 ms
  *   wait 1000                  let 1,000 ms pass (for example, holding Talk while "speaking")
  *   # comment
@@ -22,6 +23,7 @@ export type ScriptStep =
 
 const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "cue", "haptic", "config", "turn", "heartbeat", "module"]);
 const DEFAULT_TIMEOUT_MS = 20_000;
+const MAX_TIMEOUT_MS = 600_000;
 
 export function parseScript(text: string): ScriptStep[] {
   const steps: ScriptStep[] = [];
@@ -35,9 +37,14 @@ export function parseScript(text: string): ScriptStep[] {
       return;
     }
     if (word === "expect") {
-      const [event, ...match] = rest;
+      const timed = /^\d+$/.test(rest[0] ?? "");
+      const timeoutMs = timed ? Number(rest[0]) : DEFAULT_TIMEOUT_MS;
+      if (timed && !(timeoutMs > 0 && timeoutMs <= MAX_TIMEOUT_MS)) {
+        throw new Error(`Line ${line}: an expect timeout is 1 to ${MAX_TIMEOUT_MS} ms.`);
+      }
+      const [event, ...match] = timed ? rest.slice(1) : rest;
       if (!event || !EVENTS.has(event as keyof BusEvents)) throw new Error(`Line ${line}: unknown event "${event ?? ""}".`);
-      steps.push({ kind: "expect", event: event as keyof BusEvents, match: match.join(" "), timeoutMs: DEFAULT_TIMEOUT_MS, line });
+      steps.push({ kind: "expect", event: event as keyof BusEvents, match: match.join(" "), timeoutMs, line });
       return;
     }
     if (word === "wait") {

@@ -55,6 +55,8 @@ Two decisions for review: before the Pi has fetched any configuration it gives b
 
 **Re-pair.** A 401 from the cloud (the walker was forgotten on the page, or the credential is unknown) puts the walker in "pair me again": it says so once, and Talk repeats it. Running `walker pair` again while the service runs is picked up on the next heartbeat tick, with no restart.
 
+**Pairing.** A code works once, and a free Render server can take about a minute to wake, so `walker pair` first says "Waking the server…" and calls `GET /api/v1/health` until it answers (retrying every 2 s, for up to 90 s). Only then does it claim the code, once, never retried: if that request times out (20 s), the code may have been used, and it says to get a new one. The walker then adopts the configuration the pairing returns (versions start again at 1 for every pairing).
+
 ### The voice clip (AGENTS.md rule 9)
 
 - **Consent:** only the presenter speaks to the walker in the demo; a card on the walker says so. Recording starts only on a Talk press and the "listening" sound.
@@ -92,7 +94,31 @@ Keys: `t` Talk, `c` Confirm, `n` hand in front of the ToF, `f` nothing in front,
 
   `--mic mac` records the Mac's real microphone through ffmpeg instead. It records whoever is nearby and makes macOS ask for microphone permission, so no test or default run uses it.
 - **The fake cloud is not the assistant.** It understands no speech; its replies are scripted lines that start "Fake cloud", and every answer is marked `answered_by: "fixed"`. It speaks the walker contract and checks what the Pi sends against it, so it exercises the Pi's pairing, heartbeats, turns, proposals and offline handling. `--server <url>` points the simulator at a real cloud instead (pair first with `walker pair <code> --server <url> --state <dir>` and pass the same `--state`); replies are then logged by length only.
-- **Scripted run:** `--script devices/pi/test/sim/demo-path.walk` runs the demo path with no keyboard and exits 0 only if every step happened in order.
+- **Scripted run:** `--script devices/pi/test/sim/demo-path.walk` runs the demo path with no keyboard and exits 0 only if every step happened in order. A step can wait longer than the default 20 s with `expect <ms> <event> <text>`.
+
+### Against the real server on this Mac
+
+The walker server (`apps/web`) runs locally with an in-memory store when `DATABASE_URL` is unset:
+
+```bash
+pnpm --filter @walker/web exec next dev --port 3008
+```
+
+Get a pairing code as the page would (the cookie jar keeps the `walker_owner` cookie for later page calls), pair, then run the simulator against it:
+
+```bash
+curl -s -c jar.txt -X POST http://localhost:3008/api/v1/walkers/pairing-codes
+```
+
+```bash
+node devices/pi/dist/walker.mjs pair <code> --server http://localhost:3008 --state ./walker-state
+```
+
+```bash
+node devices/pi/dist/walker.mjs simulate --server http://localhost:3008 --state ./walker-state
+```
+
+`scripts/real-server-check.sh` does all of that in one go and runs `test/sim/real-server.walk`, driving what a script can't: it plants an older configuration so the walker has to fetch one, pauses the dev server (`kill -STOP`) to take the walker offline, resumes it (`kill -CONT`), then forgets the walker (`DELETE /api/v1/walkers/{id}` with the cookie jar) for the 401. It saves the log and the page's status view before and after. Restarting the dev server instead wipes its in-memory store, so the walker's credential becomes unknown and it asks to be paired again. Turns aren't on the server yet (piece 3): a Talk press gets the fixed line "Something went wrong on the server. Please try again."
 
 ## Tests
 
@@ -115,7 +141,7 @@ None of these steps has been run yet. Each says what to check, so a step that do
 6. **Optional, a nicer voice (Piper).** Download a Piper release for aarch64 and one voice (a `.onnx` file with its `.onnx.json`) into `/opt/steady-walker/voices/`, and set `WALKER_PIPER_MODEL`. Check: `echo "Steady is on." | piper --model <voice>.onnx --output_file /tmp/p.wav && aplay -D default:CARD=<soundbar> /tmp/p.wav`. Without Piper, or if it fails, the walker speaks with espeak-ng.
 7. **Build and copy the service.** On the Mac: `pnpm --filter @walker/pi bundle`, then copy `devices/pi/dist/walker.mjs`, `devices/pi/systemd/` and `devices/pi/scripts/` to the Pi (for example `scp -r`), keeping the folder layout.
 8. **Install.** On the Pi: `sudo ./scripts/install-pi.sh walker.mjs` (from the copied folder). It creates the `steady` user, puts the bundle in `/opt/steady-walker`, makes `/var/lib/steady-walker` (mode 0700), installs and enables the unit, and writes `/etc/steady-walker.env` from the example if it's missing. It does not start anything. Edit `/etc/steady-walker.env` with the names from steps 3 and 5.
-9. **Pair.** On the walker page, start pairing to get a 6-digit code (valid 10 minutes). On the Pi: `sudo -u steady WALKER_STATE_DIR=/var/lib/steady-walker node /opt/steady-walker/walker.mjs pair <code> --server https://<the Render URL>`. Check: it prints `Paired as device ...`, and `sudo ls -l /var/lib/steady-walker/credential.json` shows `-rw-------` owned by `steady`.
+9. **Pair.** On the walker page, start pairing to get a 6-digit code (valid 10 minutes). On the Pi: `sudo -u steady WALKER_STATE_DIR=/var/lib/steady-walker node /opt/steady-walker/walker.mjs pair <code> --server https://<the Render URL>`. It first prints "Waking the server…" and can wait up to 90 s for a sleeping server. Check: it prints `Paired as device ...`, and `sudo ls -l /var/lib/steady-walker/credential.json` shows `-rw-------` owned by `steady`.
 10. **Start it.** `sudo systemctl start steady-walker`, then `journalctl -u steady-walker -f` to watch. Check: you hear "Steady is on.", the log shows `link state state="online"`, and the walker page shows the walker online with its parts.
 11. **Try the demo path.** Hold Talk, ask "What can you help me with?", release: a reply. Press Confirm with nothing open: the short low double beep. Turn off the phone hotspot the Pi is on: within about 10 s it says it's offline, and Talk gets the local line. Turn it back on: "I'm back online." Reboot the Pi: the service comes back by itself and says "Steady is on."
 12. **ESP32 modules (after firmware, piece 7).** Plug each board in and check `ls -l /dev/serial/by-id/`: each board appears under a name with its USB serial number, and the service log shows `module said hello`. The service only listens to a module after its hello, and asks for one (`hello.request`) whenever it opens a port, so a board that kept running while the service restarted still announces itself. If a board's buttons do nothing, check the log for `hasn't said hello`: the board isn't answering `hello.request` (a firmware question for piece 7).

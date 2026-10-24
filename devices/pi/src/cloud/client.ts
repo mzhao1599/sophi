@@ -137,6 +137,31 @@ async function request<S extends z.ZodType>(
   return parsed.data;
 }
 
+/**
+ * `GET /api/v1/health`: "ok" when the server (and its walker store) answers, "off" when this server has
+ * walkers turned off, "not_ready" for any other answer (503 while its database starts). Throws on a refused
+ * or broken connection, as every call here does.
+ */
+export async function checkHealth(server: string, signal: AbortSignal): Promise<"ok" | "off" | "not_ready"> {
+  const url = new URL("/api/v1/health", checkServerUrl(server));
+  let response: Response;
+  let body: unknown;
+  try {
+    response = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal,
+      redirect: "error",
+    });
+    body = await response.json().catch(() => null);
+  } catch (error) {
+    throw toCloudError(error, signal);
+  }
+  // Only the health route's own answer counts: an HTML page or any other 200 (a proxy, a waking host) doesn't.
+  const health = body as { status?: unknown; walker_store?: unknown } | null;
+  if (response.status !== 200 || health?.status !== "ok") return "not_ready";
+  return health.walker_store === "off" ? "off" : "ok";
+}
+
 /** Pairing runs once from the CLI, before there is a credential. */
 export async function pairWithServer(server: string, body: PairDeviceRequest, signal: AbortSignal): Promise<PairDeviceResponse> {
   return request(checkServerUrl(server), DEVICE_ROUTES.pair, { method: "POST", body, signal }, PairDeviceResponseSchema);

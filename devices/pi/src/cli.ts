@@ -1,11 +1,10 @@
 import { join } from "node:path";
-import { DeadlineError, systemClock, withDeadline } from "./clock";
-import { CloudError, pairWithServer } from "./cloud/client";
+import { systemClock } from "./clock";
 import { createLogger } from "./log";
 import { DEFAULT_STATE_DIR, runOnPi } from "./run";
 import { simulate } from "./sim/simulate";
+import { pairWalker } from "./pair";
 import { StateStore } from "./store";
-import { SERVICE_VERSION } from "./version";
 
 const USAGE = `walker: Steady's always-on walker service
 
@@ -43,21 +42,6 @@ function parseFlags(args: string[]): { positional: string[]; flags: Map<string, 
 
 const text = (value: string | true | undefined) => (typeof value === "string" ? value : undefined);
 
-/** A pairing failure in words a person can act on. Never includes the credential (there isn't one yet). */
-function pairingProblem(error: unknown): string {
-  if (error instanceof DeadlineError) return "The server didn't answer within 90 seconds. Check the URL and try again.";
-  if (!(error instanceof CloudError)) return error instanceof Error ? error.message : String(error);
-  switch (error.code) {
-    case "pairing_code_invalid":
-      return "That code isn't valid or has expired. Get a new code on the walker page.";
-    case "pairing_locked":
-      return "Too many wrong codes from this network. Wait 10 minutes, then try a new code.";
-    case "walker_limit":
-      return "This owner already has the most walkers allowed. Forget one on the walker page first.";
-    default:
-      return error.message;
-  }
-}
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -73,18 +57,14 @@ async function main(argv: string[]): Promise<number> {
       const stateDir = text(flags.get("state")) ?? process.env.WALKER_STATE_DIR ?? DEFAULT_STATE_DIR;
       const name = text(flags.get("name"));
       const store = new StateStore(stateDir, createLogger());
-      // A free Render service can take about a minute to wake, so pairing waits up to 90 s.
-      let paired;
-      try {
-        paired = await withDeadline(systemClock, 90_000, (signal) =>
-          pairWithServer(server, { code, service_version: SERVICE_VERSION, ...(name ? { name } : {}) }, signal),
-        );
-      } catch (error) {
-        throw new Error(pairingProblem(error));
-      }
-      // The new device's configuration 1 replaces any configuration from an earlier pairing.
-      store.writeConfiguration(paired.configuration);
-      store.writeCredential({ server_url: server, device_id: paired.device_id, credential: paired.credential });
+      const paired = await pairWalker({
+        server,
+        code,
+        ...(name ? { name } : {}),
+        store,
+        clock: systemClock,
+        say: (line) => process.stdout.write(`${line}\n`),
+      });
       process.stdout.write(
         `Paired as device ${paired.device_id}. The credential is saved in ${join(stateDir, "credential.json")} (readable only by this user).\n`,
       );
