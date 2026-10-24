@@ -44,3 +44,5 @@ For an optional “call the onboarding agent” integration, expose the same ses
 ## Handoff for the first PR
 
 Create a Next.js app with a simple design system, authenticated/demo session boundary, static module catalog fixture, and accessible text onboarding flow. Add the real agent endpoint after the deterministic UI is usable. Document local setup, environment variables by *name* only, and a short manual accessibility checklist in `apps/web/README.md`.
+
+**Done (demo mode):** landing page, `/onboarding` and `/onboarding/review` as described above, the module catalog in `packages/contracts`, and the deterministic engine in `services/cloud-api`. Not done: sign-in, Supabase, the LLM agent, speech, `/devices` and settings. See [apps/web](../../apps/web/README.md).

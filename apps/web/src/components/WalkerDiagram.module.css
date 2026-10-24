@@ -1,0 +1,128 @@
+.figure {
+  display: grid;
+  gap: 12px;
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin: 0 auto;
+}
+
+.part {
+  transition: opacity 150ms ease;
+}
+
+.frame,
+.arm {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.arm {
+  stroke-width: 5;
+}
+
+.wheel,
+.box,
+.joint {
+  stroke-width: 2;
+}
+
+/* On the walker: ink frame, accent modules */
+.part[data-state="selected"] .frame {
+  stroke: var(--text);
+}
+.part[data-state="selected"] .wheel {
+  fill: var(--text);
+  stroke: var(--text);
+}
+.part[data-state="selected"] .box,
+.part[data-state="selected"] .joint {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.part[data-state="selected"] .arm {
+  stroke: var(--accent);
+}
+.part[data-state="selected"][data-highlight="true"] .box {
+  stroke: var(--text);
+  stroke-width: 3;
+}
+
+/* Suggested but not chosen: an accent outline */
+.part[data-state="suggested"] .box,
+.part[data-state="suggested"] .joint {
+  fill: var(--ground);
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+}
+.part[data-state="suggested"] .arm {
+  stroke: var(--accent);
+  stroke-dasharray: 6 5;
+}
+
+/* Not included or not available: a quiet grey outline */
+.part[data-state="off"] .box,
+.part[data-state="off"] .joint,
+.part[data-state="unavailable"] .box,
+.part[data-state="unavailable"] .joint {
+  fill: var(--ground);
+  stroke: var(--control);
+  stroke-dasharray: 3 3;
+}
+.part[data-state="off"] .arm,
+.part[data-state="unavailable"] .arm {
+  stroke: var(--control);
+  stroke-dasharray: 4 5;
+}
+
+.part[data-highlight="true"] .box,
+.part[data-highlight="true"] .joint {
+  stroke-width: 3;
+}
+
+.part[data-highlight="true"] .arm {
+  stroke-width: 7;
+}
+
+.caption {
+  font-size: var(--fs-small);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.swatch[data-state="selected"] {
+  background: var(--accent);
+}
+
+.swatch[data-state="suggested"] {
+  border: 2px dashed var(--accent);
+}
+
+.swatch[data-state="off"] {
+  border: 2px dashed var(--control);
+}

@@ -1,6 +1,6 @@
 # Proposed interfaces and contracts
 
-This is the first shared contract for web, cloud, Pi, and ESP32 work. Examples illustrate intended shape; no endpoint or message is implemented yet. When coding begins, define schemas in `packages/contracts/`, assign a protocol version, and validate on **both** sides. Prefer generated types where practical.
+This is the first shared contract for web, cloud, Pi, and ESP32 work. The **onboarding routes are implemented** (demo mode only) with schemas in [`packages/contracts/src/onboarding.ts`](../packages/contracts/src/onboarding.ts); everything else here is still a proposal. Define each new schema in `packages/contracts/`, assign a protocol version, and validate on **both** sides. Prefer generated types where practical.
 
 ## Rules shared by all transports
 
@@ -15,18 +15,22 @@ This is the first shared contract for web, cloud, Pi, and ESP32 work. Examples i
 
 Base path proposal: `/api/v1`. All user routes require an authenticated user session. Device routes require a distinct revocable device credential bound to one device. Pairing uses a short-lived, one-time challenge; never copy a user's session cookie to the Pi.
 
-| Route | Caller | Purpose |
-| --- | --- | --- |
-| `POST /onboarding/sessions` | User web app | Start a session with consent and chosen input mode |
-| `POST /onboarding/sessions/{id}/turns` | User web app or approved integration | Send text/audio reference; stream or return assistant turn and structured recommendation changes |
-| `GET /onboarding/sessions/{id}` | User web app | Restore transcript/summary/recommendation after refresh |
-| `POST /onboarding/sessions/{id}/confirm` | User web app | Confirm edited profile and selected modules as configuration version |
+| Route | Caller | Purpose | Status |
+| --- | --- | --- | --- |
+| `POST /onboarding/sessions` | User web app | Start a session with consent and chosen input mode | Built (demo) |
+| `POST /onboarding/sessions/{id}/turns` | User web app or approved integration | Answer, skip or revisit a question; returns the assistant turn, the acknowledgement and the updated session with recommendations | Built (demo), text only |
+| `GET /onboarding/sessions/{id}` | User web app | Restore transcript/summary/recommendation after refresh | Built (demo) |
+| `PATCH /onboarding/sessions/{id}/profile` | User web app | Edit or remove one item of the draft profile ("What I understood"); recommendations are recomputed | Built (demo) |
+| `POST /onboarding/sessions/{id}/confirm` | User web app | Confirm the reviewed selection as configuration version 1 | Built (demo) |
+| `DELETE /onboarding/sessions/{id}` | User web app | Delete the session and its answers now | Built (demo) |
 | `POST /devices/pairing-challenges` | User web app | Create short-lived pairing challenge |
 | `POST /devices/pair` | Pi | Claim challenge and receive device-scoped credential |
 | `GET /devices/{id}/configuration` | Pi | Fetch signed/versioned configuration and preferences |
 | `POST /devices/{id}/events` | Pi | Report bounded telemetry, capabilities, fault and task events |
 | `POST /devices/{id}/assistant-turns` | Pi | Send bounded transcript/audio reference and fresh snapshot; receive response/action proposal |
 | `POST /devices/{id}/actions/{actionId}/status` | Pi | Report local acceptance, progress, completion, cancellation, or fault |
+
+**As built (demo mode):** a session's id is in the URL; a separate secret in an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding` proves the caller started it, and a missing or wrong secret reads as `404`, the same as an unknown id. Sessions live in server memory and are deleted an hour after the last change. Turn inputs are `text` (answers the current question), `answer` (`question_id`, `option_ids`, optional `text`), `skip`, `skip_rest` and `revisit`. Responses carry `ack`, a short acknowledgement for a screen-reader announcement, besides `assistant_text`. Errors use `{ "error": { "code", "message", "trace_id", "session"? } }`; a `409 revision_conflict` includes the current session so the client can recover.
 
 An external caller (including a future Codex tool or another app) can call the onboarding agent through the same authenticated session/turn routes. Build a narrow server-side wrapper or OpenAPI description that exposes `start_onboarding`, `send_onboarding_turn`, `get_recommendations`, and `confirm_selection`. The wrapper must pass the end user's auth, never a broad service key. There is no public anonymous tool that can read another person's profile. A demo integration may use ephemeral sessions with no persistent personal data.
 

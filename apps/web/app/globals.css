@@ -1,0 +1,302 @@
+/*
+ * Design tokens: taste-skill app style "editorial-greeting" (seed 2016038647), adjusted for this
+ * product's users. Changes from the dealt sheet, each for accessibility:
+ *   - body 16px instead of 14px, meta 14px instead of 12px (people with low vision use this flow);
+ *   - control borders #8c8c88 instead of #d9d9d6, so field and checkbox edges reach 3:1 (WCAG 1.4.11);
+ *   - every interactive target is at least 44px tall.
+ * Grid: a centred 1100px column, 12 columns of 77px with 16px gutters (12 x 77 + 11 x 16 = 1100).
+ */
+
+:root {
+  --ground: #ffffff;
+  --chrome: #f6f6f4;
+  --surface: #f9f9f9;
+  --surface-step: #f0f0ed;
+  --raised: #ffffff;
+  --border: #eaeaea;
+  --rule: #ececea;
+  --control: #8c8c88;
+  --text: #1f201d;
+  --muted: #636361;
+  --primary: #1f201d;
+  --on-primary: #ffffff;
+  --accent: #1b6e66;
+  --accent-tint: #e4f0ee;
+  --negative: #b42318;
+  --pill-positive-bg: #dcfae5;
+  --pill-positive-ink: #04250e;
+  --pill-warning-bg: #fffbeb;
+  --pill-warning-ink: #92400e;
+  --pill-neutral-bg: #f0f0ed;
+  --pill-neutral-ink: #3d3d3a;
+  --pill-accent-bg: #e4f0ee;
+  --pill-accent-ink: #0f4a44;
+
+  --radius-card: 22px;
+  --radius-inner: 14px;
+  --radius-field: 12px;
+  --radius-control: 999px;
+
+  --gap: 16px;
+  --pad: 24px;
+  --column: 1100px;
+  --target: 44px;
+
+  --fs-title: 48px;
+  --fs-heading: 20px;
+  --fs-lead: 18px;
+  --fs-body: 16px;
+  --fs-small: 14px;
+
+  --font-text: var(--font-instrument-sans), "Instrument Sans", system-ui, sans-serif;
+  --font-display: var(--font-instrument-serif), "Instrument Serif", Georgia, serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font-text);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+fieldset {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--accent-tint);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  z-index: 10;
+  padding: 10px 16px;
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  color: var(--on-primary);
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+/* ---- Buttons ---- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--target);
+  padding: 0 22px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: #3a3b37;
+}
+
+.button-secondary {
+  background: var(--raised);
+  border-color: var(--control);
+  color: var(--text);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.button-text {
+  min-height: var(--target);
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.button-text:hover:not(:disabled) {
+  text-decoration-thickness: 2px;
+}
+
+.button-danger {
+  color: var(--negative);
+}
+
+.button:disabled,
+.button-text:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* ---- Pills ---- */
+
+.pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pill-recommended {
+  background: var(--pill-accent-bg);
+  color: var(--pill-accent-ink);
+}
+
+.pill-consider {
+  background: var(--pill-warning-bg);
+  color: var(--pill-warning-ink);
+}
+
+.pill-neutral {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-ink);
+}
+
+/* ---- Fields ---- */
+
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.field-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.textarea {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 1px solid var(--control);
+  border-radius: var(--radius-field);
+  background: var(--raised);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.textarea[aria-invalid="true"] {
+  border-color: var(--negative);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .pill,
+  .button {
+    border: 1px solid CanvasText;
+  }
+}

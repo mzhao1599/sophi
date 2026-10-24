@@ -1,0 +1,235 @@
+.listColumn {
+  display: grid;
+  gap: 40px;
+}
+
+.groupHeading {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.groupNote {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.modules {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.module {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px var(--pad) 12px 16px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+/* Selected: a pale accent field. The checkbox carries the state too, so colour is never the only cue. */
+.module[data-checked="true"] {
+  background: var(--accent-tint);
+}
+
+.check {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.check input[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.check input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.body {
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.name {
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.summary {
+  margin-top: 4px;
+}
+
+.why {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.reasons {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.reasons li {
+  padding-left: 14px;
+  border-left: 3px solid var(--accent);
+}
+
+.module[data-checked="true"] .reasons li {
+  border-left-color: var(--pill-accent-ink);
+}
+
+.from {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.notes {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: var(--fs-small);
+}
+
+.problem {
+  margin-top: 12px;
+  color: var(--negative);
+  font-weight: 500;
+}
+
+.details {
+  margin-top: 6px;
+}
+
+.details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.detailBody {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 4px;
+  max-width: 62ch;
+  font-size: var(--fs-small);
+}
+
+.detailBody h3 {
+  margin-top: 8px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.detailBody ul {
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.estimates {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.aside {
+  position: sticky;
+  top: 24px;
+}
+
+.summaryCard {
+  display: grid;
+  gap: 16px;
+  padding: var(--pad);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.summaryHeading {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.count {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.problems {
+  color: var(--negative);
+  font-weight: 500;
+}
+
+.problems ul {
+  margin-top: 4px;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.saveRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+
+.bottomSave {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .header {
+    order: -2;
+  }
+  .aside {
+    position: static;
+    order: -1;
+  }
+  .bottomSave {
+    display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  .module {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 16px;
+    border-radius: 18px;
+  }
+  .summaryCard {
+    padding: 16px;
+    border-radius: 18px;
+  }
+  .saveRow .button,
+  .bottomSave .button {
+    width: 100%;
+  }
+}
+
+@media (forced-colors: active) {
+  .module {
+    border-color: CanvasText;
+  }
+}
+
+/* Keep status pills readable on the selected tint. */
+.module[data-checked="true"] :global(.pill) {
+  background: var(--raised);
+}

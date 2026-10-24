@@ -72,6 +72,15 @@ Catalog metadata should also carry cost/weight/power estimates, compatibility, a
 
 Record each resolved decision with date, owner, evidence, and affected files in this document or a small `docs/decisions/` entry. Bench measurements supersede design assumptions.
 
+## Decisions made
+
+| Date | Owner | Decision | Evidence / reason | Files |
+| --- | --- | --- | --- | --- |
+| 2026-10-23 | mzhao1599 | pnpm workspace (`apps/*`, `packages/*`, `services/*`); Next.js 16.3, React 19.3, TypeScript 6.0, zod 4.6, Vitest 5.0, versions pinned at least two weeks old | TypeScript 7 lacks the compiler JS API that Next's type check uses | `package.json`, `pnpm-workspace.yaml`, `apps/web/package.json` |
+| 2026-10-23 | mzhao1599 | Onboarding starts with a deterministic question bank and recommendation rules; the LLM agent comes next behind the same API | Usable, testable UI first (web guide, "Handoff for the first PR"); the rules become the agent's baseline and fallback | `services/cloud-api/src/onboarding/` |
+| 2026-10-23 | mzhao1599 | Demo sessions in server memory with a cookie-held secret, deleted an hour after the last change | No accounts yet; nothing sensitive persists | `services/cloud-api/src/onboarding/store.ts`, `apps/web/src/server/onboarding.ts` |
+| 2026-10-23 | mzhao1599 | Visual design with taste-skill v2: app style `editorial-greeting`, landing direction `page-is-the-object`, Instrument Sans and Serif, teal accent | Dealt sheets and inspector results in `apps/web/README.md` | `apps/web/app/globals.css`, `.taste-skill/` |
+
 ## Implementation references
 
 Check current documentation when choosing exact APIs and parts: [Next.js](https://nextjs.org/docs), [Vercel AI SDK](https://ai-sdk.dev/docs), [Supabase Auth](https://supabase.com/docs/guides/auth), [Supabase row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security), [Espressif USB device support](https://docs.espressif.com/projects/esp-usb/en/latest/esp32s3/usb_device.html) for an ESP32-S3 candidate, [WCAG 2.2](https://www.w3.org/TR/WCAG22/), [Raspberry Pi 5 product brief](https://datasheets.raspberrypi.com/rpi5/raspberry-pi-5-product-brief.pdf), and the [SO-100/101 overhead camera mount](https://github.com/TheRobotStudio/SO-ARM100/blob/main/Optional/Overhead_Cam_Mount_32x32_UVC_Module/README.md). These references do not resolve the open hardware decisions above.
