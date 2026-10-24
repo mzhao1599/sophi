@@ -1,0 +1,839 @@
+import { z } from "zod";
+import { CueListSchema, PartViewSchema, SpeechSchema } from "./walker";
+import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
+
+/**
+ * Sophi Circle, version 1: the people around the person who walks with the walker ("Nan" in the docs), and
+ * the walker's own screen. Proposed, not built: no route, store or Pi code uses these yet.
+ *
+ * Who calls what (three proofs, none works on another's routes):
+ * - the walker (the Pi), with its device credential, on `/api/v1/devices/{id}/circle...`;
+ * - the owner's page (the browser that paired), with the `walker_owner` cookie, on `/api/v1/walkers/{id}/circle...`;
+ * - a member's web app (family or caregiver), with a `walker_member` cookie, on `/api/v1/circle...`.
+ *
+ * The rule everything rests on: only a call made with the walker's own device credential can accept a join
+ * or a suggestion, so nothing reaches her walker until she presses Confirm on it. No owner or member route
+ * accepts anything.
+ *
+ * This is a separate system from the walker assistant (walker.ts). Nothing here changes a walker.ts or
+ * device.ts shape, which today's deployed Pi parses strictly, and `ScreenSettings` is kept apart from
+ * `WalkerConfiguration`. An old Pi never calls these routes; an old server answers them `404`.
+ *
+ * The second half of the file is the walker screen's local contract: what the Pi streams to the screen page
+ * on 127.0.0.1 (`ScreenState`) and what the page posts back (`ScreenShown`, `ScreenPress`). Objects are strict.
+ */
+
+// ---- Limits and timings ----
+
+/** A member's name, and the owner's, as the walker shows and says it: short enough for the screen at Largest. */
+export const CIRCLE_NAME_MAX = 12;
+/** A message from a member: short enough to show whole at Largest text with the status strip and a button. */
+export const CIRCLE_MESSAGE_MAX = 30;
+/** An invite code is good this long after the owner made it, and works once. */
+export const CIRCLE_INVITE_TTL_MS = 10 * 60_000;
+/** A suggestion, or a join waiting for her Confirm, lapses this long after it was made ("No answer. Nothing changed."). */
+export const CIRCLE_ITEM_TTL_MS = 5 * 60_000;
+/** Messages are deleted this long after they were sent, opened or not. */
+export const CIRCLE_MESSAGE_RETENTION_MS = 24 * 60 * 60_000;
+/** Settled suggestions and joins are deleted this long after they were made. */
+export const CIRCLE_ITEM_RETENTION_MS = 24 * 60 * 60_000;
+export const MAX_CIRCLE_MEMBERS = 8;
+export const MAX_OPEN_INVITES = 4;
+/** Messages a walker holds at once (not yet deleted), and the most one member may have waiting unopened. */
+export const MAX_LIVE_MESSAGES = 20;
+export const MAX_UNOPENED_PER_MEMBER = 3;
+/** The new Pi polls the circle feed this often. */
+export const CIRCLE_FEED_POLL_MS = 2_000;
+/** After a `404` from the feed (a server with no circle), the Pi asks again this much later. */
+export const CIRCLE_FEED_ABSENT_RETRY_MS = 60_000;
+
+/**
+ * The walker's Confirm timing for circle items (Pi-side rule, written here so the screen and the docs agree):
+ * a press counts only ACCEPT_GATE_MS after the later of (a) the screen page reporting it has drawn that item's
+ * revision and (b) the spoken prompt finishing. With no screen page connected, (b) alone opens it, so a dead
+ * kiosk never blocks a join. An earlier press gets a low tone and "One moment".
+ */
+export const SCREEN_ACCEPT_GATE_MS = 1_500;
+/** After any Confirm settles anything (a circle item or today's model offer), presses are ignored this long, each with a low tone. */
+export const SETTLE_IGNORE_MS = 2_000;
+/** A join's first Confirm arms it ("Press Confirm again"); with no second press within this, it ends as "Nothing changed". */
+export const JOIN_ARMED_TTL_MS = 30_000;
+/** "Change it back" stays on the Done screen this long. */
+export const CHANGE_BACK_MS = 60_000;
+
+const id = z.uuid();
+const time = z.iso.datetime();
+const unique = <T>(items: readonly T[]) => new Set(items).size === items.length;
+/** One line of plain text: no control characters, no line or paragraph separators. */
+const oneLine = /^[^\p{Cc}\p{Zl}\p{Zp}]*$/u;
+
+/** A person's name as typed by the owner (members never name themselves). */
+export const CircleNameSchema = z.string().trim().min(1).max(CIRCLE_NAME_MAX).regex(oneLine, "One line, no control characters.");
+
+// ---- Roles, members, invites ----
+
+/**
+ * `family` may send messages and suggest changes to her screen and voice. `caregiver` sees whether the walker
+ * is online, its part health and the alerts in force, and can send or suggest nothing. Neither sees her
+ * conversation, location or activity. The owner is not a member: it's the browser that paired.
+ */
+export const CircleRoleSchema = z.enum(["family", "caregiver"]);
+export type CircleRole = z.infer<typeof CircleRoleSchema>;
+
+export const CircleMemberSchema = z.strictObject({
+  member_id: id,
+  /** From the owner's invite, never chosen by the member. */
+  name: CircleNameSchema,
+  role: CircleRoleSchema,
+  joined_at: time,
+});
+export type CircleMember = z.infer<typeof CircleMemberSchema>;
+
+/** Made by the owner on the /walker page; the code shows there only, never on the walker. */
+export const CircleInviteSchema = z
+  .strictObject({
+    invite_id: id,
+    name: CircleNameSchema,
+    role: CircleRoleSchema,
+    code: z.string().regex(/^\d{6}$/),
+    created_at: time,
+    expires_at: time,
+  })
+  .refine((i) => Date.parse(i.created_at) < Date.parse(i.expires_at), { message: "expires_at is after created_at.", path: ["expires_at"] });
+export type CircleInvite = z.infer<typeof CircleInviteSchema>;
+
+// ---- Screen settings and voice ----
+
+export const TextSizeSchema = z.enum(["large", "larger", "largest"]);
+export type TextSize = z.infer<typeof TextSizeSchema>;
+export const TEXT_SIZES: readonly TextSize[] = TextSizeSchema.options;
+export const ScreenThemeSchema = z.enum(["light", "dark"]);
+export type ScreenTheme = z.infer<typeof ScreenThemeSchema>;
+
+/** Her choices for her screen, without the version. */
+export const ScreenChoicesSchema = z.strictObject({
+  text_size: TextSizeSchema,
+  theme: ScreenThemeSchema,
+  /** "Good evening, Nan" on the clock screen; null shows no greeting. */
+  greeting_name: CircleNameSchema.nullable(),
+  /** Show Sophi's replies as captions while it answers. Members can't suggest turning these off. */
+  captions: z.boolean(),
+  /** Read a message aloud as soon as it arrives, instead of when she opens it. */
+  read_messages_aloud: z.boolean(),
+});
+export type ScreenChoices = z.infer<typeof ScreenChoicesSchema>;
+
+/** What a walker's screen starts with: also what the screen draws before its first feed. */
+export const DEFAULT_SCREEN_CHOICES: ScreenChoices = {
+  text_size: "large",
+  theme: "light",
+  greeting_name: null,
+  captions: true,
+  read_messages_aloud: false,
+};
+
+/**
+ * The walker screen's settings, kept on the server and versioned like the walker's configuration but apart
+ * from it (`WalkerConfiguration` is unchanged). Version 1 is DEFAULT_SCREEN_CHOICES, made with the circle.
+ * Every change adds the next version and never edits an old one. The only writer is the walker itself: her
+ * own changes, and suggestions she accepted. A version is "on the walker" when the walker's screen report
+ * says it drew it, not when the server saved it.
+ */
+export const ScreenSettingsSchema = z.strictObject({
+  version: z.int().positive(),
+  ...ScreenChoicesSchema.shape,
+  changed_at: time,
+});
+export type ScreenSettings = z.infer<typeof ScreenSettingsSchema>;
+
+/**
+ * The stock voices a member may suggest, by our own ids and names. Which Cartesia stock voice each one is
+ * stays on the server (never a cloned voice). `standard` is today's voice. The voice is used by the server
+ * when it voices her replies; the walker's own voice (Piper, for messages and offline lines) doesn't change.
+ */
+export const VoiceChoiceIdSchema = z.enum(["standard", "calm", "warm"]);
+export type VoiceChoiceId = z.infer<typeof VoiceChoiceIdSchema>;
+export const VOICE_CHOICES: readonly { id: VoiceChoiceId; name: string }[] = [
+  { id: "standard", name: "Standard" },
+  { id: "calm", name: "Calm" },
+  { id: "warm", name: "Warm" },
+];
+export const DEFAULT_VOICE: VoiceChoiceId = "standard";
+
+// ---- Suggestions and joins (circle items) ----
+
+/** Exactly one change. Captions, reading aloud and her circle are hers alone, so there is no suggestion for them. */
+export const SuggestionChangeSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("text_size"), text_size: TextSizeSchema }),
+  z.strictObject({ kind: z.literal("theme"), theme: ScreenThemeSchema }),
+  z.strictObject({ kind: z.literal("greeting"), greeting_name: CircleNameSchema.nullable() }),
+  z.strictObject({ kind: z.literal("voice"), voice: VoiceChoiceIdSchema }),
+]);
+export type SuggestionChange = z.infer<typeof SuggestionChangeSchema>;
+
+/** Her choices and voice with one change made. */
+export function applySuggestionChange(
+  choices: ScreenChoices,
+  voice: VoiceChoiceId,
+  change: SuggestionChange,
+): { choices: ScreenChoices; voice: VoiceChoiceId } {
+  switch (change.kind) {
+    case "text_size":
+      return { choices: { ...choices, text_size: change.text_size }, voice };
+    case "theme":
+      return { choices: { ...choices, theme: change.theme }, voice };
+    case "greeting":
+      return { choices: { ...choices, greeting_name: change.greeting_name }, voice };
+    case "voice":
+      return { choices, voice: change.voice };
+  }
+}
+
+/** True when the change would leave everything as it is (the server refuses such a suggestion: `unchanged`). */
+export function changesNothing(choices: ScreenChoices, voice: VoiceChoiceId, change: SuggestionChange): boolean {
+  const next = applySuggestionChange(choices, voice, change);
+  return next.voice === voice && (Object.keys(choices) as (keyof ScreenChoices)[]).every((k) => next.choices[k] === choices[k]);
+}
+
+/**
+ * `waiting` until she answers or it lapses. `accepted` only by the walker's device credential. `ignored`: she
+ * tapped Not now, or the walker let it go (a join whose second press never came). `expired`:
+ * CIRCLE_ITEM_TTL_MS passed with no answer (doing nothing is a way to say no; Talk doesn't dismiss it). A
+ * member's phone never learns which of the last two happened: both read "No answer. Nothing changed.", so it
+ * can't tell what she did or was doing. Removing a member (or the member leaving) deletes their items, so the
+ * walker's accept or ignore of one then gets `404`, which the Pi shows and says as "Nothing changed."
+ */
+export const CircleItemStateSchema = z.enum(["waiting", "accepted", "ignored", "expired"]);
+export type CircleItemState = z.infer<typeof CircleItemStateSchema>;
+
+const itemBase = {
+  item_id: id,
+  state: CircleItemStateSchema,
+  created_at: time,
+  expires_at: time,
+};
+const expiresAfterCreated = {
+  check: (i: { created_at: string; expires_at: string }) => Date.parse(i.created_at) < Date.parse(i.expires_at),
+  message: { message: "expires_at is after created_at.", path: ["expires_at"] },
+};
+
+/** A family member's suggestion: one change, for her to accept on the walker. */
+export const SuggestionItemSchema = z
+  .strictObject({
+    ...itemBase,
+    kind: z.literal("suggestion"),
+    from_member_id: id,
+    from_name: CircleNameSchema,
+    change: SuggestionChangeSchema,
+    /**
+     * Set exactly when an accepted screen change made (or already had) a settings version: the version that
+     * carries it. null for a voice change, which needs no screen version, and for anything not accepted.
+     */
+    result_settings_version: z.int().positive().nullable(),
+  })
+  .refine(expiresAfterCreated.check, expiresAfterCreated.message)
+  .refine((s) => (s.result_settings_version !== null) === (s.state === "accepted" && s.change.kind !== "voice"), {
+    message: "result_settings_version is set exactly when an accepted screen change made one.",
+    path: ["result_settings_version"],
+  });
+export type SuggestionItem = z.infer<typeof SuggestionItemSchema>;
+
+/** Someone who typed an invite code and is waiting for her two Confirm presses. */
+export const MemberJoinItemSchema = z
+  .strictObject({
+    ...itemBase,
+    kind: z.literal("member_join"),
+    /** The member this join becomes once accepted. */
+    member_id: id,
+    name: CircleNameSchema,
+    role: CircleRoleSchema,
+    /** The owner's name as the owner typed it on the invite: "Max invited Cooper". */
+    invited_by_name: CircleNameSchema,
+  })
+  .refine(expiresAfterCreated.check, expiresAfterCreated.message);
+export type MemberJoinItem = z.infer<typeof MemberJoinItemSchema>;
+
+export const CircleItemSchema = z.discriminatedUnion("kind", [SuggestionItemSchema, MemberJoinItemSchema]);
+export type CircleItem = z.infer<typeof CircleItemSchema>;
+
+/**
+ * What a member's phone says about one of their suggestions. Built on the server with `suggestionOutcome`.
+ * - `waiting`: "Waiting for Nan" (whether it's on her screen or queued behind something: the phone never says which).
+ * - `offline`: still waiting, and her walker is offline.
+ * - `accepted`: she accepted it and her screen hasn't drawn it yet (a voice change skips this).
+ * - `on_the_walker`: her screen reported drawing the version that carries it, or a later one, with no change
+ *   of hers waiting on top (the walker reports no drawn version while one is: see ScreenReportRequestSchema);
+ *   for a voice, accepted.
+ * - `no_answer`: "No answer. Nothing changed." (ignored or expired alike).
+ *
+ * `walker.drawn_settings_version` is the last report's `settings_version_drawn`, null when none.
+ */
+export const SuggestionOutcomeSchema = z.enum(["waiting", "offline", "accepted", "on_the_walker", "no_answer"]);
+export type SuggestionOutcome = z.infer<typeof SuggestionOutcomeSchema>;
+
+export function suggestionOutcome(
+  item: Pick<SuggestionItem, "state" | "change" | "result_settings_version">,
+  walker: { online: boolean; drawn_settings_version: number | null },
+): SuggestionOutcome {
+  switch (item.state) {
+    case "waiting":
+      return walker.online ? "waiting" : "offline";
+    case "accepted":
+      if (item.change.kind === "voice" || item.result_settings_version === null) return "on_the_walker";
+      return walker.drawn_settings_version !== null && walker.drawn_settings_version >= item.result_settings_version
+        ? "on_the_walker"
+        : "accepted";
+    default:
+      return "no_answer";
+  }
+}
+
+// ---- Messages ----
+
+/**
+ * A short message from a family member to her screen. Never sent to a model, never part of the walker's
+ * conversation. `waiting`: the walker hasn't said it holds it. `delivered`: the walker's screen report lists it.
+ * `opened`: she opened it (or it was read aloud on arrival, if she turned that on). Deleted
+ * CIRCLE_MESSAGE_RETENTION_MS after `created_at`, and at once when its sender is removed or leaves.
+ */
+export const CircleMessageStateSchema = z.enum(["waiting", "delivered", "opened"]);
+
+export const CircleMessageSchema = z
+  .strictObject({
+    message_id: id,
+    /** The sender's idempotency key: a retried send gets the same message back. */
+    client_message_id: id,
+    from_member_id: id,
+    from_name: CircleNameSchema,
+    text: z.string().trim().min(1).max(CIRCLE_MESSAGE_MAX).regex(oneLine, "One line, no control characters."),
+    state: CircleMessageStateSchema,
+    created_at: time,
+    expires_at: time,
+    delivered_at: time.nullable(),
+    opened_at: time.nullable(),
+  })
+  .refine((m) => (m.state === "waiting") === (m.delivered_at === null), {
+    message: "delivered_at is set once the walker holds it.",
+    path: ["delivered_at"],
+  })
+  .refine((m) => (m.state === "opened") === (m.opened_at !== null), { message: "opened_at is set exactly when opened.", path: ["opened_at"] })
+  .refine((m) => Date.parse(m.created_at) < Date.parse(m.expires_at), { message: "expires_at is after created_at.", path: ["expires_at"] });
+export type CircleMessage = z.infer<typeof CircleMessageSchema>;
+
+/**
+ * How the Pi labels each line it speaks for the circle (its bus `spoke` kinds; Pi-side, written here so every
+ * component agrees). Neither kind is ever queued as a heartbeat `WalkerEvent`, so neither reaches the walker's
+ * conversation lines or the owner's page.
+ * - `circle_prompt`: the Pi's fixed circle lines: "Let Cooper join your circle?", "Press Confirm again to let
+ *   Cooper in.", a suggestion's question, "One moment", "Done. Larger text is on.", "Nothing changed.", and a
+ *   voice suggestion's sample ("This is how I'd sound.", played from the server's clip).
+ * - `circle_message`: a member's message, read aloud. Logged by length only, never its words, like `reply`.
+ */
+export const CircleSpeechKindSchema = z.enum(["circle_prompt", "circle_message"]);
+export type CircleSpeechKind = z.infer<typeof CircleSpeechKindSchema>;
+
+// ---- Device routes (the walker, device credential) ----
+
+/**
+ * GET /api/v1/devices/{id}/circle, every CIRCLE_FEED_POLL_MS. Everything the walker needs for its circle and
+ * screen, so its cache can always be replaced by the last feed. `device_id` keys that cache: the Pi clears it
+ * when the id changes (a re-pair). Messages are every live message for this walker, oldest first; one missing
+ * from the feed is deleted from the walker too. `item` is at most one waiting suggestion or join, oldest
+ * first; the rest wait their turn on the server.
+ */
+export const CircleFeedResponseSchema = z.strictObject({
+  device_id: id,
+  settings: ScreenSettingsSchema,
+  voice: VoiceChoiceIdSchema,
+  /** The owner's name as last typed on an invite; null until the owner has invited anyone. */
+  owner_name: CircleNameSchema.nullable(),
+  members: z.array(CircleMemberSchema).max(MAX_CIRCLE_MEMBERS),
+  messages: z.array(CircleMessageSchema).max(MAX_LIVE_MESSAGES),
+  item: CircleItemSchema.refine((i) => i.state === "waiting", "Only a waiting item is on the walker.").nullable(),
+});
+export type CircleFeedResponse = z.infer<typeof CircleFeedResponseSchema>;
+
+/**
+ * POST /api/v1/devices/{id}/circle/items/{item_id}. The only way anything is accepted. A join is accepted on
+ * her second Confirm press (the first only arms it on the Pi); `ignore` settles an item she let go (Not now,
+ * or a join whose second press never came). A `404` here means the item is gone (its member was removed or
+ * left): the Pi shows and says "Nothing changed."
+ */
+export const AnswerCircleItemRequestSchema = z.strictObject({ answer: z.enum(["accept", "ignore"]) });
+export type AnswerCircleItemRequest = z.infer<typeof AnswerCircleItemRequestSchema>;
+
+export const AnswerCircleItemResponseSchema = z.strictObject({
+  item: CircleItemSchema,
+  settings: ScreenSettingsSchema,
+  voice: VoiceChoiceIdSchema,
+});
+export type AnswerCircleItemResponse = z.infer<typeof AnswerCircleItemResponseSchema>;
+
+/**
+ * PUT /api/v1/devices/{id}/circle/settings: her own change from My screen, or "Change it back". The walker
+ * applies it at once (offline too) and sends it when it can, before its next screen report. `base_version` is
+ * the version the change was made on; if the server's moved, it answers `409 settings_conflict` with the
+ * current settings, and the walker puts her change on top of them and sends it again (her last press wins).
+ */
+export const OwnSettingsRequestSchema = z.strictObject({
+  base_version: z.int().positive(),
+  choices: ScreenChoicesSchema,
+  voice: VoiceChoiceIdSchema,
+});
+export type OwnSettingsRequest = z.infer<typeof OwnSettingsRequestSchema>;
+
+export const OwnSettingsResponseSchema = z.strictObject({ settings: ScreenSettingsSchema, voice: VoiceChoiceIdSchema });
+export type OwnSettingsResponse = z.infer<typeof OwnSettingsResponseSchema>;
+
+/** POST /api/v1/devices/{id}/circle/messages/{message_id}/opened, no body. */
+export const MessageOpenedResponseSchema = z.strictObject({ message: CircleMessageSchema });
+
+/**
+ * POST /api/v1/devices/{id}/circle/screen, sent whenever any field changes (and retried until it gets a 2xx).
+ * The server keeps the last one; "On the walker" on a member's phone is read from `settings_version_drawn`
+ * only. Which item is on her screen is never sent: nothing in the cloud needs it, and it would say what she's
+ * doing.
+ */
+export const ScreenReportRequestSchema = z
+  .strictObject({
+    /** A screen page is connected to the Pi's local stream now. */
+    screen_connected: z.boolean(),
+    /** The page's last drawing had a change of hers on top that the server doesn't have yet. */
+    settings_pending_local: z.boolean(),
+    /**
+     * The settings version the page last reported drawing, exactly as the server has it. null when no page is
+     * connected, and while a change of hers is pending on top (what's drawn then is no server version), so a
+     * phone can never read "On the walker" for something her screen isn't showing.
+     */
+    settings_version_drawn: z.int().positive().nullable(),
+    /** Messages the walker holds (on disk): these read as delivered. */
+    messages_held: z.array(id).max(MAX_LIVE_MESSAGES).refine(unique, "Each message appears once."),
+  })
+  .refine((r) => r.screen_connected || (r.settings_version_drawn === null && !r.settings_pending_local), {
+    message: "Nothing is drawn without a screen.",
+    path: ["screen_connected"],
+  })
+  .refine((r) => !r.settings_pending_local || r.settings_version_drawn === null, {
+    message: "No drawn version is reported while a change of hers is pending.",
+    path: ["settings_version_drawn"],
+  });
+export type ScreenReportRequest = z.infer<typeof ScreenReportRequestSchema>;
+
+/** GET /api/v1/devices/{id}/circle/voices/{voice}/sample: "This is how I'd sound." in that voice, cached on the server. */
+export const VoiceSampleResponseSchema = z.strictObject({ voice: VoiceChoiceIdSchema, speech: SpeechSchema });
+
+// DELETE /api/v1/devices/{id}/circle/members/{member_id}: she removed someone (two taps). 204, no body.
+
+// ---- Owner routes (the /walker page, `walker_owner` cookie, under /api/v1/walkers) ----
+
+/** POST /api/v1/walkers/{id}/circle/invites. `owner_name` is how the walker names the owner ("Max invited Cooper"). */
+export const CreateInviteRequestSchema = z.strictObject({
+  name: CircleNameSchema,
+  role: CircleRoleSchema,
+  owner_name: CircleNameSchema,
+});
+export type CreateInviteRequest = z.infer<typeof CreateInviteRequestSchema>;
+export const CreateInviteResponseSchema = z.strictObject({ invite: CircleInviteSchema });
+
+/** GET /api/v1/walkers/{id}/circle: her circle as the owner manages it. No messages and no suggestions: those are hers. */
+export const OwnerCircleResponseSchema = z.strictObject({
+  owner_name: CircleNameSchema.nullable(),
+  members: z.array(CircleMemberSchema).max(MAX_CIRCLE_MEMBERS),
+  /** Open invites, codes included: only the owner sees them. */
+  invites: z.array(CircleInviteSchema).max(MAX_OPEN_INVITES),
+  /** Joins waiting for her Confirm. */
+  joins: z.array(MemberJoinItemSchema).max(MAX_OPEN_INVITES),
+});
+export type OwnerCircleResponse = z.infer<typeof OwnerCircleResponseSchema>;
+
+// DELETE /api/v1/walkers/{id}/circle/members/{member_id} and /circle/invites/{invite_id}: 204, no body.
+
+// ---- Member routes (the web app, `walker_member` cookie, path /api/v1/circle) ----
+
+/**
+ * POST /api/v1/circle/join. No cookie needed; it sets one. The consent is the notice the app showed: "Messages
+ * show on Nan's walker screen when she opens them, and are deleted after 24 hours."
+ */
+export const JoinCircleRequestSchema = z.strictObject({
+  code: z.string().regex(/^\d{6}$/),
+  consent: z.strictObject({ circle_data_notice: z.literal(true) }),
+});
+export type JoinCircleRequest = z.infer<typeof JoinCircleRequestSchema>;
+
+/*
+ * What members get are projections, not the server's rows: no item state (which would say whether she
+ * ignored it), no settings versions or change times (which would say when she was using her screen), no
+ * delivered or opened times on messages. Only the outcome words.
+ */
+
+/** A member's own suggestion, as the phone shows it. Also the body of `409 suggestion_waiting`. */
+export const MemberSuggestionViewSchema = z
+  .strictObject({
+    item_id: id,
+    change: SuggestionChangeSchema,
+    created_at: time,
+    expires_at: time,
+    outcome: SuggestionOutcomeSchema,
+  })
+  .refine(expiresAfterCreated.check, expiresAfterCreated.message);
+export type MemberSuggestionView = z.infer<typeof MemberSuggestionViewSchema>;
+
+/** A member's own message, as the phone shows it: "Waiting for the walker", "Delivered to the walker", "Opened". */
+export const MemberMessageViewSchema = z
+  .strictObject({
+    message_id: id,
+    client_message_id: id,
+    text: CircleMessageSchema.shape.text,
+    created_at: time,
+    expires_at: time,
+    outcome: CircleMessageStateSchema,
+  })
+  .refine((m) => Date.parse(m.created_at) < Date.parse(m.expires_at), { message: "expires_at is after created_at.", path: ["expires_at"] });
+export type MemberMessageView = z.infer<typeof MemberMessageViewSchema>;
+
+/** Her screen's choices and voice, with no version or time. */
+export const MemberScreenLookSchema = z.strictObject({ choices: ScreenChoicesSchema, voice: VoiceChoiceIdSchema });
+
+/**
+ * Her walker as a member sees it: status only, never what she's doing or saying. `screen` is for family (the
+ * Preview and "On the walker now", which reads its "as of" from `last_seen_at`); `parts` is for caregivers
+ * (part health). The other is null (checked on the member response, which knows the role).
+ */
+export const MemberWalkerViewSchema = z.strictObject({
+  /** The walker's own name; null when it has none, and the app then says "the walker". */
+  walker_name: z.string().min(1).max(40).nullable(),
+  online: z.boolean(),
+  last_seen_at: time.nullable(),
+  simulator: z.boolean(),
+  /** The alerts in force, from the walker's confirmed configuration. */
+  alerts: CueListSchema,
+  screen: z
+    .strictObject({
+      /** Her settings on the server now. */
+      current: MemberScreenLookSchema,
+      /** What her screen last reported drawing (with nothing of hers pending on top); null until it has. */
+      on_the_walker: MemberScreenLookSchema.nullable(),
+    })
+    .nullable(),
+  parts: z.array(PartViewSchema).max(32).nullable(),
+});
+export type MemberWalkerView = z.infer<typeof MemberWalkerViewSchema>;
+
+/**
+ * GET /api/v1/circle (and the answer to POST /join). `waiting`: the code was right and the walker is asking
+ * her ("Waiting for Nan's walker"). `no_answer`: she didn't let them in before it lapsed ("No answer from Nan's
+ * walker. Ask again later."); the cookie then stops working. `member`: "You're in". A removed member's
+ * cookie answers `401`.
+ */
+export const MemberHomeResponseSchema = z.discriminatedUnion("membership", [
+  z.strictObject({ membership: z.literal("waiting"), name: CircleNameSchema, role: CircleRoleSchema, expires_at: time }),
+  z.strictObject({ membership: z.literal("no_answer"), name: CircleNameSchema }),
+  z
+    .strictObject({
+      membership: z.literal("member"),
+      me: CircleMemberSchema,
+      walker: MemberWalkerViewSchema,
+      circle: z.strictObject({ owner_name: CircleNameSchema.nullable(), members: z.array(CircleMemberSchema).max(MAX_CIRCLE_MEMBERS) }),
+      /** This member's own suggestions, newest first; always empty for a caregiver. */
+      suggestions: z.array(MemberSuggestionViewSchema).max(10),
+      /** This member's own messages still kept, newest first; always empty for a caregiver. */
+      messages: z.array(MemberMessageViewSchema).max(MAX_LIVE_MESSAGES),
+    })
+    .refine(
+      (h) =>
+        h.me.role === "family"
+          ? h.walker.screen !== null && h.walker.parts === null
+          : h.walker.screen === null && h.walker.parts !== null && h.suggestions.length === 0 && h.messages.length === 0,
+      { message: "Family see her screen settings; caregivers see part health; neither sees the other's.", path: ["walker"] },
+    ),
+]);
+export type MemberHomeResponse = z.infer<typeof MemberHomeResponseSchema>;
+
+/** POST /api/v1/circle/suggestions (family only). A repeated `client_suggestion_id` gets the same suggestion back. */
+export const CreateSuggestionRequestSchema = z.strictObject({ client_suggestion_id: id, change: SuggestionChangeSchema });
+export type CreateSuggestionRequest = z.infer<typeof CreateSuggestionRequestSchema>;
+export const CreateSuggestionResponseSchema = MemberSuggestionViewSchema;
+
+/** POST /api/v1/circle/messages (family only). */
+export const SendMessageRequestSchema = z.strictObject({
+  client_message_id: id,
+  text: CircleMessageSchema.shape.text,
+});
+export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+export const SendMessageResponseSchema = z.strictObject({ message: MemberMessageViewSchema });
+
+// DELETE /api/v1/circle: leave the circle; deletes this member's messages and suggestions. 204, no body.
+// GET /api/v1/circle/voices/{voice}/sample: the sample clip as audio/wav, labelled "Sample" in the app.
+
+// ---- Errors ----
+
+export const CircleErrorCodeSchema = z.enum([
+  "invalid_request",
+  /** No cookie or credential, or one the server doesn't know (a removed member, a forgotten walker). */
+  "unauthenticated",
+  /** The caller's role can't do this: a caregiver sending or suggesting. */
+  "not_allowed",
+  /** Unknown id, or one that belongs to someone else: the two look the same. */
+  "not_found",
+  "invite_code_invalid",
+  /** Too many wrong codes from this client address recently (the pairing lockout's limits). */
+  "invite_locked",
+  /** MAX_CIRCLE_MEMBERS members, or MAX_OPEN_INVITES open invites, already. */
+  "circle_full",
+  /** A suggestion while her walker is offline: "Nan's walker is offline. Try again when it's back." */
+  "walker_offline",
+  /** This member already has a suggestion waiting; the body carries it. */
+  "suggestion_waiting",
+  /** The suggestion would change nothing. */
+  "unchanged",
+  /** The item isn't waiting any more; the body carries it as it stands, so a retried accept that won sees `accepted`. */
+  "item_closed",
+  /** `base_version` isn't the current version; the body carries the current settings. */
+  "settings_conflict",
+  /** MAX_LIVE_MESSAGES, or this member's MAX_UNOPENED_PER_MEMBER, already. */
+  "message_limit",
+  "rate_limited",
+  "unavailable",
+]);
+export type CircleErrorCode = z.infer<typeof CircleErrorCodeSchema>;
+
+export const CIRCLE_ERROR_STATUS: Record<CircleErrorCode, number> = {
+  invalid_request: 400,
+  unauthenticated: 401,
+  not_allowed: 403,
+  not_found: 404,
+  invite_code_invalid: 400,
+  invite_locked: 429,
+  circle_full: 409,
+  walker_offline: 409,
+  suggestion_waiting: 409,
+  unchanged: 409,
+  item_closed: 409,
+  settings_conflict: 409,
+  message_limit: 409,
+  rate_limited: 429,
+  unavailable: 503,
+};
+
+export const CircleErrorSchema = z.strictObject({
+  error: z.strictObject({
+    code: CircleErrorCodeSchema,
+    message: z.string(),
+    trace_id: z.string(),
+    /** `item_closed`, on the walker's own routes only. */
+    item: CircleItemSchema.optional(),
+    /** `suggestion_waiting`, to the member: their waiting suggestion, as a projection. */
+    suggestion: MemberSuggestionViewSchema.optional(),
+    /** `settings_conflict`, on the walker's own routes only. */
+    settings: ScreenSettingsSchema.optional(),
+  }),
+});
+export type CircleError = z.infer<typeof CircleErrorSchema>;
+
+// ---- The walker screen's local contract (Pi -> page on 127.0.0.1) ----
+//
+// The Pi decides which state shows; the page draws it and decides nothing. The page gets `ScreenState` as the
+// `data:` of each `state` event on GET /screen/events, and posts `ScreenShown` and `ScreenPress` back. Every
+// request carries the Pi's per-boot screen token (embedded in the page it serves), and the Pi checks Host and
+// Origin, because any page in a browser on the same machine can reach 127.0.0.1.
+
+/** The Pi's link to the server, as the status strip shows it. */
+export const ScreenLinkSchema = z.enum(["unpaired", "connecting", "online", "offline", "unauthorized"]);
+export type ScreenLink = z.infer<typeof ScreenLinkSchema>;
+
+export const StatusStripSchema = z.strictObject({
+  link: ScreenLinkSchema,
+  /** The whole walker is the simulator: the strip shows a dashed "Simulator". */
+  simulator: z.boolean(),
+  /** The walker's local wall time, no offset; null when its clock has never synced (no time is shown). */
+  clock: z
+    .strictObject({ local_time: z.iso.datetime({ local: true }).regex(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/, "Local time, no offset.") })
+    .nullable(),
+});
+export type StatusStrip = z.infer<typeof StatusStripSchema>;
+
+/** Where a reply came from, in small type: the model, the server's fixed line, or the walker's own offline line. */
+export const ReplySourceSchema = z.enum(["model", "fixed", "walker"]);
+
+const minutesLeft = z.int().min(0).max(Math.ceil(CIRCLE_ITEM_TTL_MS / 60_000));
+export const MyScreenViewSchema = z.discriminatedUnion("page", [
+  z.strictObject({ page: z.literal("menu") }),
+  z.strictObject({ page: z.literal("text_size") }),
+  /** Captions, and reading messages aloud automatically. */
+  z.strictObject({ page: z.literal("reading") }),
+  /**
+   * Her circle, one person per screen. Index 0 is the owner (who can read her conversations, and can't be
+   * removed here); 1..count-1 are the members, in `members` order.
+   */
+  z
+    .strictObject({
+      page: z.literal("circle"),
+      index: z.int().min(0),
+      owner_name: CircleNameSchema.nullable(),
+      member: CircleMemberSchema.nullable(),
+      count: z.int().min(1).max(MAX_CIRCLE_MEMBERS + 1),
+      /** "Remove Cooper?": the first tap asked, the next tap removes. */
+      confirm_remove: z.boolean(),
+    })
+    .refine((p) => p.index < p.count && (p.index === 0) === (p.member === null) && (!p.confirm_remove || p.member !== null), {
+      message: "Index 0 is the owner; members follow.",
+      path: ["index"],
+    }),
+]);
+
+/**
+ * The one thing on screen, in the Pi's priority order: an obstacle or her own Talk first; then today's model
+ * offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message notice; then
+ * the clock. An offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen
+ * waits behind it; only an offer from her own Talk turn takes over. Confirm during an obstacle settles
+ * nothing. An interruption returns to the screen she was on, with a new revision (the item's gate starts again).
+ */
+export const ScreenContentSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    state: z.literal("obstacle"),
+    zone: ZoneNameSchema,
+    distance: z.discriminatedUnion("status", [
+      z.strictObject({ status: z.literal("measured"), mm: ZoneDistanceSchema }),
+      z.strictObject({ status: z.literal("unknown") }),
+    ]),
+    /** The reading came from a simulated sensor. */
+    simulated: z.boolean(),
+  }),
+  z.strictObject({ state: z.literal("listening") }),
+  z.strictObject({
+    state: z.literal("answering"),
+    /** What the walker heard her say; null when nothing was transcribed. */
+    heard: z.string().max(1000).nullable(),
+    reply: z.string().min(1).max(600),
+    source: ReplySourceSchema,
+    /** Which caption page shows (0-based). The Pi pages with `captionPages` from @walker/walker-screen. */
+    page: z.int().min(0),
+  }),
+  z.strictObject({
+    state: z.literal("model_offer"),
+    proposal_id: id,
+    from_cues: CueListSchema,
+    cues: CueListSchema,
+  }),
+  z.strictObject({
+    state: z.literal("suggestion"),
+    item_id: id,
+    from_name: CircleNameSchema,
+    change: SuggestionChangeSchema,
+    minutes_left: minutesLeft,
+    /** She pressed before the gate opened: "One moment". */
+    one_moment: z.boolean(),
+  }),
+  z.strictObject({
+    state: z.literal("member_join"),
+    item_id: id,
+    name: CircleNameSchema,
+    role: CircleRoleSchema,
+    invited_by_name: CircleNameSchema,
+    /** `again`: the first press armed it; "Press Confirm again to let Cooper in." (its own revision and gate). */
+    step: z.enum(["first", "again"]),
+    minutes_left: minutesLeft,
+    one_moment: z.boolean(),
+  }),
+  z
+    .strictObject({
+      state: z.literal("done"),
+      result: z.discriminatedUnion("kind", [
+        z.strictObject({ kind: z.literal("change"), change: SuggestionChangeSchema }),
+        z.strictObject({ kind: z.literal("alerts"), cues: CueListSchema }),
+        z.strictObject({ kind: z.literal("joined"), name: CircleNameSchema }),
+        z.strictObject({ kind: z.literal("removed"), name: CircleNameSchema }),
+        z.strictObject({ kind: z.literal("nothing_changed") }),
+      ]),
+      /** "Change it back" is offered (for CHANGE_BACK_MS after a change). */
+      change_back: z.boolean(),
+    })
+    .refine((d) => !d.change_back || d.result.kind === "change", { message: "Only a change can be changed back.", path: ["change_back"] }),
+  z.strictObject({
+    state: z.literal("message_waiting"),
+    message_id: id,
+    from_name: CircleNameSchema,
+    /** Other unopened messages after this one. */
+    more: z.int().min(0).max(MAX_LIVE_MESSAGES),
+  }),
+  z.strictObject({
+    state: z.literal("message"),
+    message_id: id,
+    from_name: CircleNameSchema,
+    text: CircleMessageSchema.shape.text,
+  }),
+  z.strictObject({ state: z.literal("offline") }),
+  z.strictObject({ state: z.literal("not_set_up") }),
+  z.strictObject({
+    state: z.literal("ambient"),
+    /** The alerts in force; null before the walker has a configuration. */
+    alerts: CueListSchema.nullable(),
+  }),
+  z.strictObject({ state: z.literal("my_screen"), view: MyScreenViewSchema }),
+]);
+export type ScreenContent = z.infer<typeof ScreenContentSchema>;
+export type ScreenStateName = ScreenContent["state"];
+
+/**
+ * Her settings as the walker applies them now. `version` is the server version they are built on; with
+ * `pending_local`, a change of hers (made on My screen, maybe offline) sits on top of it and hasn't reached the
+ * server yet, so the choices here are not that version's.
+ */
+export const AppliedScreenSettingsSchema = z.strictObject({
+  ...ScreenSettingsSchema.shape,
+  pending_local: z.boolean(),
+});
+export type AppliedScreenSettings = z.infer<typeof AppliedScreenSettingsSchema>;
+
+export const ScreenStateSchema = z.strictObject({
+  v: z.literal(1),
+  /** Goes up by one with every state the Pi sends since it started; presses and "shown" name it. */
+  revision: z.int().min(0),
+  screen: ScreenContentSchema,
+  settings: AppliedScreenSettingsSchema,
+  strip: StatusStripSchema,
+});
+export type ScreenState = z.infer<typeof ScreenStateSchema>;
+
+/**
+ * POST /screen/shown: the page has drawn this revision. `item_id` is the circle item on it (null for none),
+ * so the Pi can tell the item's own gate from a stale report. The Pi forgets it when an obstacle or Talk
+ * interrupts, and the item's gate starts again from the new revision. The settings fields echo what was
+ * drawn; the Pi reports `settings_version_drawn` to the server only when `settings_pending_local` is false.
+ */
+export const ScreenShownSchema = z.strictObject({
+  revision: z.int().min(0),
+  item_id: id.nullable(),
+  settings_version: z.int().positive(),
+  settings_pending_local: z.boolean(),
+});
+export type ScreenShown = z.infer<typeof ScreenShownSchema>;
+
+/**
+ * The large buttons. `confirm` is the touch twin of the left handle and goes through the same Pi checks.
+ * `not_now` lets a suggestion or join go (the Pi answers it `ignore`); on the handles, doing nothing for its
+ * 5 minutes does the same, and Talk never dismisses it.
+ */
+export const ScreenActionSchema = z.enum([
+  "confirm",
+  "not_now",
+  "read_message",
+  "change_back",
+  "my_screen",
+  "text_size",
+  "reading",
+  "circle",
+  "text_bigger",
+  "text_smaller",
+  "toggle_captions",
+  "toggle_read_aloud",
+  "next",
+  "remove",
+  "keep",
+  "done",
+]);
+export type ScreenAction = z.infer<typeof ScreenActionSchema>;
+
+/** POST /screen/press: a tap on a button of this revision. The Pi ignores a press on an older revision. */
+export const ScreenPressSchema = z.strictObject({ revision: z.int().min(0), action: ScreenActionSchema });
+export type ScreenPress = z.infer<typeof ScreenPressSchema>;

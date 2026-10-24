@@ -80,6 +80,132 @@ The profile patch is a proposal until confirmed. Use server-side session revisio
 
 **Walker assistant routes (built; deployed on Render 2026-10-24).** The Pi and the owner's page use separate proofs: device routes take `Authorization: Bearer <credential>`, where the credential is 32 random bytes in base64url, shown once at pairing, with only its SHA-256 kept. Page routes take the `walker_owner` cookie (`httpOnly`, `SameSite=Strict`, path `/api/v1/walkers`). Neither works on the other's routes, and an unknown or someone else's id reads as `404`, the same either way. Errors use `{ "error": { "code", "message", "trace_id", "proposal"? } }` with the codes in `WalkerErrorCodeSchema` and the HTTP status for each in `WALKER_ERROR_STATUS` (`400` invalid request or pairing code, `401`, `404`, `409` walker limit or proposal closed, `429` pairing locked or rate limited, `503`). A Pi that gets `401 unauthenticated` asks to be paired again. `GET /api/v1/health` (no proof) answers `200` once the walker store is ready and `503` while its database can't be reached; Render uses it as the health check. On Render the wrong-code lockout is keyed on Cloudflare's `CF-Connecting-IP` (an IPv6 client by its /64), because a client can forge the leftmost `X-Forwarded-For` entry there; the window slides, lifting 10 minutes after the oldest of the 5 wrong tries. `POST /walkers/pairing-codes` refuses a request another site made the browser send (`Sec-Fetch-Site`), so no other page can replace the owner cookie. Turns are idempotent by `client_turn_id`. The only change a turn can propose is the walker's alert cues (`cues_change`), confirmed by id from the walker's Confirm button or the page, never by voice. Rules: [walker assistant guide](subsystems/walker-assistant.md#the-shared-nouns).
 
+## Sophi Circle and the walker screen (proposed, not built)
+
+**Status: proposed, not built.** The schemas are written in [`circle.ts`](../packages/contracts/src/circle.ts) and tested as schemas only. No route, table, Pi code or page uses them yet. Everything below specifies what the next pieces (cloud, Pi, web app) will build. The screen's drawing package (`packages/walker-screen`, a separate change) renders fixtures only.
+
+**What it is.** The walker's own screen belongs to the person who walks with it ("Nan" below). Family and caregivers join her circle from a web app on their phones. Family can send short messages and suggest one change at a time to her screen or to Sophi's voice. Nothing reaches her walker until she presses Confirm on it. It is a separate system from the walker assistant above: today's turns, proposals, Confirm and heartbeat don't change, and no `walker.ts` or `device.ts` shape changes (a test pins them, [`unchanged-shapes.test.ts`](../packages/contracts/test/unchanged-shapes.test.ts)). So today's deployed Pi and server keep working whichever is deployed first.
+
+**The rule everything rests on: only a call made with the walker's device credential can accept a join or a suggestion.** That call comes from the handle's Confirm or the screen's Confirm button, both through the Pi. No owner-cookie or member-cookie route accepts anything, so the rule holds by construction. The cloud piece adds a test that an owner-cookie accept is refused.
+
+### Callers and proofs
+
+| Caller | Proof | Path prefix |
+| --- | --- | --- |
+| The walker (Pi) | `Authorization: Bearer <device credential>`, as today | `/api/v1/devices/{id}/circle` |
+| The owner (the browser that paired) | The `walker_owner` cookie. Its path is `/api/v1/walkers`, so owner routes must sit under it | `/api/v1/walkers/{id}/circle` |
+| A member (family or caregiver), in the web app | A new `walker_member` cookie: `httpOnly`, `SameSite=Strict`, `Secure` in production, path `/api/v1/circle`. It holds a random secret, and the server keeps only its SHA-256. One membership per browser | `/api/v1/circle` |
+
+None of the three proofs works on another's routes. An unknown id, or one that belongs to someone else, reads as `404`. Errors use `{ "error": { "code", "message", "trace_id", "item"?, "settings"? } }` with `CircleErrorCodeSchema` and `CIRCLE_ERROR_STATUS`. This is a separate list, so `WalkerErrorCodeSchema` is unchanged:
+
+- `400` `invalid_request`, `invite_code_invalid`
+- `401` `unauthenticated`
+- `403` `not_allowed` (a caregiver sending or suggesting)
+- `404` `not_found`
+- `409` `circle_full`, `walker_offline`, `suggestion_waiting` (with the member's own waiting suggestion, as the same projection the member routes return), `unchanged`, `item_closed` (walker only: with the item as it stands), `settings_conflict` (walker only: with the current settings), `message_limit`
+- `429` `invite_locked`, `rate_limited`
+- `503` `unavailable`
+
+### Routes
+
+Device routes (the walker):
+
+| Route | Request → response | Notes and errors |
+| --- | --- | --- |
+| `GET /devices/{id}/circle` | → `CircleFeedResponseSchema` | Polled every 2 s (`CIRCLE_FEED_POLL_MS`). Carries `device_id`, her settings and voice, the owner's name, her members, every live message for this walker (oldest first), and at most one waiting item: a suggestion or a join, oldest first. The rest wait their turn on the server. See "The feed" below |
+| `POST /devices/{id}/circle/items/{item_id}` | `AnswerCircleItemRequestSchema` (`accept` or `ignore`) → `AnswerCircleItemResponseSchema` (the item, settings, voice) | The only accept. Accepting a screen change adds a settings version, or names the current one if her settings already had that value. Accepting a voice change sets the voice. A join is accepted on her second press. `ignore` is her Not now tap, or a join whose second press never came. Anything not waiting gets `409 item_closed`, so a retried accept that already won sees `accepted`. A `404` means the item is gone (its member was removed or left): the Pi shows and says "Nothing changed." |
+| `PUT /devices/{id}/circle/settings` | `OwnSettingsRequestSchema` (`base_version`, all five choices, voice) → `OwnSettingsResponseSchema` | Her own change from My screen, or "Change it back". An old `base_version` gets `409 settings_conflict` with the current settings; the walker puts her change on top and sends it again (her last press wins) |
+| `DELETE /devices/{id}/circle/members/{member_id}` | → `204` | She removed someone (two taps on her screen). Deletes their messages and suggestions at once |
+| `POST /devices/{id}/circle/messages/{message_id}/opened` | No body → `MessageOpenedResponseSchema` | She opened it (by Confirm or the Read it button), or it was read aloud on arrival because she turned that on |
+| `POST /devices/{id}/circle/screen` | `ScreenReportRequestSchema` → `204` | Sent whenever a field changes, and retried until it gets a 2xx. It says whether a screen page is connected, the settings version the page last drew, whether a change of hers was pending on top of it, and the message ids the walker holds (those read as delivered). `settings_version_drawn` is null while a change of hers is pending (what's drawn then is no server version), so a member's "On the walker", which comes only from it, can never claim something her screen isn't showing. Which item is on her screen is never sent: nothing in the cloud needs it, and it would say what she is doing |
+| `GET /devices/{id}/circle/voices/{voice}/sample` | → `VoiceSampleResponseSchema` (WAV, as `SpeechSchema`) | "This is how I'd sound." in that voice, synthesised once and cached on the server. Played when a voice suggestion is on screen |
+
+Owner routes (the /walker page):
+
+| Route | Request → response | Notes and errors |
+| --- | --- | --- |
+| `POST /walkers/{id}/circle/invites` | `CreateInviteRequestSchema` (the person's name, up to 12 characters; their role; the owner's own name, which is how the walker names the owner) → `CreateInviteResponseSchema` | A one-time 6-digit code, good for 10 minutes (`CIRCLE_INVITE_TTL_MS`). It shows on the page only, never on the walker. Refuses a request another site made the browser send (`Sec-Fetch-Site`), as pairing codes do. `409 circle_full` at 8 members or 4 open invites |
+| `GET /walkers/{id}/circle` | → `OwnerCircleResponseSchema` | Members, open invites (with their codes) and joins waiting for her. No messages or suggestions: those are hers |
+| `DELETE /walkers/{id}/circle/members/{member_id}` | → `204` | The same as her own removal |
+| `DELETE /walkers/{id}/circle/invites/{invite_id}` | → `204` | Cancels an unused code |
+
+Member routes (the web app):
+
+| Route | Request → response | Notes and errors |
+| --- | --- | --- |
+| `POST /circle/join` | `JoinCircleRequestSchema` (the code, and the notice the app showed) → `MemberHomeResponseSchema` (`waiting`) | Needs no cookie, and sets one. Refuses a request another site made the browser send (`Sec-Fetch-Site`), as pairing codes do, so no other page can replace the member cookie. The member's name and role come from the invite, never from them. Wrong codes share the pairing lockout's limits (`PAIRING_MAX_WRONG` within `PAIRING_LOCK_WINDOW_MS`, keyed the same way): `400 invite_code_invalid`, then `429 invite_locked`. Redeeming a code makes a join item for her walker, which lapses after 5 minutes |
+| `GET /circle` | → `MemberHomeResponseSchema` | One of `waiting`, `no_answer` (then the cookie stops working) or `member`. A member sees the walker's name (null when it has none: the app then says "the walker"), Online/Offline and last seen, and the alerts in force. Family also see her screen's choices and voice, current and as last drawn on the walker, with no versions or times (the app's "as of" comes from `last_seen_at`); caregivers see part health instead, and the response is refused if it carries both or neither. Members get projections, not the server's rows: their own suggestions as `{item_id, change, created_at, expires_at, outcome}` (no item state, so not whether she tapped Not now) and their own messages with an `outcome` word only (no delivered or opened times). Both see her circle's names. Never her conversation, location, activity or what is on her screen. The app polls it every 1.5 s while something is waiting, otherwise every 5 s |
+| `POST /circle/suggestions` | `CreateSuggestionRequestSchema` (one change: `text_size`, `theme`, `greeting` or `voice`) → `MemberSuggestionViewSchema` | Family only (`403 not_allowed`). `409 walker_offline` ("Nan's walker is offline. Try again when it's back."); `409 suggestion_waiting` (one waiting per member, returned in the body); `409 unchanged`. Idempotent by `client_suggestion_id`. Lapses after 5 minutes (`CIRCLE_ITEM_TTL_MS`). There is no suggestion for captions, reading aloud or her circle: those are hers alone |
+| `POST /circle/messages` | `SendMessageRequestSchema` (1 to 30 characters, one line) → `SendMessageResponseSchema` | Family only. `409 message_limit` at 20 live messages for the walker, or 3 unopened from this member. Idempotent by `client_message_id`. Waits on the server while the walker is offline |
+| `DELETE /circle` | → `204` | Leave the circle. Deletes this member's messages and suggestions now |
+| `GET /circle/voices/{voice}/sample` | → `audio/wav` | The same cached clip, labelled "Sample" in the app |
+
+What a member's phone says comes from `suggestionOutcome`, one shared function, so the server and the app agree:
+
+- `waiting`: "Waiting for Nan". The phone never says whether it is on her screen or queued behind something, so it can't tell what she is doing.
+- `offline`: still waiting, and her walker is offline.
+- `accepted`: she accepted it and her screen hasn't drawn it yet.
+- `on_the_walker`: her screen reported drawing the version that carries it. For a voice, accepted.
+- `no_answer`: "No answer. Nothing changed." Ignored and expired read the same. (Removing a member deletes their items, so there is no withdrawn state.)
+
+Messages read `waiting` ("Waiting for the walker"), `delivered` ("Delivered to the walker", once the walker's screen report lists it) and `opened`. None of these is styled as an error.
+
+### The feed: polling and `404`
+
+- The new Pi polls `GET /devices/{id}/circle` every 2 s; the old Pi never calls it. A suggestion should reach the walker within about 2 to 3 s (to be measured).
+- The feed never touches the link state. Online/Offline comes from the heartbeat only, and the heartbeat handles `401` as today.
+- `404` means "this server has no circle yet" (an old server, or a rollback). The Pi keeps her applied settings, shows no circle items or messages, deletes nothing, and asks again after 60 s (`CIRCLE_FEED_ABSENT_RETRY_MS`).
+- Any other failure (a timeout, a `5xx`) keeps the cache as it is and retries at the normal interval.
+- The Pi keys its cache by `device_id` and clears it when that changes, so re-pairing the walker (the reset between judges) starts the walker with an empty circle.
+- The feed is the whole truth. A cached message missing from the feed is deleted on the walker; that is how a removal, or the 24-hour limit, reaches its disk.
+
+### Who owns which state
+
+| State | Owned by |
+| --- | --- |
+| Members, invites, joins and suggestions (5 minutes to answer), messages (24 hours), screen settings versions, the voice choice, the last screen report | Cloud, in new `circle_*` tables (migration 0003, proposed) |
+| Her applied screen settings (including a change not yet sent), cached messages, the circle | Pi, on disk, keyed by device id, for offline use |
+| Which screen state shows, Talk, the link, obstacles, cues, the Confirm timing rule, arbitration | Pi. The screen page decides nothing |
+| What the screen has actually drawn | The screen page, which tells the Pi (`ScreenShown`) |
+| Button presses | The ESP32 hands, as today |
+
+### Accepting on the walker: timing, two presses, arbitration
+
+These are Pi rules. They are written into the contract's constants and comments so that the screen, the Pi and the docs agree.
+
+- **The gate (`SCREEN_ACCEPT_GATE_MS`, 1.5 s).** For a circle item, a Confirm press counts only 1.5 s after the later of two moments: (a) the screen page reporting that it drew that item's revision (`ScreenShown` names the revision and the item id), and (b) the spoken prompt finishing. With no screen page connected, (b) alone opens the gate, so a dead kiosk never blocks a join. An earlier press gets a short low tone and "One moment" (spoken as `circle_prompt`, and shown as `one_moment`). An obstacle or Talk interrupts: the Pi forgets the item's "shown", and when the screen returns to the item with a new revision, the gate starts again.
+- **Ignore after every settle (`SETTLE_IGNORE_MS`, 2 s).** After any Confirm settles anything, today's model offers included, presses are ignored for 2 s, each with a low tone. One press settles one item.
+- **Joins take two presses.** The first press arms the join, and the screen shows "Press Confirm again" as its own revision with its own gate. Only the second press calls accept. With no second press within 30 s (`JOIN_ARMED_TTL_MS`), the Pi settles it as `ignore` and shows and says "Nothing changed."
+- **Saying no.** A suggestion or a join has a Not now button (`not_now`, which the Pi answers `ignore`). On the handles, doing nothing is the way to say no: the item lapses after its 5 minutes. Talk never dismisses it; she can ask Sophi something and the item is still there afterwards.
+- **Arbitration: one thing on screen at a time.** An obstacle or her own Talk comes first. Then today's model offer, which keeps the screen and Confirm until it is settled. Then a circle item, then a message notice, then the clock. A model offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen waits behind it; only an offer from her own Talk turn takes over. A suggestion waiting behind a model offer simply waits, within its own 5 minutes. Confirm during an obstacle screen settles nothing.
+- **Today's model offers keep today's Confirm** (no gate), apart from the 2 s ignore after a settle. Confirm with nothing waiting still plays today's "nothing to confirm" sound.
+- **Every essential action has a handle path.** Confirm accepts a suggestion or a join, and on "Message from Cooper" it shows the message and reads it aloud. The main line of every screen is spoken when it appears. Touch (the large buttons: Read it, Not now, Change it back, My screen) is for when she is parked or seated. Removing someone is touch only (two taps), or the owner's page.
+
+### Speech, logs and the conversation
+
+**One logging rule, for the Pi's screen server and the cloud alike:** never log `ScreenState` bodies, message text, heard words or replies, in full or in part. Log lengths, kinds, ids and outcomes only. (The Pi's logger already logs replies by length; the simulator, whose replies are the fake cloud's, is the only exception, as today.)
+
+Every line the Pi speaks for the circle names its kind (`CircleSpeechKindSchema`):
+
+- `circle_prompt`: the Pi's fixed circle lines. These are the join and suggestion prompts, "Press Confirm again to let Cooper in.", "One moment", "Done. Larger text is on.", "Nothing changed.", and a voice suggestion's sample clip.
+- `circle_message`: a member's message, read aloud. Logged by length only, never its words (like `reply` in the Pi's logger).
+
+Neither kind is ever queued as a heartbeat `WalkerEvent`, so neither reaches the walker's conversation lines or the owner's page. Messages and suggestions never go to a model. The server applies the voice choice when Cartesia voices her replies; messages and offline lines use the walker's own voice, which doesn't change.
+
+### The walker screen's local contract (Pi ↔ page on 127.0.0.1)
+
+- The Pi serves the screen page and a Server-Sent Events stream on `127.0.0.1` only, so the screen keeps working with no internet (beat 6). Each `state` event's `data:` is a `ScreenStateSchema` object: a `revision` (one higher for each state sent since the Pi started), the content (`screen`: which state, and what it shows), her settings as applied now (`version` is the server version they are built on, and `pending_local` says a change of hers sits on top that the server doesn't have yet), and the status strip (link, simulator, local clock or none).
+- The page posts `ScreenShownSchema` to `POST /screen/shown` after drawing a revision, with its circle item id and settings version. It posts `ScreenPressSchema` to `POST /screen/press` for a tap; the Pi ignores a press on an older revision. A touch `confirm` goes through exactly the checks the handle does.
+- **A per-boot token.** 127.0.0.1 is reachable from any page in a browser on the same machine (the simulator runs on a laptop). So the Pi makes a random token when it starts, embeds it in the page it serves, and requires it on every request: as a header (`X-Screen-Token`) on the POSTs, and as a query parameter on the event stream, because `EventSource` can't set headers. The Pi also refuses a request whose `Host` isn't `127.0.0.1:<port>`, or whose `Origin` (when present) isn't the page's own.
+- The Pi's listener for the screen is wrapped so it can never throw into Talk or the heartbeat.
+
+### Consent, retention and deletion
+
+- **Consent.** A member joins only after the app shows "Messages show on Nan's walker screen when she opens them, and are deleted after 24 hours." (`consent.circle_data_notice`). She consents to each member with two Confirm presses. Nothing a member sends shows until she opens it, unless she turned on reading aloud. Her circle screen lists everyone, and says the owner can read her conversations on the Sophi website. A switch for that is not in this version and is never claimed.
+- **Retention.** Messages: 24 hours after sending, opened or not (`CIRCLE_MESSAGE_RETENTION_MS`). Suggestions and joins: 5 minutes to answer, deleted 24 hours after they were made. Invites: 10 minutes, one use. Screen reports: only the last one. Settings versions: kept with the walker.
+- **Deletion.** Removing a member (from her screen or the owner's page) deletes their messages and suggestions on the server at once, and the next feed deletes them from the walker's cache. A member leaving does the same. Forgetting the walker deletes its whole circle. The member's cookie then answers `401`.
+- **Access control.** The server is the only database client and scopes every query by device, owner or member, as the walker tables do. If a circle table is ever exposed to Supabase clients, it needs row-level security first.
+
 ## Pi ↔ cloud action protocol
 
 The assistant returns **intent**, never raw joint angles from the general conversation agent. A Pi action request might be:

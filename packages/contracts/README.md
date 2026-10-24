@@ -8,6 +8,9 @@ Versioned schemas for messages between the web app, cloud API, Pi and ESP32s. Wr
 | `src/onboarding.ts` | Onboarding session API: session view, turn requests (`text`, `answer`, `skip`, `skip_rest`, `revisit`), profile edits, confirmation, device configuration, error envelope | API v1 |
 | `src/serial.ts` | Pi ↔ ESP32 JSON Lines envelope (`hello`, `heartbeat`, `hand.input`, `perception.zones`, `haptic.play`, `ack`, `error`), the 1 KiB line limit and `parseSerialLine`. Specified, not implemented on any device | serial v1 |
 | `src/device.ts` | Pi ↔ cloud: capability manifest, sensor snapshot with `readZone` (missing or stale reads as unknown), action request and status report with `canFollowActionStatus`. Specified, no route or Pi code yet | device API v1 |
+| `src/circle.ts` | Sophi Circle: members, invites, `ScreenSettings` (versioned, apart from `WalkerConfiguration`), `VOICE_CHOICES`, suggestions and joins, messages, the circle feed, the device, owner and member routes, errors, and the walker screen's local `ScreenState`. Proposed, no route or Pi code yet ([interfaces](../../docs/interfaces.md#sophi-circle-and-the-walker-screen-proposed-not-built)) | circle v1 |
+
+`test/unchanged-shapes.test.ts` pins the JSON Schema of every schema in `walker.ts` and `device.ts` to `test/fixtures/walker-device-v1.shapes.json`, because today's deployed Pi parses them strictly. Change that snapshot only with the Pi re-bundled first. It doesn't cover refinements and transforms (`.refine`, `.trim()`) or exports that aren't schemas (constants and functions); the walker and device tests cover those.
 
 Not yet written: agent tool arguments and the Pi's reply to a serial `hello` (see [interfaces](../../docs/interfaces.md)).
 

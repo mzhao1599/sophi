@@ -93,7 +93,11 @@ export const WALKER_SETUP: Pick<WalkerConfiguration, "catalog_version" | "select
   cues: ["vibration", "spoken"],
 };
 
-/** Which part delivers each cue on a walker. A walker has no screen, so `screen` is never deliverable. */
+/**
+ * Which part delivers each cue on a walker. A walker may have a screen for its own UI (circle.ts's
+ * `ScreenState`), but the screen is not an alert channel and no part reports its health, so the `screen` cue
+ * stays undeliverable.
+ */
 const CUE_NEEDS: Record<Cue, ModuleId | null> = {
   vibration: "controls.hand",
   sound: "voice",
