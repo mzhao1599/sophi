@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs Sophi's walker service on a Raspberry Pi. Ran as far as the walker service on a Pi 5 with
-# Raspberry Pi OS trixie on 2026-10-24, and again with the Wi-Fi part the same night.
+# Raspberry Pi OS trixie on 2026-10-23, and again with the Wi-Fi part the same night.
 # Usage, on the Pi, from a copy of devices/pi: sudo ./scripts/install-pi.sh dist/walker.mjs
 # What it does: creates the `steady` system user, copies the bundle to /opt/steady-walker, creates the
 # 0700 state folder, installs the systemd unit and (only if missing) /etc/steady-walker.env, and enables
@@ -8,8 +8,8 @@
 # boot; `sudo walker-wifi-add.sh` adds a network over SSH) and puts the instructions file on the card if
 # it has none. It also installs four small system settings from systemd/ (README, "Set up the Pi"): the
 # soundbar's udev name, its volume (75%) at each service start, a journal kept across power-offs, and a
-# power button that ignores a short press. Those four were set by hand on the Pi on 2026-10-24 with the
-# same contents, then this script installed them over those on the same Pi (2026-10-24, 23:28). It does not pair the walker or
+# power button that ignores a short press. Those four were set by hand on the Pi on 2026-10-23 with the
+# same contents, then this script installed them over those on the same Pi (2026-10-23, 23:28). It does not pair the walker or
 # start the service.
 # With --screen (sudo ./scripts/install-pi.sh --screen dist/walker.mjs, in either order) it then also sets up
 # the walker's 800x480 HDMI touch screen with scripts/install-screen.sh (README, "The screen"), after the

@@ -17,7 +17,7 @@ const PAIRED = {
     catalog_version: 1,
     selected_module_ids: ["base.walker", "controls.hand", "perception.tof", "voice"],
     cues: ["vibration", "spoken"],
-    created_at: "2026-10-24T12:00:00.000Z",
+    created_at: "2026-10-23T12:00:00.000Z",
   },
 };
 

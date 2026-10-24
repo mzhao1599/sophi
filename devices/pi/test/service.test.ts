@@ -511,13 +511,13 @@ describe("reports", () => {
     const h = makeHarness();
     await boot(h);
     const bootLine = h.device()!.events.find((e) => e.text === "Sophi is on.");
-    expect(bootLine?.at).toBe("2026-10-24T12:00:00.000Z");
+    expect(bootLine?.at).toBe("2026-10-23T12:00:00.000Z");
     h.client.network = "down";
     await h.clock.advance(10_000);
     h.client.network = "up";
     await h.clock.advance(15_000);
     const offline = h.device()!.events.find((e) => e.text.startsWith("I'm offline"));
-    expect(offline?.at).toBe("2026-10-24T12:00:10.000Z");
+    expect(offline?.at).toBe("2026-10-23T12:00:10.000Z");
   });
 
   it("C4: the snapshot leaves out zones older than 500 ms", async () => {

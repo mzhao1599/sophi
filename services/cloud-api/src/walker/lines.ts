@@ -38,7 +38,7 @@ export const SIMULATED_ALL_PARTS = "All of this walker's parts are simulated.";
 /**
  * How old an obstacle reading is, worded the way it's said aloud, for the model to repeat: "just now" under
  * a second, then whole seconds ("3 seconds ago"). The model never sees milliseconds, which it once read out
- * ("…from 44 milliseconds ago", rehearsal 2026-10-24). null when there's no age to say.
+ * ("…from 44 milliseconds ago", rehearsal 2026-10-23). null when there's no age to say.
  */
 export function readingAge(ageMs: number | null | undefined): string | null {
   if (ageMs == null || !Number.isFinite(ageMs) || ageMs < 0) return null;

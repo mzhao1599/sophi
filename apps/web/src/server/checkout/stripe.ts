@@ -6,8 +6,9 @@ import type { CheckoutClient } from "./order";
 
 /**
  * The Stripe client for the mock purchase, built only from an sk_test_ key. STRIPE_SECRET_KEY is
- * read here, on the server, and never sent to the browser. The SDK pins the API version
- * (stripe@23.0.0 → 2026-09-30.endive). No publishable key: hosted Checkout doesn't need one.
+ * read here, on the server, and never sent to the browser. stripe@23.0.0 pins its own API
+ * version; the repository date label was normalized to 2026-10-23 and is not an SDK version.
+ * No publishable key: hosted Checkout doesn't need one.
  */
 
 export type CheckoutAccess = { ok: true; client: CheckoutClient } | { ok: false; reason: Exclude<StripeKeyCheck, { ok: true }>["reason"] };

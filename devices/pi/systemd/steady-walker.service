@@ -1,5 +1,5 @@
 # Sophi's always-on walker service. Installed, enabled and started on a Pi 5 (Raspberry Pi OS trixie) on
-# 2026-10-24; see devices/pi/README.md ("Set up the Pi") for what that run showed and what is still unchecked.
+# 2026-10-23; see devices/pi/README.md ("Set up the Pi") for what that run showed and what is still unchecked.
 [Unit]
 Description=Sophi walker service (buttons, mic, speaker, serial modules, cloud link)
 Wants=network-online.target

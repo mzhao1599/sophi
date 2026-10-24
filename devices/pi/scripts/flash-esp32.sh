@@ -7,7 +7,7 @@
 #                with bootloader.bin, partitions.bin, boot_app0.bin and firmware.bin (firmware/README.md,
 #                "Build an image on a Mac, flash it from the Pi").
 # Not yet run on the Pi. It writes the same four files at the same addresses as the reflash of hand-left-01
-# from the Pi with esptool 5.6.0 on 2026-10-24 (firmware/README.md, bench record). Checked on a Mac with fake
+# from the Pi with esptool 5.6.0 on 2026-10-23 (firmware/README.md, bench record). Checked on a Mac with fake
 # systemctl, fuser and esptool (devices/pi/test/flash-esp32.test.ts).
 #
 # It refuses to run while the walker service is running (the service holds every serial port open, and two

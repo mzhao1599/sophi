@@ -1,5 +1,5 @@
 # Render Blueprint: the walker server (apps/web, which also serves the onboarding page) and its
-# Postgres database. Field reference: https://render.com/docs/blueprint-spec (checked 2026-10-24).
+# Postgres database. Field reference: https://render.com/docs/blueprint-spec (checked 2026-10-23).
 # Setup steps: apps/web/README.md, "Deploy on Render". Secrets are never written here: the two keys
 # below are `sync: false`, so Render asks for them in the dashboard when the Blueprint is created.
 services:

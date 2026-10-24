@@ -8,9 +8,9 @@ import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "../src/si
 import { FakeClock, captureLogger, flush } from "./support/fakes";
 
 const heartbeatBody: HeartbeatRequest = {
-  sent_at: "2026-10-24T12:00:00.000Z",
+  sent_at: "2026-10-23T12:00:00.000Z",
   service_version: "test",
-  manifest: { device_configuration_version: 1, generated_at: "2026-10-24T12:00:00.000Z", simulator: true, modules: [] },
+  manifest: { device_configuration_version: 1, generated_at: "2026-10-23T12:00:00.000Z", simulator: true, modules: [] },
   snapshot: null,
   events: [{ event_id: "11111111-1111-4111-8111-111111111111", kind: "notice", text: "Sophi is on.", ago_ms: 1500 }],
 };
@@ -39,7 +39,7 @@ describe("HTTP cloud client (against the fake cloud on 127.0.0.1, walker contrac
     expect(await client.heartbeat(heartbeatBody, signal())).toEqual({ configuration_version: 1, open_proposal: null });
     expect(await client.configuration(signal())).toMatchObject({ version: 1 });
     expect(cloud.devices.get(result.device_id)?.events).toEqual([
-      { event_id: heartbeatBody.events[0]!.event_id, kind: "notice", text: "Sophi is on.", at: "2026-10-24T11:59:58.500Z" },
+      { event_id: heartbeatBody.events[0]!.event_id, kind: "notice", text: "Sophi is on.", at: "2026-10-23T11:59:58.500Z" },
     ]);
   });
 

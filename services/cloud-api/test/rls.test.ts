@@ -189,8 +189,8 @@ function rlsSuite(stack: LocalStack) {
       expect(error?.code).toBe(PERMISSION_DENIED);
       expect(data).toBeNull();
       expect((await anon.from(table).insert({})).error?.code).toBe(PERMISSION_DENIED);
-      expect((await anon.from(table).update({ created_at: new Date().toISOString() }).neq("created_at", "1970-01-01")).error?.code).toBe(PERMISSION_DENIED);
-      expect((await anon.from(table).delete().neq("created_at", "1970-01-01")).error?.code).toBe(PERMISSION_DENIED);
+      expect((await anon.from(table).update({ created_at: new Date().toISOString() }).neq("created_at", "2026-10-23")).error?.code).toBe(PERMISSION_DENIED);
+      expect((await anon.from(table).delete().neq("created_at", "2026-10-23")).error?.code).toBe(PERMISSION_DENIED);
     }
     const save = await anon.rpc("save_onboarding_session", saveArgs({ session: demo, owner: { kind: "demo", token_hash: "" } }, 0, hashDemoToken(demoToken)));
     expect(save.error?.code).toBe(PERMISSION_DENIED);

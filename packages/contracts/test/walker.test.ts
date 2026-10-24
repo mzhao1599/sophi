@@ -24,7 +24,7 @@ import {
   type CapabilityManifest,
 } from "../src";
 
-const T0 = "2026-10-24T09:00:00.000Z";
+const T0 = "2026-10-23T09:00:00.000Z";
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 const configuration = WalkerConfigurationSchema.parse({ version: 1, ...WALKER_SETUP, created_at: T0 });
@@ -74,18 +74,18 @@ describe("cues changes", () => {
 
 describe("zone freshness across two clocks", () => {
   // The Pi's clock runs an hour behind the server's: only each clock's own differences count.
-  const piSent = "2026-10-24T08:00:00.300Z";
+  const piSent = "2026-10-23T08:00:00.300Z";
   const snapshot = SensorSnapshotSchema.parse({
     generated_at: piSent,
     zones: [
       { zone: "front_left", instance_id: "tof-front-01", mm: 610, quality: "valid",
-        captured_at: "2026-10-24T08:00:00.200Z", expires_at: "2026-10-24T08:00:00.700Z" },
+        captured_at: "2026-10-23T08:00:00.200Z", expires_at: "2026-10-23T08:00:00.700Z" },
       { zone: "front_right", instance_id: "tof-front-01", mm: null, quality: "invalid",
-        captured_at: "2026-10-24T08:00:00.200Z", expires_at: "2026-10-24T08:00:00.700Z" },
+        captured_at: "2026-10-23T08:00:00.200Z", expires_at: "2026-10-23T08:00:00.700Z" },
       { zone: "rear", instance_id: "tof-front-01", mm: 900, quality: "valid",
-        captured_at: "2026-10-24T07:59:59.000Z", expires_at: "2026-10-24T07:59:59.500Z" },
+        captured_at: "2026-10-23T07:59:59.000Z", expires_at: "2026-10-23T07:59:59.500Z" },
       { zone: "left", instance_id: "tof-ghost-01", mm: 300, quality: "valid",
-        captured_at: "2026-10-24T08:00:00.200Z", expires_at: "2026-10-24T08:00:00.700Z" },
+        captured_at: "2026-10-23T08:00:00.200Z", expires_at: "2026-10-23T08:00:00.700Z" },
     ],
   });
   const received = Date.parse(T0);
@@ -178,12 +178,12 @@ describe("proposals", () => {
   const proposal = ProposalViewSchema.parse({
     proposal_id: uuid(2), client_turn_id: uuid(1), kind: "cues_change", from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"],
     base_configuration_version: 1, summary: "Switch your alerts from buzzing to short sounds.", state: "open",
-    created_at: T0, expires_at: "2026-10-24T09:01:00.000Z", configuration_version: null,
+    created_at: T0, expires_at: "2026-10-23T09:01:00.000Z", configuration_version: null,
   });
 
   it("is open only before it expires", () => {
-    expect(isOpenProposal(proposal, new Date("2026-10-24T09:00:59.999Z"))).toBe(true);
-    expect(isOpenProposal(proposal, new Date("2026-10-24T09:01:00.000Z"))).toBe(false);
+    expect(isOpenProposal(proposal, new Date("2026-10-23T09:00:59.999Z"))).toBe(true);
+    expect(isOpenProposal(proposal, new Date("2026-10-23T09:01:00.000Z"))).toBe(false);
     expect(isOpenProposal({ ...proposal, state: "superseded" }, new Date(T0))).toBe(false);
   });
 
@@ -264,7 +264,7 @@ describe("status view", () => {
     const superseded = {
       proposal_id: uuid(2), client_turn_id: uuid(1), kind: "cues_change", from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"],
       base_configuration_version: 1, summary: "Switch your alerts from buzzing to short sounds.", state: "superseded",
-      created_at: T0, expires_at: "2026-10-24T09:01:00.000Z", configuration_version: null,
+      created_at: T0, expires_at: "2026-10-23T09:01:00.000Z", configuration_version: null,
     };
     expect(WalkerStatusViewSchema.safeParse({ ...status, online: true, open_proposal: superseded }).success).toBe(false);
     expect(WalkerStatusViewSchema.safeParse({ ...status, online: true, open_proposal: { ...superseded, state: "open" } }).success).toBe(true);
@@ -293,7 +293,7 @@ describe("turn responses", () => {
     const proposal = {
       proposal_id: uuid(2), client_turn_id: uuid(1), kind: "cues_change", from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"],
       base_configuration_version: 1, summary: "Switch your alerts to short sounds and spoken messages.", state: "open",
-      created_at: T0, expires_at: "2026-10-24T09:01:00.000Z", configuration_version: null,
+      created_at: T0, expires_at: "2026-10-23T09:01:00.000Z", configuration_version: null,
     };
     expect(WalkerTurnResponseSchema.safeParse({ turn, proposal, speech: null, status }).success).toBe(true);
     expect(WalkerTurnResponseSchema.safeParse({ turn, proposal: { ...proposal, client_turn_id: uuid(9) }, speech: null, status }).success).toBe(false);

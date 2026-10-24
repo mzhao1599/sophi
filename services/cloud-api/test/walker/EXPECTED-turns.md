@@ -1,6 +1,6 @@
 # Walker cloud, piece 3: expected results for the assistant turn
 
-Written before the code (2026-10-24). Rows marked *(review)* were added or corrected after the break-it review. The walker in every case is the demo walker: the `WALKER_SETUP` configuration (hand controls, obstacle sensors, voice; alerts by buzzing and speech), running as the simulator with real hand controls and a simulated ToF sensor whose front zone reads 640 mm. Stub-model cases run against both stores; the live rows run against Gemini (`gemini-3.7-flash`) with Max's key.
+Written before the code (2026-10-23). Rows marked *(review)* were added or corrected after the break-it review. The walker in every case is the demo walker: the `WALKER_SETUP` configuration (hand controls, obstacle sensors, voice; alerts by buzzing and speech), running as the simulator with real hand controls and a simulated ToF sensor whose front zone reads 640 mm. Stub-model cases run against both stores; the live rows run against Gemini (`gemini-3.7-flash`) with Max's key.
 
 ## The demo path (design beats 2 to 5)
 
@@ -27,9 +27,9 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 | A proposal opens | Its summary comes from the payload, it records the turn's `client_turn_id`, and the reply ends " Press Confirm to do it." |
 | A turn arrives with a proposal already open | The reply ends " Press Confirm to do it." too (once, not twice) |
 | A model reply that already says it made the change | Nothing changes: only Confirm by id changes the configuration (the model has no way to confirm). *(review)* Its words aren't spoken: the reply is the payload's offer, so a change that also drops speech says so |
-| *(review)* `topics` includes `parts` and a reported part is simulated (and the obstacles line didn't apply) | " Some of this walker's parts are simulated." is added; when every reported part is simulated (the simulator), " All of this walker's parts are simulated." instead (rehearsal, 2026-10-24) |
-| *(rehearsal, 2026-10-24)* A measured zone in the context | `reading_age` is the reading's age as it should be said, never milliseconds: 0 ms and 999 ms are "just now", 1,000 ms is "1 second ago", 44,000 ms is "44 seconds ago" (whole seconds, rounded down). With no age there's no wording, and an unknown zone has only `unknown` (why). The status view keeps the contract's `age_ms` for the page |
-| *(rehearsal, 2026-10-24)* The policy, for a walker whose every reported part is simulated | It says the server adds "All of this walker's parts are simulated." itself when obstacles isn't in topics, so the model leaves that out. The server's rule above is unchanged |
+| *(review)* `topics` includes `parts` and a reported part is simulated (and the obstacles line didn't apply) | " Some of this walker's parts are simulated." is added; when every reported part is simulated (the simulator), " All of this walker's parts are simulated." instead (rehearsal, 2026-10-23) |
+| *(rehearsal, 2026-10-23)* A measured zone in the context | `reading_age` is the reading's age as it should be said, never milliseconds: 0 ms and 999 ms are "just now", 1,000 ms is "1 second ago", 44,000 ms is "44 seconds ago" (whole seconds, rounded down). With no age there's no wording, and an unknown zone has only `unknown` (why). The status view keeps the contract's `age_ms` for the page |
+| *(rehearsal, 2026-10-23)* The policy, for a walker whose every reported part is simulated | It says the server adds "All of this walker's parts are simulated." itself when obstacles isn't in topics, so the model leaves that out. The server's rule above is unchanged |
 | *(review)* A replay after the proposal expired, or the walker dropping offline during the model call | The response's `proposal` is read after expiry: `expired`, never `open` |
 | *(review)* The walker is forgotten while the model answers | `404 not_found`, not `503` |
 | A device turn carries its own snapshot | That snapshot, received now, is the turn's context instead of the heartbeat's (a stale heartbeat zone reads as measured from the turn's snapshot) |
@@ -55,7 +55,7 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 
 | Case | Expected |
 | --- | --- |
-| A walker turn with `CARTESIA_API_KEY` set and Cartesia answering a 16 kHz mono 16-bit WAV | `speech: { mime: "audio/wav", data_base64 }`, `voiced_by: "cartesia"`. The request is `POST https://api.cartesia.ai/tts/bytes` with `Authorization: Bearer`, `Cartesia-Version: 2026-08-14`, model `sonic-3.6`, a stock voice id, `output_format` `{ container: "wav", encoding: "pcm_s16le", sample_rate: 16000 }`, `language: "en"`, and the reply text only |
+| A walker turn with `CARTESIA_API_KEY` set and Cartesia answering a 16 kHz mono 16-bit WAV | `speech: { mime: "audio/wav", data_base64 }`, `voiced_by: "cartesia"`. The request is `POST https://api.cartesia.ai/tts/bytes` with `Authorization: Bearer`, `Cartesia-Version: 2026-10-23`, model `sonic-3.6`, a stock voice id, `output_format` `{ container: "wav", encoding: "pcm_s16le", sample_rate: 16000 }`, `language: "en"`, and the reply text only |
 | No key; an HTTP error; more than 3 s; audio over `SPEECH_MAX_BYTES`; audio that isn't 16 kHz mono 16-bit WAV | `speech: null`, `voiced_by: "walker"` |
 | A page turn | Never spoken: `speech: null`, `voiced_by: null` |
 | The whole walker turn *(review)* | The server's part, from reading the upload to the reply and its audio, stays within 8 s, leaving time for the audio's download before the Pi's 10 s: the model gets at most 8 s and only what's left of the budget, the voice at most 3 s and only what's left |

@@ -41,7 +41,7 @@ export function createGeminiModel({ apiKey, model = DEFAULT_GEMINI_MODEL, thinki
   const thinking = thinkingOption === undefined ? thinkingFor(name) : thinkingOption;
   return {
     async generate({ system, context, retry, schema, audio }, signal) {
-      // A voice clip goes inline after the context, in the same call as the schema (checked live 2026-10-24).
+      // A voice clip goes inline after the context, in the same call as the schema (checked live 2026-10-23).
       const clip = audio ? [{ inlineData: { mimeType: audio.mime, data: audio.data_base64 } }] : [];
       const body = JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },

@@ -631,7 +631,7 @@ describe("Anthropic model client", () => {
     const req = captured!;
     expect(req.url).toMatch(/\/v1\/messages\?beta=true$/);
     expect(req.headers.get("x-api-key")).toBe("test-key");
-    expect(req.headers.get("anthropic-beta")).toContain("server-side-fallback-2026-07-01");
+    expect(req.headers.get("anthropic-beta")).toContain("server-side-fallback-2026-10-23");
     expect(req.body).toMatchObject({
       model: "claude-opus-5-5",
       fallbacks: "default",

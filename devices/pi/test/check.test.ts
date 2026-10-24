@@ -352,7 +352,7 @@ describe("walker check: audio, voice, screen, GPIO", () => {
       "/sys/class/drm/card1-HDMI-A-1/modes": modes,
       "/sys/class/drm/card1-HDMI-A-2/status": "disconnected\n",
       "/sys/class/drm/card1-HDMI-A-2/modes": "",
-      "/sys/class/drm/version": "drm 1.1.0 20060810\n",
+      "/sys/class/drm/version": "drm 1.1.0 20261023\n",
       "/proc/bus/input/devices": INPUT_DEVICES,
     });
     const good = makeCtx({ files: fakeFiles(drm("connected", "800x480\n800x480\n640x480\n")) });

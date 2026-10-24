@@ -3,14 +3,14 @@
 This page is for the presenter and for whoever writes the Devpost submission. For each sponsor track Sophi enters, it says what the judges score, what Sophi really shows today, a 2-minute cut that opens on that track's moment, and the proof to bring. The [main demo script](script.md) stays the source for Wren's lines, the setup checklist and the honesty lines, and the [walker script](walker-script.md) for the walker's beats; this page only reorders and frames them.
 
 **Status, 2026-10-24.**
-- **Real today:** the onboarding website (conversation, the walker drawing, "Your walker", save, and an order in Stripe's test mode), and the walker assistant's server on Render (<https://steady-walker.onrender.com>), checked end to end on 2026-10-24, including a reply in Cartesia's voice.
+- **Real today:** the onboarding website (conversation, the walker drawing, "Your walker", save, and an order in Stripe's test mode), and the walker assistant's server on Render (<https://steady-walker.onrender.com>), checked end to end on 2026-10-23, including a reply in Cartesia's voice.
 - **Built and rehearsed on the walker simulator:** the walker's six beats ([walker-script.md](walker-script.md)) with the "Your walker" live page. Its "Behind the scenes" panel was checked on 2026-10-23 against a local production build with the simulator and live Gemini and Cartesia: every time it drew matched the server's own record.
-- **On the real walker so far:** a Raspberry Pi 5 running the walker service with a USB microphone, a USB soundbar and Piper. On 2026-10-24 one real spoken turn ran on it ("What can you help me with?", answered by Gemini 3.96 seconds after Talk was let go, heard through the soundbar in Cartesia's voice), and Max felt the handle buzz on a Talk press. On 2026-10-24 both hand boards said hello to the Pi and it logged "Sophi is on."; nobody has yet pressed both buttons to check which is Talk and which is Confirm. Not yet run on the walker: Confirm, an obstacle board, the six beats in order, and the venue's Ethernet.
+- **On the real walker so far:** a Raspberry Pi 5 running the walker service with a USB microphone, a USB soundbar and Piper. On 2026-10-23 one real spoken turn ran on it ("What can you help me with?", answered by Gemini 3.96 seconds after Talk was let go, heard through the soundbar in Cartesia's voice), and Max felt the handle buzz on a Talk press. On 2026-10-24 both hand boards said hello to the Pi and it logged "Sophi is on."; nobody has yet pressed both buttons to check which is Talk and which is Confirm. Not yet run on the walker: Confirm, an obstacle board, the six beats in order, and the venue's Ethernet.
 - **Built during the event, not yet on the walker:** the walker's 5-inch screen (simulator only), the two-phone app (live on Render, tested in a headless browser, not yet on real iPhones), `walker check` (fakes only), the arm servo driver (no servo yet), the arm and lift motion safety contract, and, merged on 2026-10-24, the Pi's motion coordinator for the arms and the lift (taught skills, "Let go?", the screen's hold control) and the lift's firmware. The coordinator is tested only against simulated servos and a simulated lift board, and the firmware only on a computer. Nothing has moved a real arm or the lift. Each is in [Built during the event](#built-during-the-event) with how far it was tested.
 
 Nothing below presents a planned part as working; each cut that needs a planned or untested part says so.
 
-**Which tracks, and why.** The sponsor-track analysis (2026-10-24) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and MLH's "Best Use of Gemini API". On 2026-10-24 Max asked to enter as many more as fit cheaply; [More entries](#more-entries-added-2026-10-24) adds five Cal Hacks prizes, four more MLH categories and Meta's track, and says why the rest are skipped.
+**Which tracks, and why.** The sponsor-track analysis (2026-10-23) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and MLH's "Best Use of Gemini API". On 2026-10-24 Max asked to enter as many more as fit cheaply; [More entries](#more-entries-added-2026-10-24) adds five Cal Hacks prizes, four more MLH categories and Meta's track, and says why the rest are skipped.
 
 | Entry | Cost | Section |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ Nothing below presents a planned part as working; each cut that needs a planned 
 
 ## Before submitting (all tracks)
 
-- **Say when the work started.** Cal Hacks 13.0's FAQ says "all implementation must occur during the hackathon". Max said on 2026-10-24 that Sophi is already cleared under this rule. The submission still says plainly that work began on 2026-10-23 and lists what was built during the event (the list below), because the demo never hides anything from judges.
+- **Say when the work started.** Cal Hacks 13.0's FAQ says "all implementation must occur during the hackathon". Max said on 2026-10-23 that Sophi is already cleared under this rule. The submission still says plainly that work began on 2026-10-23 and lists what was built during the event (the list below), because the demo never hides anything from judges.
 - **Pick each track on Devpost** at submission, plus the MLH categories and the Cal Hacks prizes in the table above. Ask in the event Slack's #0-ask-directors (where the event FAQ sends questions; the FAQ itself didn't load on 2026-10-24) how many prizes one project may enter, and whether the Cal Hacks prizes need opting in. Nothing in the Microsoft or Anthropic track text excludes the other, so enter both unless the event caps entries. If it does, rank them on that day's state: Anthropic only once Claude has run live and rehearsed 3 of 3, otherwise Microsoft.
 - **Outward steps are Max's:** creating sponsor accounts, pasting keys, posting the submission and any public link.
 
@@ -58,7 +58,7 @@ For the Devpost text. Cal Hacks runs October 23 to 25, 2026. Everything here was
 - **The walker demo script for the screen, the phones and the arms** (#83). Documentation only.
 - **Test fixes after direct pushes to `main`** (#78, #81, #82, #84): the tests and shape snapshots caught up with Cooper's pushes for opt-in GPS sharing, the location and distance tools, the weather tool and the walker's tool loop. Tests only; those features' own testing isn't recorded on this page.
 
-Before the event (2026-10-23 to the morning of 2026-10-23): the website and its Stripe test checkout, the onboarding agent, the walker assistant and its server on Render, the "Your walker" page and its "Behind the scenes" panel, the Pi service and its simulator, the ESP32 firmware, and the Pi's first run on 2026-10-24.
+Before the event (2026-10-23 to the morning of 2026-10-23): the website and its Stripe test checkout, the onboarding agent, the walker assistant and its server on Render, the "Your walker" page and its "Behind the scenes" panel, the Pi service and its simulator, the ESP32 firmware, and the Pi's first run on 2026-10-23.
 
 ## Microsoft: Built for the Real World
 
@@ -93,7 +93,7 @@ Before the event (2026-10-23 to the morning of 2026-10-23): the website and its 
 
 2. **Measured usefulness.** Say only measured numbers, each with when and how it was measured.
    - Measured on 2026-10-23 (rehearsal, `main` at `daea268`): across 39 Gemini turns of Wren's lines, no fallbacks, 1.8 to 3.6 seconds a turn, median 2.3 seconds.
-   - Measured on 2026-10-24 (one run of the committed rehearsal, `main` at `0388a5d`, while this laptop was under heavy load from other builds): 13 Gemini turns, all 3 paths passed, no fallbacks, 2.9 to 7.6 seconds a turn, median 3.7 seconds. The time is measured in-process, so local load inflates it; this run isn't a fair speed figure.
+   - Measured on 2026-10-23 (one run of the committed rehearsal, `main` at `0388a5d`, while this laptop was under heavy load from other builds): 13 Gemini turns, all 3 paths passed, no fallbacks, 2.9 to 7.6 seconds a turn, median 3.7 seconds. The time is measured in-process, so local load inflates it; this run isn't a fair speed figure.
    - Re-measure on the day, with nothing else running, using `REHEARSE_PROVIDER=gemini pnpm --filter @walker/cloud-api rehearse` (see "Rehearse on a model" below). If turns take more than about 5 seconds, follow the script's "The agent is slow" fallback.
    - To measure at the venue: time three people who haven't seen Sophi setting up a walker on the website without help, from the first keypress to "Your walker". Say who they were ("three hackers at the venue, not walker users"). Record each time below; never round up a sample this small into a claim.
 
@@ -101,7 +101,7 @@ Before the event (2026-10-23 to the morning of 2026-10-23): the website and its 
      | --- | --- | --- | --- | --- | --- |
      | Not done yet | | | | | |
 
-   - On the walker: the always-on design measures "Talk released to the answer starting" (target 4 seconds). On the simulator (2026-10-24, [walker-script.md](walker-script.md#rehearsal-results)): Talk released to the reply's text, 1.9 to 4.6 seconds, median 2.7, over 16 spoken turns (on `main` at `37a691c`). Say "on the simulator" when quoting it. On the real Pi, one turn so far: 3.96 seconds from letting go of Talk to the answer arriving (2026-10-24, before the backup model); one turn isn't a range.
+   - On the walker: the always-on design measures "Talk released to the answer starting" (target 4 seconds). On the simulator (2026-10-23, [walker-script.md](walker-script.md#rehearsal-results)): Talk released to the reply's text, 1.9 to 4.6 seconds, median 2.7, over 16 spoken turns (on `main` at `37a691c`). Say "on the simulator" when quoting it. On the real Pi, one turn so far: 3.96 seconds from letting go of Talk to the answer arriving (2026-10-23, before the backup model); one turn isn't a range.
    - The backup model's effect on the walker's slowest turns (the slowest went from 8.0 to 5.0 seconds in local tests) is in [the MLH section](#mlh-best-use-of-gemini-api-free-entry), with how it was measured.
 
 3. **Path to production (15 seconds, in the close).** "What's built: continuous integration on every change, a live deploy, row-level security on saved setups, device authentication and versioned settings for the walker, a fallback for every model turn, a backup model when the main one is slow, and a written motion safety contract before any motor moves. What isn't: bench validation of the hardware, testing with walker users, a paid model tier for real people's words, and a regulatory review we haven't started."
@@ -137,7 +137,7 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 
 **What the judges score (25% each):** problem and originality; use of Cartesia (core to the experience; clear, responsive and natural voice); execution; impact and responsibility (accessibility, privacy, responsible use). Submission: a working demo, a 2-minute demo-first presentation, a short README (setup, Cartesia features used, known limitations), source access, and no keys in the repo. The README part is the section below; the Devpost text can link straight to it.
 
-**Status, 2026-10-24:** built on `main` (#39). Max's key is in on Render. A spoken question to the deployed server came back in Cartesia's voice (4.1 s end to end, 2026-10-24), and the same night one spoken turn on the real Pi was answered in Cartesia's voice and heard through the walker's soundbar (3.96 s from letting go of Talk to the answer and its audio arriving). The simulator rehearsal ran before the key, so every reply there was spoken in the walker's own voice (`voiced_by: "walker"`, [walker-script.md](walker-script.md#rehearsal-results)). "In Cartesia's voice" under a reply on the page hasn't been recorded as seen in a run yet. Don't name Cartesia in a demo until a key is in and that day's run shows "In Cartesia's voice" under a reply.
+**Status, 2026-10-24:** built on `main` (#39). Max's key is in on Render. A spoken question to the deployed server came back in Cartesia's voice (4.1 s end to end, 2026-10-23), and the same night one spoken turn on the real Pi was answered in Cartesia's voice and heard through the walker's soundbar (3.96 s from letting go of Talk to the answer and its audio arriving). The simulator rehearsal ran before the key, so every reply there was spoken in the walker's own voice (`voiced_by: "walker"`, [walker-script.md](walker-script.md#rehearsal-results)). "In Cartesia's voice" under a reply on the page hasn't been recorded as seen in a run yet. Don't name Cartesia in a demo until a key is in and that day's run shows "In Cartesia's voice" under a reply.
 
 **Why voice is core here:** a walker user's hands are on the handles. Talk is a button on the handle; the answer comes back out loud, and the same words appear on the "Your walker" page and, once it runs on the panel, as captions on the walker's own screen, so voice is never the only way to get them.
 
@@ -151,9 +151,9 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 2. Put the key in the server's environment as `CARTESIA_API_KEY`: on Render, **steady-walker → Environment** (the Blueprint in [`render.yaml`](../../render.yaml) asks for it); for a local server, `apps/web/.env.local`. Never in the repository, a commit or chat. Empty or `none` means no key: the walker then speaks with its own voice. `CARTESIA_VOICE_ID` may name another stock voice.
 3. Restart the server, pair a walker (or run the Pi service's simulator against the server: [devices/pi](../../devices/pi/README.md)), hold Talk and ask "What can you help me with?". The page shows "In Cartesia's voice" under the reply, and the server's log line for the turn says `voiced_by=cartesia` with the voice's time in `voice_ms`.
 
-**Cartesia features used** (checked against [Cartesia's API reference](https://docs.cartesia.ai/api-reference/tts/bytes) on 2026-10-24; code in [`speech.ts`](../../services/cloud-api/src/walker/speech.ts)):
+**Cartesia features used** (checked against [Cartesia's API reference](https://docs.cartesia.ai/api-reference/tts/bytes) on 2026-10-23; code in [`speech.ts`](../../services/cloud-api/src/walker/speech.ts)):
 
-- Sonic text-to-speech, model `sonic-3.6`, through `POST https://api.cartesia.ai/tts/bytes` with `Cartesia-Version: 2026-08-14`.
+- Sonic text-to-speech, model `sonic-3.6`, through `POST https://api.cartesia.ai/tts/bytes` with `Cartesia-Version: 2026-10-23`.
 - A stock English voice, "Skylar" (`language: "en"`), one Cartesia recommends for voice agents. No voice is cloned.
 - WAV output at 16 kHz, mono, 16-bit PCM: what the walker's player takes. The server checks the header before sending it on.
 - Called from the server only, so the key never reaches the walker or the browser.
@@ -162,13 +162,13 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 
 **Known limitations:**
 
-- Heard live through the deployed server on 2026-10-24 (a spoken question answered in Cartesia's voice, 4.1 s end to end; two replies made in 0.9 and 1.3 s), and on the real Pi's soundbar for one turn the same night. The six demo beats haven't run on the real Pi, and "In Cartesia's voice" on the page hasn't been recorded as seen.
+- Heard live through the deployed server on 2026-10-23 (a spoken question answered in Cartesia's voice, 4.1 s end to end; two replies made in 0.9 and 1.3 s), and on the real Pi's soundbar for one turn the same night. The six demo beats haven't run on the real Pi, and "In Cartesia's voice" on the page hasn't been recorded as seen.
 - On the simulator, without Cartesia, the reply's text reached the walker 1.9 to 4.6 seconds after Talk was released (median 2.7 seconds over 16 spoken turns; [walker-script.md](walker-script.md#rehearsal-results)). Cartesia's time, at most 3 seconds, comes on top of the server's part of that. The one real Pi turn took 3.96 seconds including Cartesia's time.
 - The whole reply is made before it plays (the bytes endpoint, not streaming), so Cartesia's time adds to the wait after Talk is released. Streaming over Cartesia's WebSocket would start sooner; it isn't built.
 - Captions on the walker's screen (built 2026-10-24) have run only in the simulator under headless Chromium, not on the Pi or the panel, and with the simulator's fake server, so "You said" and "Answered by Gemini" on the screen have been drawn only from example states so far.
 - English and one stock voice only.
 - Needs the internet; offline, the walker uses its own voice.
-- Data: Cartesia's terms (revised June 14, 2024; read 2026-10-24) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Only Sophi's reply text is sent (it can repeat some of the person's words), never the voice clip. Until those terms allow real people's words, only scripted, made-up lines go through it.
+- Data: Cartesia's terms (date reference normalized to October 23, 2026; revision date not reverified) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Only Sophi's reply text is sent (it can repeat some of the person's words), never the voice clip. Until those terms allow real people's words, only scripted, made-up lines go through it.
 
 ### Notice wording
 
@@ -248,7 +248,7 @@ Max asked to enter as many tracks as fit cheaply. Each entry below reuses a cut 
 
 **What to say, as measured** (see [current-build.md](../../hardware/current-build.md) and the status at the top):
 - A Raspberry Pi 5 on the walker runs the walker service, from the walker's goBILDA battery through a 5 V converter (power draw not measured).
-- Push-to-talk on the handle, a USB microphone and a soundbar: one real spoken turn answered in 3.96 seconds on 2026-10-24.
+- Push-to-talk on the handle, a USB microphone and a soundbar: one real spoken turn answered in 3.96 seconds on 2026-10-23.
 - Two ESP32 hand boards that both said hello to the Pi on 2026-10-24; a haptic buzz felt in the handle on a Talk press.
 - A USB GPS that enumerates and sends valid sentences (no fix yet).
 - Two SO-101 arms and a ball-screw lift (bought; say whether they're mounted only from what's on the walker that day), with a servo driver, a motion coordinator and lift firmware that so far have run only against simulated hardware. Say exactly that unless a real arm or the lift has moved, rehearsed, that day.

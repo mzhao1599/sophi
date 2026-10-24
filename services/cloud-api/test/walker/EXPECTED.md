@@ -1,6 +1,6 @@
 # Walker cloud, piece 2: expected results
 
-Written before the code (2026-10-24). Rows marked *(review)* were added after the break-it review found the gap. Each row is a test case. The service cases run against both stores: the in-memory one always, and Postgres when `WALKER_TEST_DATABASE_URL` points at a local cluster. Times come from a fake clock, so nothing sleeps. "Owner A" and "owner B" are two browsers' `walker_owner` cookies; "walker 1" belongs to owner A.
+Written before the code (2026-10-23). Rows marked *(review)* were added after the break-it review found the gap. Each row is a test case. The service cases run against both stores: the in-memory one always, and Postgres when `WALKER_TEST_DATABASE_URL` points at a local cluster. Times come from a fake clock, so nothing sleeps. "Owner A" and "owner B" are two browsers' `walker_owner` cookies; "walker 1" belongs to owner A.
 
 ## Auth
 

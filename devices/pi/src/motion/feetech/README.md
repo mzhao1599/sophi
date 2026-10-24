@@ -57,7 +57,7 @@ const feedback = await bus.readFeedback([1, 2, 3, 4, 5, 6]); // one SYNC READ of
 
 ## References
 
-- **Feetech's official SDKs:** [FTServo_Python](https://github.com/ftservo/FTServo_Python) (`scservo_sdk/sms_sts.py`, `protocol_packet_handler.py`, read 2026-10-23) and [FTServo_Arduino](https://github.com/ftservo/FTServo_Arduino) (`src/SMS_STS.h`, `SMS_STS.cpp`, `SCS.cpp`, `INST.h`, dated 2024-11/12 in their headers).
+- **Feetech's official SDKs:** [FTServo_Python](https://github.com/ftservo/FTServo_Python) (`scservo_sdk/sms_sts.py`, `protocol_packet_handler.py`, read 2026-10-23) and [FTServo_Arduino](https://github.com/ftservo/FTServo_Arduino) (`src/SMS_STS.h`, `SMS_STS.cpp`, `SCS.cpp`, `INST.h`, dated 2026-10-23 in their headers).
 - **`feetech-servo-sdk` 1.0.0 on PyPI** (`scservo_sdk`), the package LeRobot installs. It is a third-party mirror (Adam-Software/FEETECH-Servo-Python-SDK) of Feetech's code; LeRobot calls it unofficial. Its packet builders are the same as FTServo_Python's. The golden vectors come from it.
 - **LeRobot v0.4.4** [`src/lerobot/motors/feetech/tables.py`](https://github.com/huggingface/lerobot/blob/v0.4.4/src/lerobot/motors/feetech/tables.py) and `feetech.py`, which drove SO-100/SO-101 arms. LeRobot's `main` (2026-10) has since replaced these with the `rustypot` crate and removed `tables.py`.
 - **Waveshare Bus Servo Adapter (A)** [wiki](https://www.waveshare.com/wiki/Bus_Servo_Adapter_(A)) and [schematic](https://files.waveshare.com/wiki/Bus-Servo-Adapter-(A)/Bus%20Servo%20Adapter%20(A)-Sch.pdf), a common SO-101 adapter. Which board came in our kits is still to be read off the boxes.

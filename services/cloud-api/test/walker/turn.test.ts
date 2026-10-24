@@ -462,7 +462,7 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(r.speech).toEqual({ mime: "audio/wav", data_base64: wav(800).toString("base64") });
       expect(calls).toHaveLength(1);
       expect(calls[0]!.url).toBe("https://api.cartesia.ai/tts/bytes");
-      expect(calls[0]!.init.headers).toEqual({ authorization: "Bearer sk_car_test", "cartesia-version": "2026-08-14", "content-type": "application/json" });
+      expect(calls[0]!.init.headers).toEqual({ authorization: "Bearer sk_car_test", "cartesia-version": "2026-10-23", "content-type": "application/json" });
       expect(JSON.parse(String(calls[0]!.init.body))).toEqual({
         model_id: "sonic-3.6",
         transcript: `Your hand controls work. ${SIMULATED_PARTS}`,

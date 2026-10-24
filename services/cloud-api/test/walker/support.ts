@@ -85,7 +85,7 @@ export async function postgresHarness(url: string): Promise<StoreHarness> {
 
 export const SKIP_POSTGRES = "Skipping the walker Postgres tests: set WALKER_TEST_DATABASE_URL to a local cluster.";
 
-export const T0 = Date.parse("2026-10-24T09:00:00.000Z");
+export const T0 = Date.parse("2026-10-23T09:00:00.000Z");
 
 /** A clock the test moves by hand. */
 export class Clock {

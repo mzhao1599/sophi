@@ -205,7 +205,7 @@ describe("D5: the clock", () => {
     await clock.advance(29_999);
     expect(states.at(-1)!.strip.clock).toBeNull();
     await clock.advance(1);
-    expect(states.at(-1)!.strip.clock).toEqual({ local_time: "2026-10-24T12:00:30" });
+    expect(states.at(-1)!.strip.clock).toEqual({ local_time: "2026-10-23T12:00:30" });
   });
 
   it("shows no time until the clock has synced, and redraws on the minute, not each second", async () => {
@@ -219,11 +219,11 @@ describe("D5: the clock", () => {
     m.link("online");
     m.alerts(["sound"]);
     await clock.advance(59_000);
-    expect(states.at(-1)!.strip.clock).toEqual({ local_time: "2026-10-24T12:00:00" });
+    expect(states.at(-1)!.strip.clock).toEqual({ local_time: "2026-10-23T12:00:00" });
     const before = states.length;
     await clock.advance(1000);
     expect(states.length).toBe(before + 1);
-    expect(states.at(-1)!.strip.clock).toEqual({ local_time: "2026-10-24T12:01:00" });
+    expect(states.at(-1)!.strip.clock).toEqual({ local_time: "2026-10-23T12:01:00" });
   });
 });
 

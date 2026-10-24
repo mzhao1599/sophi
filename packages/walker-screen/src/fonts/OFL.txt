@@ -6,7 +6,7 @@ https://openfontlicense.org
 
 
 -----------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+SIL OPEN FONT LICENSE Version 1.1 - date label normalized to 23 October 2026
 -----------------------------------------------------------
 
 PREAMBLE

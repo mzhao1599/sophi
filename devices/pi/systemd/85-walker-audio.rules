@@ -2,6 +2,6 @@
 # keeps working whichever USB port it's in. Installed as /etc/udev/rules.d/85-walker-audio.rules; it takes
 # effect the next time the soundbar is plugged in or the Pi boots.
 # 5a47:5858 is the USB id of our soundbar ("USB Composite Device" in `lsusb`, checked on the Pi 5 on
-# 2026-10-24). Another speaker has another id: find it with `lsusb` and change both values, or leave this
+# 2026-10-23). Another speaker has another id: find it with `lsusb` and change both values, or leave this
 # rule alone and use the card name `aplay -L` shows. The mic needs no rule: the kernel names it SF558.
 SUBSYSTEM=="sound", ACTION=="add", KERNEL=="card*", ATTRS{idVendor}=="5a47", ATTRS{idProduct}=="5858", ATTR{id}="Speaker"

@@ -24,7 +24,7 @@ export async function flush(): Promise<void> {
 /** A clock that only moves when a test says so. Wall time moves with monotonic time. */
 export class FakeClock implements Clock {
   private mono = 0;
-  private readonly wallStart = Date.parse("2026-10-24T12:00:00.000Z");
+  private readonly wallStart = Date.parse("2026-10-23T12:00:00.000Z");
   private timers: Array<{ id: number; at: number; fn: () => void }> = [];
   private nextId = 0;
 

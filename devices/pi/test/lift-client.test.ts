@@ -238,7 +238,7 @@ describe("lift client: the port", () => {
     tof.start();
     // The lift board's boot: ROM garbage, then a status before any hello.
     liftPort.sendRaw(Buffer.from([0x00, 0xff, 0x0d, 0x0a]));
-    liftPort.sendRaw("ets Jul 29 2019 12:21:46\r\nrst:0x1 (POWERON_RESET),boot:0x13\r\n");
+    liftPort.sendRaw("ets Oct 23 2026 12:21:46\r\nrst:0x1 (POWERON_RESET),boot:0x13\r\n");
     let liftSeq = 0;
     const status = () => liftPort.sendLine({ ...baseStatus, seq: liftSeq++ });
     await clock.advance(500);

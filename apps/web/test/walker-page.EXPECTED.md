@@ -1,6 +1,6 @@
 # "Your walker" page (`/walker`): expected results
 
-Written before the page was built (2026-10-24). Each line is something the page must do; the unit tests (`walker-page.test.ts`) and the browser-pane run against the fake check them. The contract is `packages/contracts/src/walker.ts`; where this file and the contract disagree, the contract wins.
+Written before the page was built (2026-10-23). Each line is something the page must do; the unit tests (`walker-page.test.ts`) and the browser-pane run against the fake check them. The contract is `packages/contracts/src/walker.ts`; where this file and the contract disagree, the contract wins.
 
 Times below are on the server's clock. The page estimates it from each response's `Date` header (the fake's offset is 0), so a laptop with a wrong clock still counts down correctly to within about a second.
 

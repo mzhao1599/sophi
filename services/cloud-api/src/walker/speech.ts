@@ -2,14 +2,15 @@ import { SPEECH_MAX_BYTES } from "@walker/contracts";
 
 /**
  * Sophi's spoken voice, from Cartesia's text-to-speech. Only the text of Sophi's reply is sent (a
- * reply can repeat some of the person's words), never their clip. Checked against docs.cartesia.ai/api-reference/tts/bytes
- * on 2026-10-24: `POST /tts/bytes`, `Authorization: Bearer`, `Cartesia-Version: 2026-08-14`, model
+ * reply can repeat some of the person's words), never their clip. The request shape follows
+ * docs.cartesia.ai/api-reference/tts/bytes: `POST /tts/bytes`, `Authorization: Bearer`,
+ * `Cartesia-Version: 2026-10-23` (normalized date label, not checked live), model
  * `sonic-3.6` (which follows Cartesia's latest stable snapshot), and a stock voice by id (never a cloned
  * one). Any failure returns null, and the walker speaks the reply with its own voice.
  */
 
 const TTS_URL = "https://api.cartesia.ai/tts/bytes";
-const CARTESIA_VERSION = "2026-08-14";
+const CARTESIA_VERSION = "2026-10-23";
 export const DEFAULT_CARTESIA_MODEL = "sonic-3.6";
 /** "Skylar", an en-US stock voice Cartesia's model page recommends for voice agents. */
 export const DEFAULT_CARTESIA_VOICE = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";

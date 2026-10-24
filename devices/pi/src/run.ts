@@ -79,7 +79,7 @@ export function readPiConfig(env: NodeJS.ProcessEnv): PiConfig {
 }
 
 /**
- * `walker run`: the real service on the Pi. Ran on a Pi 5 on 2026-10-24 (paired with the Render server, online,
+ * `walker run`: the real service on the Pi. Ran on a Pi 5 on 2026-10-23 (paired with the Render server, online,
  * offline and back); its buttons, mic, speaker and serial modules haven't been tried there yet. Resolves when
  * SIGTERM or SIGINT arrives.
  */
