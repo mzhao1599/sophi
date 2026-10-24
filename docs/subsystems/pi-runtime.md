@@ -42,7 +42,7 @@ The perception ESP32 reports `front_left=near` with timestamp and quality. Pi ch
 
 ## Cloud exchange
 
-Use the [API contract](../interfaces.md). Device credentials are separate from user sessions and can be revoked. Store credentials with restricted filesystem permissions. Validate server TLS and response schemas. Apply timeouts and backoff; do not block the sensor loop on network I/O. Every action has an ID and expiry. The Pi reports `rejected` with a reason when the device lacks a required module, is stopped, or has stale sensors.
+Use the [API contract](../interfaces.md). The capability manifest, sensor snapshot and action request/status are specified (not implemented) in [`packages/contracts/src/device.ts`](../../packages/contracts/src/device.ts), and the serial envelope in [`serial.ts`](../../packages/contracts/src/serial.ts); a Python runtime needs equivalents that pass the same fixtures. Device credentials are separate from user sessions and can be revoked. Store credentials with restricted filesystem permissions. Validate server TLS and response schemas. Apply timeouts and backoff; do not block the sensor loop on network I/O. Every action has an ID and expiry. The Pi reports `rejected` with a reason when the device lacks a required module, is stopped, or has stale sensors.
 
 ## Motion guard
 

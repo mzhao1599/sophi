@@ -6,7 +6,7 @@
 
 Each ESP32 is a small controller for one module. It samples local inputs or sensors, gives immediate cues, and exchanges short messages with the Pi over a USB serial connection. The Pi acts as USB host and opens each module's serial port. Depending on the chosen ESP32 board, the port may be native USB CDC or a USB-to-UART chip; both can carry the same messages. Select and document the exact board and pins before writing flash instructions.
 
-The initial message format is newline-delimited JSON; see [interfaces](../interfaces.md) for framing, hello, heartbeat, reports, commands, and errors. Keep serial parsing bounded and nonblocking. An invalid line must not crash firmware or hold a motor/haptic on. The Pi maps stable module IDs to logical roles such as `hand_left`; do not rely on connection order.
+The initial message format is newline-delimited JSON; see [interfaces](../interfaces.md) for framing, hello, heartbeat, reports, commands, and errors. The v1 shapes are specified (not yet implemented) in [`packages/contracts/src/serial.ts`](../../packages/contracts/src/serial.ts); a firmware parser should accept every line in `packages/contracts/test/fixtures/serial-v1.valid.jsonl` and reject each line in `serial-v1.invalid.json` with the listed problem code. Keep serial parsing bounded and nonblocking. An invalid line must not crash firmware or hold a motor/haptic on. The Pi maps stable module IDs to logical roles such as `hand_left`; do not rely on connection order.
 
 ## Shared firmware responsibilities
 

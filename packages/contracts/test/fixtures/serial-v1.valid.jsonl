@@ -1,0 +1,9 @@
+{"v":1,"type":"hello","module_id":"hand-left-01","module_type":"hand","seq":0,"capabilities":["button.primary","trigger","haptic"]}
+{"v":1,"type":"hand.input","module_id":"hand-left-01","seq":42,"uptime_ms":156205,"button":"primary","edge":"pressed","trigger":0.72}
+{"v":1,"type":"perception.zones","module_id":"tof-front-01","seq":83,"uptime_ms":26851,"zones":[{"name":"front_left","mm":610,"quality":"valid"},{"name":"front_right","mm":null,"quality":"invalid"}]}
+{"v":1,"type":"haptic.play","module_id":"hand-left-01","seq":74,"request_id":"cue-172","pattern":"near_obstacle","duration_ms":400}
+{"v":1,"type":"ack","module_id":"hand-left-01","seq":75,"request_id":"cue-172","result":"accepted"}
+{"v":1,"type":"heartbeat","module_id":"tof-front-01","seq":84,"uptime_ms":27002,"health":"ok"}
+{"v":1,"type":"hand.input","module_id":"hand-right-01","seq":9,"uptime_ms":30110,"trigger":0.15}
+{"v":1,"type":"ack","module_id":"hand-left-01","seq":76,"request_id":"cue-173","result":"rejected","reason":"invalid_field"}
+{"v":1,"type":"error","module_id":"hand-left-01","seq":77,"code":"malformed"}

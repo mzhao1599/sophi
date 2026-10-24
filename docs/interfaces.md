@@ -1,6 +1,6 @@
 # Proposed interfaces and contracts
 
-This is the first shared contract for web, cloud, Pi, and ESP32 work. The **onboarding routes are implemented** (demo mode only) with schemas in [`packages/contracts/src/onboarding.ts`](../packages/contracts/src/onboarding.ts); everything else here is still a proposal. Define each new schema in `packages/contracts/`, assign a protocol version, and validate on **both** sides. Prefer generated types where practical.
+This is the first shared contract for web, cloud, Pi, and ESP32 work. The **onboarding routes are implemented** (demo mode only) with schemas in [`packages/contracts/src/onboarding.ts`](../packages/contracts/src/onboarding.ts). The serial envelope, capability manifest, sensor snapshot and action request/status are **specified** as v1 schemas in [`serial.ts`](../packages/contracts/src/serial.ts) and [`device.ts`](../packages/contracts/src/device.ts) but **not implemented** on any Pi, ESP32 or cloud route. Everything else here is still a proposal. Define each new schema in `packages/contracts/`, assign a protocol version, and validate on **both** sides. Prefer generated types where practical.
 
 ## Rules shared by all transports
 
@@ -26,9 +26,9 @@ Base path proposal: `/api/v1`. All user routes require an authenticated user ses
 | `POST /devices/pairing-challenges` | User web app | Create short-lived pairing challenge |
 | `POST /devices/pair` | Pi | Claim challenge and receive device-scoped credential |
 | `GET /devices/{id}/configuration` | Pi | Fetch signed/versioned configuration and preferences |
-| `POST /devices/{id}/events` | Pi | Report bounded telemetry, capabilities, fault and task events |
+| `POST /devices/{id}/events` | Pi | Report bounded telemetry, capabilities, fault and task events | Bodies specified (`CapabilityManifestSchema`, `SensorSnapshotSchema`), route not built |
 | `POST /devices/{id}/assistant-turns` | Pi | Send bounded transcript/audio reference and fresh snapshot; receive response/action proposal |
-| `POST /devices/{id}/actions/{actionId}/status` | Pi | Report local acceptance, progress, completion, cancellation, or fault |
+| `POST /devices/{id}/actions/{actionId}/status` | Pi | Report local acceptance, progress, completion, cancellation, or fault | Body specified (`ActionStatusReportSchema`), route not built |
 
 **As built (demo mode):** a session's id is in the URL; a separate secret in an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding` proves the caller started it, and a missing or wrong secret reads as `404`, the same as an unknown id. Sessions live in server memory and are deleted an hour after the last change. Turn inputs are `text` (answers the current question), `answer` (`question_id`, `option_ids`, optional `text`), `skip`, `skip_rest` and `revisit`. Responses carry `ack`, a short acknowledgement for a screen-reader announcement, besides `assistant_text`. With `ONBOARDING_ENGINE=agent` and `ANTHROPIC_API_KEY` set on the server, an LLM agent reads `text` and `answer` turns; the wire format is the same either way. Under the agent, `current_question` is still a bank topic (`id` from `QuestionId`) with the bank's `selection` and `text_label`, but its `prompt` and `detail` are the model's words and `options` can be a subset of the bank's, in the model's order; a multiple-choice topic can come back once as a clarifying follow-up, whose answer is added to the earlier one. A turn the model can't complete (refusal or bad reply twice, API error, 15-second deadline) is answered by the deterministic engine instead of failing, so there is no `503` for a model outage on this route. Because a model turn takes seconds, the service re-checks the revision before saving: of two overlapping turns, the second gets `409 revision_conflict`. Details: [`services/cloud-api`](../services/cloud-api/README.md#onboarding-agent). Errors use `{ "error": { "code", "message", "trace_id", "session"? } }`; a `409 revision_conflict` includes the current session so the client can recover.
 
@@ -78,6 +78,8 @@ The assistant returns **intent**, never raw joint angles from the general conver
 
 The Pi verifies action ID, expiry, configuration version, capability, current state, and user start. The manipulation controller produces local bounded trajectories. The Pi reports `accepted`, `rejected`, `started`, `progress`, and terminal `completed`/`cancelled`/`failed` events. On uncertain retry, query action status before resending. `stop` and `cancel` are local controls; cloud cancellation is supplementary.
 
+**Specified, v1** ([`device.ts`](../packages/contracts/src/device.ts), not implemented): `ActionRequestSchema` accepts only `manipulation.pick_place`, with `object_label` and `destination_label` (at most 64 characters each, treated as data to match against camera detections) and `requires_user_start` fixed to `true`, so no v1 request can skip the user's start. `ActionStatusReportSchema` carries `action_id`, a per-action `seq` (so a retried report is recognisable), `status`, `reported_at` and, for `rejected`, `cancelled` and `failed` only, a `reason` (`expired`, `configuration_mismatch`, `capability_unavailable`, `stale_sensors`, `stopped`, `busy`, `user_cancelled`, `cloud_cancelled`, `fault`). `canFollowActionStatus` encodes the order: `accepted` or `rejected` first; `started`, `cancelled` or `failed` after `accepted`; `progress` (repeatable), `completed`, `cancelled` or `failed` after `started`. Each action ends in exactly one terminal status (`rejected`, `completed`, `cancelled`, `failed`) and nothing follows it.
+
 ## Pi ↔ ESP32 USB serial
 
 Use one USB serial port per controller. Native USB CDC is possible on some ESP32 variants; other boards expose a USB-to-UART bridge. Confirm the actual board before choosing firmware settings. Assign stable IDs from a provisioned device/module ID plus USB serial/udev mapping; never rely on `/dev/ttyUSB0` staying constant. Cameras and arm drivers may have their own USB protocols and are **not** forced through this ESP32 envelope.
@@ -99,13 +101,30 @@ Example bounded command and acknowledgement:
 {"v":1,"type":"ack","module_id":"hand-left-01","seq":75,"request_id":"cue-172","result":"accepted"}
 ```
 
+Example heartbeat and error (a line the module could not read):
+
+```json
+{"v":1,"type":"heartbeat","module_id":"tof-front-01","seq":84,"uptime_ms":27002,"health":"ok"}
+{"v":1,"type":"error","module_id":"hand-left-01","seq":77,"code":"malformed"}
+```
+
+**Specified, v1** ([`serial.ts`](../packages/contracts/src/serial.ts), not implemented on any Pi or ESP32). Fixtures any implementation can run: [`serial-v1.valid.jsonl`](../packages/contracts/test/fixtures/serial-v1.valid.jsonl) (includes every example line above) and [`serial-v1.invalid.json`](../packages/contracts/test/fixtures/serial-v1.invalid.json) (each bad line with the expected problem code).
+
+- Types: `hello`, `heartbeat`, `hand.input`, `perception.zones` (module → Pi), `haptic.play` (Pi → module), `ack` (module → Pi), `error` (either way). `module_id` names the sender on a module's message and the destination on a Pi command. `uptime_ms` is required on `heartbeat`, `hand.input` and `perception.zones`, optional on `hello`, `ack` and `error`, and absent on `haptic.play`.
+- Every object is strict: a field v1 does not list is rejected, not ignored. Add a field to the schema (and update the receiver) before any sender emits it.
+- 1 KiB means at most 1024 UTF-8 bytes **including** the `\n`, so a 1024-byte receive buffer holds any valid line. `parseSerialLine` checks size, then JSON, then `v`, then `type`, then fields, and returns one problem code (`oversize`, `malformed`, `unsupported_version`, `unknown_type`, `invalid_field`) without throwing. `ack.reason` and `error.code` use the same codes plus `unsupported` (the module lacks that capability) and `overflow` (a bounded queue was full).
+- `hand.input` sends a `button` with its `edge`, a `trigger` value from 0 to 1, or both. `button` names one the module declared as `button.<name>` in its hello.
+- Zone `quality` is `valid` or `invalid`; `mm` is a number exactly when the reading is valid. Up to 16 uniquely named zones per line.
+- `haptic.play`: the pattern must be one of `confirmation`, `recording`, `near_obstacle`, `error`; shape and strength are fixed per pattern in firmware, and no waveform or intensity travels over the wire. `duration_ms` is 1 to `HAPTIC_MAX_DURATION_MS` (1000, a placeholder until the actuator is bench-tested). Only the Pi sends it, from its local cue policy; cloud or model text never becomes a haptic command directly. The cue stops when its duration ends; a newer `haptic.play` replaces the one playing instead of queueing (proposal). On USB disconnect or a watchdog reset the firmware stops the cue, as the firmware guide requires.
+- Not specified yet: the Pi's reply to `hello` (protocol version and requested report rate), the heartbeat timeout after which the Pi marks a module unavailable, and the near/far thresholds. The 1 s heartbeat and 10–20 Hz ToF rate are exported as proposals (`SERIAL_HEARTBEAT_INTERVAL_MS`, `SERIAL_TOF_REPORT_HZ`), not enforced per line.
+
 Firmware sends a hello on boot, then heartbeat/health (proposed every 1 second) and events. Pi responds to hello with protocol version and requested report rate. Sensor reports should be bounded (proposed 10–20 Hz for ToF and edge-triggered controls); tune from measurements. Haptic commands expire after their duration and cannot be queued indefinitely. Sequence numbers detect drops; a reboot resets `seq` and is signaled by a new hello/boot ID. If heartbeats stop, Pi marks the module unavailable and acts on stale state conservatively.
 
 **Safety path:** a physical stop must interrupt actuator power or driver enable through a hardware path independent of USB serial and cloud software. A Pi process may additionally issue a stop. Do not implement the physical stop as only a JSON message.
 
 ## Sensor and voice data
 
-The Pi publishes a capability manifest with module IDs, protocol/firmware versions, and current availability. A sensor snapshot sent to cloud includes zone, value, quality, capture time, and expiry; omitted or stale data means unknown. Store high-rate raw streams locally only if needed for debugging and consented. The cloud normally receives a compact snapshot, not continuous ToF samples.
+The Pi publishes a capability manifest with module IDs, protocol/firmware versions, and current availability. A sensor snapshot sent to cloud includes zone, value, quality, capture time, and expiry; omitted or stale data means unknown. Both are **specified, v1** in [`device.ts`](../packages/contracts/src/device.ts) (not implemented): `CapabilityManifestSchema` lists each detected part by catalog `module_id`, hardware `instance_id`, firmware and serial protocol versions (null where the part has none), `health` (`ok`, `degraded`, `fault`, or `unavailable` when the Pi stopped hearing from it), fault codes and `observed_at`. `SensorSnapshotSchema` holds per-zone `mm`, `quality`, `captured_at` and `expires_at`, and `readZone(snapshot, zone, now)` returns `unknown` for a missing, invalid or expired zone, never clear. Store high-rate raw streams locally only if needed for debugging and consented. The cloud normally receives a compact snapshot, not continuous ToF samples.
 
 Audio clips and camera frames use bounded uploads to private storage or authenticated streaming endpoints, with MIME type, duration/size checks, consent, and a short expiry. Return opaque media references in API JSON. Never log raw media URLs or location coordinates in ordinary application logs. Speech output carries text as a fallback; voice cannot be the only way to understand a reply.
 
@@ -122,4 +141,4 @@ Audio clips and camera frames use bounded uploads to private storage or authenti
 
 ## Implementation checklist
 
-When writing `packages/contracts/`, add schemas for module catalog, profile, configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and agent tool arguments. Define compatibility rules and fixtures. Document exact byte limits, timeout values, and error codes after device measurements. The examples above are contract proposals, not permission to skip validation.
+When writing `packages/contracts/`, add schemas for module catalog, profile, configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and agent tool arguments. Written so far: catalog, onboarding profile and configuration, serial envelope, capability manifest, sensor snapshot, action request/status. Still to write: agent tool arguments and the Pi's reply to `hello`. Define compatibility rules and fixtures. Document exact byte limits, timeout values, and error codes after device measurements. The examples above are contract proposals, not permission to skip validation.
