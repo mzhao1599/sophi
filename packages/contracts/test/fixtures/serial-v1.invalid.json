@@ -1,12 +1,62 @@
 [
-  {"expect": "malformed", "why": "Cut off mid-line", "line": "{\"v\":1,\"type\":\"hello\",\"module_id\":\"hand-left-01\""},
-  {"expect": "malformed", "why": "JSON, but not an object", "line": "[1,2,3]"},
-  {"expect": "unsupported_version", "why": "Another protocol version", "line": "{\"v\":2,\"type\":\"heartbeat\",\"module_id\":\"hand-left-01\",\"seq\":1,\"uptime_ms\":10,\"health\":\"ok\"}"},
-  {"expect": "unknown_type", "why": "A type v1 doesn't define", "line": "{\"v\":1,\"type\":\"motor.move\",\"module_id\":\"hand-left-01\",\"seq\":1,\"angle\":90}"},
-  {"expect": "invalid_field", "why": "Haptic pattern outside the allowlist", "line": "{\"v\":1,\"type\":\"haptic.play\",\"module_id\":\"hand-left-01\",\"seq\":2,\"request_id\":\"cue-1\",\"pattern\":\"custom\",\"duration_ms\":400}"},
-  {"expect": "invalid_field", "why": "Haptic duration over HAPTIC_MAX_DURATION_MS (1000)", "line": "{\"v\":1,\"type\":\"haptic.play\",\"module_id\":\"hand-left-01\",\"seq\":3,\"request_id\":\"cue-2\",\"pattern\":\"error\",\"duration_ms\":1001}"},
-  {"expect": "invalid_field", "why": "A free waveform is not a v1 field", "line": "{\"v\":1,\"type\":\"haptic.play\",\"module_id\":\"hand-left-01\",\"seq\":4,\"request_id\":\"cue-3\",\"pattern\":\"error\",\"duration_ms\":400,\"waveform\":[255,0,255]}"},
-  {"expect": "invalid_field", "why": "A distance on an invalid reading", "line": "{\"v\":1,\"type\":\"perception.zones\",\"module_id\":\"tof-front-01\",\"seq\":5,\"uptime_ms\":10,\"zones\":[{\"name\":\"front_left\",\"mm\":610,\"quality\":\"invalid\"}]}"},
-  {"expect": "invalid_field", "why": "A button without its edge", "line": "{\"v\":1,\"type\":\"hand.input\",\"module_id\":\"hand-left-01\",\"seq\":6,\"uptime_ms\":10,\"button\":\"primary\"}"},
-  {"expect": "invalid_field", "why": "A rejection without a reason", "line": "{\"v\":1,\"type\":\"ack\",\"module_id\":\"hand-left-01\",\"seq\":7,\"request_id\":\"cue-4\",\"result\":\"rejected\"}"}
+  {
+    "expect": "malformed",
+    "why": "Cut off mid-line",
+    "line": "{\"v\":1,\"type\":\"hello\",\"module_id\":\"hand-left-01\""
+  },
+  {
+    "expect": "malformed",
+    "why": "JSON, but not an object",
+    "line": "[1,2,3]"
+  },
+  {
+    "expect": "unsupported_version",
+    "why": "Another protocol version",
+    "line": "{\"v\":2,\"type\":\"heartbeat\",\"module_id\":\"hand-left-01\",\"seq\":1,\"uptime_ms\":10,\"health\":\"ok\"}"
+  },
+  {
+    "expect": "unknown_type",
+    "why": "A type v1 doesn't define",
+    "line": "{\"v\":1,\"type\":\"motor.move\",\"module_id\":\"hand-left-01\",\"seq\":1,\"angle\":90}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Haptic pattern outside the allowlist",
+    "line": "{\"v\":1,\"type\":\"haptic.play\",\"module_id\":\"hand-left-01\",\"seq\":2,\"request_id\":\"cue-1\",\"pattern\":\"custom\",\"duration_ms\":400}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Haptic duration over HAPTIC_MAX_DURATION_MS (1000)",
+    "line": "{\"v\":1,\"type\":\"haptic.play\",\"module_id\":\"hand-left-01\",\"seq\":3,\"request_id\":\"cue-2\",\"pattern\":\"error\",\"duration_ms\":1001}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A free waveform is not a v1 field",
+    "line": "{\"v\":1,\"type\":\"haptic.play\",\"module_id\":\"hand-left-01\",\"seq\":4,\"request_id\":\"cue-3\",\"pattern\":\"error\",\"duration_ms\":400,\"waveform\":[255,0,255]}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A distance on an invalid reading",
+    "line": "{\"v\":1,\"type\":\"perception.zones\",\"module_id\":\"tof-front-01\",\"seq\":5,\"uptime_ms\":10,\"zones\":[{\"name\":\"front_left\",\"mm\":610,\"quality\":\"invalid\"}]}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A button without its edge",
+    "line": "{\"v\":1,\"type\":\"hand.input\",\"module_id\":\"hand-left-01\",\"seq\":6,\"uptime_ms\":10,\"button\":\"primary\"}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A rejection without a reason",
+    "line": "{\"v\":1,\"type\":\"ack\",\"module_id\":\"hand-left-01\",\"seq\":7,\"request_id\":\"cue-4\",\"result\":\"rejected\"}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A module can't call itself \"any\": that id only addresses a hello.request",
+    "line": "{\"v\":1,\"type\":\"hello\",\"module_id\":\"any\",\"module_type\":\"hand\",\"seq\":0,\"capabilities\":[\"button.primary\"]}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A hello.request carries nothing but the envelope",
+    "line": "{\"v\":1,\"type\":\"hello.request\",\"module_id\":\"any\",\"seq\":3,\"rate_hz\":20}"
+  }
 ]
