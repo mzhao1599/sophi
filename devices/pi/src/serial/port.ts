@@ -15,9 +15,15 @@ import type { ModuleManager, SerialConnection } from "./modules";
  */
 export const SERIAL_BY_PATH_DIR = "/dev/serial/by-path";
 
-export function listSerialPorts(dir = SERIAL_BY_PATH_DIR): string[] {
+export function listSerialPorts(dir = SERIAL_BY_PATH_DIR, excludedPort?: string): string[] {
   try {
     const seen = new Set<string>();
+    let excludedTarget: string | null = null;
+    try {
+      if (excludedPort) excludedTarget = realpathSync(excludedPort);
+    } catch {
+      // The configured GPS receiver may not be plugged in yet.
+    }
     return readdirSync(dir)
       .filter((name) => !name.startsWith("."))
       .sort()
@@ -25,6 +31,7 @@ export function listSerialPorts(dir = SERIAL_BY_PATH_DIR): string[] {
       .filter((path) => {
         try {
           const target = realpathSync(path);
+          if (path === excludedPort || target === excludedTarget) return false;
           if (seen.has(target)) return false;
           seen.add(target);
           return true;
@@ -95,7 +102,7 @@ export class SerialScanner {
   private cancel: Cancel | null = null;
 
   constructor(
-    private readonly deps: { clock: Clock; log: Logger; modules: ModuleManager; dir?: string },
+    private readonly deps: { clock: Clock; log: Logger; modules: ModuleManager; dir?: string; excludedPort?: string },
   ) {}
 
   start(): void {
@@ -107,7 +114,7 @@ export class SerialScanner {
   }
 
   private scan(): void {
-    for (const path of listSerialPorts(this.deps.dir)) {
+    for (const path of listSerialPorts(this.deps.dir, this.deps.excludedPort)) {
       if (this.open.has(path)) continue;
       try {
         const conn = openSerialPort(path, this.deps.log);

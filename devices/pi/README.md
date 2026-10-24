@@ -15,6 +15,7 @@ Nothing in this service can move the arms or the lift. It has no motion command 
 | Pi, once | `walker pair <code> --server <url>` | Trades the walker page's 6-digit code for a device credential, saved with mode 0600. |
 | Pi, at bring-up | `walker check` | Read-only checks of everything the demo uses, one PASS / WARN / FAIL / SKIP line each ([Check the walker first](#check-the-walker-first-walker-check)). |
 | Pi, when a board needs firmware | `scripts/flash-esp32.sh <module id>` | Flashes a prebuilt ESP32 image with esptool ([Flash a board from the Pi](#flash-a-board-from-the-pi)). |
+| Pi, when USB GPS is connected | `walker gps --port <tty>` | Reads one checksum-verified NMEA fix locally; does not upload coordinates or enable sharing. |
 | Mac | `walker simulate` | The same service with every part simulated, and a fake cloud unless `--server` is given. |
 | Cloud (pieces 2 and 3) | Render web service | Pairing, heartbeats, the assistant turn, proposals. Not in this package. |
 | ESP32s (piece 7) | Hand controls, ToF | Serial v1 JSON Lines over USB, spoken by the firmware in [`firmware/`](../../firmware/README.md). One hand board ran with this service on the Pi on 2026-10-24 (step 12); no obstacle board yet, and the simulator stands in for what isn't connected. |
@@ -33,6 +34,7 @@ heartbeat every 5 s ◄─► cloud: manifest + snapshot + status events out; co
 
 - `src/service.ts`: the Talk and Confirm state machine, the heartbeat loop, offline and re-pair handling, the manifest and snapshot.
 - `src/serial/`: `lineReader.ts` (JSON Lines framing), `modules.ts` (hello and `hello.request`, heartbeat, health, zones, hand buttons, `haptic.play`), `port.ts` (tty file plus `stty`, ports found under `/dev/serial/by-path`).
+- `src/gps.ts`: local NMEA RMC reader for an explicitly selected USB serial GPS port. It is separate from the ESP32 protocol and does not feed cloud snapshots.
 - `src/buttons.ts`: `gpiomon` for the two Pi buttons, with a 30 ms debounce.
 - `src/audio/`: clip capture (`arecord`, a WAV file, or the Mac mic behind a flag), speech out (Piper, espeak-ng, `say`), generated cue sounds.
 - `src/cues.ts`: the local obstacle cue policy. `src/notices.ts`: every fixed line the Pi says on its own.
@@ -287,6 +289,16 @@ What it ran on (2026-10-24): a Raspberry Pi 5, 4 GB, on the official 27 W USB-C 
 
 To stop it: `sudo systemctl stop steady-walker`. To keep it from starting at boot: `sudo systemctl disable steady-walker`.
 
+### USB GPS bring-up (local only)
+
+`walker gps` was installed on the Pi on 2026-10-24 for a USB receiver that exposes a Linux serial tty and sends NMEA RMC sentences. The purchased receiver has **not** yet been plugged into this Pi, so its USB adapter, baud rate, and ability to get a fix are unverified. A bare UART GPS board needs a USB-to-UART adapter; a USB power cable alone does not carry its data.
+
+1. Plug the GPS in and compare `ls -l /dev/serial/by-path/` with the two existing hand-controller ports. Pick the new GPS link, not a `/dev/ttyUSB0` number (those numbers can change after reboot). If no new serial link appears, inspect `lsusb` and the receiver's USB wiring before changing software.
+2. Add `WALKER_GPS_PORT=/dev/serial/by-path/<GPS link>` to `/etc/steady-walker.env` and restart `steady-walker`. This makes the ESP32 scanner skip that tty. The service does **not** read, store, report, or share coordinates.
+3. Run `sudo -u steady node /opt/steady-walker/walker.mjs gps --port /dev/serial/by-path/<GPS link> --wait 90`. It listens for at most 90 seconds and prints one receiver-reported fix to **that terminal only**, then exits. It validates each RMC checksum and the valid-fix flag. No fix means the receiver is talking but has not reported a valid position; no RMC data means check the path, NMEA mode, and baud. `--baud` defaults to 9600 as a bring-up choice, **not** a confirmed setting for this unit. Use the receiver's documented baud if different.
+
+Try for a fix outdoors with a view of the sky. The reported coordinates do not establish navigation-grade accuracy, and GPS often fails indoors. Location is not in the walker manifest, cloud context, caregiver page, or activity log. Sharing needs a separate opt-in design and implementation.
+
 ### Optional: the Piper voice
 
 Piper is a voice that runs on the Pi itself. The walker uses it for its own lines, and for a reply whenever the server sends no voice. It isn't in the installer, since the walker works without it (espeak-ng is the fallback). Run on the Pi 5 on 2026-10-24, which installed piper-tts 1.8.0 from pip:
@@ -426,6 +438,7 @@ The status strip says Online or Offline, the time when the clock has synced, and
 | `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT` | unset | The follower arms' servo adapters: a link in `/dev/serial/by-id/` (or `/dev/serial/by-path/` for adapters that share a serial number), never `/dev/ttyACM0`. Read by `walker check` today; the motion coordinator (branch `claude/motion-arms`, not merged) reads the same names. |
 | `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` | unset | The leader (teaching) arms' adapters, the same way. |
 | `WALKER_STOP_SENSE` | `not_wired` | `gpio:<BCM line>` when the hardware stop's normally closed stop-sense contact is wired to that Pi line, else `not_wired`. Declared by the installer, never inferred. Read by `walker check` today (and by the coordinator, not merged). |
+| `WALKER_GPS_PORT` | unset | Explicit USB serial path for an optional NMEA GPS receiver. The service excludes the same tty from ESP32 scanning. It reads no coordinates; `walker gps` is a separate local check. |
 | `WALKER_SCREEN_PORT` | `8740` | The walker screen page's port on 127.0.0.1 (1024 to 65535), or `off` for no screen page. Also read by `walker simulate --screen`. |
 | `WALKER_SCREEN_ASSETS` | `screen-page` beside `walker.mjs` | Where the page's built files are (`/opt/steady-walker/screen-page` on the Pi). |
 | `WALKER_SCREEN_GREETING` | unset | A name for "Good evening, Nan" on the clock (up to 12 characters), until the circle brings her own. |

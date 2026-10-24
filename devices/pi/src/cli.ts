@@ -6,6 +6,7 @@ import { simulate } from "./sim/simulate";
 import { pairWalker } from "./pair";
 import { StateStore } from "./store";
 import { realCheckDeps, walkerCheck } from "./check";
+import { readGps } from "./gps";
 
 const USAGE = `walker: Sophi's always-on walker service
 
@@ -14,6 +15,9 @@ const USAGE = `walker: Sophi's always-on walker service
   walker run
       Runs the service on the Pi (GPIO buttons, serial modules, ALSA mic and speaker). Settings come from
       environment variables; see devices/pi/README.md.
+  walker gps [--port </dev/serial/by-path/...>] [--baud <rate>] [--wait <seconds>]
+      Reads one checksum-verified GPS fix locally. Never sends coordinates to the cloud. The port can also
+      come from WALKER_GPS_PORT; baud defaults to 9600 and wait to 60 seconds.
   walker check [--sound] [--buzz] [--press] [--server <url>] [--state <dir>] [--port <tty,...>]
                [--expect <module id,...>] [--env <file>] [--sim]
       Read-only bring-up checks: one PASS / WARN / FAIL / SKIP line per item, then a summary; exits 1 if
@@ -83,6 +87,22 @@ async function main(argv: string[]): Promise<number> {
     }
     case "run":
       return runOnPi(process.env);
+    case "gps": {
+      const port = text(flags.get("port")) ?? process.env.WALKER_GPS_PORT;
+      if (!port) {
+        process.stderr.write("Set WALKER_GPS_PORT or pass --port with the GPS USB serial path.\n");
+        return 2;
+      }
+      const baud = Number(text(flags.get("baud")) ?? "9600");
+      const wait = Number(text(flags.get("wait")) ?? "60");
+      const reading = await readGps(port, baud, wait * 1000);
+      if (reading.status === "fix") {
+        process.stdout.write(`Receiver-reported GPS fix: ${reading.latitude.toFixed(5)}, ${reading.longitude.toFixed(5)}\n`);
+        return 0;
+      }
+      process.stdout.write(reading.status === "no_fix" ? "GPS is sending RMC data but has no fix yet.\n" : "No valid RMC data received; check the USB port, baud rate, and NMEA output.\n");
+      return 1;
+    }
     case "check": {
       // Each open serial port holds one libuv thread-pool thread for its blocking reads, as in the service's unit.
       // A closed port's read stays blocked until a byte arrives, and a servo bus never sends one unasked, so

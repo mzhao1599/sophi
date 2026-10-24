@@ -43,7 +43,7 @@ export function isServoPort(ctx: CheckContext, path: string): boolean {
 export const realSerial: SerialSource = {
   simulated: false,
   // The arms' servo adapters are never opened here: a JSON hello at 115200 baud doesn't belong on a servo bus.
-  ports: (ctx) => (ctx.options.ports ?? listSerialPorts(ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR)).filter((path) => !isServoPort(ctx, path)),
+  ports: (ctx) => (ctx.options.ports ?? listSerialPorts(ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR, ctx.env.WALKER_GPS_PORT)).filter((path) => !isServoPort(ctx, path)),
   open: (path) => openSerialPort(path, silentLogger),
 };
 

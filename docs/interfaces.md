@@ -4,6 +4,8 @@ This is the first shared contract for web, cloud, Pi, and ESP32 work. The **onbo
 
 ## Rules shared by all transports
 
+**Local USB GPS:** the Pi can reserve `WALKER_GPS_PORT` so its ESP32 scanner ignores that tty, and `walker gps` can print one NMEA RMC fix to the local terminal. This is a bring-up interface only: no coordinate field, cloud route, caregiver access, retention, or sharing consent has been implemented. The receiver has not yet been connected for a hardware check.
+
 - Each event has a schema version, origin, timestamp, request/event ID, and correlation ID. Avoid embedding raw audio/images in ordinary JSON events.
 - Commands have idempotency keys and explicit deadlines. A retry must not start the same motion twice.
 - Acknowledgement means receipt/validation, not task completion. Completion or failure is a later event.

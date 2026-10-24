@@ -26,6 +26,7 @@ One supervised process can host these adapters initially; split processes only w
 - **Audio manager:** capture bounded push-to-talk clips, show record/playback state through cues, and play speech/text fallback. Choose ESP32 or Pi USB audio after bench measurement.
 - **Camera manager:** discover overhead and gripper feeds, set resolution/frame rate, check actual codec and USB bandwidth, publish a bounded frame capture interface.
 - **Cloud client:** authenticated HTTPS, short timeouts, idempotent retries, configuration fetch, and offline status.
+- **Optional GPS bring-up:** an explicit USB serial port is excluded from ESP32 scanning; `walker gps` reads one checksum-verified NMEA RMC fix locally. No service, cloud, or caregiver location flow exists yet. See the [Pi GPS steps](../../devices/pi/README.md#usb-gps-bring-up-local-only).
 - **Action manager:** validate cloud task requests against current capabilities and config; ask for user start; execute through a motion guard; publish status.
 - **State store:** local config version, device ID, calibration, recent faults, and bounded unsent event queue. Do not store an unlimited transcript or raw camera feed.
 

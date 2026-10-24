@@ -87,7 +87,7 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   const store = new StateStore(config.stateDir, log);
   const cues = writeCueSounds(join(config.stateDir, "cues"));
   const modules = new ModuleManager({ clock, log, bus });
-  const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir });
+  const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir, excludedPort: env.WALKER_GPS_PORT });
   // The Pi can't sense a button, so it watches (and reports) the GPIO buttons only when declared wired.
   const buttons = config.gpioWired
     ? new GpioButtons(
