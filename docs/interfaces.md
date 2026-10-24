@@ -20,7 +20,7 @@ Base path proposal: `/api/v1`. All user routes require an authenticated user ses
 | `POST /onboarding/sessions` | User web app | Start a session with consent and chosen input mode | Built (demo) |
 | `POST /onboarding/sessions/{id}/turns` | User web app or approved integration | Answer, skip or revisit a question; returns the assistant turn, the acknowledgement and the updated session with recommendations | Built (demo), text only |
 | `GET /onboarding/sessions/{id}` | User web app | Restore transcript/summary/recommendation after refresh | Built (demo) |
-| `PATCH /onboarding/sessions/{id}/profile` | User web app | Edit or remove one item of the draft profile ("What I understood"); recommendations are recomputed | Built (demo) |
+| `PATCH /onboarding/sessions/{id}/profile` | User web app | Edit or remove one item of the draft profile ("What I understood"); recommendations are recomputed | Built (demo); the one-page demo changes answers with `revisit` instead, so no page calls it now |
 | `POST /onboarding/sessions/{id}/confirm` | User web app | Confirm the reviewed selection as configuration version 1 | Built (demo) |
 | `DELETE /onboarding/sessions/{id}` | User web app | Delete the session and its answers now | Built (demo) |
 | `POST /onboarding/sessions/{id}/checkout` | User web app | Mock purchase of the confirmed configuration: returns a Stripe **test-mode** hosted Checkout URL. Web-only; shapes in `apps/web/src/lib/checkout.ts` | Built (demo), test mode only |
@@ -38,7 +38,7 @@ Base path proposal: `/api/v1`. All user routes require an authenticated user ses
 
 - **Signed in** (Supabase Auth, passwordless): `/login` emails a one-time code and a link (`/auth/confirm`, which redeems it only when its **Sign in** button is pressed); either sets the Supabase session cookies (`sb-…-auth-token`, `httpOnly`, `SameSite=Lax`, `Secure` in production). `proxy.ts` refreshes an expiring access token before each page. Route handlers verify the user with `getClaims()` and read and write account sessions through a database client carrying that user's own token, so Postgres row-level security applies. An account session (`kind: "account"`) is reachable by its owner from any device and by nobody else; signed out, it reads as `404`.
 - **Demo** (no account): the session secret in the `walker_demo` cookie, as above. A demo session needs that cookie even when the visitor is signed in, and a signed-in user's id never opens someone's demo session.
-- Which kind `POST /onboarding/sessions` creates is decided by the consent the start screen showed, not by whether the visitor happens to be signed in at that moment.
+- Which kind `POST /onboarding/sessions` creates is decided by the consent the page showed (the one-line notice under the demo's text box), not by whether the visitor happens to be signed in at that moment.
 
 Account pages that aren't part of this API: `/setups` lists a signed-in user's confirmed setups (newest first) with **Delete setup** (deletes the setup and its session) and **Delete my account** (deletes the Supabase user, which cascades to every row). Both are server actions that check the user first.
 

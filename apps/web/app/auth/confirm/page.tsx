@@ -22,7 +22,7 @@ export default async function ConfirmPage({ searchParams }: Props) {
   const params = await searchParams;
   return (
     <>
-      <TopBar session={null} />
+      <TopBar />
       <main id="main" className={screen.main}>
         <div className={screen.grid}>
           <section className={styles.column} aria-labelledby="confirm-heading">

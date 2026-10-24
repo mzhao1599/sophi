@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ModuleId, QuestionId, SessionKind, SessionView, TurnInput } from "@walker/contracts";
 import * as api from "./api";
 
@@ -30,11 +30,6 @@ function storeId(id: string | null) {
 
 export type Phase = "loading" | "none" | "ready";
 
-// One-shot, set by reset(navigate) just before it leaves the page. The screen that mounts next knows
-// the session was just deleted, so it starts on "none" rather than "loading" and can move focus in its
-// first commit. Module state: it survives a client-side navigation and is gone after a full page load.
-let leavingAfterReset = false;
-
 export interface Onboarding {
   phase: Phase;
   session: SessionView | null;
@@ -45,26 +40,15 @@ export interface Onboarding {
   error: string | null;
   /** Changes whenever a new question appears, so the screen can move focus to it. */
   questionKey: number;
-  /**
-   * True on the screen that reset(navigate) opened. The previous screen deleted the session and took
-   * the focused button with it, so this screen places focus itself.
-   */
-  arrivedAfterReset: boolean;
-  start(): Promise<void>;
+  /** Starts a session with the notice the screen showed; the new session, or null (with an error) if it couldn't. */
+  start(): Promise<SessionView | null>;
   answer(questionId: QuestionId, optionIds: string[], text: string): Promise<boolean>;
-  skip(questionId: QuestionId): Promise<void>;
-  skipRest(): Promise<void>;
-  revisit(questionId: QuestionId): Promise<void>;
-  updateFact(factId: string, text: string): Promise<boolean>;
-  removeFact(factId: string, text: string): Promise<void>;
+  skip(questionId: QuestionId): Promise<boolean>;
+  skipRest(): Promise<boolean>;
+  revisit(questionId: QuestionId): Promise<boolean>;
   confirm(selected: ModuleId[]): Promise<boolean>;
-  /**
-   * Deletes the session on the server. False (with an error) if it couldn't, so nothing is cleared.
-   * With `navigate` (a router.push), a successful delete clears the session and navigates in one
-   * transition, so this screen and its pressed button stay until the next screen replaces them; that
-   * screen starts with phase "none" and `arrivedAfterReset` set.
-   */
-  reset(navigate?: () => void): Promise<boolean>;
+  /** Deletes the session on the server. False (with an error) if it couldn't, so nothing is cleared. */
+  reset(): Promise<boolean>;
   clearError(): void;
 }
 
@@ -76,9 +60,7 @@ export interface OnboardingOptions {
 }
 
 export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOptions = {}): Onboarding {
-  // An account session waiting to be resumed still loads as usual after a reset.
-  const [arrivedAfterReset] = useState(() => leavingAfterReset && !resumeId);
-  const [phase, setPhase] = useState<Phase>(arrivedAfterReset ? "none" : "loading");
+  const [phase, setPhase] = useState<Phase>("loading");
   const [session, setSession] = useState<SessionView | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -99,9 +81,6 @@ export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOp
   }, []);
 
   useEffect(() => {
-    leavingAfterReset = false;
-    // The session was just deleted and its stored id cleared, so there is nothing to restore.
-    if (arrivedAfterReset) return;
     const id = readStoredId() ?? resumeId;
     if (!id) {
       setPhase("none");
@@ -120,7 +99,7 @@ export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOp
         storeId(null);
         setPhase("none");
       });
-  }, [arrivedAfterReset, resumeId]);
+  }, [resumeId]);
 
   const run = useCallback(
     async <T,>(fn: (s: SessionView) => Promise<T>): Promise<T | undefined> => {
@@ -171,7 +150,6 @@ export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOp
     status,
     error,
     questionKey,
-    arrivedAfterReset,
     clearError: () => setError(null),
     async start() {
       setBusy(true);
@@ -181,36 +159,19 @@ export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOp
         storeId(r.session.session_id);
         apply(r.session);
         setStatus("Setup started.");
+        return r.session;
       } catch (e) {
         setError(e instanceof api.ApiRequestError ? e.message : "Couldn't start. Please try again.");
+        return null;
       } finally {
         setBusy(false);
       }
     },
     answer: (questionId, optionIds, text) =>
       turn({ type: "answer", question_id: questionId, option_ids: optionIds, ...(text.trim() ? { text: text.trim() } : {}) }),
-    async skip(questionId) {
-      await turn({ type: "skip", question_id: questionId });
-    },
-    async skipRest() {
-      await turn({ type: "skip_rest" });
-    },
-    async revisit(questionId) {
-      await turn({ type: "revisit", question_id: questionId });
-    },
-    async updateFact(factId, text) {
-      const next = await run((s) => api.editProfile(s, { type: "update", fact_id: factId, text }));
-      if (!next) return false;
-      apply(next);
-      setStatus("Updated. Suggestions now follow your change.");
-      return true;
-    },
-    async removeFact(factId, text) {
-      const next = await run((s) => api.editProfile(s, { type: "remove", fact_id: factId }));
-      if (!next) return;
-      apply(next);
-      setStatus(`Removed: ${text}.`);
-    },
+    skip: (questionId) => turn({ type: "skip", question_id: questionId }),
+    skipRest: () => turn({ type: "skip_rest" }),
+    revisit: (questionId) => turn({ type: "revisit", question_id: questionId }),
     async confirm(selected) {
       const next = await run((s) => api.confirmSelection(s, selected));
       if (!next) return false;
@@ -220,7 +181,7 @@ export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOp
       setStatus("Your setup is saved.");
       return true;
     },
-    async reset(navigate) {
+    async reset() {
       const current = sessionRef.current;
       setBusy(true);
       setError(null);
@@ -239,23 +200,10 @@ export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOp
       storeId(null);
       sessionRef.current = null;
       lastQuestion.current = null;
-      const clear = () => {
-        setSession(null);
-        setPhase("none");
-        setBusy(false);
-        setStatus("Your answers were deleted.");
-      };
-      if (navigate) {
-        // router.push is a transition that waits for the next page; clearing in the same one means
-        // React never shows this screen without its session ("No setup in progress") on the way.
-        leavingAfterReset = true;
-        startTransition(() => {
-          clear();
-          navigate();
-        });
-      } else {
-        clear();
-      }
+      setSession(null);
+      setPhase("none");
+      setBusy(false);
+      setStatus("Your answers were deleted.");
       return true;
     },
   };

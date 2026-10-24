@@ -21,7 +21,7 @@ export default async function LoginPage({ searchParams }: Props) {
 
   return (
     <>
-      <TopBar session={null} />
+      <TopBar />
       <main id="main" className={screen.main}>
         <div className={screen.grid}>
           <div className={styles.column}>

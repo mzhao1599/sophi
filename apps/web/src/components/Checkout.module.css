@@ -1,4 +1,27 @@
-/* The mock purchase: the button panel on the saved setup and the /checkout return pages. Tokens only. */
+/* The mock purchase: the Order (demo) button on the saved walker and the /checkout return pages. Tokens only. */
+
+/*
+ * Order (demo), beside "Saved." in the walker's header. The wrapper adds no box, so the button sits
+ * in the header's grid next to "Saved." and the lines under it span the row.
+ */
+.order {
+  display: contents;
+}
+
+.card {
+  white-space: nowrap;
+}
+
+.order .notice,
+.order .state,
+.order .error {
+  grid-column: 1 / -1;
+  justify-self: end;
+  max-width: 40ch;
+  margin: 0;
+  font-size: var(--fs-small);
+  text-align: right;
+}
 
 .panel {
   align-self: start;
@@ -17,18 +40,6 @@
   margin-top: 8px;
   color: var(--muted);
   font-size: var(--fs-small);
-}
-
-.notice :global(.pill) {
-  margin-right: 4px;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 24px;
-  margin-top: 16px;
 }
 
 .state {
@@ -79,7 +90,10 @@
     padding: 16px;
     border-radius: var(--radius-card);
   }
-  .row :global(.button) {
-    width: 100%;
+  .order .notice,
+  .order .state,
+  .order .error {
+    justify-self: start;
+    text-align: left;
   }
 }

@@ -16,7 +16,7 @@ export function CheckoutResult({ order }: { order: DemoOrder | { kind: "off" } |
   const [title, lead] = copy(order);
   return (
     <>
-      <TopBar session={null} />
+      <TopBar />
       <main id="main" className={screen.main}>
         <div className={screen.grid}>
           <header className={screen.span12}>
@@ -48,11 +48,8 @@ export function CheckoutResult({ order }: { order: DemoOrder | { kind: "off" } |
           ) : null}
 
           <div className={`${screen.span12} ${screen.actions}`}>
-            <Link href="/onboarding/review" className="button button-primary">
-              Back to your saved setup
-            </Link>
-            <Link href="/" className="button button-secondary">
-              Home
+            <Link href="/" className="button button-primary">
+              Back to your walker
             </Link>
           </div>
         </div>
@@ -71,7 +68,7 @@ function copy(order: DemoOrder | { kind: "off" } | { kind: "cancelled" }): [stri
     case "cancelled":
       return [
         "Demo checkout cancelled",
-        "You left Stripe's test checkout before paying. This was a demo order: no money moved and nothing was charged. Your saved setup hasn't changed.",
+        "You left Stripe's test checkout before paying. This was a demo order: no money moved and nothing was charged. Your saved walker hasn't changed.",
       ];
     case "unpaid":
       return ["This demo order wasn't completed", `Stripe hasn't marked this test order as paid, so nothing was charged. ${NO_MONEY}`];

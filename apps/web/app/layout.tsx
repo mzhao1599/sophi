@@ -15,11 +15,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={archivo.variable} suppressHydrationWarning>
-      <head>
-        {/* Lets CSS hide entrance-animated content only when a script is there to reveal it. */}
-        <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
-      </head>
+    <html lang="en" className={archivo.variable}>
       <body>
         <a className="skip-link" href="#main">
           Skip to main content

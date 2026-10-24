@@ -5,6 +5,7 @@ import {
   type ModuleId,
   type NeedTag,
   type ProfileFact,
+  type Question,
   type QuestionId,
   type SessionState,
   type SessionView,
@@ -101,6 +102,13 @@ export function createSession(id: string, now: Date, ttlMs: number, kind: Engine
   const first = currentQuestion(base);
   const opening = say(base, now, "assistant", OPENING, null);
   return first ? say(opening, now, "assistant", first.prompt, first.id) : opening;
+}
+
+/** The question every new session opens with, for a screen that shows it before the session starts. */
+export function openingQuestion(): Question {
+  const first = currentQuestion(createSession("opening", new Date(0), 1));
+  if (!first) throw new Error("The question bank has no first question.");
+  return toQuestionView(first);
 }
 
 // ---- Derived state ----

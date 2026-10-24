@@ -1,0 +1,570 @@
+/*
+ * The one-page demo, laid out for a laptop first (1440 x 900 and 1280 x 800): a one-line headline,
+ * then the chat (about 40%) beside the walker (about 60%). In review the chat folds into a summary
+ * and the module list, and the walker widens to about 70%. Below 1000px everything stacks.
+ */
+
+.bar {
+  border-bottom: 1px solid var(--rule);
+  background: var(--chrome);
+}
+
+.barInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: calc(1360px + 2 * 40px);
+  min-height: 56px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* The wordmark in the condensed capitals the earlier screens used. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--target);
+  font-size: 18px;
+  font-weight: 800;
+  font-stretch: 75%;
+  font-variation-settings: "wdth" 75;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.barRight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: var(--fs-small);
+}
+
+.scope {
+  color: var(--muted);
+}
+
+.main {
+  max-width: calc(1360px + 2 * 40px);
+  margin: 0 auto;
+  padding: 24px 40px 32px;
+}
+
+.headline {
+  font-size: clamp(28px, 2.8vw, 40px);
+  font-weight: 800;
+  font-stretch: 80%;
+  font-variation-settings: "wdth" 80;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+  grid-template-areas: "chat walker";
+  align-items: start;
+  gap: 32px;
+  margin-top: 24px;
+  transition: grid-template-columns 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* While chatting, the walker's box runs as tall as the chat beside it. */
+.stage[data-view="chat"] {
+  align-items: stretch;
+}
+
+.stage[data-view="walker"] {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
+  grid-template-areas:
+    "heard walker"
+    "list walker";
+  grid-template-rows: auto 1fr;
+  row-gap: 24px;
+}
+
+.chatArea {
+  grid-area: chat;
+  min-width: 0;
+}
+
+.listArea {
+  grid-area: list;
+  min-width: 0;
+}
+
+/* ---- Chat ---- */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: clamp(520px, calc(100dvh - 190px), 760px);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 20px 20px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.log:focus-visible {
+  outline-offset: -3px;
+}
+
+.bubble {
+  max-width: 88%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 17px;
+  line-height: 1.45;
+  animation: bubble-in 260ms ease-out both;
+}
+
+.bubble[data-role="assistant"] {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+  background: var(--raised);
+}
+
+/* What you said carries the one hue, as a pale tint: it is what you chose. */
+.bubble[data-role="user"] {
+  align-self: flex-end;
+  border: 1px solid #c9cdf3;
+  border-bottom-right-radius: 4px;
+  background: var(--accent-tint);
+  color: var(--pill-accent-ink);
+}
+
+.detail {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.note,
+.system {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  animation: bubble-in 260ms ease-out both;
+}
+
+.note svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.system {
+  align-self: center;
+  text-align: center;
+}
+
+.typing {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  border-bottom-left-radius: 4px;
+  background: var(--raised);
+}
+
+.typing span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--control);
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.composer {
+  display: grid;
+  gap: 12px;
+  padding: 14px 20px 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.chips {
+  display: grid;
+  gap: 8px;
+}
+
+.chipHint {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  padding: 8px 16px;
+  border: 1px solid var(--control);
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.chip:hover:not([aria-disabled="true"]) {
+  border-color: var(--text);
+}
+
+.chip[aria-pressed="true"],
+.chip[data-selected] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.chip[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.chipMark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chipMark path {
+  opacity: 0;
+}
+
+.chip[aria-pressed="true"] .chipMark path {
+  opacity: 1;
+}
+
+.form {
+  display: grid;
+}
+
+.textLabel {
+  margin-bottom: 6px;
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.text.text {
+  min-height: 52px;
+  resize: none;
+}
+
+.send {
+  flex: none;
+  min-height: 52px;
+}
+
+.error {
+  color: var(--negative);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.composerFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 16px;
+}
+
+.notice {
+  flex: 1 1 240px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.skips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+
+.skip.skip {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+/* ---- Walker ---- */
+
+.walker {
+  --canvas-h: clamp(340px, calc(100dvh - 300px), 640px);
+  display: flex;
+  flex-direction: column;
+  grid-area: walker;
+  gap: 14px;
+  min-width: 0;
+}
+
+.walker > figure {
+  flex: 1;
+  align-content: center;
+}
+
+.walkerHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.walkerTitle {
+  font-size: 26px;
+  font-weight: 800;
+  font-stretch: 80%;
+  font-variation-settings: "wdth" 80;
+  line-height: 1.15;
+}
+
+.walkerTitle:focus {
+  outline: none;
+}
+
+.walkerTitle:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.walkerSub {
+  color: var(--muted);
+}
+
+/* "Saved." and Order (demo) side by side; the Stripe note spans the row under them. */
+.savedArea {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: end;
+  gap: 4px 16px;
+}
+
+.savedLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  font-weight: 600;
+}
+
+.savedLine:focus {
+  outline: none;
+}
+
+.savedLine:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.savedLine svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.problems {
+  padding: 10px 14px;
+  border-left: 3px solid var(--negative);
+  border-radius: var(--radius-inner);
+  background: #fdf0ef;
+  color: var(--negative);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.problems ul {
+  margin-top: 4px;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+/* ---- What I heard ---- */
+
+.heard {
+  display: grid;
+  grid-area: heard;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 20px 6px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  animation: bubble-in 320ms ease-out both;
+}
+
+.heardTitle {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.heardEmpty {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.heardList > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-small);
+  line-height: 1.35;
+}
+
+.heardList > li:first-child {
+  border-top: 0;
+}
+
+.heardItems {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.change.change {
+  flex: none;
+  font-size: var(--fs-small);
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: none;
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (max-width: 999px) {
+  .stage,
+  .stage[data-view="walker"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "chat"
+      "walker";
+  }
+  .stage[data-view="walker"] {
+    grid-template-areas:
+      "heard"
+      "walker"
+      "list";
+    grid-template-rows: auto;
+  }
+  .chat {
+    height: auto;
+  }
+  .log {
+    min-height: 260px;
+    max-height: 55dvh;
+  }
+  .walker {
+    --canvas-h: 560px;
+  }
+}
+
+@media (max-width: 640px) {
+  .barInner,
+  .main {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .main {
+    padding-top: 16px;
+  }
+  .scope {
+    display: none;
+  }
+  .stage {
+    gap: 24px;
+    margin-top: 16px;
+  }
+  .log {
+    padding: 16px 12px 8px;
+  }
+  .composer {
+    padding: 12px 12px 6px;
+  }
+  .bubble {
+    max-width: 94%;
+  }
+  .heard {
+    padding: 16px 16px 8px;
+  }
+  .savedArea {
+    justify-content: start;
+  }
+}

@@ -2,7 +2,7 @@
 
 An experimental, modular AI assistive walker for Cal Hacks. A user starts in an accessible web app, describes the tasks they want help with, and receives a small, explainable set of recommended modules. On the walker, physical controls, speech, haptics, cameras, and optional robot arms work through a Raspberry Pi 5. Local software handles time-sensitive sensing and stop behavior; cloud software handles conversation, planning, and user preferences.
 
-**Status:** the web app's landing page and text onboarding work end to end in demo mode, backed by a deterministic onboarding engine and shared contracts (see [apps/web](apps/web/README.md)). There is no working walker, firmware, Pi runtime, sign-in, persistence, or LLM agent yet. Hardware selections and electrical budgets still need bench validation. This is a prototype, not a certified mobility aid or a substitute for a caregiver.
+**Status:** the web app is a one-page demo that works end to end: a guided text chat with the onboarding assistant, then a clickable drawing of the walker to adjust, save and order in Stripe test mode, backed by a deterministic onboarding engine and shared contracts (see [apps/web](apps/web/README.md)). There is no working walker, firmware, Pi runtime, sign-in, persistence, or LLM agent yet. Hardware selections and electrical budgets still need bench validation. This is a prototype, not a certified mobility aid or a substitute for a caregiver.
 
 To run the web app: `pnpm install`, then `pnpm dev`, and open <http://localhost:3000>. `pnpm test` and `pnpm typecheck` cover every package.
 

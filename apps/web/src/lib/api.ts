@@ -4,7 +4,6 @@ import {
   TurnResponseSchema,
   type ApiErrorCode,
   type ConfirmRequest,
-  type ProfileEditRequest,
   type SessionKind,
   type SessionView,
   type TurnInput,
@@ -71,14 +70,6 @@ export async function sendTurn(session: SessionView, input: TurnInput): Promise<
     body: JSON.stringify({ client_turn_id: crypto.randomUUID(), last_seen_revision: session.revision, input }),
   });
   return TurnResponseSchema.parse(body);
-}
-
-export async function editProfile(session: SessionView, edit: ProfileEditRequest["edit"]): Promise<SessionView> {
-  const body = await call(`${BASE}/${encodeURIComponent(session.session_id)}/profile`, {
-    method: "PATCH",
-    body: JSON.stringify({ last_seen_revision: session.revision, edit }),
-  });
-  return SessionResponseSchema.parse(body).session;
 }
 
 export async function confirmSelection(

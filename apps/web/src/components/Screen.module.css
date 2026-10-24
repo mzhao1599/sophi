@@ -1,4 +1,4 @@
-/* The canvas: a centred 1100px column on a 12-column grid (12 x 77 + 11 x 16 = 1100). */
+/* The pages beside the demo (sign-in, your setups, checkout results): a centred 1100px column on a 12-column grid (12 x 77 + 11 x 16 = 1100). */
 .main {
   max-width: calc(var(--column) + 2 * var(--pad));
   margin: 0 auto;
@@ -16,22 +16,8 @@
   grid-column: span 8;
 }
 
-.span4 {
-  grid-column: span 4;
-}
-
 .span12 {
   grid-column: 1 / -1;
-}
-
-/* The summary sits level with the answer panel rather than the question. */
-.asideOffset {
-  margin-top: 0;
-}
-
-.loading {
-  color: var(--muted);
-  font-size: var(--fs-lead);
 }
 
 .doneTitle {
@@ -64,40 +50,8 @@
   margin-top: 28px;
 }
 
-/* The walker as the answers have shaped it, under the "that's everything" title. */
-.preview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
-  align-items: start;
-  gap: 24px;
-  margin-top: 40px;
-  padding: var(--pad);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-}
-
-.previewText {
-  display: grid;
-  gap: 8px;
-}
-
-.previewHeading {
-  font-size: var(--fs-heading);
-  font-weight: 600;
-}
-
-.previewNote {
-  max-width: 40ch;
-  color: var(--muted);
-}
-
-.previewFigure figure {
-  --d-ground: var(--surface);
-}
-
 @media (max-width: 900px) {
-  .span8,
-  .span4 {
+  .span8 {
     grid-column: 1 / -1;
   }
 }
@@ -105,10 +59,6 @@
 @media (max-width: 640px) {
   .main {
     padding: 32px 16px 80px;
-  }
-  .preview {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 16px;
   }
   .doneTitle {
     font-size: 28px;

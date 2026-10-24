@@ -1,11 +1,14 @@
 /*
- * The drawing takes its colours from the screen it sits on:
+ * The walker drawing, its hotspots and panels, the module list and the switch.
+ * The drawing takes its colours from:
  *   --d-ink     frame and wheels
  *   --d-on      a module that is on the walker (solid)
- *   --d-ground  the fill behind a dashed outline (the surface the drawing sits on)
+ *   --d-ground  the fill behind a dashed outline
  *   --d-suggest a suggested module's dashed outline
  *   --d-off     an absent module's dashed outline
- * State is shown by solid against dashed, never by colour alone.
+ * State is shown by solid against dashed and by words, never by colour alone.
+ * The figure is a size container: from 560px wide, each hotspot is a label in a column beside the
+ * drawing with a leader line to its part; narrower, it is a 44px round marker on the part.
  */
 
 .figure {
@@ -15,19 +18,51 @@
   --d-suggest: var(--accent);
   --d-off: var(--control);
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  padding: 16px 12px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background-color: var(--ground);
+  background-image: radial-gradient(var(--surface-step) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+  container: walker / inline-size;
 }
 
-.svg {
-  display: block;
-  width: 100%;
-  max-width: 320px;
-  height: auto;
+.canvas {
+  position: relative;
+  width: min(100%, 420px, calc(var(--canvas-h, 560px) * 320 / 380));
+  aspect-ratio: 320 / 380;
   margin: 0 auto;
 }
 
+.drawing,
+.leaders {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.leaders {
+  display: none;
+}
+
+.caption {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+/* ---- The drawing ---- */
+
 .part {
-  transition: opacity 150ms ease;
+  transition: opacity 200ms ease;
+}
+
+.part[data-clickable] {
+  cursor: pointer;
 }
 
 .frame {
@@ -40,6 +75,7 @@
 
 .box {
   stroke-width: 2.5;
+  transition: fill 300ms ease, stroke 300ms ease;
 }
 
 .arm {
@@ -47,6 +83,7 @@
   stroke-width: 8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: stroke 300ms ease;
 }
 
 /* The button mark on each grip shows only when the hand controls are on. */
@@ -55,19 +92,22 @@
   stroke: none;
 }
 
-/* On the walker: solid */
-.part[data-state="selected"] .box {
+/* On the walker: solid, with a short glow as it lights up. */
+.part[data-state="on"] {
+  animation: light-up 900ms ease-out;
+}
+.part[data-state="on"] .box {
   fill: var(--d-on);
   stroke: var(--d-on);
 }
-.part[data-state="selected"] .arm {
+.part[data-state="on"] .arm {
   stroke: var(--d-on);
 }
-.part[data-state="selected"] .button {
+.part[data-state="on"] .button {
   fill: var(--d-ground);
 }
 
-/* Suggested but not chosen: a dashed outline in the "on" colour */
+/* Suggested but not on: a dashed outline in the "on" colour */
 .part[data-state="suggested"] .box {
   fill: var(--d-ground);
   stroke: var(--d-suggest);
@@ -78,7 +118,7 @@
   stroke-dasharray: 8 7;
 }
 
-/* Not included, or not built yet: a quieter dashed outline */
+/* Off, or not built yet: a quieter dashed outline */
 .part[data-state="off"] .box,
 .part[data-state="unavailable"] .box {
   fill: var(--d-ground);
@@ -91,7 +131,7 @@
   stroke-dasharray: 6 8;
 }
 
-/* The row under the pointer or keyboard focus: a heavier edge in the frame's ink */
+/* The module under the pointer, focused, or open: a heavier edge in the frame's ink */
 .part[data-highlight="true"] .box {
   stroke: var(--d-ink);
   stroke-width: 4;
@@ -100,50 +140,496 @@
   stroke-width: 11;
 }
 
-.caption {
+.leader path {
+  fill: none;
+  stroke: var(--d-off);
+  stroke-width: 1.3;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 300ms ease;
+}
+.leader circle {
+  fill: var(--d-off);
+}
+.leader[data-state="on"] path,
+.leader[data-state="suggested"] path {
+  stroke: var(--d-on);
+}
+.leader[data-state="on"] path {
+  stroke-dasharray: none;
+}
+.leader[data-state="on"] circle,
+.leader[data-state="suggested"] circle {
+  fill: var(--d-on);
+}
+.leader[data-highlight] path {
+  stroke-width: 2.6;
+}
+
+/* ---- Hotspots (narrow: round markers on the parts) ---- */
+
+.spot {
+  display: contents;
+}
+
+.hotspot {
+  position: absolute;
+  top: var(--ny);
+  left: var(--nx);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  translate: -50% -50%;
+}
+
+button.hotspot:hover,
+.spot[data-open] .hotspot {
+  background: var(--accent-tint);
+}
+
+/* While the chat runs the drawing is a picture; the markers appear once there is something to choose. */
+.figure:not([data-review]) .hotspot {
+  display: none;
+}
+
+.icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+.icon circle {
+  fill: var(--d-ground);
+  stroke: var(--d-off);
+  stroke-width: 1.6;
+  transition: fill 250ms ease, stroke 250ms ease;
+}
+.icon path {
+  fill: none;
+  stroke: var(--d-off);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon[data-state="on"] {
+  animation: pop 420ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.icon[data-state="on"] circle {
+  fill: var(--d-on);
+  stroke: var(--d-on);
+}
+.icon[data-state="on"] path {
+  stroke: #ffffff;
+}
+.icon[data-state="suggested"] circle {
+  stroke: var(--d-suggest);
+  stroke-dasharray: 3 2.4;
+}
+.icon[data-state="suggested"] path {
+  stroke: var(--d-suggest);
+}
+.icon[data-state="unavailable"] circle {
+  stroke-dasharray: 1.4 2.6;
+}
+
+/* Narrow: the name and state are the button's accessible name only. */
+.spotText {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Panel ---- */
+
+.panel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow:
+    0 14px 36px rgb(11 12 16 / 0.16),
+    0 2px 6px rgb(11 12 16 / 0.08);
+  color: var(--text);
+  text-align: left;
+  animation: panel-in 180ms ease-out;
+}
+
+.panelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panelTitle {
+  padding-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  margin: -6px -10px 0 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+}
+
+.close:hover {
+  background: var(--surface);
+}
+
+.close svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.panelText {
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.panelWhy {
+  padding: 8px 10px;
+  border-radius: var(--radius-inner);
+  background: var(--accent-tint);
+  color: var(--pill-accent-ink);
   font-size: var(--fs-small);
 }
 
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
+.whyLabel {
+  display: block;
+  font-weight: 600;
+}
+
+.because {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.panelMuted {
   color: var(--muted);
   font-size: var(--fs-small);
 }
 
-.legend li {
-  display: inline-flex;
+.problem {
+  display: block;
+  color: var(--negative);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.panelSwitch {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  padding-top: 2px;
 }
 
-.swatch {
-  display: inline-block;
-  width: 16px;
-  height: 12px;
-  border-radius: 3px;
+.lockNote {
+  color: var(--muted);
+  font-size: var(--fs-small);
 }
 
-.swatch[data-state="selected"] {
-  background: var(--d-on);
+/* ---- Wide: labels beside the drawing, leader lines to the parts ---- */
+
+@container walker (min-width: 560px) {
+  .canvas {
+    width: min(100%, calc(var(--canvas-h, 560px) * 620 / 380));
+    aspect-ratio: 620 / 380;
+  }
+
+  /* 150 / 620 and 320 / 620 of the box: the drawing sits between the two label columns. */
+  .drawing {
+    left: 24.194%;
+    width: 51.613%;
+  }
+
+  .leaders {
+    display: block;
+  }
+
+  .spot {
+    position: absolute;
+    top: var(--wy);
+    z-index: 1;
+    display: block;
+    width: 22.581%;
+    translate: 0 -50%;
+  }
+
+  .spot[data-side="left"] {
+    right: calc(100% - var(--wx));
+  }
+
+  .spot[data-side="right"] {
+    left: var(--wx);
+  }
+
+  .spot[data-open] {
+    z-index: 3;
+  }
+
+  .hotspot,
+  .figure:not([data-review]) .hotspot {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: auto;
+    min-height: var(--target);
+    padding: 6px 8px;
+    border-radius: var(--radius-control);
+    background: rgb(255 255 255 / 0.92);
+    font: inherit;
+    text-align: left;
+    translate: none;
+  }
+
+  .spot[data-side="left"] .hotspot {
+    flex-direction: row-reverse;
+    text-align: right;
+  }
+
+  button.hotspot:hover,
+  .spot[data-open] .hotspot {
+    background: var(--accent-tint);
+  }
+
+  .spotText {
+    position: static;
+    display: grid;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+
+  .spotName {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .spotState {
+    color: var(--muted);
+    font-size: var(--fs-small);
+    line-height: 1.3;
+  }
+
+  .hotspot[data-state="on"] .spotState {
+    color: var(--accent);
+  }
+
+  .panel {
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: min(300px, 46cqw);
+  }
+
+  .spot[data-side="left"] .panel {
+    left: calc(100% + 10px);
+  }
+
+  .spot[data-side="right"] .panel {
+    right: calc(100% + 10px);
+  }
+
+  .spot[data-low] .panel {
+    top: auto;
+    bottom: 0;
+  }
 }
 
-.swatch[data-state="suggested"] {
-  border: 2px dashed var(--d-suggest);
+/* ---- Switch ---- */
+
+.switch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  font-size: var(--fs-small);
+  font-weight: 600;
 }
 
-.swatch[data-state="off"] {
-  border: 2px dashed var(--d-off);
+.track {
+  position: relative;
+  width: 46px;
+  height: 28px;
+  border: 1.5px solid var(--control);
+  border-radius: var(--radius-pill);
+  background: var(--surface-step);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.thumb {
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(11 12 16 / 0.35);
+  transition: transform 150ms ease;
+}
+
+.switch[aria-checked="true"] .track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.switch[aria-checked="true"] .thumb {
+  transform: translateX(18px);
+}
+
+.switch[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.switch[aria-disabled="true"] .track {
+  opacity: 0.7;
+}
+
+.switchText {
+  min-width: 2.2em;
+  text-align: left;
+}
+
+/* ---- Module list ---- */
+
+.listSection {
+  display: grid;
+  gap: 10px;
+}
+
+.listHeading {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.list {
+  display: grid;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px 4px 14px;
+  border-radius: var(--radius-inner);
+  background: var(--surface);
+  transition: background-color 200ms ease;
+}
+
+.row[data-state="on"] {
+  background: var(--accent-tint);
+}
+
+.rowText {
+  display: grid;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.rowName {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.rowState {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.3;
+}
+
+@keyframes light-up {
+  0% {
+    filter: drop-shadow(0 0 0 rgb(20 35 184 / 0));
+  }
+  35% {
+    filter: drop-shadow(0 0 7px rgb(20 35 184 / 0.6));
+  }
+  100% {
+    filter: drop-shadow(0 0 0 rgb(20 35 184 / 0));
+  }
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.6);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @media (forced-colors: active) {
   .frame,
-  .part[data-state="selected"] .box {
+  .part[data-state="on"] .box,
+  .icon[data-state="on"] circle {
     fill: CanvasText;
     stroke: CanvasText;
   }
-  .part[data-state="selected"] .arm {
+  .part[data-state="on"] .arm {
     stroke: CanvasText;
+  }
+  .switch[aria-checked="true"] .track {
+    background: Highlight;
+  }
+  .panel,
+  .row {
+    border: 1px solid CanvasText;
   }
 }

@@ -31,7 +31,7 @@ export default async function SetupsPage() {
 
   return (
     <>
-      <TopBar session={null} account={{ email: user.email }} signIn />
+      <TopBar account={{ email: user.email }} signIn />
       <main id="main" className={screen.main}>
         <div className={screen.grid}>
           <div className={styles.column}>

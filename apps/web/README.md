@@ -1,8 +1,8 @@
 # Web app
 
-Owns the landing page, onboarding, module review, and (later) device pairing and settings. Next.js 16 (App Router) and TypeScript. The onboarding API route handlers live here too, as thin adapters over [`services/cloud-api`](../../services/cloud-api/README.md); shapes come from [`packages/contracts`](../../packages/contracts/README.md).
+Owns the demo page (onboarding chat and module choice), and (later) device pairing and settings. Next.js 16 (App Router) and TypeScript. The onboarding API route handlers live here too, as thin adapters over [`services/cloud-api`](../../services/cloud-api/README.md); shapes come from [`packages/contracts`](../../packages/contracts/README.md).
 
-**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres. With Supabase, **passwordless sign-in** (an emailed code or link) saves setups to an account, resumes an unfinished one on another device, and lists saved setups with delete. Checked against a local Supabase stack, not yet a hosted project. The LLM onboarding agent is built but off by default (see below). A **mock purchase** of the saved setup through Stripe runs in **test mode only** and is off until a test key is set. Speech input and device pairing are not built yet.
+**Status:** the site is **one page for a quick demo**, laid out for a laptop screen first (1440 and 1280 wide) and still usable at 768 and 390. A guided text chat with the onboarding assistant sits beside a drawing of the walker that lights up suggested modules as the answers come in; then the drawing becomes the clickable **Your walker**, where each module can be opened and switched, saved, and ordered through Stripe test mode. It works end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres. With Supabase, **passwordless sign-in** (an emailed code or link) saves setups to an account, resumes an unfinished one on another device, and lists saved setups with delete. Checked against a local Supabase stack, not yet a hosted project. The LLM onboarding agent is built but off by default (see below). A **mock purchase** of the saved setup through Stripe runs in **test mode only** and is off until a test key is set. Speech input and device pairing are not built yet.
 
 ## Run it
 
@@ -56,25 +56,30 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Landing page: what this is, how setup works, the modules (tick one to see it drawn on the walker), who's in control, questions, and a closing question that starts the setup with your words |
-| `/onboarding` | Start screen (what the demo does with answers), then one question at a time, the editable "What I understood" summary and the full transcript |
-| `/onboarding/review` | Module list with reasons quoted from your answers, dependency checks, the walker drawing, and save; after saving, the configuration the walker would receive |
-| `/login` | Sign in or create an account with an email address: the email carries a code to type here and a link. Needs Supabase |
+| `/` | **The demo.** A one-line headline; the chat (about 40% wide) beside the walker drawing (about 60%); at review, "Here's what I heard" and the module list beside the clickable walker, with Save, Order (demo) and Start over |
+| `/onboarding`, `/onboarding/review` | Redirect to `/` (`next.config.ts`), so old links and sign-in's `?next=` still land on the demo |
+| `/login` | Sign in or create an account with an email address: the email carries a code to type here and a link. Needs Supabase. Not linked from the demo |
 | `/auth/confirm` | Where the email's link lands: a **Sign in** button that redeems it (opening the link alone signs nobody in), then Your setups |
-| `/setups` | **Your setups**: a signed-in user's saved setups, newest first, with delete; carry on with an unfinished setup; sign out; delete the account |
+| `/setups` | **Your setups**: a signed-in user's saved setups, newest first, with delete; carry on with an unfinished setup; sign out; delete the account. Not linked from the demo |
 | `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface). `POST …/{id}/checkout` starts the mock purchase |
 | `/api/v1/checkout/status` | Whether the mock purchase button is on, and why not |
 | `/checkout/success` | Where Stripe returns after a test payment: says it was a demo and no money moved, and lists the modules read from the Checkout Session on the server |
 | `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
-| `/dev/preview/{start,question,done,review,saved}` | **Development only** (404 in production): each screen rendered from a session the real engine produced, for design review and the taste-skill inspector |
+| `/dev/preview/{start,chat,walker,saved}` | **Development only** (404 in production): the demo page in each state, from a session the real engine produced, for design review and the taste-skill inspector |
+
+### The demo, step by step
+
+1. **Chat.** The first question ("What would you like help with?") is on screen before anything is sent; it comes from the engine (`openingQuestion()` in `services/cloud-api`), so it matches what a new session asks. The options are buttons: on a choose-any question they toggle (`aria-pressed`) and **Send** sends them with anything typed; on a choose-one question a press sends it. The text box is always there (Enter sends, Shift+Enter starts a new line). The log is the session's own turns: questions and the person's replies as bubbles, the short acknowledgements (`ack`) as a line between them. **Skip this question** and, after one answer, **Skip to my walker** sit under the box. Under the agent, the questions and options are the model's choice from the bank; the page doesn't change.
+2. **The walker lights up.** After each answer, modules that are now suggested turn solid on the drawing (required plus recommended, the same default as the engine's `defaultSelection`); "worth considering" ones are dashed in blue; the rest are dashed grey; location sharing is marked "Not available yet". A polite announcement says what lit up.
+3. **Your walker.** When the questions are done (or skipped), the chat folds into **Here's what I heard**, each answer with **Change** (which reopens that question in the chat), and the drawing becomes the main stage. Each module is a labelled button on the drawing (a round marker on narrow screens) that opens a small panel: what it does, why it was suggested (the recommendation's reason and the answer it came from), and an on/off switch. **All modules** lists the same switches. Switches follow `checkSelection`: the frame stays on, location sharing can't be turned on, turning on the arm lift also turns on the arms (and turning off the arms turns off the lift), and a "needs one of" rule (obstacle sensors need hand controls or voice) is shown next to the module and blocks Save until it is settled. The logic is `src/lib/walker.ts`, unit tested.
+4. **Save, then Order (demo).** Save confirms the selection (`POST …/confirm`); the header then shows **Saved.** and **Order (demo)**, which opens Stripe's test checkout (see [Mock purchase](#mock-purchase-stripe-test-mode-only)). **Start over** in the top bar deletes the answers and starts again.
 
 ## How demo mode works
 
-- Pressing **Start the demo** creates a session in **Postgres** when Supabase is configured, otherwise in **server memory**. Its id goes in this tab's `sessionStorage`; the secret that proves you started it is an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding`. Postgres stores only the secret's hash. The id alone can't read anything, so it may appear in URLs.
-- Answers are deleted an hour after the last change (within five minutes of expiring, by a database job), or immediately with **Delete my answers**. The memory store also loses them when the server restarts.
+- The **first send** creates a session in **Postgres** when Supabase is configured, otherwise in **server memory**. The one-line notice under the text box (answers are deleted after an hour; leave out names and medical details) is on screen before that, and starting means `consent: { demo_data_notice: true }`. The session id goes in this tab's `sessionStorage`; the secret that proves you started it is an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding`. Postgres stores only the secret's hash. The id alone can't read anything, so it may appear in URLs.
+- Answers are deleted an hour after the last change (within five minutes of expiring, by a database job), or immediately with **Start over**. The memory store also loses them when the server restarts.
 - The in-memory store is for local demos. On a host with several instances (Vercel), two requests can land on different instances and lose the session, so production refuses to start onboarding without Supabase unless `ONBOARDING_ALLOW_MEMORY_STORE=true` (see [`services/cloud-api`](../../services/cloud-api/README.md#supabase-store)).
-- With the onboarding agent on, each answer is also sent to Anthropic's API, and the first screen says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
-- The landing page's closing question ("What would you like help with?") hands its words to the first question through `sessionStorage`, never the URL.
+- With the onboarding agent on, each answer is also sent to Anthropic's API, and the notice under the text box says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
 
 ## Sign-in
 
@@ -83,7 +88,8 @@ Passwordless, with Supabase Auth and [`@supabase/ssr`](https://supabase.com/docs
 - **First sign-in creates the account.** There is no password to set or forget.
 - **One email, two ways in:** a 6-digit code to type on `/login` (works when the email is read on another device), and a link to `/auth/confirm` for the device where you want to be signed in. Both work once and expire in an hour. The link opens a page with a **Sign in** button, and only the button redeems it: email security scanners that open links can't use it up, and a link someone else sent can't quietly sign you into their account. The template is [`supabase/templates/sign-in.html`](../../supabase/templates/sign-in.html); the hosted project needs it pasted in (see "Deploy on Vercel").
 - **Accessible:** a labelled email field with a hint, errors in `role="alert"` linked to their field, a polite status for "We sent a new email", and focus moved to the new heading when the step changes. Every step is a plain form, so it works with the keyboard and without JavaScript. The demo stays one click away and is labelled as a demo.
-- **What changes when signed in:** the start screen shows the account notice and starts an account session; the bar says "Saved to your account"; an unfinished setup resumes on any device; a saved setup appears in Your setups, numbered 1, 2, 3. "Delete my answers" is hidden for a saved account setup, which is deleted from Your setups behind a confirmation instead.
+- **Not on the demo path.** The demo page has no sign-in link; `/login` and `/setups` work when visited directly.
+- **What changes when signed in:** the note under the demo's text box says answers go to your account, and the first send starts an account session; an unfinished setup resumes on any device; a saved setup appears in Your setups, numbered 1, 2, 3. **Start over** is hidden for a saved account setup, which is deleted from Your setups behind a confirmation instead. This path was not clicked through after the one-page redesign (it needs the local Supabase stack).
 - **What is kept and for how long** (consent, retention, access and deletion for each kind of session): [`services/cloud-api`](../../services/cloud-api/README.md#supabase-store).
 
 ### Trying sign-in locally
@@ -178,7 +184,7 @@ Before sharing a public link, add a rate limit for `POST /api/v1/onboarding/sess
 
 ## Mock purchase (Stripe test mode only)
 
-The saved-setup view has a **Mock purchase this setup** button so the demo can show buying the walker. **Nothing can really be bought:** the walker is an experimental prototype, not a certified mobility aid, so checkout runs in Stripe test mode only and no real money can move.
+After **Save**, the walker's header offers **Order (demo)** so the demo can show buying the walker. **Nothing can really be bought:** the walker is an experimental prototype, not a certified mobility aid, so checkout runs in Stripe test mode only and no real money can move.
 
 - **Test mode is enforced on the server.** `STRIPE_SECRET_KEY` must be a test secret key (`sk_test_…`). A live key (`sk_live_`, `rk_live_`), a restricted key or anything else is refused: the server logs `[checkout] Refusing to start mock purchase: …` (never the key), and the button stays off with a short reason. Without a key the button is off too, and everything else works as before. A Checkout Session that comes back live is also refused.
 - **Flow.** The button posts the configuration version to `POST /api/v1/onboarding/sessions/{id}/checkout`. The server reads the confirmed configuration from the session, with ownership checked as on every onboarding route (the demo session's cookie, or the signed-in account that saved it), builds one line item per selected module, creates a hosted Checkout Session and returns its `checkout.stripe.com` URL; the browser goes there. There is no card form on our site and no publishable key.
@@ -191,7 +197,7 @@ The saved-setup view has a **Mock purchase this setup** button so the demo can s
 
 1. In the [Stripe dashboard](https://dashboard.stripe.com/test/apikeys), in test mode (a sandbox), copy the **secret key** (`sk_test_…`).
 2. Put it in `apps/web/.env.local` as `STRIPE_SECRET_KEY=sk_test_…` and restart `pnpm dev`. Never commit it or paste it into chat.
-3. Finish onboarding and save, press **Mock purchase this setup**, and pay with Stripe's test card `4242 4242 4242 4242`, any future expiry and any CVC.
+3. Answer a question or two, press **Skip to my walker**, **Save my walker**, then **Order (demo)**, and pay with Stripe's test card `4242 4242 4242 4242`, any future expiry and any CVC.
 
 ## Code map
 
@@ -205,54 +211,44 @@ src/server/checkout/     mock purchase: test-key guard, Stripe client, placehold
 src/lib/checkout.ts      mock purchase request/response shapes and the browser calls
 src/lib/api.ts           browser client; validates every response against the contracts
 src/lib/useOnboarding.ts one hook owns the flow: restore, every API call, the status line, focus key
-src/components/          screens and parts (QuestionStep, FactsPanel, ReviewScreen, WalkerDiagram, CheckoutButton, …)
-src/components/landing/  landing page parts and styles
-public/images/found/     credited archival pictures and credits.json
-test/                    unit tests for the mock purchase (stubbed Stripe client and onboarding service)
+src/lib/chat.ts          the chat log from the session's turns, and the reply text the engine records
+src/lib/walker.ts        selection: defaults, part states, switches and their dependency rules, panel text
+src/components/          DemoScreen (the page), Chat, WalkerDiagram (drawing, hotspots, panel), ModuleList,
+                         ModuleSwitch, CheckoutButton; TopBar, LoginForm, SetupsList for the account pages
+test/                    unit tests for selection, the chat log and the mock purchase
 ```
 
 ## Accessibility
 
 Target: WCAG 2.2 AA. What is built in:
 
-- Every choice is a native checkbox or radio inside a `fieldset` with a `legend`; no custom key handling.
-- When a new question appears, focus moves to its heading; a polite live region announces only what was recorded ("Noted: at home."). Errors use `role="alert"` and are linked to the group with `aria-describedby`.
-- While onboarding starts, or an answer or edit saves, focus never falls to the page. The buttons involved use `aria-disabled` while busy, not `disabled`, so they stay focusable; a press then is ignored. On a question, Continue, "Skip this question" and "Skip the rest and review" move focus to a visible note ("Saving your answer…", "Skipping this question…", "Skipping to the review…"), which a screen reader reads when it takes focus; the next heading then takes focus in the same update that removes the note. If the save fails, focus goes back to the button that was pressed (Continue, when Enter was pressed in an option) and the error is announced. "Start the demo" and the Save and Remove buttons in "What I understood" keep focus and say what is happening ("Starting…", "Saving…", "Removing…"); "Change this answer" keeps focus until the reopened question's heading takes it. "Delete my answers" in the top bar keeps focus and says "Deleting…"; once the answers are gone, focus moves to the heading that replaces them ("Set up your walker" on the questions page, "No setup in progress" on the review page). The same happens if the session has expired by the time something saves. The review page's two "Save this setup" buttons keep focus and say "Saving…"; when the setup is saved, focus moves to "Your setup is saved", and if saving fails it stays on the button and the error is announced. "Skip them and review", shown on the review page while questions remain, keeps focus and says "Skipping…"; when the review appears, focus moves to its heading, "Choose your modules", and if skipping fails it stays on the button and the error is announced. "Delete and start over" on the saved setup keeps focus and says "Deleting…" while the answers are deleted and the questions page loads. The saved setup stays on screen until that page replaces it (clearing the session and the navigation run in one React transition), and focus then moves to "Set up your walker". If deleting fails, nothing is cleared, focus stays on the button and the error is announced. Following an ordinary link to another page still leaves focus on the page itself, because Next.js 16 doesn't move focus on client-side navigation; that is a separate gap.
-- Locked modules (the frame, and features not built yet) use `aria-disabled` with a visible reason, so they stay legible and focusable.
-- The whole conversation is available as text in the transcript; nothing is said only once or only by sound.
-- Touch targets are at least 44px; body text 16–17px; control borders reach 3:1; focus rings are 3px.
-- Motion is limited to transform and opacity, with `prefers-reduced-motion` fallbacks that keep all content. Content hidden for an entrance animation is hidden only when the script that reveals it is running. The landing page's one moving line has a visible pause button (WCAG 2.2.2), stops on hover, and doesn't move at all under reduced motion.
-- On the landing page every colour field sets its own text and focus-ring colours, so the 3px ring stays visible on ultramarine, black, yellow and pink.
+- **Every step works by tapping alone, by typing alone and by keyboard alone.** Options are real buttons in a `fieldset` with a legend that says how to answer; the text box is always there; nothing needs voice or a fine-motor gesture.
+- **The chat log is `role="log"`**, so new messages are read politely; the bubble shown while a reply is being sent keeps its place when the server's copy replaces it, so it isn't read twice. Changes on the walker ("Lit up on your walker: Hand controls and Obstacle sensors.", "Added Arm lift. Robot arms added too, because arm lift needs them. 5 modules on your walker.") go to a separate polite status line.
+- **Focus is never taken without a reason.** After a reply, focus stays in the text box if it was there; if an option or Send was pressed, it goes to the next question's first option (or the box), without scrolling. When the walker view appears, focus moves to its heading, "Your walker"; after Save, to "Saved."; after **Change**, to the reopened question's first option; after **Start over**, to the text box. Nothing moves focus on page load. Buttons that are busy use `aria-disabled`, so they keep focus.
+- **The drawing is never the only way in.** Each module on the drawing is a real `<button>` with its name and state as its accessible name and `aria-expanded`; Enter or Space opens its panel, Escape closes it and returns focus to the button, a press outside closes it. The panel's switch is a `<button role="switch">` named after the module. **All modules** beside the drawing has the same switches. Hovering or focusing a module highlights its part (a bonus, never needed). The drawing itself is hidden from screen readers; its caption says the same in words.
+- **Errors are linked:** a chat error is `role="alert"` and in the text box's and options' `aria-describedby`; Save's "Before saving" list is an alert linked to the Save button; a module's dependency problem is linked to its switches; a locked switch (the frame, location sharing, a saved walker) stays focusable and says why.
+- Targets are at least 44px (hotspots, options, switches, text buttons); body text 16–17px; control borders reach 3:1; focus rings are 3px. State is never colour alone: parts on the walker are solid, others dashed, and every label and switch says On or Off in words.
+- Motion is transform, opacity and a short glow when a part lights up, with `prefers-reduced-motion` turning it off. Large text and zoom reflow into one column below 1000px.
 
-Manual checklist before a demo (not yet done with real users):
+Checked on 2026-10-23 in the built-in browser with the `web-memory` preview: the whole flow at 1440 by pointer and by keyboard alone (options, Send, Skip, Skip to my walker, hotspot panel, switch, Escape, the Save block and its fix from the list, Save, Order (demo) to Stripe's test checkout, Change, Start over), and at 390 by tapping (marker, panel, switch, Save, Order). Not yet done:
 
-- [ ] Complete onboarding with the keyboard only, including editing and removing an item, changing an earlier answer, and saving.
-- [ ] Complete it with VoiceOver (macOS/iOS) or NVDA; check that each question and acknowledgement is read once.
-- [ ] 200% browser zoom and a 390px-wide phone: nothing overlaps, no sideways scrolling.
-- [ ] Windows High Contrast or forced colours: panels, pills and selected modules stay distinguishable.
+- [ ] VoiceOver (macOS/iOS) or NVDA: check each question, acknowledgement and switch change is read once.
+- [ ] 200% browser zoom.
+- [ ] Windows High Contrast or forced colours: parts, switches and selected options stay distinguishable.
 - [ ] Ask someone who hasn't seen it to set up a walker without help, and note where they hesitate.
 
 ## Design
 
-Built with [taste-skill](https://www.tasteskill.dev/) v2 (`design-taste-frontend`). The second design (October 2026) started from real sites; what was taken from each is in [`.taste-skill/redesign/inspiration.md`](../../.taste-skill/redesign/inspiration.md), and the reasoning, redraws and critique rounds are in [`.taste-skill/redesign/notes.md`](../../.taste-skill/redesign/notes.md). The dealt sheets are in [`.taste-skill/`](../../.taste-skill) (reprint with `node <skill>/scripts/draw.mjs --show --out .taste-skill/page` or `.taste-skill/app`).
+Built with [taste-skill](https://www.tasteskill.dev/) v2 (`design-taste-frontend`). The app style is `achromatic-ledger` (seed 1253139886) with the earlier landing page's palette and type kept: ink on white, no colour in the chrome, Archivo throughout (condensed 800 for titles), and one hue, ultramarine `#1423b8`, on what you chose (your replies as a pale tint, chosen options, switches that are on, parts on the walker). The primary action is near-black. Notes from the earlier redesigns: [`.taste-skill/redesign/`](../../.taste-skill/redesign).
 
-- **Landing**: direction `loud-flat-poster` ("Loud and flat"), seed 1681769881. Flat fields of ultramarine, black, yellow and pink with white or black ink; one green for the primary action; one family, Archivo (condensed 800 capitals for display, normal width for text, body 18px). Idea: the walker's own rules are said at full volume as poster statements, and the walker is a flat drawing you build by ticking its parts (the Modules section, with the drawing pinned beside the list). Redraws: the hero (the dealt one scrolled its headline sideways all the time, which fails WCAG 2.2.2) and the "about" section (it needed team portraits that don't exist); the dealt pink was lightened so black text reaches 7.6:1.
-- **App screens** (onboarding, review): style `achromatic-ledger`, seed 1253139886, with the landing's palette and type kept. Ink on white with no colour in the chrome; the primary action is near-black; the one hue (ultramarine `#1423b8`) goes on what you chose: a chosen answer, a module on your walker, the progress bar, the parts drawn on the walker. Titles are Archivo 800 at 80% width (32px; the current question 40px). Shell: no sidebar (the sheet's icon rail was replaced, because the app has two destinations), a 56px bar with the mark, the wordmark in the landing's condensed capitals, the demo scope and "Delete my answers". Changes from the sheet, for accessibility: body 16px (not 14), meta 14px (not 12), control borders `#6e7380` (3:1 or more on white and on the panels), targets 44px or more. Signature element: the walker drawing, on review and on the "That's everything I need" screen.
-- **Inspector**, last run: 0 FAIL at 1440, 768 and 390 on the landing and on every app screen (`/dev/preview/{start,question,done,review,saved}`, with `--app`). Warnings kept, with reasons: no video on the landing (the open collections have no honest clip of walking aids; the slow sway of the hero print and the moving line are the page's moving pictures); the 40px question heading (the question is the one thing to read on that screen, and larger type helps people with low vision); the review list running past the first screen (seven modules with reasons; the summary and Save stay pinned beside it).
+- **Layout**: designed for 1440 x 900 and 1280 x 800 first. One-line headline; the chat at 40% and the walker at 60%; at review the columns ease to 30/70 (instantly under reduced motion). Below 1000px everything stacks; below 560px of drawing width the hotspot labels become 44px round markers on the parts.
+- **Signature element**: the walker drawing on drafting-dot paper, with leader lines from each label to its part. It is a schematic, not to scale; solid means on the walker, dashed means left off.
+- **Inspector**, last run 2026-10-23 on `/dev/preview/{start,chat,walker,saved}` with `--app`: 0 FAIL at 1440, 768 and 390. Warnings kept, with reasons: the 40px headline (the inspector expects an app title of 18–32px; this is the page's one message, read from a projector in a 30-second demo); on start and chat at 1440, a 57px band around the drawing in its box (the box runs as tall as the chat beside it so the two halves line up, and the drawing is centred on its paper).
 
-### Pictures and stand-ins
+### Pictures
 
-The walker has no photographs yet, so it is **drawn** (`WalkerDiagram`, flat pieces; solid means on the walker, dashed means left off). Replace or supplement the drawing with real photographs once the hardware exists. The archival prints show the history of walking frames and are never presented as this walker; each is captioned where it appears and credited in the footer, with one treatment (black and white, stuck on at a slight angle):
-
-| File | Work | Licence | Where |
-| --- | --- | --- | --- |
-| `an-old-man-with-a-beard-in.jpg` | "An old man with a beard in a walking frame", Wellcome Collection | CC BY 4.0 | Hero, cut to an arch |
-| `mother-child-old-man-with-baby-s.jpg` | Elisha Kirkall, "Mother, Child, old man with baby's walking frame on wheels", 1724, Yale Center for British Art | CC0 | How setup works |
-| `old-man-with-a-walking-stick.jpg` | Wilhelm Leibl, "Old Man with a Walking Stick", 1875/77, Art Institute of Chicago | CC0 | Who's in control |
-| `two-mothers-with-crying-babies-and-one.jpg` | "Two mothers with crying babies and one in a walking frame", Wellcome Collection | CC BY 4.0 | Fair questions |
-
-Source pages and licence links are in `public/images/found/credits.json`. The interface fragments under "How setup works" are drawn in HTML from the app's real wording and the demo's sample answers; the configuration shown under "Pair" is an excerpt of the demo's saved output (the `/dev/preview/saved` answers), labelled as such, because pairing isn't built.
+The walker has no photographs yet, so it is **drawn** (`WalkerDiagram`). Replace or supplement the drawing with real photographs once the hardware exists. The archival prints the landing page used were removed with it.
 
 ### Copy to confirm with the team
 
-The letter on the landing page is signed "The Assistive Walker team, Cal Hacks, October 2026". The "Pair" step says pairing will use "one code" (the planned one-time pairing challenge), and "Tell" says "6 or 7 short questions" (the agent may ask about six). Change any of them if the team prefers.
+The headline ("Tell us what you need help with. We'll build your walker."), the notice under the text box, and the button name "Order (demo)". Change any of them if the team prefers.

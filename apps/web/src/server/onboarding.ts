@@ -12,7 +12,7 @@ import {
 } from "@walker/cloud-api";
 import type { ApiError } from "@walker/contracts";
 import type { z } from "zod";
-import type { ScreenAccess } from "@/components/OnboardingScreen";
+import type { ScreenAccess } from "@/components/DemoScreen";
 import { requestAuth } from "./supabase";
 
 /**
@@ -56,16 +56,14 @@ export async function deleteAccountData(userId: string): Promise<void> {
 }
 
 /**
- * What the onboarding and review pages need to know about the visitor: who is signed in, whether
- * signing in is possible here (Supabase fully configured), and their unfinished setup, if any, so
- * another device can carry on with it.
+ * What the demo page needs to know about the visitor: who is signed in (only possible with Supabase
+ * fully configured), and their unfinished setup, if any, so another device can carry on with it.
  */
 export async function screenAccess(): Promise<ScreenAccess> {
-  const signIn = accountsAvailable();
   const { client, user } = await requestAuth();
-  if (!signIn || !client || !user) return { account: null, signIn, resumeId: null };
+  if (!accountsAvailable() || !client || !user) return { account: null, resumeId: null };
   const resumeId = await latestOpenSessionId(client).catch(() => null);
-  return { account: { email: user.email }, signIn, resumeId };
+  return { account: { email: user.email }, resumeId };
 }
 
 /**

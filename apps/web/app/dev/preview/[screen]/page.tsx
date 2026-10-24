@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
-import { MemorySessionStore, OnboardingService } from "@walker/cloud-api";
+import { MemorySessionStore, OnboardingService, openingQuestion } from "@walker/cloud-api";
 import type { SessionView, TurnInput } from "@walker/contracts";
 import { PreviewHarness } from "@/components/PreviewHarness";
 
 /**
- * Development-only previews of each onboarding state, built by running the real engine on a scripted
- * set of answers. Used for design review and the taste-skill inspector, which can't carry a session
+ * Development-only previews of each state of the demo page, built by running the real engine on a
+ * scripted set of answers. Used for design review and the taste-skill inspector, which can't carry a session
  * cookie. Returns 404 in production builds.
  */
 
@@ -40,17 +40,16 @@ async function sessionAfter(steps: number, confirm = false): Promise<SessionView
 export default async function Preview({ params }: { params: Promise<{ screen: string }> }) {
   if (process.env.NODE_ENV === "production") notFound();
   const { screen } = await params;
+  const show = (session: SessionView | null) => <PreviewHarness session={session} opening={openingQuestion()} />;
   switch (screen) {
     case "start":
-      return <PreviewHarness screen="onboarding" session={null} />;
-    case "question":
-      return <PreviewHarness screen="onboarding" session={await sessionAfter(2)} />;
-    case "done":
-      return <PreviewHarness screen="onboarding" session={await sessionAfter(SCRIPT.length)} />;
-    case "review":
-      return <PreviewHarness screen="review" session={await sessionAfter(SCRIPT.length)} />;
+      return show(null);
+    case "chat":
+      return show(await sessionAfter(2));
+    case "walker":
+      return show(await sessionAfter(SCRIPT.length));
     case "saved":
-      return <PreviewHarness screen="review" session={await sessionAfter(SCRIPT.length, true)} />;
+      return show(await sessionAfter(SCRIPT.length, true));
     default:
       notFound();
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MODULE_CATALOG, checkSelection, type SessionView, type TurnInput } from "@walker/contracts";
-import { MemorySessionStore, OnboardingError, OnboardingService, defaultSelection } from "../src";
+import { MemorySessionStore, OnboardingError, OnboardingService, defaultSelection, openingQuestion } from "../src";
 import { QUESTIONS } from "../src/onboarding/questions";
 
 function setup(start = new Date("2026-10-23T17:00:00Z")) {
@@ -32,6 +32,12 @@ describe("onboarding service", () => {
     expect(view.state).toBe("collecting");
     expect(view.current_question?.id).toBe("tasks");
     expect(defaultSelection(view.recommendations)).toEqual(["base.walker"]);
+  });
+
+  it("shows the same opening question before a session exists as the session starts with", async () => {
+    const { service } = setup();
+    const { view } = await begin(service);
+    expect(openingQuestion()).toEqual(view.current_question);
   });
 
   it("walks the questions, asks about reaching only when relevant, and recommends from answers", async () => {

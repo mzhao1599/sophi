@@ -26,9 +26,8 @@ Test with keyboard only, browser zoom, at least one screen reader, a mobile view
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Clear project introduction, demo entry, and sign-in |
-| `/onboarding` | Conversation, progress, transcript, editable summary |
-| `/onboarding/review` | Module cards with rationale and manual selection |
+| `/` | The demo, one page: a guided chat beside a live drawing of the walker, then the clickable walker to adjust, save and order (built) |
+| `/onboarding`, `/onboarding/review` | Redirect to `/` (they were the separate conversation and review pages) |
 | `/devices` | Paired devices, online/last-seen state, actual modules |
 | `/devices/[id]/settings` | Audio/haptic preferences, privacy, caregivers if later supported |
 | `/devices/[id]/activity` | Human-readable action and fault history |
@@ -45,4 +44,4 @@ For an optional “call the onboarding agent” integration, expose the same ses
 
 Create a Next.js app with a simple design system, authenticated/demo session boundary, static module catalog fixture, and accessible text onboarding flow. Add the real agent endpoint after the deterministic UI is usable. Document local setup, environment variables by *name* only, and a short manual accessibility checklist in `apps/web/README.md`.
 
-**Done (demo mode):** landing page, `/onboarding` and `/onboarding/review` as described above, the module catalog in `packages/contracts`, and the deterministic engine in `services/cloud-api`. Not done: sign-in, Supabase, the LLM agent, speech, `/devices` and settings. See [apps/web](../../apps/web/README.md).
+**Done (demo mode):** the one-page demo at `/` (chat, clickable walker, save, Stripe test-mode order), the module catalog in `packages/contracts`, the deterministic engine and the optional LLM agent in `services/cloud-api`, and passwordless sign-in with Supabase (kept, but not linked from the demo). Not done: speech, `/devices` and settings. See [apps/web](../../apps/web/README.md).

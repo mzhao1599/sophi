@@ -238,35 +238,6 @@ a {
   opacity: 0.7;
 }
 
-/* ---- Pills ---- */
-
-.pill {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-small);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.pill-recommended {
-  background: var(--pill-accent-bg);
-  color: var(--pill-accent-ink);
-}
-
-.pill-consider {
-  background: var(--pill-warning-bg);
-  color: var(--pill-warning-ink);
-}
-
-.pill-neutral {
-  background: var(--pill-neutral-bg);
-  color: var(--pill-neutral-ink);
-}
-
 /* ---- Fields ---- */
 
 .field-label {
@@ -309,7 +280,6 @@ a {
 }
 
 @media (forced-colors: active) {
-  .pill,
   .button {
     border: 1px solid CanvasText;
   }
