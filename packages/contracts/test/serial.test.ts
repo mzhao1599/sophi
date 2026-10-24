@@ -10,9 +10,10 @@ const invalidCases: { expect: string; why: string; line: string }[] = JSON.parse
 
 describe("serial envelope v1", () => {
   it("keeps every example line from docs/interfaces.md in the fixtures", () => {
+    // Lift lines (`"type":"lift.…"`) have their own fixtures and parser: lift-serial.test.ts.
     const docLines = read("../../../docs/interfaces.md")
       .split("\n")
-      .filter((l) => l.startsWith('{"v":1,'));
+      .filter((l) => l.startsWith('{"v":1,') && !l.startsWith('{"v":1,"type":"lift.'));
     expect(docLines.length).toBeGreaterThanOrEqual(5);
     for (const line of docLines) expect(validLines).toContain(line);
   });

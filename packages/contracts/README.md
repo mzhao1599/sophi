@@ -9,12 +9,14 @@ Versioned schemas for messages between the web app, cloud API, Pi and ESP32s. Wr
 | `src/serial.ts` | Pi ↔ ESP32 JSON Lines envelope (`hello`, `heartbeat`, `hand.input`, `perception.zones`, `haptic.play`, `ack`, `error`), the 1 KiB line limit and `parseSerialLine`. Specified, not implemented on any device | serial v1 |
 | `src/device.ts` | Pi ↔ cloud: capability manifest, sensor snapshot with `readZone` (missing or stale reads as unknown), action request and status report with `canFollowActionStatus`. Specified, no route or Pi code yet | device API v1 |
 | `src/circle.ts` | Sophi Circle: members, invites, `ScreenSettings` (versioned, apart from `WalkerConfiguration`), `VOICE_CHOICES`, suggestions and joins, messages, the circle feed, the device, owner and member routes, errors, and the walker screen's local `ScreenState`. Proposed, no route or Pi code yet ([interfaces](../../docs/interfaces.md#sophi-circle-and-the-walker-screen-proposed-not-built)) | circle v1 |
+| `src/motion.ts` | Arms and lift: joints, calibration files, named poses, lift configuration, skill files with `checkSkillAgainstSetup`, the one pending Confirm target that every non-stop command needs (`ConfirmTargetSchema`, `confirmPressVerdict`, `commandMatchesTarget`), the cloud's id-only `MotionOfferRequestSchema`, the lift's installation record (guards, drop test), the nine motion commands and their rule-8 policy (`MOTION_COMMAND_POLICY`), motion state, latched faults with fixed sentences, and every placeholder limit. **Proposed, not built** | motion v1 |
+| `src/lift-serial.ts` | Pi ↔ lift ESP32 lines (`lift.hello`, `lift.status`, `lift.ack`, `lift.done`, `lift.heartbeat`, `lift.home`, `lift.move`, `lift.stop`, `lift.enable`, `lift.clear`) and `parseLiftSerialLine`. **Proposed, not built** | serial v1, `lift.` types |
 
 `test/unchanged-shapes.test.ts` pins the JSON Schema of every schema in `walker.ts` and `device.ts` to `test/fixtures/walker-device-v1.shapes.json`, because today's deployed Pi parses them strictly. Change that snapshot only with the Pi re-bundled first. It doesn't cover refinements and transforms (`.refine`, `.trim()`) or exports that aren't schemas (constants and functions); the walker and device tests cover those.
 
 Not yet written: agent tool arguments and the Pi's reply to a serial `hello` (see [interfaces](../../docs/interfaces.md)).
 
-Language-neutral fixtures for the serial envelope live in `test/fixtures/`: `serial-v1.valid.jsonl` (every line must parse) and `serial-v1.invalid.json` (each line with the problem code it must produce). A Python Pi runtime or C++ firmware parser should run the same files.
+Language-neutral fixtures for the serial envelope live in `test/fixtures/`: `serial-v1.valid.jsonl` (every line must parse) and `serial-v1.invalid.json` (each line with the problem code it must produce), and the same pair for the lift (`lift-serial-v1.*`). `existing-v1.shapes.json` pins the JSON Schema of catalog, device, serial and walker, which deployed parsers read strictly. A Python Pi runtime or C++ firmware parser should run the same files.
 
 Rules:
 

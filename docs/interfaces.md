@@ -295,6 +295,87 @@ Firmware sends a hello on boot and on each `hello.request`, then heartbeat/healt
 
 **Safety path:** a physical stop must interrupt actuator power or driver enable through a hardware path independent of USB serial and cloud software. A Pi process may additionally issue a stop. Do not implement the physical stop as only a JSON message.
 
+## Pi ↔ lift ESP32 USB serial (proposed)
+
+**Proposed, not built:** no lift firmware or Pi code exists, and every timing is a placeholder. Where to find the details:
+
+- the schemas and the firmware's exact rules (numbered 1 to 10 in its header): [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts)
+- the limits: [`motion.ts`](../packages/contracts/src/motion.ts)
+- the rules in plain language: the [manipulation guide](subsystems/manipulation.md#the-lift-proposed)
+- fixtures: [`lift-serial-v1.valid.jsonl`](../packages/contracts/test/fixtures/lift-serial-v1.valid.jsonl) (includes every example below) and [`lift-serial-v1.invalid.json`](../packages/contracts/test/fixtures/lift-serial-v1.invalid.json)
+
+The lift's own ESP32 (`lift-01`, a dedicated board) drives the stepper driver's step, direction and enable lines. It reads the top and bottom limit switches and its own stop-sense input. Lift motion follows the [rule](subsystems/manipulation.md#the-rule): it starts only from a handle Confirm press on the walker and runs only while a person holds the screen's hold control. Over serial, that hold is a lease in every Pi heartbeat.
+
+**Transport.** The lift uses the same transport and envelope as the other modules: JSON Lines, 1 KiB a line, `v: 1`, `module_id`, `seq`, strict objects. It shares their `hello.request` and `error` lines, but every other type starts with `lift.`:
+
+- **Parsers.** Today's `parseSerialLine` answers `unknown_type` to every lift line. So a deployed Pi ignores a lift board, and a hand or obstacle board never acts on a lift line. The lift's own parser is `parseLiftSerialLine`.
+- **Ids.** Lift module ids must start with `lift-`. Request ids carry the Pi service's boot prefix, six lowercase letters or digits followed by a counter (`k3x9q2-17`), so an id from before a restart never matches.
+
+Example lines (from the fixtures, not captured from a board):
+
+```json
+{"v":1,"type":"lift.hello","module_id":"lift-01","seq":0,"firmware_version":"0.1.0","uptime_ms":0,"config":{"microsteps":8,"soft_min_mm":5,"soft_max_mm":600,"max_speed_mm_s":20,"max_accel_mm_s2":50,"top_switch_mm":null},"stop_sense":"wired"}
+{"v":1,"type":"lift.heartbeat","module_id":"lift-01","seq":3,"hold_request_id":null}
+{"v":1,"type":"lift.heartbeat","module_id":"lift-01","seq":5,"hold_request_id":"k3x9q2-2"}
+{"v":1,"type":"lift.home","module_id":"lift-01","seq":6,"request_id":"k3x9q2-2"}
+{"v":1,"type":"lift.done","module_id":"lift-01","seq":212,"request_id":"k3x9q2-2","uptime_ms":31800,"outcome":"completed","position_mm":5}
+{"v":1,"type":"lift.move","module_id":"lift-01","seq":310,"request_id":"k3x9q2-3","target_mm":250,"speed_mm_s":20}
+{"v":1,"type":"lift.status","module_id":"lift-01","seq":260,"uptime_ms":34000,"state":"moving","homed":true,"position_mm":121.5,"target_mm":250,"driver_enabled":true,"limits":{"top":"released","bottom":"released"},"stop_sense":"released","faults":[],"request_id":"k3x9q2-3","heartbeat_age_ms":60}
+{"v":1,"type":"lift.stop","module_id":"lift-01","seq":330,"request_id":"k3x9q2-4"}
+{"v":1,"type":"lift.ack","module_id":"lift-01","seq":291,"request_id":"k3x9q2-9","result":"rejected","reason":"not_held","uptime_ms":36100}
+{"v":1,"type":"lift.status","module_id":"lift-01","seq":450,"uptime_ms":42000,"state":"fault","homed":false,"position_mm":null,"target_mm":null,"driver_enabled":true,"limits":{"top":"released","bottom":"released"},"stop_sense":"pressed","faults":["stop_circuit_opened"],"request_id":null,"heartbeat_age_ms":40}
+```
+
+**Lift → Pi**
+
+- **`lift.hello`**, on boot and on every `hello.request`. It carries the soft limits, speed, acceleration and microstep setting built into the firmware, and whether a stop-sense input is wired. The Pi refuses lift motion if these differ from its own configuration (`lift_config_mismatch`). Nothing sent over serial can raise them.
+- **`lift.status`**, at `LIFT_STATUS_HZ` (20 Hz) and on every change. It is also the lift's heartbeat. It reports:
+  - the state: `unhomed`, `homing`, `idle`, `moving`, `stopping` or `fault`
+  - whether it is homed, and its height (counted in steps, not measured)
+  - the target and the request being carried out
+  - whether the driver is enabled, both limit switches, and the lift's own stop-sense reading
+  - the latched faults, and the time since the last Pi heartbeat
+- **`lift.ack`**, for every command. A rejection names a reason: a serial problem code, or `stale_seq`, `request_used`, `no_heartbeat`, `not_held`, `stop_pressed`, `fault_latched`, `busy`, `driver_disabled`, `not_homed`, `out_of_range` or `cause_present`.
+- **`lift.done`**, once per accepted move or homing:
+  - `completed`;
+  - `stopped`: by a stop, a disable, a `hello.request`, or the person letting go;
+  - `failed`, with the fault that caused it.
+
+**Pi → lift**
+
+- **`lift.heartbeat`**, every `LIFT_HEARTBEAT_INTERVAL_MS` (100 ms), from the motion coordinator's control loop. Its `hold_request_id` is the request a person at the walker is holding the screen's hold control for, or null when nobody is.
+- **Commands:**
+  - `lift.home` and `lift.move` (`target_mm` from 0 to 1000, `speed_mm_s` up to 50)
+  - `lift.stop`
+  - `lift.enable`
+  - `lift.clear`, sent only for a confirmed local `fault.clear`
+
+**Rules the firmware follows**
+
+- **Sequence.** Every Pi line's `seq` must be above the last one the lift accepted since the last `hello.request`. A stale heartbeat is ignored; a stale command is rejected with `stale_seq`. A `hello.request` stops any move and starts sequence tracking again.
+- **Hold-to-run.** A move or homing R is accepted only if the latest heartbeat, received within `LIFT_WATCHDOG_TIMEOUT_MS` (300 ms), names R.
+  - While R runs, a heartbeat naming anything else means the person let go: the lift ramps down at `LIFT_STOP_DECEL_MM_S2` and holds, with no fault.
+  - No heartbeat for 300 ms stops it the same way and latches `watchdog_expired`.
+  - The driver always stays enabled while it holds.
+  - A stopping or finished request never resumes, whatever later heartbeats name. A move or homing whose request id counter isn't above the highest the lift accepted under the same boot prefix is rejected with `request_used`.
+  - The Pi stops heartbeating after 300 ms without a `lift.status`, so a break in either direction stops the lift.
+- **Always accepted.** `lift.stop` and `lift.enable(false)` are accepted whatever the state, sequence number or heartbeat. Disabling frees the motor and clears homed. The Pi sends it only for a confirmed `lift.disable`.
+- **Homing,** in four phases:
+  1. A fast approach down at 15 mm/s to the bottom switch.
+  2. A back-off up 5 mm at 2 mm/s. The switch must release within 8 mm.
+  3. A slow approach down at 2 mm/s until the switch presses again. That point is 0 mm.
+  4. A back-off up 5 mm at 2 mm/s. That point is home.
+
+  `homing_failed` latches if a press or release doesn't come within its distance, if the travel over all phases goes past `LIFT_HOMING_MAX_TRAVEL_MM`, or if the top switch presses.
+- **Switches.** Limit switches and the stop-sense input are all normally closed.
+  - A limit switch pressing while the lift is homed latches `limit_hit` and stops it at once.
+  - Both pressed latches `limit_wiring`.
+  - The stop-sense input is read on an edge interrupt, and any press latches `stop_circuit_opened`.
+  - Every latched fault clears homed.
+- **Boot.** The lift boots not stepping, unhomed and with the driver enabled, so the motor holds the carriage. ENA is wired so that a resetting or unpowered ESP32 leaves the driver enabled: on most TB6600s, ENA is an active-disable input. Check this on the received unit.
+- **Pins.** PUL, DIR, ENA and the inputs never use an ESP32-WROOM-32 strapping pin (GPIO 0, 2, 5, 12, 15) or a flash pin (GPIO 6 to 11). GPIO 34 to 39 are input-only, with no internal pull-ups.
+- **Not specified yet:** the exact pins, the step pulse timing, and the TB6600's enable polarity. The firmware owner records them after checking the received unit.
+
 ## Sensor and voice data
 
 The Pi publishes a capability manifest with module IDs, protocol/firmware versions, and current availability. A sensor snapshot sent to cloud includes zone, value, quality, capture time, and expiry; omitted or stale data means unknown. Both are **specified, v1** in [`device.ts`](../packages/contracts/src/device.ts) (not implemented): `CapabilityManifestSchema` lists each detected part by catalog `module_id`, hardware `instance_id`, firmware and serial protocol versions (null where the part has none), `health` (`ok`, `degraded`, `fault`, or `unavailable` when the Pi stopped hearing from it), fault codes, `observed_at` and `simulated` (a fake adapter stands in for the part), plus `simulator` for a whole walker simulated on a computer. Device v1 is unreleased until a walker ships, so fields can still be added, with the Pi and cloud updated together. The Pi also reports the parts it hosts itself, under fixed instance ids with `protocol_version: null`: the coordinator as `base.walker` (`pi-coordinator`, or `sim-coordinator` in the simulator), its USB mic and speaker as `voice` (`pi-usb-audio` / `sim-audio`), and its GPIO buttons as `controls.hand` (`pi-gpio-buttons`) only when the installer declares them wired. `SensorSnapshotSchema` holds per-zone `mm`, `quality`, `captured_at` and `expires_at`, and `readZone(snapshot, zone, now)` returns `unknown` for a missing, invalid or expired zone, never clear. Store high-rate raw streams locally only if needed for debugging and consented. The cloud normally receives a compact snapshot, not continuous ToF samples.
@@ -308,10 +389,10 @@ Audio clips and camera frames use bounded uploads to private storage or authenti
 | Cloud timeout / network loss | Pi ends the pending turn with an offline cue; local controls and alerts continue; no delayed motion starts on reconnect |
 | ESP32 unplug / malformed frames | Pi marks capability unavailable and raises a user-visible service status; stale obstacle values are unknown |
 | Camera unavailable | Manipulation request is rejected or paused; no blind continuation |
-| Arm/lift fault or limit hit | Driver is disabled/stopped, stop reason logged, user informed, manual reset/inspection required |
+| Arm/lift fault or limit hit | Motion stops and holds (or that arm is released), per the [fault table](subsystems/manipulation.md#faults); stop reason logged, user informed, local inspection and `fault.clear` required (proposed, `motion.ts`) |
 | Duplicate command | Same action ID produces same status; never repeats physical motion |
 | Invalid auth/ownership | API rejects without revealing another user's device or session |
 
 ## Implementation checklist
 
-When writing `packages/contracts/`, add schemas for module catalog, profile, configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and agent tool arguments. Written so far: catalog, onboarding profile and configuration, serial envelope, capability manifest, sensor snapshot, action request/status. Still to write: agent tool arguments and the Pi's reply to `hello`. Define compatibility rules and fixtures. Document exact byte limits, timeout values, and error codes after device measurements. The examples above are contract proposals, not permission to skip validation.
+When writing `packages/contracts/`, add schemas for module catalog, profile, configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and agent tool arguments. Written so far: catalog, onboarding profile and configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and (proposed, not built) the motion contract and the lift's serial lines (`motion.ts`, `lift-serial.ts`). Still to write: agent tool arguments and the Pi's reply to `hello`. Define compatibility rules and fixtures. Document exact byte limits, timeout values, and error codes after device measurements. The examples above are contract proposals, not permission to skip validation.

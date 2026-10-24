@@ -59,7 +59,7 @@ The perception ESP32 measures ToF sensors, rejects invalid/stale readings, and r
 
 ### Manipulation
 
-The assistant or user requests a high-level action such as “pick up the cup.” The Pi captures bounded camera frames and the manipulation planner proposes an object, grasp, and short motion plan. The user explicitly starts the action. The local motion guard checks available arm, homing state, workspace, lift position, velocity/force/current limits, timeout, collision zones, and current stop state. It executes a small segment, checks feedback, and can pause/replan. Emergency stop, user cancel, stale sensing, communication loss, or watchdog expiry stops motion. See [manipulation](subsystems/manipulation.md).
+The assistant or user requests a high-level action such as “pick up the cup.” The Pi captures bounded camera frames and the manipulation planner proposes an object, grasp, and short motion plan. The user explicitly starts the action. The local motion guard checks available arm, homing state, workspace, lift position, velocity/force/current limits, timeout, collision zones, and current stop state. It executes a small segment, checks feedback, and can pause/replan. Emergency stop, user cancel, stale sensing, communication loss, or watchdog expiry stops motion. See [manipulation](subsystems/manipulation.md). The first version (proposed in [`motion.ts`](../packages/contracts/src/motion.ts), not built) has no camera planning: a person teaches a movement with a leader arm, and the walker replays it after a Confirm press; the lift runs on its own ESP32 (`lift-01`) with a watchdog and moves only while a person holds its control.
 
 ## Data and trust boundaries
 

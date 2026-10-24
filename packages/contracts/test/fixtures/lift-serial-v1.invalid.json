@@ -1,0 +1,182 @@
+[
+  {
+    "expect": "unknown_type",
+    "why": "A hand line on a lift port",
+    "line": "{\"v\":1,\"type\":\"hand.input\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":10,\"button\":\"talk\",\"edge\":\"pressed\"}"
+  },
+  {
+    "expect": "unknown_type",
+    "why": "A type the lift protocol doesn't define",
+    "line": "{\"v\":1,\"type\":\"lift.jog\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"mm\":5}"
+  },
+  {
+    "expect": "unsupported_version",
+    "why": "Another protocol version",
+    "line": "{\"v\":2,\"type\":\"lift.heartbeat\",\"module_id\":\"lift-01\",\"seq\":1,\"hold_request_id\":null}"
+  },
+  {
+    "expect": "malformed",
+    "why": "Cut off mid-line",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"lift-01\""
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A lift command addressed to a hand board",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"hand-left-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"target_mm\":100,\"speed_mm_s\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A move past the rail",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"target_mm\":1001,\"speed_mm_s\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A move below home",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"target_mm\":-1,\"speed_mm_s\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A move faster than the ceiling",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"target_mm\":100,\"speed_mm_s\":51}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A move with no speed",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"target_mm\":100}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A move carrying an acceleration (the firmware owns it)",
+    "line": "{\"v\":1,\"type\":\"lift.move\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"target_mm\":100,\"speed_mm_s\":10,\"accel_mm_s2\":500}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A command without a request_id",
+    "line": "{\"v\":1,\"type\":\"lift.stop\",\"module_id\":\"lift-01\",\"seq\":1}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A request id without the Pi's boot prefix",
+    "line": "{\"v\":1,\"type\":\"lift.stop\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"lift-2\"}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A request id counting from zero",
+    "line": "{\"v\":1,\"type\":\"lift.stop\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-0\"}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A heartbeat without its hold lease",
+    "line": "{\"v\":1,\"type\":\"lift.heartbeat\",\"module_id\":\"lift-01\",\"seq\":1}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A hold lease that isn't a request id",
+    "line": "{\"v\":1,\"type\":\"lift.heartbeat\",\"module_id\":\"lift-01\",\"seq\":1,\"hold_request_id\":true}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A heartbeat with a field v1 doesn't list",
+    "line": "{\"v\":1,\"type\":\"lift.heartbeat\",\"module_id\":\"lift-01\",\"seq\":1,\"hold_request_id\":null,\"motion_allowed\":true}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A position while unhomed",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"unhomed\",\"homed\":false,\"position_mm\":10,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":null}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Moving with the driver off",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"moving\",\"homed\":true,\"position_mm\":10,\"target_mm\":50,\"driver_enabled\":false,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":\"k3x9q2-1\",\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Moving with no target",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"moving\",\"homed\":true,\"position_mm\":10,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":\"k3x9q2-1\",\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Moving without naming its request",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"moving\",\"homed\":true,\"position_mm\":10,\"target_mm\":50,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Idle but not homed",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"idle\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Homing while homed",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"homing\",\"homed\":true,\"position_mm\":10,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":\"k3x9q2-1\",\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Stopping while unhomed but reporting a height",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"stopping\",\"homed\":false,\"position_mm\":10,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":\"k3x9q2-1\",\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A target while idle",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"idle\",\"homed\":true,\"position_mm\":10,\"target_mm\":50,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A fault state with no fault",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"fault\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"pressed\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A fault code the lift doesn't latch",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"fault\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[\"overload\"],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "The same fault twice",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"fault\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"pressed\",\"bottom\":\"pressed\"},\"stop_sense\":\"released\",\"faults\":[\"limit_wiring\",\"limit_wiring\"],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A pressed stop without its fault",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"unhomed\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"pressed\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "Homing with the stop pressed (its latched fault means the state must be fault)",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"homing\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"released\",\"bottom\":\"released\"},\"stop_sense\":\"pressed\",\"faults\":[\"stop_circuit_opened\"],\"request_id\":\"k3x9q2-1\",\"heartbeat_age_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A switch state the lift can't report",
+    "line": "{\"v\":1,\"type\":\"lift.status\",\"module_id\":\"lift-01\",\"seq\":1,\"uptime_ms\":50,\"state\":\"unhomed\",\"homed\":false,\"position_mm\":null,\"target_mm\":null,\"driver_enabled\":true,\"limits\":{\"top\":\"unknown\",\"bottom\":\"released\"},\"stop_sense\":\"released\",\"faults\":[],\"request_id\":null,\"heartbeat_age_ms\":null}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A rejection with no reason",
+    "line": "{\"v\":1,\"type\":\"lift.ack\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"result\":\"rejected\",\"uptime_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "An acceptance with a reason",
+    "line": "{\"v\":1,\"type\":\"lift.ack\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"result\":\"accepted\",\"reason\":\"busy\",\"uptime_ms\":10}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A failure with no fault",
+    "line": "{\"v\":1,\"type\":\"lift.done\",\"module_id\":\"lift-01\",\"seq\":1,\"request_id\":\"k3x9q2-1\",\"uptime_ms\":10,\"outcome\":\"failed\",\"position_mm\":null}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A hello whose limits are upside down",
+    "line": "{\"v\":1,\"type\":\"lift.hello\",\"module_id\":\"lift-01\",\"seq\":0,\"firmware_version\":\"0.1.0\",\"uptime_ms\":0,\"config\":{\"microsteps\":8,\"soft_min_mm\":600,\"soft_max_mm\":5,\"max_speed_mm_s\":20,\"max_accel_mm_s2\":50,\"top_switch_mm\":null},\"stop_sense\":\"wired\"}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A microstep setting the driver doesn't have",
+    "line": "{\"v\":1,\"type\":\"lift.hello\",\"module_id\":\"lift-01\",\"seq\":0,\"firmware_version\":\"0.1.0\",\"uptime_ms\":0,\"config\":{\"microsteps\":3,\"soft_min_mm\":5,\"soft_max_mm\":600,\"max_speed_mm_s\":20,\"max_accel_mm_s2\":50,\"top_switch_mm\":null},\"stop_sense\":\"wired\"}"
+  },
+  {
+    "expect": "invalid_field",
+    "why": "A hello that doesn't say whether the stop is wired",
+    "line": "{\"v\":1,\"type\":\"lift.hello\",\"module_id\":\"lift-01\",\"seq\":0,\"firmware_version\":\"0.1.0\",\"uptime_ms\":0,\"config\":{\"microsteps\":8,\"soft_min_mm\":5,\"soft_max_mm\":600,\"max_speed_mm_s\":20,\"max_accel_mm_s2\":50,\"top_switch_mm\":null}}"
+  }
+]

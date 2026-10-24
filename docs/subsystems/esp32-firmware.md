@@ -16,6 +16,10 @@ Each ESP32 is a small controller for one module. It samples local inputs or sens
 
 The initial message format is newline-delimited JSON; see [interfaces](../interfaces.md) for framing, hello, heartbeat, reports, commands, and errors. The v1 shapes are specified in [`packages/contracts/src/serial.ts`](../../packages/contracts/src/serial.ts); a firmware parser must give each line in `packages/contracts/test/fixtures/serial-v1.valid.jsonl` and `serial-v1.invalid.json` the contract's problem code, except that it answers `unsupported` to the types only modules send (above). The firmware's cross-check sends it every fixture line. Keep serial parsing bounded and nonblocking. An invalid line must not crash firmware or hold a motor/haptic on. The Pi maps stable module IDs to logical roles such as `hand_left`; do not rely on connection order.
 
+## Lift module (proposed, not built)
+
+A dedicated ESP32 (`lift-01`) drives the lift's stepper (step, direction, enable on a TB6600-type driver) and reads its top and bottom limit switches. Its serial lines all start with `lift.` ([interfaces](../interfaces.md#pi--lift-esp32-usb-serial-proposed), [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts)). It moves only while the Pi's heartbeat carries the move's hold lease (a person at the walker is holding the screen's hold control), stops on its own when the lease or the heartbeat stops or its own stop-sense input reads pressed, always accepts a stop or a disable, checks every command against limits built into its firmware, and latches its own faults. It never resumes a stopping or finished request and refuses a request id it already accepted. Its exact rules are numbered 1 to 10 at the top of `lift-serial.ts`; it must not use the ESP32 strapping pins (GPIO 0, 2, 5, 12, 15) for PUL, DIR or ENA. Rules: [manipulation guide](manipulation.md#the-lift-proposed).
+
 ## Shared firmware responsibilities
 
 - Boot into a safe state: haptics/speaker off, no action latched, valid firmware version and module ID available.
