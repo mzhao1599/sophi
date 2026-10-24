@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Adds one Wi-Fi network to the walker, asking for its name and password at the prompt (the password
 # isn't shown or saved anywhere but NetworkManager). Usage, on the Pi: sudo walker-wifi-add.sh
-# A network added here is preferred over the phone hotspot when both are in range.
+# A network added here connects automatically and is preferred over saved networks with the default
+# priority (0) when both are in range. For a backup that should stay off (the venue Wi-Fi at Cal Hacks,
+# where the walker uses Ethernet), run afterwards:
+#   nmcli connection modify "walker: <name>" connection.autoconnect no
 set -euo pipefail
 
 read -r -p "Wi-Fi name: " name

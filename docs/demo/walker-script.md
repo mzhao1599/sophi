@@ -7,7 +7,7 @@ This is the script for showing the always-on walker assistant to judges at Cal H
 - what the "Your walker" page shows at each beat;
 - the honesty lines and judge Q&A;
 - a 60-second cut, and how this joins the onboarding demo in one 3 to 4 minute run;
-- a setup checklist for two cases: the simulator on the Mac (tonight), and the real Pi on Max's phone hotspot with the server on Render;
+- a setup checklist for two cases: the simulator on the Mac (tonight), and the real Pi on the venue network (Ethernet) with the server on Render;
 - the rehearsal results, with timings.
 
 The onboarding demo's script is [script.md](script.md); it stays the source for Wren's lines and the website setup. Sponsor-track framing is in [tracks.md](tracks.md).
@@ -124,15 +124,15 @@ The page's distance comes from the walker's report every 5 seconds, so it can re
 > "Now it loses the internet."
 
 1. Cut the walker's network:
-   - **Real Pi:** turn off the phone hotspot the Pi is on. The laptop stays on venue Wi-Fi, so the page keeps working.
+   - **Real Pi:** unplug the Ethernet cable at the Pi's end. Never unplug anything at the venue's switch. The laptop stays on its own connection, so the page keeps working. This takes the walker offline only if it has no Wi-Fi to fall back to: keep its Wi-Fi backup off ([setup B, step 3](#b-the-real-pi-on-the-venue-network-server-on-render)).
    - **Simulator:** press `o` in the simulator's terminal. It cuts the walker's own requests, so the page stays connected.
 2. Within about 10 seconds (5.2 to 7.3 seconds in the rehearsal) the walker counts itself offline and says, once: "I'm offline right now. Your short-sound alerts still work."
    - It names the alerts in force now, so after beat 4 it says short sounds.
    - In the simulator it adds "The obstacle sensor is simulated."
-   - Measured with the simulator's switch, which fails each request at once. On a hotspot that drops packets, each try can wait out its 5-second deadline first; that isn't measured.
+   - Measured with the simulator's switch, which fails each request at once. Unplugging the Pi's cable hasn't been timed: how soon the Pi notices, and whether each try then fails at once or waits out its 5-second deadline first, isn't measured.
 3. Talk (any line): the walker answers at once with the same offline line. It records nothing and doesn't reach the model.
 4. The page shows "Offline" with "last seen", every part "Unavailable" and every zone "Unknown" (about 12 to 13 seconds after the cut).
-5. Turn the network back on (simulator: press `o` again). Once offline, the walker retries after 10 seconds and then every 15 seconds (and at once when Talk is pressed), so it's back within about 15 seconds of the network returning, plus a hotspot's own rejoin time, which isn't measured. It says "I'm back online." The page shows "Online", and its conversation now holds the offline line once, then "I'm back online.", both marked "On the walker".
+5. Turn the network back on (real Pi: plug the cable back into the Pi; simulator: press `o` again). Once offline, the walker retries after 10 seconds and then every 15 seconds (and at once when Talk is pressed), so it's back within about 15 seconds of the network returning, plus the Pi's time to get its wired address back, which isn't measured. It says "I'm back online." The page shows "Online", and its conversation now holds the offline line once, then "I'm back online.", both marked "On the walker".
 
 > "Buttons and obstacle cues never needed the internet. When it's back, the page catches up with everything the walker said."
 
@@ -314,7 +314,7 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
 9. **Screen.** Put the browser and the simulator's terminal side by side; the terminal is the walker's buttons. Click once on an empty part of the page, so the walker's name doesn't keep the focus ring it gets when the page switches to the walker. Close everything else. Do Not Disturb on.
 10. **Reset between judges.** On the page, "Forget this walker", then pair again (step 6) and restart the walker (step 7), so each judge sees the same starting state (vibration alerts, version 1).
 
-### B. The real Pi on Max's phone hotspot, server on Render
+### B. The real Pi on the venue network, server on Render
 
 Needs Max. On the night of 2026-10-24 the Pi steps ran up to one spoken turn: OS, Node, the service, pairing with Render, the USB mic and soundbar, Piper, and one ESP32 hand board for Talk ([what each showed](../../devices/pi/README.md#set-up-the-pi)). Not yet run on the Pi: the GPIO buttons, Confirm, an obstacle board, and the six beats in order.
 
@@ -326,11 +326,27 @@ Needs Max. On the night of 2026-10-24 the Pi steps ran up to one spoken turn: OS
    - the systemd service.
 
    Each step there says what to check.
-3. **Network:** the Pi joins Max's phone hotspot, and the laptop stays on venue Wi-Fi. That way, turning off the hotspot (beat 6) takes only the walker offline.
+3. **Network.** Cal Hacks prohibits personal hotspots, routers and other broadcasting equipment in the venue, and says it can detect them, so the Pi can't use Max's phone hotspot there. Never unplug the venue's access points or switches.
+   - **Primary: Ethernet.** There's a hardline switch every 3 tables. Request a cable in the Cal Hacks app first, then pick it up at the Hardware Checkout window. Plug it from the switch into the Pi 5's own Ethernet port (gigabit, no adapter). NetworkManager on Raspberry Pi OS Lite trixie is expected to get an address on `eth0` by itself (DHCP); that hasn't been run on this Pi. Check: `nmcli device` shows `eth0` as `connected`, and the page shows the walker online.
+   - **Backup only: the venue Wi-Fi,** if Ethernet fails, and only if it has no sign-in web page (the Pi has no browser) and doesn't ask for a username (WPA2-Enterprise). About 3,000 people share it. The Pi 5's Wi-Fi is Wi-Fi 5 on 5 GHz: it works with the venue's Wi-Fi 6 access points, but expect congestion (2.4 GHz is only on the Mezzanine). Add it as in [the Pi's network notes](../../devices/pi/README.md#the-network-ethernet-first-wi-fi-as-a-backup), then turn its autoconnect off.
+   - **Keep the Wi-Fi backup off for the demo.** If the Pi also has a working Wi-Fi network saved and turned on, unplugging Ethernet in beat 6 fails over to Wi-Fi and the walker does NOT go offline. So keep the venue Wi-Fi off unless Ethernet has failed, and do the same for any other saved Wi-Fi network in range. These NetworkManager commands are *not yet run on the Pi*:
+
+     ```bash
+     nmcli connection show            # the saved connections; Wi-Fi ones have TYPE wifi
+     sudo nmcli connection modify "walker: <venue network>" connection.autoconnect no
+     sudo nmcli connection down "walker: <venue network>"   # only if it's connected now
+     nmcli device                     # eth0 "connected"; wlan0 not connected
+     # Only if Ethernet has failed:
+     sudo nmcli connection up "walker: <venue network>"
+     ```
+
+     Use the name `nmcli connection show` lists; the walker's own Wi-Fi scripts name it `walker: <network name>`. With the Wi-Fi backup in use, there's no cable to pull for beat 6: skip it.
+   - **The laptop** stays on its own connection (the venue Wi-Fi), so beat 6 takes only the walker offline.
+   - **Reaching the Pi:** venue networks often keep devices from reaching each other, so SSH from the laptop may not work there. Fallbacks are in [the Pi's network notes](../../devices/pi/README.md#the-network-ethernet-first-wi-fi-as-a-backup).
 4. **Pair:** open `/walker` on the Render address, press "Get a pairing code", and on the Pi run the pair command from the Pi checklist with `--server https://<the Render address>`. The page switches to the walker. On a sleeping free server the first request can take a minute: the Pi wakes it before using the code.
 5. **Obstacle sensors and hand boards:** one hand board (`hand-left-01`) ran with the Pi and gave Talk on a temporary wire before the side mapping changed. Current Pi code treats that left control as Confirm; Talk is on `hand-right-01` or a wired Pi GPIO Talk button. The new mapping still needs a physical check. The obstacle board hasn't run. If no sensor board is connected, the page shows "No obstacle sensors reporting." In that case skip beat 3, and in beat 4 say the cue change is saved for when the sensors are fitted.
 6. **Cartesia,** only with a key: the page says "In Cartesia's voice"† under spoken replies. Its terms (read 2026-10-24) allow training on inputs unless agreed otherwise, so the same scripted-lines-only rule as Gemini's free tier applies.
-7. **Run it once** on the venue network: all six beats, including the hotspot off and on. Time beat 6's return on the real hotspot; it isn't measured.
+7. **Run it once** on the venue network: all six beats, including the Ethernet cable out at the Pi and back in. Time beat 6 (the offline line after unplugging, and "I'm back online." after plugging in); neither is measured.
 8. **Card on the walker:** "Only the presenter speaks to this walker. Type on the page instead; it says where typed words go."
 
 ## Requests
@@ -409,11 +425,11 @@ The first rehearsal, on `beab832` before #43 to #45, used a patched simulator bu
 **Screenshots** at 1440 by 900 of every beat in the second scripted run are in [walker-rehearsal/](walker-rehearsal/).
 
 **Not verified here:**
-- the real Pi, its buttons, microphone and speaker, and the hotspot;
+- the real Pi, its buttons, microphone and speaker, and its Ethernet (unplugging and plugging back in);
 - Render;
 - Cartesia's voice;
 - `--mic mac` and `--loud` with a live voice;
 - the ESP32 boards;
-- the venue network;
+- the venue network: its Ethernet, its Wi-Fi, and whether the laptop can reach the Pi by SSH;
 - the projector;
 - a VoiceOver pass.

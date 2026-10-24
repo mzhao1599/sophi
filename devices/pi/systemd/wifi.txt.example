@@ -4,7 +4,9 @@
 # (wifi.txt, on the card's "bootfs" drive), add a block like the one below, save, and put the card
 # back in the walker. On its next start the walker adds the network and replaces the password here
 # with "(saved)", so the password doesn't stay on the card. Leave the password empty for an open
-# network. Networks that need a sign-in web page won't work; use a phone hotspot instead.
+# network. Networks that need a sign-in web page won't work. At Cal Hacks phone hotspots are
+# banned: the walker uses the venue's Ethernet, and a venue Wi-Fi added here is only a backup, to
+# switch off for the demo (nmcli connection modify "walker: <name>" connection.autoconnect no).
 #
 # name: Example Network
 # password: example-password

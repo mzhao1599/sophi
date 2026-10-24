@@ -123,7 +123,7 @@ export interface TurnEvent {
 
 /**
  * The Pi gives up on a turn after 10 s. The server's part (from reading the upload to having the reply
- * and its audio) stays within this, which leaves time for the audio's download over a phone hotspot.
+ * and its audio) stays within this, which leaves time for the audio's download over a slow network.
  */
 const TURN_BUDGET_MS = 8_000;
 const VOICE_TIMEOUT_MS = 3_000;

@@ -195,7 +195,7 @@ One question and its answer (`WalkerService.turn`, routes `POST /devices/{id}/tu
 
 The model can't confirm anything: only Confirm by id changes a walker (piece 2). A turn's response reads its proposal after expiry, so a replay of an expired proposal, or a walker that dropped offline while the model answered, never comes back as `open`. The rules are one pure function, `applyRules` in `service.ts`.
 
-**Time.** The Pi gives up on a turn after 10 s. The server's part, counted from when the route starts reading the upload, stays within 8 s: the model gets at most 8 s and only what's left, then the voice at most 3 s and only what's left (skipped under half a second). That leaves time for the audio's download over a phone hotspot.
+**Time.** The Pi gives up on a turn after 10 s. The server's part, counted from when the route starts reading the upload, stays within 8 s: the model gets at most 8 s and only what's left, then the voice at most 3 s and only what's left (skipped under half a second). That leaves time for the audio's download over a slow network.
 
 **Idempotency.** A `client_turn_id` already stored returns that turn and its proposal with a fresh status and `speech: null`, without calling the model. Two uploads of one turn at once store one turn and at most one proposal (the store's `saveTurn` is one transaction).
 
