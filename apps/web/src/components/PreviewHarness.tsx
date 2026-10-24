@@ -23,7 +23,7 @@ export function PreviewHarness({ screen, session }: { screen: "onboarding" | "re
     updateFact: async () => false,
     removeFact: noop,
     confirm: async () => false,
-    reset: noop,
+    reset: async () => false,
     clearError: () => undefined,
   };
   return screen === "onboarding" ? <OnboardingView o={o} /> : <ReviewView o={o} />;

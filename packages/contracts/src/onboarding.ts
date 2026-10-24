@@ -137,14 +137,18 @@ export const DeviceConfigurationSchema = z.object({
     request_start: z.array(z.enum(["left_button", "right_button", "voice", "app"])),
   }),
   confirmed_at: z.iso.datetime(),
-  /** Demo configurations can't be paired with a real walker. */
-  source: z.literal("demo"),
+  /** Where it was saved. Demo configurations can't be paired with a real walker. */
+  source: z.enum(["demo", "account"]),
 });
 export type DeviceConfiguration = z.infer<typeof DeviceConfigurationSchema>;
 
+export const SessionKindSchema = z.enum(["demo", "account"]);
+export type SessionKind = z.infer<typeof SessionKindSchema>;
+
 export const SessionViewSchema = z.object({
   session_id: z.string().min(1),
-  kind: z.literal("demo"),
+  /** demo: anonymous and deleted an hour after the last change. account: owned by the signed-in user. */
+  kind: SessionKindSchema,
   state: SessionStateSchema,
   revision: z.number().int().nonnegative(),
   catalog_version: z.number().int().positive(),
@@ -166,13 +170,27 @@ export type SessionView = z.infer<typeof SessionViewSchema>;
 
 export const StartSessionRequestSchema = z.object({
   input_mode: z.literal("text"),
-  consent: z.object({
-    /**
-     * The user read that demo answers are kept in server memory for an hour and then deleted, and, when
-     * the onboarding agent is on, that their answers are also sent to the model provider.
-     */
-    demo_data_notice: z.literal(true),
-  }),
+  /**
+   * Which data notice the user read on the start screen. It also picks the kind of session, so a
+   * session is never kept longer than the notice said, even if the user signed in or out meanwhile.
+   */
+  consent: z.union([
+    z.object({
+      /**
+       * A demo session: answers are kept for an hour after the last change and then deleted, and, when
+       * the onboarding agent is on, they are also sent to the model provider.
+       */
+      demo_data_notice: z.literal(true),
+    }),
+    z.object({
+      /**
+       * An account session (needs a signed-in user): answers and the saved setup are kept in the user's
+       * account until they delete them; an unfinished setup is deleted 30 days after the last change.
+       * The same model-provider notice applies when the agent is on.
+       */
+      account_data_notice: z.literal(true),
+    }),
+  ]),
 });
 export type StartSessionRequest = z.infer<typeof StartSessionRequestSchema>;
 
@@ -247,6 +265,8 @@ export const ApiErrorCodeSchema = z.enum([
   "question_mismatch",
   "invalid_selection",
   "rate_limited",
+  /** 503: the server can't take this request now, for example because it has no database configured. */
+  "unavailable",
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 

@@ -2,7 +2,7 @@
 
 Owns the landing page, onboarding, module review, and (later) device pairing and settings. Next.js 16 (App Router) and TypeScript. The onboarding API route handlers live here too, as thin adapters over [`services/cloud-api`](../../services/cloud-api/README.md); shapes come from [`packages/contracts`](../../packages/contracts/README.md).
 
-**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**. The LLM onboarding agent is built but off by default (see below). Sign-in, Supabase persistence, speech input and device pairing are not built yet.
+**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres (checked against a local stack). The LLM onboarding agent is built but off by default (see below). Sign-in, speech input and device pairing are not built yet.
 
 ## Run it
 
@@ -24,7 +24,26 @@ Then open <http://localhost:3000>. Other commands, from the repository root:
 | `pnpm typecheck` | TypeScript across all packages |
 | `pnpm build` | Production build of the web app |
 
-No environment variables are needed for the default, deterministic onboarding. To turn on the onboarding agent, copy `.env.example` to `.env.local` (git-ignored) and set `ONBOARDING_ENGINE=agent` and `ANTHROPIC_API_KEY`; `ONBOARDING_AGENT_MODEL` is optional. They are read on the server only. What the agent does and how it falls back is in [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent).
+No environment variables are needed for the default, deterministic onboarding with sessions in server memory. Every variable is listed, names only, in [`.env.example`](.env.example); copy it to `.env.local` (git-ignored) to set them.
+
+- **Onboarding agent:** `ONBOARDING_ENGINE=agent` and `ANTHROPIC_API_KEY`; `ONBOARDING_AGENT_MODEL` is optional. Server only. What the agent does and how it falls back is in [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent).
+- **Sessions in Postgres:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`. All three or none. The secret key is server only and must never get a `NEXT_PUBLIC_` name.
+
+### Local Supabase
+
+Needs Docker running. The CLI comes through npx at a pinned version (`scripts/supabase.mjs`), so there is nothing to install. From the repository root:
+
+```bash
+pnpm supabase start
+```
+
+The first start downloads the images and applies [`supabase/migrations/`](../../supabase/migrations). This project uses ports 55420–55429, not Supabase's default 5432x, so it can run next to another local Supabase project. Then:
+
+```bash
+pnpm supabase status
+```
+
+Copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into `apps/web/.env.local` as `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`, and restart `pnpm dev`. Studio is at <http://127.0.0.1:55423>. `pnpm supabase db reset` re-applies the migrations to an empty database; `pnpm supabase stop` stops the stack. The database tests: `pnpm test:db` (see [`services/cloud-api`](../../services/cloud-api/README.md)).
 
 ## Routes
 
@@ -38,9 +57,9 @@ No environment variables are needed for the default, deterministic onboarding. T
 
 ## How demo mode works
 
-- Pressing **Start the demo** creates a session in **server memory**. Its id goes in this tab's `sessionStorage`; the secret that proves you started it is an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding`. The id alone can't read anything, so it may appear in URLs.
-- Answers are deleted an hour after the last change, when the server restarts, or immediately with **Delete my answers**.
-- The in-memory store is for local demos. On a host with several instances (Vercel), two requests can land on different instances and lose the session; the Supabase store replaces it (see [`services/cloud-api`](../../services/cloud-api/README.md)).
+- Pressing **Start the demo** creates a session in **Postgres** when Supabase is configured, otherwise in **server memory**. Its id goes in this tab's `sessionStorage`; the secret that proves you started it is an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding`. Postgres stores only the secret's hash. The id alone can't read anything, so it may appear in URLs.
+- Answers are deleted an hour after the last change (within five minutes of expiring, by a database job), or immediately with **Delete my answers**. The memory store also loses them when the server restarts.
+- The in-memory store is for local demos. On a host with several instances (Vercel), two requests can land on different instances and lose the session, so production refuses to start onboarding without Supabase unless `ONBOARDING_ALLOW_MEMORY_STORE=true` (see [`services/cloud-api`](../../services/cloud-api/README.md#supabase-store)).
 - With the onboarding agent on, each answer is also sent to Anthropic's API, and the first screen says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
 - The landing page's closing question ("What would you like help with?") hands its words to the first question through `sessionStorage`, never the URL.
 
@@ -48,7 +67,7 @@ No environment variables are needed for the default, deterministic onboarding. T
 
 ```text
 app/                     routes (pages and API route handlers)
-src/server/onboarding.ts cookie handling, request parsing with the contract schemas, error envelope
+src/server/onboarding.ts store and engine choice, cookie handling, request parsing with the contract schemas, error envelope
 src/lib/api.ts           browser client; validates every response against the contracts
 src/lib/useOnboarding.ts one hook owns the flow: restore, every API call, the status line, focus key
 src/components/          screens and parts (QuestionStep, FactsPanel, ReviewScreen, WalkerDiagram, …)

@@ -1,4 +1,4 @@
-import { clearToken, handle, json, onboarding, readToken } from "@/server/onboarding";
+import { clearToken, handle, json, onboardingRequest } from "@/server/onboarding";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -6,15 +6,17 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, { params }: Context) {
   return handle(async () => {
     const { id } = await params;
-    return json(await onboarding.get(id, await readToken(id)));
+    const { service, caller } = await onboardingRequest(id);
+    return json(await service.get(id, caller));
   });
 }
 
-/** DELETE /api/v1/onboarding/sessions/{id} — delete the session and everything in it now. */
+/** DELETE /api/v1/onboarding/sessions/{id} — delete the session and everything in it now, including an account's setup saved from it. */
 export async function DELETE(_request: Request, { params }: Context) {
   return handle(async () => {
     const { id } = await params;
-    await onboarding.remove(id, await readToken(id));
+    const { service, caller } = await onboardingRequest(id);
+    await service.remove(id, caller);
     await clearToken();
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   });

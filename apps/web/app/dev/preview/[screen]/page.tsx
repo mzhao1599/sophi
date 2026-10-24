@@ -24,11 +24,11 @@ async function sessionAfter(steps: number, confirm = false): Promise<SessionView
   const { token, response } = await service.start({ input_mode: "text", consent: { demo_data_notice: true } });
   let view = response.session;
   for (const input of SCRIPT.slice(0, steps)) {
-    view = (await service.turn(view.session_id, token, { client_turn_id: crypto.randomUUID(), last_seen_revision: view.revision, input })).session;
+    view = (await service.turn(view.session_id, { token }, { client_turn_id: crypto.randomUUID(), last_seen_revision: view.revision, input })).session;
   }
   if (confirm) {
     view = (
-      await service.confirm(view.session_id, token, {
+      await service.confirm(view.session_id, { token }, {
         last_seen_revision: view.revision,
         selected_module_ids: ["base.walker", "controls.hand", "perception.tof"],
       })

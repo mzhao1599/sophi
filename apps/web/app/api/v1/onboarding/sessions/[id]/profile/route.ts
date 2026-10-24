@@ -1,5 +1,5 @@
 import { ProfileEditRequestSchema } from "@walker/contracts";
-import { handle, json, onboarding, parseBody, readToken } from "@/server/onboarding";
+import { handle, json, onboardingRequest, parseBody } from "@/server/onboarding";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -9,6 +9,7 @@ export async function PATCH(request: Request, { params }: Context) {
     const { id } = await params;
     const body = await parseBody(request, ProfileEditRequestSchema);
     if (body instanceof Response) return body;
-    return json(await onboarding.editProfile(id, await readToken(id), body));
+    const { service, caller } = await onboardingRequest(id);
+    return json(await service.editProfile(id, caller, body));
   });
 }

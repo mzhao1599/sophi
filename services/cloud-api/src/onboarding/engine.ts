@@ -42,7 +42,8 @@ export interface PendingQuestion {
 
 export interface EngineSession {
   id: string;
-  kind: "demo";
+  /** demo: anonymous, owned by a secret token, deleted after an hour. account: owned by a signed-in user. */
+  kind: "demo" | "account";
   revision: number;
   catalog_version: number;
   input_mode: "text";
@@ -80,10 +81,10 @@ const OPENING =
   "Hi. I'll ask a few short questions about what you'd like help with, then suggest walker modules that fit. You can skip any question, and change anything before you save.";
 const REVIEW_READY = "That's everything I need. Check what I understood, then choose your modules.";
 
-export function createSession(id: string, now: Date, ttlMs: number): EngineSession {
+export function createSession(id: string, now: Date, ttlMs: number, kind: EngineSession["kind"] = "demo"): EngineSession {
   const base: EngineSession = {
     id,
-    kind: "demo",
+    kind,
     revision: 0,
     catalog_version: CATALOG_VERSION,
     input_mode: "text",
@@ -127,6 +128,12 @@ export function currentQuestion(session: EngineSession): QuestionDefinition | nu
 export function stateOf(session: EngineSession, now: Date): SessionState {
   if (session.configuration) return "confirmed";
   if (now.getTime() > Date.parse(session.expires_at)) return "expired";
+  return currentQuestion(session) ? "collecting" : "review";
+}
+
+/** The state as stored: like stateOf, but without the clock ("expired" is worked out on read). */
+export function storedState(session: EngineSession): Exclude<SessionState, "expired"> {
+  if (session.configuration) return "confirmed";
   return currentQuestion(session) ? "collecting" : "review";
 }
 
@@ -367,7 +374,8 @@ export function editFact(
   return prune({ ...input, facts });
 }
 
-export function confirm(input: EngineSession, selected: readonly ModuleId[], now: Date): EngineSession {
+/** `version`: the owner's next configuration_version (1 for a demo, 1, 2, 3… per account). */
+export function confirm(input: EngineSession, selected: readonly ModuleId[], now: Date, version = 1): EngineSession {
   if (input.configuration) throw new EngineError("session_confirmed", "This setup has already been saved.");
   const tags = activeTags(input.facts);
   const cues = (
@@ -395,12 +403,12 @@ export function confirm(input: EngineSession, selected: readonly ModuleId[], now
     ...input,
     revisit: null,
     configuration: {
-      configuration_version: 1,
+      configuration_version: version,
       catalog_version: input.catalog_version,
       selected_module_ids: ordered,
       preferences: { cues, request_start: starts },
       confirmed_at: now.toISOString(),
-      source: "demo",
+      source: input.kind,
     },
   };
 }

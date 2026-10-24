@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MODULE_CATALOG, type DeviceConfiguration, type SessionView } from "@walker/contracts";
 import screen from "./Screen.module.css";
 import styles from "./SavedConfiguration.module.css";
@@ -36,9 +36,10 @@ export function SavedConfiguration({
   session: SessionView;
   configuration: DeviceConfiguration;
   busy: boolean;
-  onStartOver(): Promise<void>;
+  onStartOver(): Promise<boolean>;
 }) {
   const router = useRouter();
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => headingRef.current?.focus(), []);
   const modules = configuration.selected_module_ids.map((id) => MODULE_CATALOG.modules.find((m) => m.id === id)!);
@@ -108,12 +109,18 @@ export function SavedConfiguration({
           className="button button-secondary"
           disabled={busy}
           onClick={async () => {
-            await onStartOver();
-            router.push("/onboarding");
+            const deleted = await onStartOver();
+            setDeleteFailed(!deleted);
+            if (deleted) router.push("/onboarding");
           }}
         >
           Delete and start over
         </button>
+        {deleteFailed ? (
+          <p role="alert" className={styles.meta}>
+            Your answers couldn&apos;t be deleted just now. Please try again.
+          </p>
+        ) : null}
         <p className={styles.meta}>Session {session.session_id.slice(0, 8)} · deleted automatically within an hour.</p>
       </div>
     </div>

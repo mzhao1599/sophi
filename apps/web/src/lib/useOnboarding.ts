@@ -48,7 +48,8 @@ export interface Onboarding {
   updateFact(factId: string, text: string): Promise<boolean>;
   removeFact(factId: string, text: string): Promise<void>;
   confirm(selected: ModuleId[]): Promise<boolean>;
-  reset(): Promise<void>;
+  /** Deletes the session on the server. False (with an error) if it couldn't, so nothing is cleared. */
+  reset(): Promise<boolean>;
   clearError(): void;
 }
 
@@ -191,17 +192,27 @@ export function useOnboarding(): Onboarding {
     async reset() {
       const current = sessionRef.current;
       setBusy(true);
+      setError(null);
       try {
-        if (current) await api.deleteSession(current.session_id).catch(() => undefined);
-      } finally {
-        storeId(null);
-        sessionRef.current = null;
-        lastQuestion.current = null;
-        setSession(null);
-        setPhase("none");
-        setBusy(false);
-        setStatus("Your answers were deleted.");
+        if (current) await api.deleteSession(current.session_id);
+      } catch (e) {
+        // Already gone (expired or deleted elsewhere) is what the user asked for; anything else isn't.
+        if (!(e instanceof api.ApiRequestError && e.code === "not_found")) {
+          const message = "Your answers couldn't be deleted just now. Please try again.";
+          setError(message);
+          setStatus(message);
+          setBusy(false);
+          return false;
+        }
       }
+      storeId(null);
+      sessionRef.current = null;
+      lastQuestion.current = null;
+      setSession(null);
+      setPhase("none");
+      setBusy(false);
+      setStatus("Your answers were deleted.");
+      return true;
     },
   };
 }

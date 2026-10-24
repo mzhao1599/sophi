@@ -48,6 +48,8 @@ Do not send every sensor sample to a model. A model invocation needs a reason, b
 
 This is a conceptual schema; migration names and exact SQL should follow the chosen Supabase version. Every user-owned table needs ownership rules and RLS if exposed to Supabase's Data API.
 
+**Built so far** ([`supabase/migrations/`](../supabase/migrations)): `onboarding_sessions` (the engine session as one `jsonb` document, plus owner, revision, state, catalog version and expiry), `onboarding_turn_results` (each turn's response by `client_turn_id`, standing in for `agent_runs` idempotency) and `device_configurations` (owner-scoped, numbered per user, immutable; no `devices` table yet). Turns, summaries and recommendation drafts live inside the session document rather than in their own tables. There is no `profiles` table yet. Details and retention: [`services/cloud-api`](../services/cloud-api/README.md#supabase-store).
+
 | Entity | Key fields | Notes |
 | --- | --- | --- |
 | `profiles` | `user_id`, reviewed goals, preferences, revision | Confirmed facts only; deletion/edit path |

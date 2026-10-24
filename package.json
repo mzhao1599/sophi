@@ -9,6 +9,8 @@
     "dev": "pnpm --filter @walker/web dev",
     "build": "pnpm --filter @walker/web build",
     "test": "pnpm -r --if-present test",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test:db": "node scripts/test-db.mjs",
+    "supabase": "node scripts/supabase.mjs"
   }
 }

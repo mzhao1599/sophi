@@ -1,6 +1,14 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { MemorySessionStore, OnboardingService, engineFromEnv, isOnboardingError } from "@walker/cloud-api";
+import {
+  OnboardingService,
+  SupabaseSessionStore,
+  engineFromEnv,
+  isOnboardingError,
+  storeBackendFromEnv,
+  type Caller,
+  type StoreBackend,
+} from "@walker/cloud-api";
 import type { ApiError } from "@walker/contracts";
 import type { z } from "zod";
 
@@ -13,14 +21,33 @@ import type { z } from "zod";
 const COOKIE = "walker_demo";
 const COOKIE_PATH = "/api/v1/onboarding";
 
-// The demo sessions live in one store per server process, kept across dev hot reloads (see
-// MemorySessionStore for its limits). The service itself is rebuilt with each module load so its
-// error classes always match the code that checks them.
-const globalForStore = globalThis as unknown as { __walkerDemoStore?: MemorySessionStore };
-const store = (globalForStore.__walkerDemoStore ??= new MemorySessionStore());
+// Where sessions are kept: Supabase when its three variables are set, otherwise server memory (see
+// storeBackendFromEnv in services/cloud-api, including why production refuses memory). Chosen on the
+// first request, not at import, so a build doesn't log about it, and kept for the life of the server
+// process (across dev hot reloads too, so the memory store keeps its sessions).
+const globalForStore = globalThis as unknown as { __walkerStoreBackend?: StoreBackend };
+function storeBackend(): StoreBackend {
+  return (globalForStore.__walkerStoreBackend ??= storeBackendFromEnv(process.env));
+}
 // ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY turns on the onboarding agent; otherwise the
-// deterministic engine runs. Both variables are read here, on the server, and never sent to the browser.
-export const onboarding = new OnboardingService(store, { engine: engineFromEnv(process.env) });
+// deterministic engine runs. These variables and the Supabase secret key are read here, on the
+// server, and never sent to the browser.
+const engine = engineFromEnv(process.env);
+export const engineKind = engine.kind;
+
+/**
+ * The onboarding service for one request, and who is asking about `sessionId`: the demo secret
+ * from the cookie, only if it is for that session. The service is rebuilt each time (it is only a
+ * few references) so its store can carry the requester's own database client, and so its error
+ * classes always match the code that checks them after a hot reload.
+ */
+export async function onboardingRequest(sessionId?: string): Promise<{ service: OnboardingService; caller: Caller }> {
+  const backend = storeBackend();
+  const store = backend.kind === "supabase" ? new SupabaseSessionStore({ admin: backend.admin, user: null }) : backend.store;
+  const service = new OnboardingService(store, { engine, startBlocked: backend.kind === "memory" ? backend.startBlocked : undefined });
+  const token = sessionId ? await readToken(sessionId) : undefined;
+  return { service, caller: { token } };
+}
 
 export async function readToken(sessionId: string): Promise<string | undefined> {
   const value = (await cookies()).get(COOKIE)?.value;
@@ -82,7 +109,9 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
       return errorResponse(error.code, error.status, error.message, error.session ? { session: error.session } : {});
     }
     const id = traceId();
-    console.error(`[onboarding] unexpected error trace=${id}`, error instanceof Error ? error.name : "unknown");
+    // The name and, for a database error, its Postgres code; never the message, which can quote row data.
+    const code = error instanceof Error && "code" in error && typeof error.code === "string" ? ` code=${error.code}` : "";
+    console.error(`[onboarding] unexpected error trace=${id} ${error instanceof Error ? error.name : "unknown"}${code}`);
     return Response.json(
       { error: { code: "invalid_request", message: "Something went wrong on our side. Please try again.", trace_id: id } },
       { status: 500, headers: { "Cache-Control": "no-store" } },

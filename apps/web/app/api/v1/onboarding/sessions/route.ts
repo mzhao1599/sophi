@@ -1,13 +1,17 @@
 import { StartSessionRequestSchema } from "@walker/contracts";
-import { handle, json, onboarding, parseBody, writeToken } from "@/server/onboarding";
+import { handle, json, onboardingRequest, parseBody, writeToken } from "@/server/onboarding";
 
-/** POST /api/v1/onboarding/sessions — start a demo onboarding session. */
+/**
+ * POST /api/v1/onboarding/sessions — start a session of the kind the consent names: a demo session
+ * (its secret goes in a cookie) or, for a signed-in user, an account session.
+ */
 export async function POST(request: Request) {
   return handle(async () => {
     const body = await parseBody(request, StartSessionRequestSchema);
     if (body instanceof Response) return body;
-    const { token, response } = await onboarding.start(body);
-    await writeToken(response.session.session_id, token);
+    const { service, caller } = await onboardingRequest();
+    const { token, response } = await service.start(body, caller);
+    if (token) await writeToken(response.session.session_id, token);
     return json(response, 201);
   });
 }

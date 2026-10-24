@@ -81,7 +81,7 @@ async function conversation(service: OnboardingService) {
     },
     async send(input: TurnInput) {
       const client_turn_id = `10000000-0000-4000-8000-${String(++turnCounter).padStart(12, "0")}`;
-      const r = await service.turn(id, token, { client_turn_id, last_seen_revision: view.revision, input });
+      const r = await service.turn(id, { token }, { client_turn_id, last_seen_revision: view.revision, input });
       view = r.session;
       return r;
     },
@@ -296,14 +296,14 @@ describe("onboarding agent", () => {
     const { service } = setup(model);
     const { token, response } = await service.start({ input_mode: "text", consent: { demo_data_notice: true } });
     const id = response.session.session_id;
-    let view = (await service.turn(id, token, { client_turn_id: "40000000-0000-4000-8000-000000000001", last_seen_revision: 0, input: { type: "text", text: "at home I keep bumping into things" } })).session;
+    let view = (await service.turn(id, { token }, { client_turn_id: "40000000-0000-4000-8000-000000000001", last_seen_revision: 0, input: { type: "text", text: "at home I keep bumping into things" } })).session;
     expect(view.progress).toEqual({ answered: 2, total: 6 });
 
     // Rewording the fact so it no longer says where reopens "places"...
-    view = (await service.editProfile(id, token, { last_seen_revision: view.revision, edit: { type: "update", fact_id: view.facts[0]!.id, text: "I keep bumping into things" } })).session;
+    view = (await service.editProfile(id, { token }, { last_seen_revision: view.revision, edit: { type: "update", fact_id: view.facts[0]!.id, text: "I keep bumping into things" } })).session;
     expect(view.progress).toEqual({ answered: 1, total: 6 });
     // ...so after the agent's pending question, it is asked.
-    view = (await service.turn(id, token, { client_turn_id: "40000000-0000-4000-8000-000000000002", last_seen_revision: view.revision, input: { type: "skip", question_id: "feedback" } })).session;
+    view = (await service.turn(id, { token }, { client_turn_id: "40000000-0000-4000-8000-000000000002", last_seen_revision: view.revision, input: { type: "skip", question_id: "feedback" } })).session;
     expect(view.current_question?.id).toBe("places");
   });
 
@@ -418,7 +418,7 @@ describe("onboarding agent", () => {
     const { token, response } = await service.start({ input_mode: "text", consent: { demo_data_notice: true } });
     const id = response.session.session_id;
     const turn = (n: number, text: string) =>
-      service.turn(id, token, { client_turn_id: `30000000-0000-4000-8000-00000000000${n}`, last_seen_revision: 0, input: { type: "text", text } });
+      service.turn(id, { token }, { client_turn_id: `30000000-0000-4000-8000-00000000000${n}`, last_seen_revision: 0, input: { type: "text", text } });
 
     const first = turn(1, "at home");
     const second = turn(2, "outside");

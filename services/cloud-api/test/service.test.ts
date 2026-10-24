@@ -16,13 +16,13 @@ function setup(start = new Date("2026-10-23T17:00:00Z")) {
 
 async function begin(service: OnboardingService) {
   const { token, response } = await service.start({ input_mode: "text", consent: { demo_data_notice: true } });
-  return { token, id: response.session.session_id, view: response.session };
+  return { token: token!, id: response.session.session_id, view: response.session };
 }
 
 let turnCounter = 0;
 async function send(service: OnboardingService, id: string, token: string, view: SessionView, input: TurnInput) {
   const client_turn_id = `10000000-0000-4000-8000-${String(++turnCounter).padStart(12, "0")}`;
-  return service.turn(id, token, { client_turn_id, last_seen_revision: view.revision, input });
+  return service.turn(id, { token }, { client_turn_id, last_seen_revision: view.revision, input });
 }
 
 describe("onboarding service", () => {
@@ -92,21 +92,21 @@ describe("onboarding service", () => {
       last_seen_revision: view.revision,
       input: { type: "answer", question_id: "tasks", option_ids: ["obstacles"] } as TurnInput,
     };
-    const first = await service.turn(id, token, request);
-    const retry = await service.turn(id, token, request);
+    const first = await service.turn(id, { token }, request);
+    const retry = await service.turn(id, { token }, request);
     expect(retry).toBe(first);
     await expect(
-      service.turn(id, token, { ...request, client_turn_id: "20000000-0000-4000-8000-000000000002" }),
+      service.turn(id, { token }, { ...request, client_turn_id: "20000000-0000-4000-8000-000000000002" }),
     ).rejects.toMatchObject({ code: "revision_conflict", status: 409 });
   });
 
   it("hides sessions from callers without the token and deletes idle ones", async () => {
     const { service, advance } = setup();
     const { id, token, view } = await begin(service);
-    await expect(service.get(id, "wrong")).rejects.toMatchObject({ code: "not_found", status: 404 });
-    await expect(service.get(id, undefined)).rejects.toBeInstanceOf(OnboardingError);
+    await expect(service.get(id, { token: "wrong" })).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await expect(service.get(id, {})).rejects.toBeInstanceOf(OnboardingError);
     advance(59 * 60 * 1000);
-    await expect(service.get(id, token)).resolves.toBeDefined();
+    await expect(service.get(id, { token })).resolves.toBeDefined();
     // The demo store deletes a session's data once it expires, so it reads the same as an unknown id.
     advance(2 * 60 * 1000);
     await expect(send(service, id, token, view, { type: "skip", question_id: "tasks" })).rejects.toMatchObject({
@@ -122,11 +122,11 @@ describe("onboarding service", () => {
     expect(fact.source).toBe("typed");
     expect(view.recommendations.find((r) => r.module_id === "perception.tof")?.status).toBe("recommended");
 
-    view = (await service.editProfile(id, token, { last_seen_revision: view.revision, edit: { type: "update", fact_id: fact.id, text: "I want to pick up cups" } })).session;
+    view = (await service.editProfile(id, { token }, { last_seen_revision: view.revision, edit: { type: "update", fact_id: fact.id, text: "I want to pick up cups" } })).session;
     expect(view.facts[0]).toMatchObject({ source: "edited", tags: ["pick_up"] });
     expect(view.recommendations.find((r) => r.module_id === "perception.tof")?.status).toBe("not_suggested");
 
-    view = (await service.editProfile(id, token, { last_seen_revision: view.revision, edit: { type: "remove", fact_id: fact.id } })).session;
+    view = (await service.editProfile(id, { token }, { last_seen_revision: view.revision, edit: { type: "remove", fact_id: fact.id } })).session;
     expect(view.facts).toEqual([]);
   });
 
@@ -150,10 +150,10 @@ describe("onboarding service", () => {
     let { id, token, view } = await begin(service);
     view = (await send(service, id, token, view, { type: "skip_rest" })).session;
     await expect(
-      service.confirm(id, token, { last_seen_revision: view.revision, selected_module_ids: ["base.walker", "manipulation.lift"] }),
+      service.confirm(id, { token }, { last_seen_revision: view.revision, selected_module_ids: ["base.walker", "manipulation.lift"] }),
     ).rejects.toMatchObject({ code: "invalid_selection", status: 422 });
 
-    view = (await service.confirm(id, token, { last_seen_revision: view.revision, selected_module_ids: ["voice", "base.walker"] })).session;
+    view = (await service.confirm(id, { token }, { last_seen_revision: view.revision, selected_module_ids: ["voice", "base.walker"] })).session;
     expect(view.state).toBe("confirmed");
     expect(view.configuration).toMatchObject({ configuration_version: 1, selected_module_ids: ["base.walker", "voice"], source: "demo" });
     await expect(send(service, id, token, view, { type: "skip_rest" })).rejects.toMatchObject({ code: "session_confirmed" });

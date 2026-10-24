@@ -28,8 +28,8 @@ export function StartPanel({ busy, error, onStart, agent = false }: { busy: bool
           <h2 className={styles.heading}>Before you start</h2>
           <ul className={styles.notes}>
             <li>
-              This is a demo. Your answers are kept in this server&apos;s memory for an hour after your last change, then deleted.
-              You can delete them sooner at any time.
+              This is a demo. Your answers are kept for an hour after your last change, then deleted. You can delete them sooner
+              at any time.
             </li>
             {agent ? (
               <li>

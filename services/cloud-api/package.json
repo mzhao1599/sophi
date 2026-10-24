@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",
+    "@supabase/supabase-js": "2.117.2",
     "@walker/contracts": "workspace:*",
     "zod": "4.6.5"
   },
