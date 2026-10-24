@@ -67,9 +67,9 @@ What each sponsor's technology does in Steady, and whether it runs today. How th
 
 | Technology | Where | Status |
 | --- | --- | --- |
-| Google Gemini API (`gemini-3.7-flash`) | The onboarding agent reads the person's words and words each question ([gemini.ts](services/cloud-api/src/onboarding/gemini.ts)); the walker assistant's design uses it to hear and answer speech | Onboarding: runs on the demo laptop. Walker: being built |
+| Google Gemini API (`gemini-3.7-flash`) | The onboarding agent reads the person's words and words each question ([gemini.ts](services/cloud-api/src/onboarding/gemini.ts)); the walker assistant hears a spoken question and answers it in one call ([walker assistant](services/cloud-api/README.md#walker-assistant)) | Onboarding: runs on the demo laptop. Walker: built and checked live with the demo's lines, not yet on the real walker |
 | Anthropic Claude (`claude-opus-5-5`) | The same onboarding agent, behind the same adapter ([anthropic.ts](services/cloud-api/src/onboarding/anthropic.ts)) | Built and tested with stub models; not yet run live |
-| Cartesia text-to-speech | The walker assistant's spoken replies, made on the server; the walker's own voice covers offline lines | Being built; in the walker contract (`speech`, `voiced_by`) |
+| Cartesia text-to-speech (`sonic-3.6`) | The walker assistant's spoken replies, made on the server from the reply's text ([speech.ts](services/cloud-api/src/walker/speech.ts)); the walker's own voice covers offline lines and any failure. Setup, features and limits: [Steady and Cartesia](docs/demo/tracks.md#steady-and-cartesia-the-readme-section-for-cartesias-judges) | Built and tested with a stubbed Cartesia; no key yet, so not heard live |
 | Stripe Checkout (test mode only) | "Order (Demo)" for a saved walker, at placeholder prices | Runs today |
 
 ## Contributing

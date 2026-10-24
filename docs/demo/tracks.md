@@ -66,19 +66,65 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **The 2-minute cut:** Wren's L1 (the cart starts building), L4 (her "no" stays out of the cart), "Show My Walker", one part's panel ("You said …"), switch on the arms and lift and point at the total changing, Save, Order (Demo), Stripe's page with the module summaries, pay with the test card, and end on "Demo order: no money moved".
 
-## Cartesia: Best Use of Cartesia (only once built)
+## Cartesia: Best Use of Cartesia (only with a key, and heard working that day)
 
-**What the judges score (25% each):** problem and originality; use of Cartesia (core to the experience; clear, responsive and natural voice); execution; impact and responsibility (accessibility, privacy, responsible use). Submission: a working demo, a 2-minute demo-first presentation, a short README (setup, Cartesia features used, known limitations), source access, and no keys in the repo.
+**What the judges score (25% each):** problem and originality; use of Cartesia (core to the experience; clear, responsive and natural voice); execution; impact and responsibility (accessibility, privacy, responsible use). Submission: a working demo, a 2-minute demo-first presentation, a short README (setup, Cartesia features used, known limitations), source access, and no keys in the repo. The README part is the section below; the Devpost text can link straight to it.
 
-**Status:** built on `main` (#39) but not yet heard. The walker contract carries a spoken reply in Cartesia's voice (`speech`, with `voiced_by: "cartesia"`), the server calls Cartesia's text-to-speech when it has `CARTESIA_API_KEY`, and the Pi plays the audio. There's no key yet, so it's tested with a stubbed Cartesia only, and in the 2026-10-24 rehearsal the walker spoke every reply with its own voice (the page said "In the walker's own voice"). Until a key is set and Cartesia has been heard on the walker, don't mention Cartesia.
+**Status, 2026-10-24:** built on `main` (#39) and tested with a stubbed Cartesia only. There is no Cartesia key yet, so every walker reply is spoken in the walker's own voice (`voiced_by: "walker"`): in the 2026-10-24 rehearsal ([walker-script.md](walker-script.md#rehearsal-results)) the page said "In the walker's own voice" under every spoken reply, and "In Cartesia's voice" hasn't been seen on screen yet. Don't name Cartesia in a demo until a key is in and that day's run shows "In Cartesia's voice" under a reply. The walker itself has run only as the Pi service's simulator on a Mac, not yet on the real Pi with its speaker.
 
-**Why voice is core here:** a walker user's hands are on the handles. Talk is a button press on the handle, and the answer comes back out loud.
+**Why voice is core here:** a walker user's hands are on the handles. Talk is a button on the handle; the answer comes back out loud, and the same words appear on the "Your walker" page, so voice is never the only way to get them.
 
-**What only Cartesia does in Steady:** it speaks the assistant's replies. Only Steady's own reply text goes to Cartesia, never the person's voice (Gemini hears that). Fixed lines (boot, offline, "pair me again") stay on the walker's local voice, so the walker still speaks with no internet, and if Cartesia fails or is slow the walker speaks the reply itself. A stock voice is used; no one's voice is cloned.
+### Steady and Cartesia (the README section for Cartesia's judges)
 
-**The 2-minute cut (walker beats from the always-on design):** boot ("Steady is on"), hold Talk and ask "What can you help me with?" (the answer in Cartesia's voice, with "In Cartesia's voice" on the page; that label hasn't been seen on screen yet), "Stop buzzing me, use short sounds instead" then Confirm, then turn off the hotspot: the walker still answers locally, in its own voice. Then 30 seconds on the problem and how it's built.
+**What Cartesia does in Steady:** it is Steady's speaking voice on the walker. Hold Talk and ask a question; Google's Gemini hears the clip and writes the answer; the server sends only the answer's text to Cartesia's text-to-speech and returns the audio with the answer; the walker plays it. The page notes under each reply which voice spoke it: "In Cartesia's voice" or "In the walker's own voice".
 
-**Max's steps:** a Cartesia account and API key, pasted into Render's environment as `CARTESIA_API_KEY`; check Cartesia's terms for the plan used.
+**Setup:**
+
+1. Create a Cartesia account and an API key. When creating the account, file Cartesia's training opt-out (see "Max's steps" below).
+2. Put the key in the server's environment as `CARTESIA_API_KEY`: on Render, **steady-walker → Environment** (the Blueprint in [`render.yaml`](../../render.yaml) asks for it); for a local server, `apps/web/.env.local`. Never in the repository, a commit or chat. Empty or `none` means no key: the walker then speaks with its own voice. `CARTESIA_VOICE_ID` may name another stock voice.
+3. Restart the server, pair a walker (or run the Pi service's simulator against the server: [devices/pi](../../devices/pi/README.md)), hold Talk and ask "What can you help me with?". The page shows "In Cartesia's voice" under the reply, and the server's log line for the turn says `voiced_by=cartesia` with the voice's time in `voice_ms`.
+
+**Cartesia features used** (checked against [Cartesia's API reference](https://docs.cartesia.ai/api-reference/tts/bytes) on 2026-10-24; code in [`speech.ts`](../../services/cloud-api/src/walker/speech.ts)):
+
+- Sonic text-to-speech, model `sonic-3.6`, through `POST https://api.cartesia.ai/tts/bytes` with `Cartesia-Version: 2026-08-14`.
+- A stock English voice, "Skylar" (`language: "en"`), one Cartesia recommends for voice agents. No voice is cloned.
+- WAV output at 16 kHz, mono, 16-bit PCM: what the walker's player takes. The server checks the header before sending it on.
+- Called from the server only, so the key never reaches the walker or the browser.
+
+**How it behaves when something goes wrong:** the voice gets at most 3 seconds inside the server's 8-second budget for a turn (the walker gives up at 10). No key, an error, a slow answer, audio longer than about a minute, or audio the walker can't play: the answer comes back without speech, and the walker says it in its own voice (Piper or espeak-ng on the Pi). The walker's fixed lines ("Steady is on", "I'm offline right now…", "I need to be paired again") always use its own voice, so it still talks with no internet. Typed questions from the page are answered on the page and not spoken.
+
+**Known limitations:**
+
+- Not yet heard live: no key yet, so Cartesia's latency and voice quality on the walker are unmeasured.
+- On the simulator, without Cartesia, the reply's text reached the walker 2.1 to 6.3 seconds after Talk was released (median 3.0 seconds over 16 spoken turns; [walker-script.md](walker-script.md#rehearsal-results)). Cartesia's time, at most 3 seconds, comes on top of the server's part of that.
+- The whole reply is made before it plays (the bytes endpoint, not streaming), so Cartesia's time adds to the wait after Talk is released. Streaming over Cartesia's WebSocket would start sooner; it isn't built.
+- English and one stock voice only.
+- Needs the internet; offline, the walker uses its own voice.
+- Not yet run on the real Pi with its USB speaker.
+- Data: Cartesia's terms (revised June 14, 2024; read 2026-10-24) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Only Steady's reply text is sent (it can repeat some of the person's words), never the voice clip. Until those terms allow real people's words, only scripted, made-up lines go through it.
+
+### Notice wording
+
+- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types: "Your words go to Google's Gemini, which may keep a copy, and the text of Steady's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker."
+- **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. What's said goes to Google's Gemini, and Steady's replies are spoken by Cartesia from their text; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
+- **Said aloud at the Talk beat:** "Steady's answer is in Cartesia's voice. Only the answer's text goes to Cartesia, never the speaker's voice."
+
+### The 2-minute cut
+
+Demo first, then the why. The beats and their exact lines are in the walker script, [`walker-script.md`](walker-script.md); this cut uses four of them.
+
+1. **0:00 to 0:15, boot:** the walker says "Steady is on." in its own voice, and the page shows "Online" with each part's health.
+2. **0:15 to 0:40, ask:** Talk: "What can you help me with?" The answer comes back out loud in Cartesia's voice (in the model's own words), and the page shows "You said (as heard by Gemini)", the reply, and "In Cartesia's voice". Say the line about where the text goes.
+3. **0:40 to 1:15, change a setting:** Talk: "Stop buzzing me, use short sounds instead." Steady says "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." (the server writes this line from the change itself). Press Confirm on the walker. It says "Done. Obstacle alerts now use short sounds.", and the page's alerts change to "Version 2", "Short sounds" and then "Applied" (2 to 9 seconds after Confirm in the rehearsal; keep talking meanwhile).
+4. **1:15 to 1:35, offline:** turn off the walker's hotspot. After about 6 to 10 seconds the walker says, once, "I'm offline right now. Your short-sound alerts still work.", in its own voice, and a Talk press then gets the same line at once. "Cartesia speaks when it can; the walker never goes silent." On the simulator, cutting the network needs the walker script's setup checklist.
+5. **1:35 to 2:00, why and how:** "Your hands are on the handles, so voice is how you ask. Push to talk, never a listening microphone. Gemini hears, Cartesia speaks, the walker's own voice covers offline, and every word is on the page too, for anyone who can't hear it."
+
+**Max's steps:**
+
+- Create the Cartesia account and key, and file Cartesia's training opt-out when creating the account.
+- Paste the key into Render's environment as `CARTESIA_API_KEY`.
+- Check the plan's terms. A third-party guide says the free plan is for personal, non-commercial use.
+- Then run the cut once that day before mentioning Cartesia.
 
 ## Anthropic (only with a Claude key)
 
