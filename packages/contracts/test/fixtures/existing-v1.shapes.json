@@ -2808,6 +2808,58 @@
         ]
       }
     },
+    "DeviceSpeechRequestSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "DeviceSpeechResponseSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "speech": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mime": {
+                  "type": "string",
+                  "const": "audio/wav"
+                },
+                "data_base64": {
+                  "type": "string",
+                  "minLength": 4,
+                  "maxLength": 2666668,
+                  "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+                }
+              },
+              "required": [
+                "mime",
+                "data_base64"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "speech"
+      ],
+      "additionalProperties": false
+    },
     "DeviceTurnRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
