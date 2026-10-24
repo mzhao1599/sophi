@@ -201,6 +201,43 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(events.at(-1)).toMatchObject({ reason: "invalid_reply", attempts: 2 });
     });
 
+    it('retries a reply that says "clear" or "safe", even to deny it, once, then falls back', async () => {
+      const bad = { reply: "The front sensor measured something 64 centimetres ahead just now. I cannot say if the way is clear.", topics: ["obstacles"] };
+      const good = { reply: "The front sensor measured something 64 centimetres ahead just now.", topics: ["obstacles"] };
+      const fixed = stubModel([bad, good]);
+      const service = serviceWith(fixed.model);
+      const w = await walker(service);
+      const r = await service.turn(device(w.credential), w.id, typed("Is anything in front of my garden gate?"));
+      expect(fixed.requests).toHaveLength(2);
+      expect(fixed.requests[1]?.retry).toMatch(/"clear" or "safe"/);
+      expect(r.turn).toMatchObject({ answered_by: "model", reply: `${good.reply} ${SIMULATED_READINGS}` });
+      expect(events.at(-1)).toMatchObject({ reason: null, attempts: 2 });
+
+      // Tagged with another topic, the words are still caught.
+      const twice = stubModel({ reply: "The way ahead is Clear.", topics: ["other"] });
+      const again = serviceWith(twice.model);
+      const v = await walker(again);
+      const s = await again.turn(device(v.credential), v.id, typed("Can I go?"));
+      expect(twice.requests).toHaveLength(2);
+      expect(s.turn).toMatchObject({ answered_by: "fixed" });
+      expect(s.turn.reply).not.toMatch(/\b(clear|safe)\b/i);
+      expect(events.at(-1)).toMatchObject({ reason: "invalid_reply", attempts: 2 });
+    });
+
+    it("doesn't retry words the server replaces anyway: the arms line and an offer", async () => {
+      for (const answer of [
+        { reply: "It's safe, I'll grab them.", topics: ["arms"] },
+        { reply: "Sure, sounds are safer.", topics: ["settings"], cues_change: { cues: ["sound", "spoken"] } },
+      ]) {
+        const stub = stubModel(answer);
+        const service = serviceWith(stub.model);
+        const w = await walker(service);
+        const r = await service.turn(device(w.credential), w.id, typed("A question."));
+        expect(stub.requests).toHaveLength(1);
+        expect(r.turn.reply).not.toMatch(/safe/i);
+      }
+    });
+
     for (const [cues, line] of [
       [["spoken"], "While the obstacle sensors are on, your alerts keep buzzing or short sounds, so I'll leave them as they are."],
       [["screen", "vibration"], "This walker has no part that can give that alert, so I'll leave your alerts as they are."],

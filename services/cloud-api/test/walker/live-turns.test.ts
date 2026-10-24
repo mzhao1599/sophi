@@ -66,7 +66,7 @@ const askCanHelp: Check = (r) => {
 const askObstacle: Check = (r) => {
   expect(r.turn.answered_by).toBe("model");
   expect(r.turn.reply.endsWith(SIMULATED_READINGS)).toBe(true);
-  expect(r.turn.reply.toLowerCase()).not.toMatch(/\bclear\b/);
+  expect(r.turn.reply).not.toMatch(/\b(clear|safe)\b/i);
   expect(r.turn.reply).toMatch(/\d|centimet|metre|meter/i);
 };
 const askShortSounds: Check = (r) => {

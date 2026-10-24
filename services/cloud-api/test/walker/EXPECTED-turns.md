@@ -19,6 +19,7 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 | Case | Expected |
 | --- | --- |
 | A reply longer than 350 characters | Rejected; one retry with a note that names the rule (never her words); a second long reply falls back |
+| *(2026-10-23)* A reply the server will speak in the model's words says "clear" or "safe" in any form ("clears", "cleared", "clearance", "safer", "safest", "safety", "safely", "unsafe"; any case; even to deny it: "I cannot say if the way is clear"), whatever its `topics` | Rejected like a broken reply: one retry with a note naming the rule (never her words); a good second reply is used as is (`attempts: 2`); a second such reply falls back to the fixed line (`invalid_reply`). "clearly" passes. Not checked when the server replaces the words anyway: `topics` has `arms`, or a `cues_change` came with it |
 | A `cues_change` that fails `checkCuesChange` (`alerts_off`, `undeliverable`, `unchanged`, `duplicate`) | Dropped, no proposal, and the reply is a fixed line saying why, `answered_by: "fixed"`. *(review)* An empty list never reaches the check: the reply schema refuses it, so it's retried and then falls back |
 | A valid `cues_change` while the walker is offline | No proposal opens; a fixed line says the walker is offline |
 | `topics` includes `arms` | The fixed line built from the manifest (no arm reported: "doesn't have robot arms"; an arm reported: "can't move the robot arms from a conversation"), `answered_by: "fixed"`, and any `cues_change` is dropped |

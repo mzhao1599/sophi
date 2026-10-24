@@ -17,7 +17,9 @@ import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant } from ".
  * ready never loses to the deadline. Once an answer is picked the other attempt is cancelled, so it
  * can't start a retry. The result's `ms` is the time to the pick (what the person waited), and `model`
  * names the model whose answer (or failure) it is. Everything after this step is the same for either
- * model: the server's rules word any offer, and only the person's Confirm changes the walker.
+ * model: the server's rules word any offer, and only the person's Confirm changes the walker. Each model
+ * keeps its own one retry (a broken reply, or "clear"/"safe"), so a backup answer that needed its retry
+ * can come later than usual, still within the turn's deadline.
  */
 
 /** The switch-over comes at least this long before the turn's own limit. */

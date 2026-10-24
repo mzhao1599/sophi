@@ -8,7 +8,8 @@ import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
  * voice clip inline when they spoke. The model reads the walker's status and their words and returns a transcript, a
  * reply, the topics it touched and at most one suggested cues change. It decides nothing else: the
  * service applies the rules (lines.ts and service.ts), opens any proposal, and only a person's Confirm
- * changes the walker. A reply that breaks the shape is retried once with the reason; a second failure,
+ * changes the walker. A reply that breaks the shape, or one that says "clear" or "safe" (saysClearOrSafe),
+ * is retried once with the reason; a second failure,
  * an API error, a refusal or the deadline returns a failure, and the service answers with a fixed line.
  */
 
@@ -135,6 +136,26 @@ class RejectedReply extends Error {
   }
 }
 
+/**
+ * A sensor can miss things, so Steady never says the way is "clear" or "safe", in any form ("cleared",
+ * "clearance", "safer", "safety", "safely", "unsafe"), not even to deny it ("I cannot say if the way is
+ * clear" still puts the words in the person's ear). The policy says so; this check is the guarantee, and
+ * it reads every reply the server will speak in the model's words, whatever topics the model tagged:
+ * the arms line and offers replace the model's words, so those replies aren't checked. "clearly" passes.
+ * Measured live 2026-10-23 (local runs, not recorded in the repo): on the demo's lines, gemini-3.6-flash
+ * denied in those words on 9 of 210 obstacle answers and gemini-3.7-flash never, and no other answer of 419
+ * used them. Asked outright ("Is the way ahead clear?"), both models use them on most first tries, and
+ * the retry usually fixes it.
+ */
+const CLEAR_OR_SAFE = /\b(clear|clears|cleared|clearance|safe|safer|safest|safety|safely|unsafe)\b/i;
+const CLEAR_OR_SAFE_NOTE =
+  'Server note: your previous reply broke a rule. Never use the words "clear" or "safe" in any form, not even to deny them: a sensor can miss things. Say what was measured and how old the reading is.';
+
+export function saysClearOrSafe(reply: WalkerReply): boolean {
+  if (reply.topics.includes("arms") || reply.cues_change) return false;
+  return CLEAR_OR_SAFE.test(reply.reply);
+}
+
 /** The reply as the schema allows it, or a RejectedReply whose note names the rule (never the person's words). */
 function parseReply(reply: AgentReply): WalkerReply {
   if (reply.stop_reason === "refusal") throw new RejectedReply("refusal", "");
@@ -149,6 +170,7 @@ function parseReply(reply: AgentReply): WalkerReply {
     const issues = result.error.issues.slice(0, 4).map((i) => `${i.path.join(".") || "reply"}: ${i.message}`);
     throw new RejectedReply("invalid_reply", `Server note: your previous reply broke a rule. ${issues.join("; ")}. Keep the reply under ${MAX_REPLY - 50} characters.`);
   }
+  if (saysClearOrSafe(result.data)) throw new RejectedReply("invalid_reply", CLEAR_OR_SAFE_NOTE);
   return result.data;
 }
 
