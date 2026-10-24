@@ -80,6 +80,89 @@ Passwordless, with Supabase Auth and [`@supabase/ssr`](https://supabase.com/docs
 
 Use the throwaway address `walker-tester@example.test` (also noted in `.env.example`). The local stack sends no real email: open Mailpit at <http://127.0.0.1:55424> to read the code and the link. Any localhost port is allowed as a link target locally (`supabase/config.toml`), so it works when `pnpm dev` moves off 3000. Never sign in to the local stack with a real address; there is no reason to.
 
+## Deploy on Vercel
+
+**Not deployed yet.** These are the steps for whoever owns the accounts; nothing here creates them. The repository is a pnpm workspace, so the Vercel project's **Root Directory is `apps/web`**, and Vercel installs the whole workspace from the repository root, where `pnpm-lock.yaml` is. No `vercel.json` is needed: the defaults (Next.js preset, `pnpm install`, `pnpm run build`, which is `next build`) are right. A clean clone builds this way: `pnpm install --frozen-lockfile` and `pnpm build`, both run inside `apps/web`.
+
+### 1. The hosted Supabase project (once)
+
+1. Create a project in the [Supabase dashboard](https://supabase.com/dashboard). Its **project ref** is the id in the dashboard URL.
+2. From the repository root, sign the CLI in and apply the migrations. This creates the tables, policies, functions and the `pg_cron` expiry job.
+
+   ```bash
+   pnpm supabase login
+   ```
+
+   ```bash
+   pnpm supabase link --project-ref <project-ref>
+   ```
+
+   ```bash
+   pnpm supabase db push
+   ```
+
+3. **Authentication → URL Configuration.** Site URL: your production address, for example `https://<project>.vercel.app` or your own domain. Redirect URLs, where the sign-in link may land:
+   - `https://<production-domain>/auth/confirm`
+   - `https://*-<vercel-team-slug>.vercel.app/auth/confirm`, for preview deployments (the slug is in your Vercel team URL)
+   - `http://localhost:3000/auth/confirm`, only if you run the app locally against the hosted project
+4. **Authentication → Email Templates.** For **Magic Link** and for **Confirm signup**, set the subject to `Your Assistive Walker sign-in code` and paste [`supabase/templates/sign-in.html`](../../supabase/templates/sign-in.html) as the body. Without it, emails carry only Supabase's default link, which works only in the browser that asked, and no code.
+5. **Authentication → SMTP Settings.** Set up your own email provider before anyone outside the team signs in. Supabase's built-in email is for trying things out: it sends only a few emails an hour, and only to members of your Supabase organization.
+6. **Project Settings → API Keys.** You need the **publishable** key and a **secret** key for the next step.
+
+### 2. The Vercel project (once)
+
+The CLI runs through npx at a pinned version, so nothing needs installing. Sign in:
+
+```bash
+npx vercel@62.2.0 login
+```
+
+Then, from the repository root (not `apps/web`), link the repository to a new project:
+
+```bash
+npx vercel@62.2.0 link
+```
+
+When it asks for the code's directory, answer `./apps/web`. Or, after linking, set **Settings → Build and Deployment → Root Directory** to `apps/web` in the dashboard. In the same place:
+
+- Framework preset: Next.js (detected). Leave Build, Install and Output at their defaults.
+- **Include source files outside of the Root Directory in the Build Step**: on (the default). The app compiles `packages/contracts` and `services/cloud-api` from source.
+- Node.js version: 22.x, the same as CI.
+
+Connecting the GitHub repository (Settings → Git) makes every pull request a preview deployment and `main` the production one.
+
+### 3. Environment variables
+
+Set them in **Settings → Environment Variables**, or one at a time with `npx vercel@62.2.0 env add <NAME> <environment>`. Names only here; values come from the Supabase dashboard (step 1.6) and your Anthropic account.
+
+| Name | Production | Preview | Notes |
+| --- | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Hosted project URL | Same project, or a separate one (below) | Public. Built into the page, so redeploy after changing it |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key | As above | Public; row-level security is what protects data |
+| `SUPABASE_SECRET_KEY` | Secret key | As above | Mark it **Sensitive**. Server only: never give it a `NEXT_PUBLIC_` name |
+| `ENABLE_EXPERIMENTAL_COREPACK` | `1` | `1` | Makes Vercel use pnpm 11.20.0 from `packageManager` directly. Without it Vercel starts pnpm 9 or 10 from the lockfile version; pnpm 10 then switches itself to 11.20.0 (checked locally with 10.18.3), pnpm 9 may not |
+| `ONBOARDING_ENGINE`, `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_MODEL` | Optional | Optional | The onboarding agent (see above). Mark the API key **Sensitive** |
+| `ONBOARDING_ALLOW_MEMORY_STORE` | Leave unset | Leave unset | Without Supabase, onboarding refuses to start on Vercel, on purpose |
+
+Leave the **Development** environment empty: local development uses the local stack in `apps/web/.env.local`. For the same reason, don't run `vercel env pull` into `apps/web/.env.local`; it would replace those local settings.
+
+**Previews and real data.** Pointing Preview at the production Supabase project means preview deployments read and write the same accounts and setups. That is fine for a hackathon team. Once real users sign in, give Preview its own Supabase project (steps 1.1 to 1.6 again, with its own redirect URLs).
+
+### 4. Deploy and check
+
+```bash
+npx vercel@62.2.0
+```
+
+That makes a preview deployment; `npx vercel@62.2.0 --prod` makes a production one. With Git connected, a push does the same. Then check:
+
+- The build log says pnpm 11.20.0 and `next build` finished.
+- `/onboarding` starts a demo, and a row appears in the Supabase dashboard's `onboarding_sessions` table (no `user_id`).
+- `/login` sends an email with a code and a link, and both sign in. The link opens a **Sign in** page; press its button.
+- A setup saved while signed in appears in **Your setups**, and **Delete setup** removes it from `device_configurations` and `onboarding_sessions`.
+
+Before sharing a public link, add a rate limit for `POST /api/v1/onboarding/sessions` and `/login` (for example a Vercel Firewall rule); the app caps demo sessions and turns but doesn't limit by address.
+
 ## Code map
 
 ```text

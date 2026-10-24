@@ -6,7 +6,7 @@ An experimental, modular AI assistive walker for Cal Hacks. A user starts in an 
 
 To run the web app: `pnpm install`, then `pnpm dev`, and open <http://localhost:3000>. `pnpm test` and `pnpm typecheck` cover every package.
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `pnpm test`, `pnpm typecheck` and `pnpm build` on every pull request to `main` and every push to `main`.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `pnpm test`, `pnpm typecheck` and `pnpm build` on every pull request to `main` and every push to `main`. The database tests need a local Supabase stack (Docker, `pnpm supabase start`, then `pnpm test:db`); CI skips them. Deploying to Vercel with a hosted Supabase project: [apps/web/README.md](apps/web/README.md#deploy-on-vercel).
 
 ## What a user experiences
 
@@ -42,6 +42,8 @@ firmware/perception/      ToF sensing and local alert output
 firmware/voice/           Microphone, speaker, and button interface if used
 hardware/                 Schematics, CAD, BOM, wiring and test records
 packages/contracts/       Versioned event and command schemas
+supabase/                 Postgres migrations (tables, RLS), local stack config, sign-in email template
+scripts/                  Supabase CLI at a pinned version, database test runner
 docs/                     Architecture, interfaces, subsystem guides
 ```
 
