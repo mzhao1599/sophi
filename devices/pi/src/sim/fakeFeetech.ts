@@ -240,6 +240,9 @@ export class FakeSts3215 {
     this.memory[STS3215.moving.address] = this.torqueOn && (this.velocity !== 0 || Math.abs(this.get("goalPosition") - wrapped) > 1) ? 1 : 0;
   }
 
+  /** The servo's present position when its goal was last written (null before any goal write). */
+  presentAtGoalWrite: number | null = null;
+
   /** Applies a WRITE (or an ACTION'd REG_WRITE) to memory, as the servo would. */
   applyWrite(address: number, data: number[]): void {
     for (let i = 0; i < data.length; i += 1) {
@@ -261,6 +264,8 @@ export class FakeSts3215 {
       if (at < 40 && this.memory[STS3215.lock.address] === 0) this.saved[at] = data[i]!;
     }
     const goal = STS3215.goalPosition.address;
+    // Where the servo was when a goal arrived: a hold made from a fresh read writes a goal equal to it.
+    if (address <= goal + 1 && address + data.length > goal) this.presentAtGoalWrite = this.get("presentPosition");
     if (this.goalEnablesTorque && !this.torqueOn && address <= goal + 1 && address + data.length > goal) {
       // Assumption, the dangerous way: a goal turns torque on, and the servo drives to it.
       this.onTorqueOn?.(this.get("goalPosition"), this.get("presentPosition"));

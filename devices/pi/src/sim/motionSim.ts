@@ -313,11 +313,12 @@ export class MotionSim {
         this.sim("left follower goals moved away");
       },
       "inspect-hold-tight-left": () => {
-        // A hold that read first sets each torqued servo's goal to where it was at the stop (the last handle press
-        // or handle unplug), within 0.5°; one made from the tick before would lag by up to a tick of motion.
-        // A grasping gripper too: a stop lets off its squeeze.
+        // A hold that read first sets each torqued servo's goal to where the servo was when that goal arrived,
+        // within 0.5°; one made from the tick before would lag by up to a tick of motion. Measured at the goal's
+        // arrival, not at the press, so the check holds in real time too (the fresh read lands a few ms after
+        // the press, while the arm still coasts). A grasping gripper too: a stop lets off its squeeze.
         const servos = [...this.fake("left", "follower").servos.values()].filter((s) => s.get("torqueEnable") === 1);
-        const gap = Math.max(0, ...servos.map((s) => Math.abs(s.get("goalPosition") - (this.marked.get(s.id) ?? Infinity))));
+        const gap = Math.max(0, ...servos.map((s) => Math.abs(s.get("goalPosition") - (s.presentAtGoalWrite ?? this.marked.get(s.id) ?? Infinity))));
         this.sim(gap <= degToTicks(0.5) ? `left follower hold tight ok (${servos.length} servos)` : `left follower hold tight BAD gap=${gap}`);
       },
       "inspect-goals-right": () => {
