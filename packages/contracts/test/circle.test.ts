@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
+  AddPhoneRequestSchema,
+  ApproveJoinRequestSchema,
+  OwnerPhonesResponseSchema,
+  PRESET_REPLIES,
+  PhoneHomeResponseSchema,
+  PhoneMessageViewSchema,
+  PhoneSendMessageRequestSchema,
+  PresetReplyIdSchema,
+  caregiverConsentLine,
   AnswerCircleItemRequestSchema,
   AnswerCircleItemResponseSchema,
   CIRCLE_ERROR_STATUS,
@@ -381,5 +391,73 @@ describe("the screen's local contract", () => {
     ok(ScreenPressSchema, { revision: 7, action: "not_now" });
     bad(ScreenPressSchema, { revision: 7, action: "accept_for_her" });
     bad(ScreenPressSchema, { action: "confirm" });
+  });
+});
+
+describe("the two-phone app", () => {
+  const rose = { member_id: uuid(30), name: "Rose", role: "walker_user" } as const;
+  const maya = { member_id: uuid(31), name: "Maya", role: "caregiver" } as const;
+  const part = { module_id: "voice", instance_id: "pi-usb-audio", health: "ok", simulated: false, in_configuration: true };
+  const walker = { walker_name: "My walker", online: true, simulator: false, alerts: [...WALKER_SETUP.cues], parts: null, battery: "not_measured" };
+  const msg = { message_id: uuid(40), client_message_id: uuid(41), from_member_id: maya.member_id, from_name: "Maya", to_member_id: rose.member_id, text: "Lunch at noon?", mine: false };
+
+  it("adds her own phone or a caretaker's, by name, and nothing else", () => {
+    ok(AddPhoneRequestSchema, { name: "Rose", role: "walker_user" });
+    ok(AddPhoneRequestSchema, { name: "Maya", role: "caregiver" });
+    bad(AddPhoneRequestSchema, { name: "Cooper", role: "family" });
+    bad(AddPhoneRequestSchema, { name: "Maya", role: "caregiver", owner_name: "Max" });
+    ok(CircleInviteSchema, { invite_id: uuid(1), name: "Rose", role: "walker_user", code: "123456", created_at: T0, expires_at: T5 });
+  });
+
+  it("approves a caretaker only with her consent, and words that consent in full", () => {
+    ok(ApproveJoinRequestSchema, { consent: { walker_user_agreed: true } });
+    bad(ApproveJoinRequestSchema, { consent: { walker_user_agreed: false } });
+    bad(ApproveJoinRequestSchema, {});
+    expect(caregiverConsentLine("Maya", "Rose")).toBe(
+      "Rose agreed that Maya can see whether the walker is on, its part health and its alerts, and exchange short messages with her.",
+    );
+    expect(caregiverConsentLine("Maya", null)).toMatch(/^The person who uses this walker agreed that Maya/);
+  });
+
+  it("gives her phone three one-tap replies, each short enough to send", () => {
+    expect(Object.keys(PRESET_REPLIES)).toEqual(PresetReplyIdSchema.options);
+    for (const text of Object.values(PRESET_REPLIES)) expect(PhoneMessageViewSchema.shape.text.safeParse(text).success).toBe(true);
+  });
+
+  it("sends a typed message of at most 30 characters, or a preset to one person", () => {
+    ok(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), text: "x".repeat(CIRCLE_MESSAGE_MAX) });
+    bad(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), text: "x".repeat(CIRCLE_MESSAGE_MAX + 1) });
+    bad(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), text: "two\nlines" });
+    ok(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), preset: "call_me", to_member_id: uuid(2) });
+    bad(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), preset: "call_me" });
+    bad(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), preset: "come_now", to_member_id: uuid(2) });
+    bad(PhoneSendMessageRequestSchema, { client_message_id: uuid(1), text: "hi", preset: "okay", to_member_id: uuid(2) });
+  });
+
+  it("gives a caretaker part health and her own phone none, with no times anywhere", () => {
+    const home = { membership: "member", me: rose, walker, people: [rose, maya], messages: [msg] };
+    ok(PhoneHomeResponseSchema, home);
+    ok(PhoneHomeResponseSchema, { ...home, me: maya, walker: { ...walker, parts: [part] } });
+    bad(PhoneHomeResponseSchema, { ...home, me: maya });
+    bad(PhoneHomeResponseSchema, { ...home, walker: { ...walker, parts: [part] } });
+    bad(PhoneHomeResponseSchema, { ...home, walker: { ...walker, last_seen_at: T0 } });
+    bad(PhoneHomeResponseSchema, { ...home, messages: [{ ...msg, created_at: T0 }] });
+    bad(PhoneHomeResponseSchema, { ...home, people: [{ ...rose, joined_at: T0 }] });
+    bad(PhoneHomeResponseSchema, { ...home, walker: { ...walker, battery: "full" } });
+    ok(PhoneHomeResponseSchema, { membership: "waiting", name: "Maya", role: "caregiver", expires_at: T5 });
+    bad(PhoneHomeResponseSchema, { membership: "waiting", name: "Rose", role: "walker_user", expires_at: T5 });
+    ok(PhoneHomeResponseSchema, { membership: "no_answer", name: "Maya" });
+    // The only time in any phone shape is a waiting join's expiry.
+    const times = JSON.stringify(z.toJSONSchema(PhoneHomeResponseSchema, { unrepresentable: "any" })).match(/"[a-z_]*_at"/g);
+    expect(times).toEqual(['"expires_at"', '"expires_at"']);
+  });
+
+  it("lists the owner's phones, codes and waiting caretakers", () => {
+    ok(OwnerPhonesResponseSchema, {
+      members: [{ ...rose, joined_at: T0 }],
+      invites: [],
+      joins: [{ member_id: maya.member_id, name: "Maya", role: "caregiver", expires_at: T5 }],
+    });
+    bad(OwnerPhonesResponseSchema, { members: [], invites: [], joins: [{ member_id: rose.member_id, name: "Rose", role: "walker_user", expires_at: T5 }] });
   });
 });

@@ -3,7 +3,22 @@ import type { ProposalView, WalkerConfiguration, WalkerEventView, WalkerTurnView
 import { OFFLINE_AFTER_MS } from "@walker/contracts";
 import { WALKER_MIGRATIONS } from "./migrations";
 import { decideAnswer, type Answer } from "./rules";
-import type { AnswerResult, ClaimResult, DeviceRecord, Heartbeat, PairingClaim, PairingCode, SavedTurn, WalkerStore } from "./store";
+import type {
+  AnswerResult,
+  CircleInviteRecord,
+  CircleMemberRecord,
+  CircleMessageRecord,
+  ClaimResult,
+  DeviceRecord,
+  Heartbeat,
+  InviteClaim,
+  InviteClaimResult,
+  PairingClaim,
+  PairingCode,
+  PutInviteResult,
+  SavedTurn,
+  WalkerStore,
+} from "./store";
 
 /**
  * Walkers in Postgres through node-postgres (`pg`), on Render Postgres in production. The server is
@@ -305,6 +320,194 @@ export class PostgresWalkerStore implements WalkerStore {
     return rowCount === 1;
   }
 
+  // ---- The two-phone circle. Steps that must be atomic lock the walker's row first. ----
+
+  async putInvite(invite: CircleInviteRecord, { maxOpen, maxMembers }: { maxOpen: number; maxMembers: number }, now: Date): Promise<PutInviteResult> {
+    return this.transaction("save an invite", async (db) => {
+      const { rowCount } = await db.query("select 1 from walker_devices where id = $1 for update", [invite.device_id]);
+      if (rowCount === 0) return "circle_full" as const;
+      await db.query("delete from walker_circle_invites where expires_at <= $1", [now]);
+      if (invite.role === "walker_user") {
+        const { rowCount: taken } = await db.query("select 1 from walker_circle_members where device_id = $1 and role = 'walker_user'", [invite.device_id]);
+        if (taken) return "walker_user_taken" as const;
+        await db.query("delete from walker_circle_invites where device_id = $1 and role = 'walker_user'", [invite.device_id]);
+      }
+      const { rows } = await db.query<{ invites: number; members: number }>(
+        `select (select count(*)::int from walker_circle_invites where device_id = $1) as invites,
+                (select count(*)::int from walker_circle_members where device_id = $1 and (state = 'member' or expires_at > $2)) as members`,
+        [invite.device_id, now],
+      );
+      if ((rows[0]?.invites ?? 0) >= maxOpen || (rows[0]?.members ?? 0) >= maxMembers) return "circle_full" as const;
+      const { rowCount: saved } = await db.query(
+        `insert into walker_circle_invites (id, device_id, code, name, role, created_at, expires_at) values ($1, $2, $3, $4, $5, $6, $7)
+         on conflict (code) do nothing`,
+        [invite.invite_id, invite.device_id, invite.code, invite.name, invite.role, invite.created_at, invite.expires_at],
+      );
+      return saved === 1 ? ("ok" as const) : ("code_taken" as const);
+    });
+  }
+
+  async circleOf(deviceId: string, now: Date) {
+    const [members, invites] = await Promise.all([
+      this.query<MemberRow>("read the circle", `select ${MEMBER_COLUMNS} from walker_circle_members where device_id = $1 order by created_at, id`, [deviceId]),
+      this.query<InviteRow>(
+        "read the circle",
+        `select ${INVITE_COLUMNS} from walker_circle_invites where device_id = $1 and expires_at > $2 order by created_at, id`,
+        [deviceId, now],
+      ),
+    ]);
+    return { members: members.rows.map(toMember), invites: invites.rows.map(toInvite) };
+  }
+
+  async claimInvite({ code, now, member, waitingUntil, maxMembers, address_key, triesSince, maxWrong }: InviteClaim): Promise<InviteClaimResult> {
+    return this.transaction("join a circle", async (db) => {
+      const { rows: lock } = await db.query<{ ok: boolean }>("select pg_try_advisory_xact_lock(hashtext('join:' || $1)) as ok", [address_key]);
+      if (!lock[0]?.ok) return { ok: false, reason: "busy" } as const;
+      const { rows: tries } = await db.query<{ n: number }>(
+        "select count(*)::int as n from walker_pairing_tries where address_key = $1 and at > $2",
+        [address_key, triesSince],
+      );
+      if ((tries[0]?.n ?? 0) >= maxWrong) return { ok: false, reason: "locked" } as const;
+      const { rows } = await db.query<InviteRow>(`select ${INVITE_COLUMNS} from walker_circle_invites where code = $1 and expires_at > $2`, [code, now]);
+      const invite = rows[0] && toInvite(rows[0]);
+      if (!invite) {
+        await db.query("insert into walker_pairing_tries (address_key, at) values ($1, $2)", [address_key, now]);
+        return { ok: false, reason: "code_invalid" } as const;
+      }
+      // Serialises joins and invites for one walker, so two at once can't both pass the limits.
+      await db.query("select 1 from walker_devices where id = $1 for update", [invite.device_id]);
+      // Another join used it while this one waited for the lock.
+      const { rowCount: still } = await db.query("select 1 from walker_circle_invites where id = $1", [invite.invite_id]);
+      if (still !== 1) return { ok: false, reason: "code_invalid" } as const;
+      const { rows: count } = await db.query<{ n: number; walker_user: boolean }>(
+        `select count(*) filter (where state = 'member' or expires_at > $2)::int as n, bool_or(role = 'walker_user') as walker_user
+         from walker_circle_members where device_id = $1`,
+        [invite.device_id, now],
+      );
+      if ((count[0]?.n ?? 0) >= maxMembers) return { ok: false, reason: "circle_full" } as const;
+      if (invite.role === "walker_user" && count[0]?.walker_user) return { ok: false, reason: "walker_user_taken" } as const;
+      await db.query("delete from walker_circle_invites where id = $1", [invite.invite_id]);
+      const waiting = invite.role === "caregiver";
+      const record: CircleMemberRecord = {
+        member_id: member.member_id,
+        device_id: invite.device_id,
+        name: invite.name,
+        role: invite.role,
+        state: waiting ? "waiting" : "member",
+        created_at: member.created_at,
+        expires_at: waiting ? waitingUntil : null,
+        joined_at: waiting ? null : member.created_at,
+      };
+      await db.query(
+        `insert into walker_circle_members (id, device_id, secret_hash, name, role, state, created_at, expires_at, joined_at, replaces_member_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          record.member_id,
+          record.device_id,
+          member.secret_hash,
+          record.name,
+          record.role,
+          record.state,
+          record.created_at,
+          record.expires_at,
+          record.joined_at,
+          member.replaces_member_id,
+        ],
+      );
+      return { ok: true, member: record } as const;
+    });
+  }
+
+  async memberBySecret(secretHash: string) {
+    const { rows } = await this.query<MemberRow>("find a phone", `select ${MEMBER_COLUMNS} from walker_circle_members where secret_hash = $1`, [secretHash]);
+    return rows[0] && toMember(rows[0]);
+  }
+
+  async circleDevice(deviceId: string) {
+    if (!UUID.test(deviceId)) return undefined;
+    const { rows } = await this.query<DeviceRow>("find a walker", `select ${DEVICE_COLUMNS} from walker_devices where id = $1`, [deviceId]);
+    return rows[0] && toDevice(rows[0]);
+  }
+
+  async approveJoin(deviceId: string, memberId: string, now: Date) {
+    if (!UUID.test(memberId)) return undefined;
+    return this.transaction("approve a join", async (db) => {
+      const { rows } = await db.query<MemberRow & { replaces_member_id: string | null }>(
+        `update walker_circle_members set state = 'member', expires_at = null, joined_at = $3
+         where device_id = $1 and id = $2 and state = 'waiting' and expires_at > $3
+         returning ${MEMBER_COLUMNS}, replaces_member_id`,
+        [deviceId, memberId, now],
+      );
+      if (rows[0]) {
+        // The same browser's earlier membership goes now that this one is in; the cascade takes its messages.
+        if (rows[0].replaces_member_id) await db.query("delete from walker_circle_members where id = $1", [rows[0].replaces_member_id]);
+        return toMember(rows[0]);
+      }
+      // Approved already (a retried Approve): the member as it is.
+      const { rows: already } = await db.query<MemberRow>(
+        `select ${MEMBER_COLUMNS} from walker_circle_members where device_id = $1 and id = $2 and state = 'member'`,
+        [deviceId, memberId],
+      );
+      return already[0] && toMember(already[0]);
+    });
+  }
+
+  async removeMember(deviceId: string, memberId: string) {
+    if (!UUID.test(memberId)) return false;
+    // One statement: the cascade takes every message to or from them with it.
+    const { rowCount } = await this.query("remove a phone", "delete from walker_circle_members where device_id = $1 and id = $2", [deviceId, memberId]);
+    return rowCount === 1;
+  }
+
+  async saveMessage(message: CircleMessageRecord, maxLive: number, now: Date) {
+    return this.transaction("save a message", async (db) => {
+      const { rowCount } = await db.query("select 1 from walker_devices where id = $1 for update", [message.device_id]);
+      if (rowCount === 0) return null;
+      const { rows: prior } = await db.query<MessageRow & { cleared: boolean }>(
+        `select ${MESSAGE_COLUMNS}, cleared from walker_circle_messages where from_member_id = $1 and client_message_id = $2`,
+        [message.from_member_id, message.client_message_id],
+      );
+      if (prior[0]?.cleared) return "cleared" as const;
+      if (prior[0]) return { message: toMessage(prior[0]), created: false };
+      const { rows: members } = await db.query<{ n: number }>(
+        "select count(*)::int as n from walker_circle_members where device_id = $1 and state = 'member' and id = any($2::uuid[])",
+        [message.device_id, [message.from_member_id, message.to_member_id]],
+      );
+      if ((members[0]?.n ?? 0) !== 2) return null;
+      await db.query("delete from walker_circle_messages where device_id = $1 and expires_at <= $2", [message.device_id, now]);
+      await db.query(
+        `insert into walker_circle_messages (id, device_id, from_member_id, to_member_id, client_message_id, text, created_at, expires_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [message.message_id, message.device_id, message.from_member_id, message.to_member_id, message.client_message_id, message.text, message.created_at, message.expires_at],
+      );
+      // Past the newest `maxLive`: the text goes now; the row stays until it expires so a retry isn't saved again.
+      await db.query(
+        `update walker_circle_messages set cleared = true, text = '' where device_id = $1 and not cleared and id not in (
+           select id from walker_circle_messages where device_id = $1 and not cleared order by created_at desc, seq desc limit $2)`,
+        [message.device_id, maxLive],
+      );
+      return { message: { ...message }, created: true };
+    });
+  }
+
+  async messagesFor(deviceId: string, memberId: string, now: Date) {
+    const { rows } = await this.query<MessageRow>(
+      "read messages",
+      `select ${MESSAGE_COLUMNS} from walker_circle_messages
+       where device_id = $1 and (from_member_id = $2 or to_member_id = $2) and expires_at > $3 and not cleared order by created_at, seq`,
+      [deviceId, memberId, now],
+    );
+    return rows.map(toMessage);
+  }
+
+  async sweepCircle(now: Date, lapsedBefore: Date) {
+    // Three short statements, each its own transaction, so the sweep never holds row locks across tables
+    // while a join or a message holds a walker's row (no lock-order deadlock).
+    await this.query("delete old circle data", "delete from walker_circle_invites where expires_at <= $1", [now]);
+    await this.query("delete old circle data", "delete from walker_circle_messages where expires_at <= $1", [now]);
+    await this.query("delete old circle data", "delete from walker_circle_members where state = 'waiting' and expires_at < $1", [lapsedBefore]);
+  }
+
   private async query<R extends object = object>(action: string, sql: string, values: unknown[]) {
     try {
       return await this.pool.query<R>(sql, values);
@@ -467,6 +670,68 @@ function toTurn(r: TurnRow): WalkerTurnView {
     answered_by: r.answered_by,
     voiced_by: r.voiced_by,
     created_at: r.created_at.toISOString(),
+  };
+}
+
+const MEMBER_COLUMNS = "id, device_id, name, role, state, created_at, expires_at, joined_at";
+interface MemberRow {
+  id: string;
+  device_id: string;
+  name: string;
+  role: CircleMemberRecord["role"];
+  state: CircleMemberRecord["state"];
+  created_at: Date;
+  expires_at: Date | null;
+  joined_at: Date | null;
+}
+function toMember(r: MemberRow): CircleMemberRecord {
+  return {
+    member_id: r.id,
+    device_id: r.device_id,
+    name: r.name,
+    role: r.role,
+    state: r.state,
+    created_at: r.created_at.toISOString(),
+    expires_at: iso(r.expires_at),
+    joined_at: iso(r.joined_at),
+  };
+}
+
+const INVITE_COLUMNS = "id, device_id, code, name, role, created_at, expires_at";
+interface InviteRow {
+  id: string;
+  device_id: string;
+  code: string;
+  name: string;
+  role: CircleInviteRecord["role"];
+  created_at: Date;
+  expires_at: Date;
+}
+function toInvite(r: InviteRow): CircleInviteRecord {
+  return { invite_id: r.id, device_id: r.device_id, code: r.code, name: r.name, role: r.role, created_at: r.created_at.toISOString(), expires_at: r.expires_at.toISOString() };
+}
+
+const MESSAGE_COLUMNS = "id, device_id, from_member_id, to_member_id, client_message_id, text, created_at, expires_at";
+interface MessageRow {
+  id: string;
+  device_id: string;
+  from_member_id: string;
+  to_member_id: string;
+  client_message_id: string;
+  text: string;
+  created_at: Date;
+  expires_at: Date;
+}
+function toMessage(r: MessageRow): CircleMessageRecord {
+  return {
+    message_id: r.id,
+    device_id: r.device_id,
+    from_member_id: r.from_member_id,
+    to_member_id: r.to_member_id,
+    client_message_id: r.client_message_id,
+    text: r.text,
+    created_at: r.created_at.toISOString(),
+    expires_at: r.expires_at.toISOString(),
   };
 }
 

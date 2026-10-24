@@ -4,7 +4,9 @@ import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
 
 /**
  * Sophi Circle, version 1: the people around the person who walks with the walker ("Nan" in the docs), and
- * the walker's own screen. Proposed, not built: no route, store or Pi code uses these yet.
+ * the walker's own screen. Mostly proposed, not built. Built now: the lean two-phone app ("The two-phone
+ * app" below: her own phone and a caretaker's), with its owner and member routes. No Pi code uses any of
+ * this file, and nothing outside that section has a route yet.
  *
  * Who calls what (three proofs, none works on another's routes):
  * - the walker (the Pi), with its device credential, on `/api/v1/devices/{id}/circle...`;
@@ -76,8 +78,12 @@ export const CircleNameSchema = z.string().trim().min(1).max(CIRCLE_NAME_MAX).re
  * `family` may send messages and suggest changes to her screen and voice. `caregiver` sees whether the walker
  * is online, its part health and the alerts in force, and can send or suggest nothing. Neither sees her
  * conversation, location or activity. The owner is not a member: it's the browser that paired.
+ *
+ * `walker_user` is her own phone, in the two-phone app only (below). In that app a `caregiver` also exchanges
+ * short messages with her phone; `family` isn't used there, and the v1 shapes (MemberHomeResponseSchema)
+ * don't describe a `walker_user`.
  */
-export const CircleRoleSchema = z.enum(["family", "caregiver"]);
+export const CircleRoleSchema = z.enum(["family", "caregiver", "walker_user"]);
 export type CircleRole = z.infer<typeof CircleRoleSchema>;
 
 export const CircleMemberSchema = z.strictObject({
@@ -565,13 +571,149 @@ export const SendMessageResponseSchema = z.strictObject({ message: MemberMessage
 // DELETE /api/v1/circle: leave the circle; deletes this member's messages and suggestions. 204, no body.
 // GET /api/v1/circle/voices/{voice}/sample: the sample clip as audio/wav, labelled "Sample" in the app.
 
+// ---- The two-phone app (built: lean, for the demo) ----
+//
+// Two phones: her own (`walker_user`, a simple mode with a few big tiles and no typing) and a caretaker's
+// (`caregiver`). The owner's /walker page adds each phone with a code. Her own phone joins on the code alone.
+// A caretaker's join waits until the owner's page approves it with an explicit consent line: the lean
+// stand-in for her Confirm on the walker, because today's deployed Pi can't show or accept a join without a
+// change to what it parses (walker.ts, device.ts). The member routes are the ones above (`walker_member`
+// cookie, path /api/v1/circle) with these shapes. A phone sees whether the walker is online, the alerts in
+// force, part health (caretaker only) and the messages between the phones. Never her conversation, her
+// location or any activity time: no member shape here carries a time except a waiting join's expiry.
+
+/** The roles a phone can be added as. */
+export const PhoneRoleSchema = z.enum(["walker_user", "caregiver"]);
+export type PhoneRole = z.infer<typeof PhoneRoleSchema>;
+
+/** How long a caretaker's join waits for the owner's approval. */
+export const PHONE_JOIN_TTL_MS = CIRCLE_ITEM_TTL_MS;
+
+/** POST /api/v1/walkers/{id}/circle/invites ("Add a phone"): her own phone or a caretaker, and their name. → CreateInviteResponseSchema. */
+export const AddPhoneRequestSchema = z.strictObject({ name: CircleNameSchema, role: PhoneRoleSchema });
+export type AddPhoneRequest = z.infer<typeof AddPhoneRequestSchema>;
+
+/** A caretaker who typed the code and is waiting for the owner's approval. */
+export const PendingJoinSchema = z.strictObject({
+  member_id: id,
+  name: CircleNameSchema,
+  role: z.literal("caregiver"),
+  expires_at: time,
+});
+export type PendingJoin = z.infer<typeof PendingJoinSchema>;
+
+/** GET /api/v1/walkers/{id}/circle: the phones as the owner manages them. No messages: those are theirs. */
+export const OwnerPhonesResponseSchema = z.strictObject({
+  members: z.array(CircleMemberSchema).max(MAX_CIRCLE_MEMBERS),
+  /** Open invites, codes included: only the owner sees them. */
+  invites: z.array(CircleInviteSchema).max(MAX_OPEN_INVITES),
+  joins: z.array(PendingJoinSchema).max(MAX_CIRCLE_MEMBERS),
+});
+export type OwnerPhonesResponse = z.infer<typeof OwnerPhonesResponseSchema>;
+
+/**
+ * The line the owner's page shows beside Approve for a waiting caretaker. The owner approves only after
+ * asking her; the server takes an approval only with `walker_user_agreed: true`.
+ */
+export function caregiverConsentLine(caregiverName: string, walkerUserName: string | null): string {
+  const who = walkerUserName ?? "The person who uses this walker";
+  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and its alerts, and exchange short messages with ${walkerUserName ? "her" : "them"}.`;
+}
+
+/** POST /api/v1/walkers/{id}/circle/joins/{member_id}: the owner approves a waiting caretaker. Declining is DELETE on the member. */
+export const ApproveJoinRequestSchema = z.strictObject({ consent: z.strictObject({ walker_user_agreed: z.literal(true) }) });
+export type ApproveJoinRequest = z.infer<typeof ApproveJoinRequestSchema>;
+export const ApproveJoinResponseSchema = z.strictObject({ member: CircleMemberSchema });
+
+/** Her phone sends one of these with one tap; it never types. */
+export const PresetReplyIdSchema = z.enum(["okay", "call_me", "on_my_way"]);
+export type PresetReplyId = z.infer<typeof PresetReplyIdSchema>;
+export const PRESET_REPLIES: Readonly<Record<PresetReplyId, string>> = {
+  okay: "I'm okay",
+  call_me: "Can you call me?",
+  on_my_way: "I'm on my way",
+};
+
+/**
+ * POST /api/v1/circle/messages in the two-phone app. A caretaker types (to her phone); her phone sends a
+ * preset to one caretaker. A repeated `client_message_id` from the same phone gets the same message back.
+ * Each walker keeps its newest MAX_LIVE_MESSAGES; a newer one deletes the oldest. Each is deleted
+ * CIRCLE_MESSAGE_RETENTION_MS after it was sent, and at once when either phone is removed.
+ */
+export const PhoneSendMessageRequestSchema = z.union([
+  z.strictObject({ client_message_id: id, text: CircleMessageSchema.shape.text }),
+  z.strictObject({ client_message_id: id, preset: PresetReplyIdSchema, to_member_id: id }),
+]);
+export type PhoneSendMessageRequest = z.infer<typeof PhoneSendMessageRequestSchema>;
+
+/** A message between the phones, as either phone sees it: no times and no read state. */
+export const PhoneMessageViewSchema = z.strictObject({
+  message_id: id,
+  client_message_id: id,
+  from_member_id: id,
+  from_name: CircleNameSchema,
+  to_member_id: id,
+  text: CircleMessageSchema.shape.text,
+  /** This phone sent it. */
+  mine: z.boolean(),
+});
+export type PhoneMessageView = z.infer<typeof PhoneMessageViewSchema>;
+export const PhoneSendMessageResponseSchema = z.strictObject({ message: PhoneMessageViewSchema });
+
+/** A person in the circle as a phone sees them: no join time. */
+export const PhonePersonSchema = z.strictObject({ member_id: id, name: CircleNameSchema, role: PhoneRoleSchema });
+export type PhonePerson = z.infer<typeof PhonePersonSchema>;
+
+/** Her walker as a phone sees it: status only, with no last-seen time. */
+export const PhoneWalkerViewSchema = z.strictObject({
+  /** The walker's own name, as it was paired ("My walker" by default). */
+  walker_name: z.string().min(1).max(40),
+  online: z.boolean(),
+  simulator: z.boolean(),
+  /** The alerts in force, from the walker's current configuration. */
+  alerts: CueListSchema,
+  /** Part health, for a caretaker; null on her own phone. */
+  parts: z.array(PartViewSchema).max(32).nullable(),
+  /** No walker measures its battery yet: the app says "Battery: not measured on this walker". */
+  battery: z.literal("not_measured"),
+});
+export type PhoneWalkerView = z.infer<typeof PhoneWalkerViewSchema>;
+
+/**
+ * GET /api/v1/circle in the two-phone app, and the answer to POST /api/v1/circle/join. `waiting`: a
+ * caretaker's code was right and the owner hasn't approved yet. `no_answer`: it wasn't approved in time
+ * (the phone joins again with a new code). `member`: in. A removed phone's cookie answers `401`.
+ */
+export const PhoneHomeResponseSchema = z.discriminatedUnion("membership", [
+  z.strictObject({ membership: z.literal("waiting"), name: CircleNameSchema, role: z.literal("caregiver"), expires_at: time }),
+  z.strictObject({ membership: z.literal("no_answer"), name: CircleNameSchema }),
+  z
+    .strictObject({
+      membership: z.literal("member"),
+      me: PhonePersonSchema,
+      walker: PhoneWalkerViewSchema,
+      /** Everyone in, this phone included, in joining order. */
+      people: z.array(PhonePersonSchema).max(MAX_CIRCLE_MEMBERS),
+      /** The messages to or from this phone still kept, oldest first. */
+      messages: z.array(PhoneMessageViewSchema).max(MAX_LIVE_MESSAGES),
+    })
+    .refine((h) => (h.me.role === "caregiver") === (h.walker.parts !== null), {
+      message: "A caretaker sees part health; her own phone doesn't.",
+      path: ["walker", "parts"],
+    }),
+]);
+export type PhoneHomeResponse = z.infer<typeof PhoneHomeResponseSchema>;
+
 // ---- Errors ----
 
 export const CircleErrorCodeSchema = z.enum([
   "invalid_request",
   /** No cookie or credential, or one the server doesn't know (a removed member, a forgotten walker). */
   "unauthenticated",
-  /** The caller's role can't do this: a caregiver sending or suggesting. */
+  /**
+   * The caller's role can't do this: in v1, a caregiver sending or suggesting. In the two-phone app: a phone
+   * still waiting to be approved sending, her phone typing instead of sending a preset, a caretaker sending a preset.
+   */
   "not_allowed",
   /** Unknown id, or one that belongs to someone else: the two look the same. */
   "not_found",

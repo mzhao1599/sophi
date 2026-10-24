@@ -1,12 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import type {
   CapabilityManifest,
+  PhoneRole,
   ProposalView,
   SensorSnapshot,
   WalkerConfiguration,
   WalkerEventView,
   WalkerTurnView,
 } from "@walker/contracts";
+import { CIRCLE_ITEM_RETENTION_MS } from "@walker/contracts";
 import { decideAnswer, shouldExpire, type Answer } from "./rules";
 
 /**
@@ -88,7 +90,127 @@ export interface SavedTurn {
   created: boolean;
 }
 
-export interface WalkerStore {
+// ---- The two-phone circle (migration 0003) ----
+
+export interface CircleMemberRecord {
+  member_id: string;
+  device_id: string;
+  name: string;
+  role: PhoneRole;
+  /** `waiting`: a caretaker whose join the owner hasn't approved yet. */
+  state: "waiting" | "member";
+  created_at: string;
+  /** When a waiting caretaker's join lapses; null once a member. */
+  expires_at: string | null;
+  joined_at: string | null;
+}
+
+export interface CircleInviteRecord {
+  invite_id: string;
+  device_id: string;
+  code: string;
+  name: string;
+  role: PhoneRole;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface CircleMessageRecord {
+  message_id: string;
+  device_id: string;
+  client_message_id: string;
+  from_member_id: string;
+  to_member_id: string;
+  text: string;
+  created_at: string;
+  expires_at: string;
+}
+
+/** `walker_user_taken`: her own phone is already in (only one per walker). */
+export type PutInviteResult = "ok" | "code_taken" | "circle_full" | "walker_user_taken";
+
+/** One join attempt: the code, the member it would create, and the lockout it is checked against (as pairing). */
+export interface InviteClaim {
+  code: string;
+  now: Date;
+  /** `replaces_member_id`: this browser's earlier membership, removed once the new one is in. */
+  member: { member_id: string; secret_hash: string; created_at: string; replaces_member_id: string | null };
+  /** When a caretaker's wait for the owner's approval ends. Her own phone joins at once. */
+  waitingUntil: string;
+  maxMembers: number;
+  address_key: string;
+  triesSince: Date;
+  maxWrong: number;
+}
+
+export type InviteClaimResult =
+  | { ok: true; member: CircleMemberRecord }
+  | { ok: false; reason: "locked" | "busy" | "code_invalid" | "circle_full" | "walker_user_taken" };
+
+/**
+ * The circle's storage. Every read and write names the device id the service already resolved (by the
+ * owner's hash, or from the member found by its cookie's hash), so one walker's circle never reaches another's.
+ */
+export interface CircleStore {
+  /**
+   * In one step: drops this walker's expired invites; refuses `circle_full` at `maxOpen` open invites or
+   * `maxMembers` people (members and caretakers still waiting); for her own phone, refuses
+   * `walker_user_taken` when it is already in, and replaces an earlier open invite for it; refuses
+   * `code_taken` when a live invite has the same digits; otherwise saves it.
+   */
+  putInvite(invite: CircleInviteRecord, limits: { maxOpen: number; maxMembers: number }, now: Date): Promise<PutInviteResult>;
+  /** Members and waiting caretakers (lapsed ones too) in the order they joined, and open invites, oldest first. */
+  circleOf(deviceId: string, now: Date): Promise<{ members: CircleMemberRecord[]; invites: CircleInviteRecord[] }>;
+  /**
+   * In one step per client address, as claimPairingCode: `locked` past the wrong-code limit; a live code is
+   * used up and its member made (waiting for a caretaker, in at once for her own phone); a wrong or expired
+   * code is recorded as a wrong try. A full circle or her phone already in leaves the code usable.
+   */
+  claimInvite(claim: InviteClaim): Promise<InviteClaimResult>;
+  memberBySecret(secretHash: string): Promise<CircleMemberRecord | undefined>;
+  /** The walker a member belongs to (found from the member, never from a caller's id). */
+  circleDevice(deviceId: string): Promise<DeviceRecord | undefined>;
+  /**
+   * In one step: a caretaker still waiting at `now` becomes a member, and the membership it replaces (the
+   * same browser's earlier one) is removed with its messages. One already a member comes back as it is.
+   * Undefined when it is gone or lapsed.
+   */
+  approveJoin(deviceId: string, memberId: string, now: Date): Promise<CircleMemberRecord | undefined>;
+  /** Deletes the member (or waiting caretaker) and every message to or from them, at once. */
+  removeMember(deviceId: string, memberId: string): Promise<boolean>;
+  /**
+   * In one step: a message with this sender's client_message_id already kept comes back unchanged
+   * (`created: false`), or `cleared` when the limit has since cleared it; otherwise, with both phones still
+   * members, it is saved, and this walker's messages beyond its newest `maxLive` are cleared (text deleted,
+   * a short record kept until they expire, so a retry isn't saved again). Null when the sender or the
+   * recipient isn't a member of this walker any more.
+   */
+  saveMessage(message: CircleMessageRecord, maxLive: number, now: Date): Promise<{ message: CircleMessageRecord; created: boolean } | "cleared" | null>;
+  /** Unexpired, uncleared messages to or from this member, oldest first. */
+  messagesFor(deviceId: string, memberId: string, now: Date): Promise<CircleMessageRecord[]>;
+  /** Deletes expired invites and messages, and caretakers' joins that lapsed before `lapsedBefore`. */
+  sweepCircle(now: Date, lapsedBefore: Date): Promise<void>;
+}
+
+/** The circle's sweep runs at most this often per server process and store. */
+export const CIRCLE_SWEEP_EVERY_MS = 60_000;
+const lastCircleSweep = new WeakMap<object, number>();
+
+/**
+ * The circle's deletion sweep, at most once per CIRCLE_SWEEP_EVERY_MS for each store in this process
+ * (`force` at server start). A clock that went backwards (a test's) sweeps again. Called from the walker's
+ * own sweep, so rows are deleted even when no phone or owner asks, and from circle requests only after
+ * the caller has been found, so a forged cookie can't make the server sweep.
+ */
+export async function sweepCircleThrottled(store: CircleStore, now: Date, force = false): Promise<void> {
+  const last = lastCircleSweep.get(store);
+  const t = now.getTime();
+  if (!force && last !== undefined && t >= last && t - last < CIRCLE_SWEEP_EVERY_MS) return;
+  lastCircleSweep.set(store, t);
+  await store.sweepCircle(now, new Date(t - CIRCLE_ITEM_RETENTION_MS));
+}
+
+export interface WalkerStore extends CircleStore {
   /** Prepares the store: Postgres runs its migrations. Safe to call again. */
   ready(): Promise<void>;
   /** Throws when the store can't be reached now (Postgres: one `select 1`). */
@@ -155,6 +277,25 @@ interface MemoryDevice extends DeviceRecord {
   proposals: ProposalView[];
   turns: { turn: WalkerTurnView; proposal_id: string | null }[];
   lines: WalkerEventView[];
+  members: MemoryMember[];
+  invites: CircleInviteRecord[];
+  /** Oldest first. A cleared one has no text left and is kept only until it expires. */
+  messages: (CircleMessageRecord & { cleared: boolean })[];
+}
+
+type MemoryMember = CircleMemberRecord & { secret_hash: string; replaces_member_id: string | null };
+
+/** In the circle at `now`: a member, or a caretaker whose join hasn't lapsed. */
+function counts(m: CircleMemberRecord, now: Date): boolean {
+  return m.state === "member" || (m.expires_at !== null && ms(m.expires_at) > now.getTime());
+}
+
+function publicMember({ secret_hash: _hash, replaces_member_id: _replaces, ...member }: MemoryMember): CircleMemberRecord {
+  return { ...member };
+}
+
+function publicMessage({ cleared: _cleared, ...message }: CircleMessageRecord & { cleared: boolean }): CircleMessageRecord {
+  return { ...message };
 }
 
 const ms = (iso: string) => Date.parse(iso);
@@ -207,6 +348,9 @@ export class MemoryWalkerStore implements WalkerStore {
       proposals: [],
       turns: [],
       lines: [],
+      members: [],
+      invites: [],
+      messages: [],
     };
     this.devices.set(device.device_id, record);
     return { ok: true, device: publicDevice(record), configuration: copy(configuration) };
@@ -310,6 +454,129 @@ export class MemoryWalkerStore implements WalkerStore {
     const d = this.devices.get(deviceId);
     if (!d || d.owner_hash !== ownerHash) return false;
     return this.devices.delete(deviceId);
+  }
+
+  // ---- The two-phone circle. Each method is synchronous after its first line, so each is one step. ----
+
+  async putInvite(invite: CircleInviteRecord, { maxOpen, maxMembers }: { maxOpen: number; maxMembers: number }, now: Date): Promise<PutInviteResult> {
+    const d = this.device(invite.device_id);
+    d.invites = d.invites.filter((i) => ms(i.expires_at) > now.getTime());
+    if (invite.role === "walker_user") {
+      if (d.members.some((m) => m.role === "walker_user")) return "walker_user_taken";
+      d.invites = d.invites.filter((i) => i.role !== "walker_user");
+    }
+    if (d.invites.length >= maxOpen || d.members.filter((m) => counts(m, now)).length >= maxMembers) return "circle_full";
+    const live = (i: CircleInviteRecord) => i.code === invite.code && ms(i.expires_at) > now.getTime();
+    if ([...this.devices.values()].some((other) => other.invites.some(live))) return "code_taken";
+    d.invites.push({ ...invite });
+    return "ok";
+  }
+
+  async circleOf(deviceId: string, now: Date) {
+    const d = this.devices.get(deviceId);
+    if (!d) return { members: [], invites: [] };
+    return {
+      members: d.members.map(publicMember),
+      invites: d.invites.filter((i) => ms(i.expires_at) > now.getTime()).map((i) => ({ ...i })),
+    };
+  }
+
+  async claimInvite({ code, now, member, waitingUntil, maxMembers, address_key, triesSince, maxWrong }: InviteClaim): Promise<InviteClaimResult> {
+    const wrong = this.wrongTries.filter((t) => t.address_key === address_key && ms(t.at) > triesSince.getTime()).length;
+    if (wrong >= maxWrong) return { ok: false, reason: "locked" };
+    const d = [...this.devices.values()].find((x) => x.invites.some((i) => i.code === code && ms(i.expires_at) > now.getTime()));
+    const invite = d?.invites.find((i) => i.code === code);
+    if (!d || !invite) {
+      this.wrongTries.push({ address_key, at: now.toISOString() });
+      return { ok: false, reason: "code_invalid" };
+    }
+    if (d.members.filter((m) => counts(m, now)).length >= maxMembers) return { ok: false, reason: "circle_full" };
+    if (invite.role === "walker_user" && d.members.some((m) => m.role === "walker_user")) return { ok: false, reason: "walker_user_taken" };
+    d.invites = d.invites.filter((i) => i !== invite);
+    const waiting = invite.role === "caregiver";
+    const record: MemoryMember = {
+      ...member,
+      device_id: d.device_id,
+      name: invite.name,
+      role: invite.role,
+      state: waiting ? ("waiting" as const) : ("member" as const),
+      expires_at: waiting ? waitingUntil : null,
+      joined_at: waiting ? null : member.created_at,
+    };
+    d.members.push(record);
+    return { ok: true, member: publicMember(record) };
+  }
+
+  async memberBySecret(secretHash: string) {
+    for (const d of this.devices.values()) {
+      const found = d.members.find((m) => m.secret_hash === secretHash);
+      if (found) return publicMember(found);
+    }
+    return undefined;
+  }
+
+  async circleDevice(deviceId: string) {
+    const found = this.devices.get(deviceId);
+    return found && publicDevice(found);
+  }
+
+  async approveJoin(deviceId: string, memberId: string, now: Date) {
+    const m = this.devices.get(deviceId)?.members.find((x) => x.member_id === memberId);
+    if (m?.state === "member") return publicMember(m);
+    if (!m || !counts(m, now)) return undefined;
+    m.state = "member";
+    m.expires_at = null;
+    m.joined_at = now.toISOString();
+    if (m.replaces_member_id) this.dropMember(m.replaces_member_id);
+    return publicMember(m);
+  }
+
+  async removeMember(deviceId: string, memberId: string) {
+    const d = this.devices.get(deviceId);
+    if (!d || !d.members.some((m) => m.member_id === memberId)) return false;
+    this.dropMember(memberId);
+    return true;
+  }
+
+  async saveMessage(message: CircleMessageRecord, maxLive: number, now: Date) {
+    const d = this.devices.get(message.device_id);
+    if (!d) return null;
+    const prior = d.messages.find((m) => m.from_member_id === message.from_member_id && m.client_message_id === message.client_message_id);
+    if (prior?.cleared) return "cleared" as const;
+    if (prior) return { message: publicMessage(prior), created: false };
+    const isMember = (id: string) => d.members.some((m) => m.member_id === id && m.state === "member");
+    if (!isMember(message.from_member_id) || !isMember(message.to_member_id)) return null;
+    d.messages = d.messages.filter((m) => ms(m.expires_at) > now.getTime());
+    d.messages.push({ ...message, cleared: false });
+    const live = d.messages.filter((m) => !m.cleared);
+    for (const old of live.slice(0, Math.max(0, live.length - maxLive))) {
+      old.cleared = true;
+      old.text = "";
+    }
+    return { message: { ...message }, created: true };
+  }
+
+  async messagesFor(deviceId: string, memberId: string, now: Date) {
+    const d = this.devices.get(deviceId);
+    return (d?.messages ?? [])
+      .filter((m) => !m.cleared && ms(m.expires_at) > now.getTime() && (m.from_member_id === memberId || m.to_member_id === memberId))
+      .map(publicMessage);
+  }
+
+  /** Removes a member wherever it is, with every message to or from it. */
+  private dropMember(memberId: string) {
+    for (const d of this.devices.values()) {
+      d.members = d.members.filter((m) => m.member_id !== memberId);
+      d.messages = d.messages.filter((m) => m.from_member_id !== memberId && m.to_member_id !== memberId);
+    }
+  }
+
+  async sweepCircle(now: Date, lapsedBefore: Date) {
+    for (const d of this.devices.values()) {
+      d.invites = d.invites.filter((i) => ms(i.expires_at) > now.getTime());
+      d.messages = d.messages.filter((m) => ms(m.expires_at) > now.getTime());
+      d.members = d.members.filter((m) => m.state === "member" || m.expires_at === null || ms(m.expires_at) >= lapsedBefore.getTime());
+    }
   }
 
   private device(deviceId: string): MemoryDevice {

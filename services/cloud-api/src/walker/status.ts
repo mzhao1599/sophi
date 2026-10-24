@@ -54,7 +54,7 @@ export function buildStatusView({ device, configuration, proposal, turns, lines,
  * `unavailable` row with no instance when it reports none); then reported parts outside the
  * configuration. Each keeps its own `simulated` flag, because a simulator can have real parts plugged in.
  */
-function partViews(device: DeviceRecord, configuration: WalkerConfiguration, online: boolean): PartView[] {
+export function partViews(device: DeviceRecord, configuration: WalkerConfiguration, online: boolean): PartView[] {
   const reported = device.manifest?.modules ?? [];
   const selected = configuration.selected_module_ids;
   const view = (m: (typeof reported)[number]): PartView => ({

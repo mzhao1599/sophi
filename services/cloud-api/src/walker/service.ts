@@ -47,7 +47,7 @@ import {
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, type DeviceRecord, type WalkerStore } from "./store";
+import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./store";
 
 export class WalkerError extends Error {
   override readonly name = "WalkerError";
@@ -181,7 +181,7 @@ export class WalkerService {
   /** At server start: the store's migrations, then the history sweep. */
   async prepare(): Promise<void> {
     await this.begin();
-    await this.sweep(this.now());
+    await this.sweep(this.now(), true);
   }
 
   // ---- Pairing ----
@@ -488,8 +488,10 @@ export class WalkerService {
     await this.store.ready();
   }
 
-  private sweep(now: Date) {
-    return this.store.sweep(now, new Date(now.getTime() - WALKER_HISTORY_RETENTION_MS), new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS));
+  /** The walker's history sweep, then the circle's (at most once a minute; always at server start). */
+  private async sweep(now: Date, atStart = false) {
+    await this.store.sweep(now, new Date(now.getTime() - WALKER_HISTORY_RETENTION_MS), new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS));
+    await sweepCircleThrottled(this.store, now, atStart);
   }
 }
 

@@ -38,9 +38,10 @@ export {
   type TurnEvent,
   type WalkerServiceOptions,
 } from "./walker/service";
+export { CircleError, CircleService, isCircleError, type CircleServiceOptions, type MemberCaller, type MessageEvent } from "./walker/circle";
 export { WALKER_SYSTEM_PROMPT, createWalkerAssistant, type WalkerAssistant, type Words } from "./walker/assistant";
 export { createCartesiaVoice, type WalkerVoice } from "./walker/speech";
-export { MemoryWalkerStore, newSecret, sha256, type DeviceRecord, type WalkerStore } from "./walker/store";
+export { CIRCLE_SWEEP_EVERY_MS, MemoryWalkerStore, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./walker/store";
 export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
 export { WALKER_MIGRATIONS } from "./walker/migrations";
 export { buildStatusView } from "./walker/status";

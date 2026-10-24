@@ -99,6 +99,15 @@ export function walkerJson(body: unknown, status = 200): NextResponse {
 /** Each error response's trace id, so the log line can carry it without adding a header. */
 const traceIds = new WeakMap<Response, string>();
 
+/** The trace id of an error response made here (the circle's routes share readJson and its errors). */
+export function traceIdOf(response: Response): string | undefined {
+  return traceIds.get(response);
+}
+
+export function rememberTraceId(response: Response, traceId: string) {
+  traceIds.set(response, traceId);
+}
+
 export function walkerError(code: WalkerErrorCode, message: string, proposal?: ProposalView): NextResponse {
   const trace_id = crypto.randomUUID();
   const body: WalkerError = { error: { code, message, trace_id, ...(proposal ? { proposal } : {}) } };

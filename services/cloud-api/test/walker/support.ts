@@ -41,7 +41,18 @@ export function memoryHarness(): StoreHarness {
   };
 }
 
-const TABLES = ["walker_devices", "walker_configurations", "walker_proposals", "walker_turns", "walker_lines", "walker_pairing_codes", "walker_pairing_tries"];
+const TABLES = [
+  "walker_devices",
+  "walker_configurations",
+  "walker_proposals",
+  "walker_turns",
+  "walker_lines",
+  "walker_pairing_codes",
+  "walker_pairing_tries",
+  "walker_circle_members",
+  "walker_circle_invites",
+  "walker_circle_messages",
+];
 
 export async function postgresHarness(url: string): Promise<StoreHarness> {
   const name = `walker_test_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;

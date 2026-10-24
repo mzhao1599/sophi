@@ -116,4 +116,63 @@ create index walker_pairing_tries_address on walker_pairing_tries (address_key, 
 alter table walker_turns add column seq bigint generated always as identity;
 `,
   },
+  {
+    id: "0003_walker_circle_phones",
+    sql: `
+-- The two-phone circle: her own phone (walker_user) and caretakers, added by the owner with a code.
+-- Everything hangs off the walker, so forgetting it deletes its circle. Wrong codes go in
+-- walker_pairing_tries under their own address key (same limits, separate count).
+create table walker_circle_members (
+  id uuid primary key,
+  device_id uuid not null references walker_devices (id) on delete cascade,
+  -- SHA-256 (hex) of the phone's walker_member cookie; never the secret.
+  secret_hash text not null unique check (secret_hash ~ '^[0-9a-f]{64}$'),
+  name text not null check (char_length(name) between 1 and 12),
+  role text not null check (role in ('walker_user', 'caregiver')),
+  state text not null check (state in ('waiting', 'member')),
+  created_at timestamptz not null,
+  expires_at timestamptz,
+  joined_at timestamptz,
+  -- The browser's earlier membership, which this one replaces once it is in (no foreign key: it may be gone).
+  replaces_member_id uuid,
+  check ((state = 'member') = (joined_at is not null)),
+  check ((state = 'waiting') = (expires_at is not null)),
+  check (state = 'member' or role = 'caregiver')
+);
+create index walker_circle_members_device on walker_circle_members (device_id, created_at);
+-- Her own phone: one per walker.
+create unique index walker_circle_one_walker_user on walker_circle_members (device_id) where role = 'walker_user';
+
+create table walker_circle_invites (
+  id uuid primary key,
+  device_id uuid not null references walker_devices (id) on delete cascade,
+  code text not null unique check (code ~ '^[0-9]{6}$'),
+  name text not null check (char_length(name) between 1 and 12),
+  role text not null check (role in ('walker_user', 'caregiver')),
+  created_at timestamptz not null,
+  expires_at timestamptz not null
+);
+create index walker_circle_invites_device on walker_circle_invites (device_id);
+
+-- Short messages between the phones. Deleted 24 hours after sending, and with either phone.
+create table walker_circle_messages (
+  id uuid primary key,
+  device_id uuid not null references walker_devices (id) on delete cascade,
+  from_member_id uuid not null references walker_circle_members (id) on delete cascade,
+  to_member_id uuid not null references walker_circle_members (id) on delete cascade,
+  client_message_id uuid not null,
+  text text not null check (char_length(text) <= 30),
+  -- Cleared by the newest-20 limit: the text is gone, and the row stays (until expires_at) only so a
+  -- retried send of it isn't saved again.
+  cleared boolean not null default false,
+  created_at timestamptz not null,
+  expires_at timestamptz not null,
+  seq bigint generated always as identity,
+  unique (from_member_id, client_message_id),
+  check (cleared = (text = ''))
+);
+create index walker_circle_messages_device on walker_circle_messages (device_id, created_at, seq);
+create index walker_circle_messages_expires on walker_circle_messages (expires_at);
+`,
+  },
 ];

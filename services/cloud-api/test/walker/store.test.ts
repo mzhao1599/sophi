@@ -120,7 +120,7 @@ if (walkerTestDatabaseUrl) {
         await Promise.all([new PostgresWalkerStore(second).ready(), new PostgresWalkerStore(third).ready()]);
         await new PostgresWalkerStore(second).ready();
         const { rows } = await h.pool!.query("select id from walker_schema_migrations order by id");
-        expect(rows.map((r) => r.id)).toEqual(["0001_walker", "0002_walker_turn_order"]);
+        expect(rows.map((r) => r.id)).toEqual(["0001_walker", "0002_walker_turn_order", "0003_walker_circle_phones"]);
       } finally {
         await second.end();
         await third.end();
