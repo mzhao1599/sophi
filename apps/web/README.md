@@ -30,7 +30,7 @@ No environment variables are needed for the default, deterministic onboarding. T
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Landing page: what this is, a build sheet you can tick to see modules on the walker, how setup works, the modules, questions, and a sentence that starts the setup with your words |
+| `/` | Landing page: what this is, how setup works, the modules (tick one to see it drawn on the walker), who's in control, questions, and a closing question that starts the setup with your words |
 | `/onboarding` | Start screen (what the demo does with answers), then one question at a time, the editable "What I understood" summary and the full transcript |
 | `/onboarding/review` | Module list with reasons quoted from your answers, dependency checks, the walker drawing, and save; after saving, the configuration the walker would receive |
 | `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface) |
@@ -42,7 +42,7 @@ No environment variables are needed for the default, deterministic onboarding. T
 - Answers are deleted an hour after the last change, when the server restarts, or immediately with **Delete my answers**.
 - The in-memory store is for local demos. On a host with several instances (Vercel), two requests can land on different instances and lose the session; the Supabase store replaces it (see [`services/cloud-api`](../../services/cloud-api/README.md)).
 - With the onboarding agent on, each answer is also sent to Anthropic's API, and the first screen says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
-- The landing page's closing sentence ("I'd like help with ___") hands its words to the first question through `sessionStorage`, never the URL.
+- The landing page's closing question ("What would you like help with?") hands its words to the first question through `sessionStorage`, never the URL.
 
 ## Code map
 
@@ -65,7 +65,8 @@ Target: WCAG 2.2 AA. What is built in:
 - Locked modules (the frame, and features not built yet) use `aria-disabled` with a visible reason, so they stay legible and focusable.
 - The whole conversation is available as text in the transcript; nothing is said only once or only by sound.
 - Touch targets are at least 44px; body text 16–17px; control borders reach 3:1; focus rings are 3px.
-- Motion is limited to transform and opacity, with `prefers-reduced-motion` fallbacks that keep all content. Content hidden for an entrance animation is hidden only when the script that reveals it is running.
+- Motion is limited to transform and opacity, with `prefers-reduced-motion` fallbacks that keep all content. Content hidden for an entrance animation is hidden only when the script that reveals it is running. The landing page's one moving line has a visible pause button (WCAG 2.2.2), stops on hover, and doesn't move at all under reduced motion.
+- On the landing page every colour field sets its own text and focus-ring colours, so the 3px ring stays visible on ultramarine, black, yellow and pink.
 
 Manual checklist before a demo (not yet done with real users):
 
@@ -77,25 +78,25 @@ Manual checklist before a demo (not yet done with real users):
 
 ## Design
 
-Built with [taste-skill](https://www.tasteskill.dev/) v2 (`design-taste-frontend`). The dealt sheets are saved in [`.taste-skill/`](../../.taste-skill) (reprint with `node <skill>/scripts/draw.mjs --show --out .taste-skill/app` or `.taste-skill/page`).
+Built with [taste-skill](https://www.tasteskill.dev/) v2 (`design-taste-frontend`). The second design (October 2026) started from real sites; what was taken from each is in [`.taste-skill/redesign/inspiration.md`](../../.taste-skill/redesign/inspiration.md), and the reasoning, redraws and critique rounds are in [`.taste-skill/redesign/notes.md`](../../.taste-skill/redesign/notes.md). The dealt sheets are in [`.taste-skill/`](../../.taste-skill) (reprint with `node <skill>/scripts/draw.mjs --show --out .taste-skill/page` or `.taste-skill/app`).
 
-- **App screens** (onboarding, review): style `editorial-greeting`, seed 2016038647. The current question is the typeset serif greeting; panels are tonal; the one accent (teal `#1b6e66`) marks selection and data. Shell: no sidebar (the product has two destinations so far), a 56px bar naming the product and the demo scope. Signature element: the walker drawing, with each module drawn where it mounts. Changes from the sheet, for accessibility: body 16px (not 14), control borders `#8c8c88` (not `#d9d9d6`).
-- **Landing**: direction `page-is-the-object`, seed 2026717547, palette and type kept from the app. Idea: the walker's build sheet (the configuration the Pi receives) becomes the card on the first screen; its tear-off stub is where you tick modules. The dealt "curtain footer" was replaced by the walker assembling on the card, because the curtain kept the footer under the page for the whole scroll, which the inspector fails as covered text.
-- **Inspector**, last run: 0 FAIL on every screen. Warnings kept, with reasons: the 48px question heading on app screens (the style's own greeting size, and larger type helps people with low vision); the review list running past the first screen (the summary and Save stay beside it); "hero void" on the landing (the dealt blueprint is a centred card on a flat field, the page's one rest); "off-centre" at 390px (measured before below-the-fold content appears; the frame is 16px on both sides); no video (no honest clip of walking aids was found).
+- **Landing**: direction `loud-flat-poster` ("Loud and flat"), seed 1681769881. Flat fields of ultramarine, black, yellow and pink with white or black ink; one green for the primary action; one family, Archivo (condensed 800 capitals for display, normal width for text, body 18px). Idea: the walker's own rules are said at full volume as poster statements, and the walker is a flat drawing you build by ticking its parts (the Modules section, with the drawing pinned beside the list). Redraws: the hero (the dealt one scrolled its headline sideways all the time, which fails WCAG 2.2.2) and the "about" section (it needed team portraits that don't exist); the dealt pink was lightened so black text reaches 7.6:1.
+- **App screens** (onboarding, review): still the first design, style `editorial-greeting`, seed 2016038647, until they are redesigned to match.
+- **Inspector**, last run on the landing: 0 FAIL at 1440, 768 and 390. One warning kept: no video (the open collections have no honest clip of walking aids; the slow sway of the hero print and the moving line are the page's moving pictures).
 
 ### Pictures and stand-ins
 
-The walker has no photographs yet, so it is **drawn** (`WalkerDiagram`). Replace or supplement the drawing with real photographs once the hardware exists. The archival pictures show the history of walking aids and are never presented as this walker; each is credited in the footer:
+The walker has no photographs yet, so it is **drawn** (`WalkerDiagram`, flat pieces; solid means on the walker, dashed means left off). Replace or supplement the drawing with real photographs once the hardware exists. The archival prints show the history of walking frames and are never presented as this walker; each is captioned where it appears and credited in the footer, with one treatment (black and white, stuck on at a slight angle):
 
-| File | Work | Licence |
-| --- | --- | --- |
-| `an-old-man-with-a-beard-in.jpg` | "An old man with a beard in a walking frame", Wellcome Collection | CC BY 4.0 |
-| `two-mothers-with-crying-babies-and-one.jpg` | "Two mothers with crying babies and one in a walking frame", Wellcome Collection | CC BY 4.0 |
-| `mother-child-old-man-with-baby-s.jpg` | Elisha Kirkall, "Mother, Child, old man with baby's walking frame on wheels", 1724, Yale Center for British Art | CC0 |
-| `old-man-with-a-walking-stick.jpg` | Wilhelm Leibl, "Old Man with a Walking Stick", 1875/77, Art Institute of Chicago | CC0 |
+| File | Work | Licence | Where |
+| --- | --- | --- | --- |
+| `an-old-man-with-a-beard-in.jpg` | "An old man with a beard in a walking frame", Wellcome Collection | CC BY 4.0 | Hero, cut to an arch |
+| `mother-child-old-man-with-baby-s.jpg` | Elisha Kirkall, "Mother, Child, old man with baby's walking frame on wheels", 1724, Yale Center for British Art | CC0 | How setup works |
+| `old-man-with-a-walking-stick.jpg` | Wilhelm Leibl, "Old Man with a Walking Stick", 1875/77, Art Institute of Chicago | CC0 | Who's in control |
+| `two-mothers-with-crying-babies-and-one.jpg` | "Two mothers with crying babies and one in a walking frame", Wellcome Collection | CC BY 4.0 | Fair questions |
 
-Source pages and licence links are in `public/images/found/credits.json`.
+Source pages and licence links are in `public/images/found/credits.json`. The interface fragments under "How setup works" are drawn in HTML from the app's real wording and the demo's sample answers; the configuration shown under "Pair" is an excerpt of the demo's saved output (the `/dev/preview/saved` answers), labelled as such, because pairing isn't built.
 
 ### Copy to confirm with the team
 
-The letter on the landing page is signed "The Assistive Walker team, Cal Hacks, October 2026". The slip says pairing will use "one code" (the planned one-time pairing challenge). Change either if the team prefers.
+The letter on the landing page is signed "The Assistive Walker team, Cal Hacks, October 2026". The "Pair" step says pairing will use "one code" (the planned one-time pairing challenge), and "Tell" says "6 or 7 short questions" (the agent may ask about six). Change any of them if the team prefers.

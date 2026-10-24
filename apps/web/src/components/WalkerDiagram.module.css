@@ -1,4 +1,19 @@
+/*
+ * The drawing takes its colours from the screen it sits on:
+ *   --d-ink     frame and wheels
+ *   --d-on      a module that is on the walker (solid)
+ *   --d-ground  the fill behind a dashed outline (the surface the drawing sits on)
+ *   --d-suggest a suggested module's dashed outline
+ *   --d-off     an absent module's dashed outline
+ * State is shown by solid against dashed, never by colour alone.
+ */
+
 .figure {
+  --d-ink: var(--text);
+  --d-on: var(--accent);
+  --d-ground: var(--ground);
+  --d-suggest: var(--accent);
+  --d-off: var(--control);
   display: grid;
   gap: 12px;
 }
@@ -15,79 +30,74 @@
   transition: opacity 150ms ease;
 }
 
-.frame,
+.frame {
+  fill: var(--d-ink);
+}
+
+.hub {
+  fill: var(--d-ground);
+}
+
+.box {
+  stroke-width: 2.5;
+}
+
 .arm {
   fill: none;
-  stroke-width: 6;
+  stroke-width: 8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.arm {
-  stroke-width: 5;
+/* The button mark on each grip shows only when the hand controls are on. */
+.button {
+  fill: none;
+  stroke: none;
 }
 
-.wheel,
-.box,
-.joint {
-  stroke-width: 2;
-}
-
-/* On the walker: ink frame, accent modules */
-.part[data-state="selected"] .frame {
-  stroke: var(--text);
-}
-.part[data-state="selected"] .wheel {
-  fill: var(--text);
-  stroke: var(--text);
-}
-.part[data-state="selected"] .box,
-.part[data-state="selected"] .joint {
-  fill: var(--accent);
-  stroke: var(--accent);
+/* On the walker: solid */
+.part[data-state="selected"] .box {
+  fill: var(--d-on);
+  stroke: var(--d-on);
 }
 .part[data-state="selected"] .arm {
-  stroke: var(--accent);
+  stroke: var(--d-on);
 }
-.part[data-state="selected"][data-highlight="true"] .box {
-  stroke: var(--text);
-  stroke-width: 3;
+.part[data-state="selected"] .button {
+  fill: var(--d-ground);
 }
 
-/* Suggested but not chosen: an accent outline */
-.part[data-state="suggested"] .box,
-.part[data-state="suggested"] .joint {
-  fill: var(--ground);
-  stroke: var(--accent);
-  stroke-dasharray: 4 3;
+/* Suggested but not chosen: a dashed outline in the "on" colour */
+.part[data-state="suggested"] .box {
+  fill: var(--d-ground);
+  stroke: var(--d-suggest);
+  stroke-dasharray: 5 4;
 }
 .part[data-state="suggested"] .arm {
-  stroke: var(--accent);
-  stroke-dasharray: 6 5;
+  stroke: var(--d-suggest);
+  stroke-dasharray: 8 7;
 }
 
-/* Not included or not available: a quiet grey outline */
+/* Not included, or not built yet: a quieter dashed outline */
 .part[data-state="off"] .box,
-.part[data-state="off"] .joint,
-.part[data-state="unavailable"] .box,
-.part[data-state="unavailable"] .joint {
-  fill: var(--ground);
-  stroke: var(--control);
-  stroke-dasharray: 3 3;
+.part[data-state="unavailable"] .box {
+  fill: var(--d-ground);
+  stroke: var(--d-off);
+  stroke-dasharray: 4 4;
 }
 .part[data-state="off"] .arm,
 .part[data-state="unavailable"] .arm {
-  stroke: var(--control);
-  stroke-dasharray: 4 5;
+  stroke: var(--d-off);
+  stroke-dasharray: 6 8;
 }
 
-.part[data-highlight="true"] .box,
-.part[data-highlight="true"] .joint {
-  stroke-width: 3;
+/* The row under the pointer or keyboard focus: a heavier edge in the frame's ink */
+.part[data-highlight="true"] .box {
+  stroke: var(--d-ink);
+  stroke-width: 4;
 }
-
 .part[data-highlight="true"] .arm {
-  stroke-width: 7;
+  stroke-width: 11;
 }
 
 .caption {
@@ -110,19 +120,30 @@
 
 .swatch {
   display: inline-block;
-  width: 14px;
-  height: 10px;
+  width: 16px;
+  height: 12px;
   border-radius: 3px;
 }
 
 .swatch[data-state="selected"] {
-  background: var(--accent);
+  background: var(--d-on);
 }
 
 .swatch[data-state="suggested"] {
-  border: 2px dashed var(--accent);
+  border: 2px dashed var(--d-suggest);
 }
 
 .swatch[data-state="off"] {
-  border: 2px dashed var(--control);
+  border: 2px dashed var(--d-off);
+}
+
+@media (forced-colors: active) {
+  .frame,
+  .part[data-state="selected"] .box {
+    fill: CanvasText;
+    stroke: CanvasText;
+  }
+  .part[data-state="selected"] .arm {
+    stroke: CanvasText;
+  }
 }
