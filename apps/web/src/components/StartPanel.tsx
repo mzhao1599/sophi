@@ -48,7 +48,15 @@ export function StartPanel({ busy, error, onStart, agent = false }: { busy: bool
             </p>
           ) : null}
           <div className={styles.actions}>
-            <button type="button" className="button button-primary" onClick={onStart} disabled={busy}>
+            {/* aria-disabled while starting, so focus stays here until the first question's heading takes it. */}
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => {
+                if (!busy) onStart();
+              }}
+              aria-disabled={busy || undefined}
+            >
               {busy ? "Starting…" : "Start the demo"}
             </button>
             <p className={styles.consent}>Starting means you&apos;ve read how the demo keeps your answers.</p>

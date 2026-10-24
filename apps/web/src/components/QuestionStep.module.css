@@ -149,6 +149,11 @@
   margin-left: auto;
 }
 
+/* "Saving your answer…": holds focus while a turn saves, until the next question's heading takes it. */
+.saving {
+  font-weight: 500;
+}
+
 @media (max-width: 900px) {
   .options {
     grid-template-columns: minmax(0, 1fr);

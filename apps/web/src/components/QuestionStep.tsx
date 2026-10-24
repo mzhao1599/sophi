@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import type { Question, SessionView } from "@walker/contracts";
 import { DRAFT_KEY } from "./landing/CtaSentence";
 import styles from "./QuestionStep.module.css";
@@ -39,6 +39,11 @@ export function QuestionStep({ question, previous, progress, revisiting, busy, e
   const [selected, setSelected] = useState<string[]>(previous?.option_ids ?? []);
   const [text, setText] = useState(() => previous?.text ?? (question.id === "tasks" ? readDraft() : ""));
   const [localError, setLocalError] = useState<string | null>(null);
+  // What this step is saving ("Saving your answer…"), shown in a note that holds focus meanwhile.
+  const [saving, setSaving] = useState<string | null>(null);
+  const savingRef = useRef<HTMLParagraphElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  const pressedRef = useRef<HTMLButtonElement | null>(null);
   // The draft is used once; clear it after the first render (not in the state initializer, which
   // React may run twice in development).
   useEffect(() => {
@@ -49,10 +54,32 @@ export function QuestionStep({ question, previous, progress, revisiting, busy, e
     }
   }, []);
 
-  // focusKey is 0 when a saved session is restored on page load; leave focus alone then.
-  useEffect(() => {
+  // focusKey is 0 when a saved session is restored on page load; leave focus alone then. A layout
+  // effect, so focus moves in the same commit that removes the previous question.
+  useLayoutEffect(() => {
     if (focusKey > 0) headingRef.current?.focus();
   }, [focusKey]);
+
+  // While a save runs, the inputs are disabled, so focus waits on the saving note instead of falling
+  // to the page. A successful turn replaces this step and the new heading takes focus. If this step
+  // is still here when the save ends, it failed: focus goes back to the button that was pressed.
+  useLayoutEffect(() => {
+    if (!saving) return;
+    if (busy) {
+      savingRef.current?.focus();
+    } else {
+      if (document.activeElement === savingRef.current) pressedRef.current?.focus();
+      setSaving(null);
+    }
+  }, [busy, saving]);
+
+  /** Buttons stay focusable while busy (aria-disabled), so a press then is ignored here. */
+  function begin(label: string, button: HTMLButtonElement | null, action: () => unknown) {
+    if (busy || saving) return;
+    pressedRef.current = button;
+    setSaving(label);
+    void action();
+  }
 
   const multiple = question.selection === "multiple";
   const message = localError ?? error;
@@ -63,14 +90,16 @@ export function QuestionStep({ question, previous, progress, revisiting, busy, e
     setSelected((s) => (multiple ? (checked ? [...s, id] : s.filter((x) => x !== id)) : checked ? [id] : []));
   }
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy || saving) return;
     if (selected.length === 0 && !text.trim()) {
       setLocalError("Choose an option or write an answer. You can also skip this question.");
       firstInputRef.current?.focus();
       return;
     }
-    await onAnswer(selected, text);
+    // Enter in a radio or checkbox submits too; either way, a failed save returns focus to Continue.
+    begin("Saving your answer…", submitRef.current, () => onAnswer(selected, text));
   }
 
   const step = Math.min(progress.answered + 1, progress.total);
@@ -156,18 +185,34 @@ export function QuestionStep({ question, previous, progress, revisiting, busy, e
         ) : null}
 
         <div className={styles.actions}>
-          <button type="submit" className="button button-primary" disabled={busy}>
-            {busy ? "Saving…" : "Continue"}
+          <button ref={submitRef} type="submit" className="button button-primary" aria-disabled={busy || undefined}>
+            Continue
           </button>
-          <button type="button" className="button-text" onClick={onSkip} disabled={busy}>
+          <button
+            type="button"
+            className="button-text"
+            onClick={(e) => begin("Skipping this question…", e.currentTarget, onSkip)}
+            aria-disabled={busy || undefined}
+          >
             Skip this question
           </button>
           {progress.answered > 0 ? (
-            <button type="button" className={`button-text ${styles.skipRest}`} onClick={onSkipRest} disabled={busy}>
+            <button
+              type="button"
+              className={`button-text ${styles.skipRest}`}
+              onClick={(e) => begin("Skipping to the review…", e.currentTarget, onSkipRest)}
+              aria-disabled={busy || undefined}
+            >
               Skip the rest and review
             </button>
           ) : null}
         </div>
+
+        {saving ? (
+          <p ref={savingRef} tabIndex={-1} className={styles.saving}>
+            {saving}
+          </p>
+        ) : null}
       </form>
     </section>
   );

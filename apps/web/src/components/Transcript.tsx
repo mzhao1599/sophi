@@ -21,8 +21,16 @@ export function Transcript({ turns, canChange, busy, onChange }: { turns: Turn[]
           <li key={t.id} className={t.role === "user" ? styles.user : styles.assistant}>
             <span className={styles.who}>{t.role === "user" ? "You" : "Assistant"}</span>
             <p className={styles.text}>{t.text}</p>
+            {/* aria-disabled while busy, so focus stays here until the reopened question's heading takes it. */}
             {canChange && t.role === "user" && t.question_id && latestAnswer.get(t.question_id) === t.id ? (
-              <button type="button" className="button-text" onClick={() => onChange(t.question_id!)} disabled={busy}>
+              <button
+                type="button"
+                className="button-text"
+                onClick={() => {
+                  if (!busy) onChange(t.question_id!);
+                }}
+                aria-disabled={busy || undefined}
+              >
                 Change this answer
               </button>
             ) : null}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { MODULE_CATALOG, type ModuleId, type SessionView } from "@walker/contracts";
 import { useOnboarding, type Onboarding } from "@/lib/useOnboarding";
 import { FactsPanel } from "./FactsPanel";
@@ -76,7 +76,8 @@ export function OnboardingView({ o, agent = false }: { o: Onboarding; agent?: bo
   const doneRef = useRef<HTMLHeadingElement>(null);
   const reviewReady = s && (s.state === "review" || s.state === "confirmed");
 
-  useEffect(() => {
+  // A layout effect, so focus moves in the same commit that removes the last question.
+  useLayoutEffect(() => {
     if (reviewReady && o.questionKey > 1) doneRef.current?.focus();
   }, [reviewReady, o.questionKey]);
 

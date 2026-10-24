@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { MODULE_CATALOG, NEED_TAG_LABELS, getCatalogEntry, type ProfileFact, type Recommendation } from "@walker/contracts";
 import styles from "./FactsPanel.module.css";
 
@@ -39,16 +39,41 @@ export function FactsPanel({ facts, recommendations, editable, busy, onUpdate, o
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // The fact being saved or removed. Its button keeps focus meanwhile (aria-disabled, not disabled,
+  // so focus isn't dropped to the page) and says what is happening.
+  const [pending, setPending] = useState<string | null>(null);
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
+  // The fact whose Edit button takes focus back when its editor closes. A layout effect, so focus
+  // moves in the same commit that removes the editor instead of falling to the page for a frame.
+  const returnTo = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (editing !== null || !returnTo.current) return;
+    editButtons.current.get(returnTo.current)?.focus();
+    returnTo.current = null;
+  }, [editing]);
+
+  function closeEditor(factId: string) {
+    returnTo.current = factId;
+    setEditing(null);
+  }
 
   const suggested = (recommendations ?? []).filter((r) => r.status === "recommended" || r.status === "consider");
 
   async function save(fact: ProfileFact) {
-    if (!draft.trim()) return;
-    if (await onUpdate(fact.id, draft.trim())) {
-      setEditing(null);
-      requestAnimationFrame(() => editButtons.current.get(fact.id)?.focus());
-    }
+    if (busy || !draft.trim()) return;
+    setPending(fact.id);
+    const saved = await onUpdate(fact.id, draft.trim());
+    setPending(null);
+    if (saved) closeEditor(fact.id);
+  }
+
+  async function remove(fact: ProfileFact) {
+    if (busy) return;
+    setPending(fact.id);
+    await onRemove(fact.id, fact.text);
+    setPending(null);
+    headingRef.current?.focus();
   }
 
   return (
@@ -79,21 +104,25 @@ export function FactsPanel({ facts, recommendations, editable, busy, onUpdate, o
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") {
-                          setEditing(null);
-                          requestAnimationFrame(() => editButtons.current.get(fact.id)?.focus());
+                          closeEditor(fact.id);
                         }
                       }}
                     />
                     <div className={styles.row}>
-                      <button type="button" className="button button-primary" onClick={() => save(fact)} disabled={busy || !draft.trim()}>
-                        Save
+                      <button
+                        type="button"
+                        className="button button-primary"
+                        onClick={() => save(fact)}
+                        disabled={!draft.trim()}
+                        aria-disabled={busy || undefined}
+                      >
+                        {pending === fact.id ? "Saving…" : "Save"}
                       </button>
                       <button
                         type="button"
                         className="button-text"
                         onClick={() => {
-                          setEditing(null);
-                          requestAnimationFrame(() => editButtons.current.get(fact.id)?.focus());
+                          closeEditor(fact.id);
                         }}
                       >
                         Cancel
@@ -119,23 +148,22 @@ export function FactsPanel({ facts, recommendations, editable, busy, onUpdate, o
                             else editButtons.current.delete(fact.id);
                           }}
                           onClick={() => {
+                            if (busy) return;
                             setEditing(fact.id);
                             setDraft(fact.text);
                           }}
-                          disabled={busy}
+                          aria-disabled={busy || undefined}
                         >
                           Edit<span className="visually-hidden">: {fact.text}</span>
                         </button>
                         <button
                           type="button"
                           className="button-text"
-                          onClick={async () => {
-                            await onRemove(fact.id, fact.text);
-                            headingRef.current?.focus();
-                          }}
-                          disabled={busy}
+                          onClick={() => remove(fact)}
+                          aria-disabled={busy || undefined}
                         >
-                          Remove<span className="visually-hidden">: {fact.text}</span>
+                          {pending === fact.id ? "Removing…" : "Remove"}
+                          <span className="visually-hidden">: {fact.text}</span>
                         </button>
                       </div>
                     ) : null}
