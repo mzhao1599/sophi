@@ -62,6 +62,17 @@ These directories are ownership boundaries, not a commitment to a package manage
 
 The proposed software baseline is TypeScript/Next.js for the web app, a cloud API deployed on Vercel, Supabase Auth/Postgres/Storage for accounts and durable state, a Pi service with typed adapters, and ESP32 firmware over USB serial. See [project scope and decisions](docs/project-plan.md) for which choices are provisional, how to stage the hackathon demo, and what must be measured before hardware integration.
 
+## Sponsor technologies
+
+What each sponsor's technology does in Steady, and whether it runs today. How the demo frames each sponsor track is in [docs/demo/tracks.md](docs/demo/tracks.md).
+
+| Technology | Where | Status |
+| --- | --- | --- |
+| Google Gemini API (`gemini-3.7-flash`) | The onboarding agent reads the person's words and words each question ([gemini.ts](services/cloud-api/src/onboarding/gemini.ts)); the walker assistant's design uses it to hear and answer speech | Onboarding: runs on the demo laptop. Walker: being built |
+| Anthropic Claude (`claude-opus-5-5`) | The same onboarding agent, behind the same adapter ([anthropic.ts](services/cloud-api/src/onboarding/anthropic.ts)) | Built and tested with stub models; not yet run live |
+| Cartesia text-to-speech | The walker assistant's spoken replies, made on the server; the walker's own voice covers offline lines | Being built; in the walker contract (`speech`, `voiced_by`) |
+| Stripe Checkout (test mode only) | "Order (Demo)" for a saved walker, at placeholder prices | Runs today |
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) before making changes. Each component should have a short README explaining what it owns, how to run it, its dependencies, and how it exchanges data with the Pi or cloud. Keep this root README product focused; put wire formats in [interfaces](docs/interfaces.md) and implementation detail in subsystem guides. Never commit credentials, private recordings, or real user health/location data.

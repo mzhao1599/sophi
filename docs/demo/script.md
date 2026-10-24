@@ -2,7 +2,7 @@
 
 **Steady. A smart walker you set up by talking to it.**
 
-This is the script for showing the website to judges at Cal Hacks: a click sequence for the website alone, a 3-minute main script, a 60-second cut, the persona's exact lines, what each line should do with both onboarding engines, the honesty lines, judge Q&A, the setup checklist, and the rehearsal results.
+This is the script for showing the website to judges at Cal Hacks: a click sequence for the website alone, a 3-minute main script, a 60-second cut, the persona's exact lines, what each line should do with both onboarding engines, the honesty lines, judge Q&A, the setup checklist, and the rehearsal results. How to frame it for each sponsor track, with a 2-minute cut per track, is in [tracks.md](tracks.md). `pnpm --filter @walker/cloud-api rehearse` re-runs the rehearsal below (see "Rehearse on a model" in tracks.md).
 
 **What is real today:** the website. A person types what they need, the onboarding assistant asks short questions, the walker drawing lights up suggested modules, and the person switches modules, saves the walker and orders it through Stripe's test mode. **What is planned:** the walker hardware (frame, hand controls, obstacle sensors, voice module, robot arms, arm lift) and location sharing. The parts are ordered; nothing is assembled or tested yet. Nothing in this script presents a planned part as working.
 
@@ -22,7 +22,7 @@ Every input and click, with nothing to say. Use it to rehearse, or alongside the
 7. Click "Show My Walker", under the text box.
 8. On the drawing, click the "Obstacle sensors" label. Its panel opens with "You said:" and her words; press Escape to close it.
 9. Click the "Voice" label. Its panel shows "You said no" and her words; press Escape.
-10. In "All modules" on the right, switch on "Robot arms" and "Arm lift". Every part is now on screen.
+10. In "All modules" on the right, switch on "Robot arms" and "Arm lift". Every part is now on screen, and the line under "Your walker" reads "5 modules · $1,675 at demo prices, not a real quote".
 11. Click "Save".
 12. Click "Order (Demo)". Stripe's test checkout opens.
 13. On Stripe's page, fill in the fields below, then click "Pay":
@@ -167,7 +167,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 1. Press Escape to close the panel.
 2. In "All modules"† beside the drawing, switch on "Robot arms"†, then "Arm lift"†. Both turn solid on the drawing.
-3. Point along the drawing: the frame, hand controls, obstacle sensors, robot arms and arm lift on; Voice "You Said No"†; Location sharing "Not Available Yet"†.
+3. Point along the drawing: the frame, hand controls, obstacle sensors, robot arms and arm lift on; Voice "You Said No"†; Location sharing "Not Available Yet"†. The line under "Your walker"† now reads "5 modules · $1,675 at demo prices, not a real quote"†.
 
 **2:01 to 2:10. No mouse needed (accessibility, 10 seconds)**
 
