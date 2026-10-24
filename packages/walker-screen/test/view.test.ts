@@ -71,13 +71,21 @@ describe("fixtures", () => {
   });
 });
 
+describe("controls that aren't built are not shown", () => {
+  it("no screen outside My screen itself offers a My screen button (it does nothing yet)", () => {
+    for (const fixture of screenFixtures().filter((f) => f.state.screen.state !== "my_screen")) {
+      expect(buttons(screenView(fixture.state)).map((b) => b.action), fixture.name).not.toContain("my_screen");
+    }
+  });
+});
+
 describe("the walker's own states", () => {
-  it("ambient: the time, the part of the day, her greeting and the alerts, with My screen", () => {
+  it("ambient: the time, the part of the day, her greeting and the alerts, and no My screen yet", () => {
     const v = screenView(state({ state: "ambient", alerts: ["sound", "spoken"] }, { settings: { ...settings, greeting_name: "Nan" } }));
     expect(v.main.text).toBe("7:42");
     expect(texts(v)).toEqual(["7:42", "Good evening, Nan", "Saturday evening", "Alerts: short sounds and speech"]);
     expect(v.strip.time).toBeNull();
-    expect(buttons(v).map((b) => b.action)).toEqual(["my_screen"]);
+    expect(buttons(v)).toEqual([]); // "My screen" comes back with the circle piece, once it does something
     expect(v.left).toBeNull();
   });
 
@@ -89,6 +97,14 @@ describe("the walker's own states", () => {
 
   it("listening", () => {
     expect(texts(screenView(state({ state: "listening" })))).toEqual(["Listening", "Let go of Talk when you're done."]);
+  });
+
+  it("thinking: One moment, words only, no buttons and no Confirm", () => {
+    const v = screenView(state({ state: "thinking" }));
+    expect(texts(v)).toEqual(["One moment", "Your question is with Sophi."]);
+    expect(v.main.size).toBe("main");
+    expect(buttons(v)).toEqual([]);
+    expect(v.left).toBeNull();
   });
 
   it("answering: captions paged at her size, what she said, and where the reply came from", () => {
@@ -129,7 +145,8 @@ describe("the walker's own states", () => {
     const v = screenView(state({ state: "offline" }, { strip: { link: "offline", simulator: false, clock: { local_time: "2026-10-24T19:42:00" } } }));
     expect(texts(v)).toEqual(["No internet", "Alerts still work on the walker."]);
     expect(v.strip).toMatchObject({ word: "Offline", shape: "hollow", time: "7:42" });
-    expect(buttons(v).map((b) => b.action)).toEqual(["my_screen"]);
+    // "My screen" isn't built yet, so it isn't shown (it comes back with the circle piece).
+    expect(buttons(v)).toEqual([]);
   });
 
   it("not set up", () => {

@@ -11,6 +11,8 @@ import { HttpCloudClient, pairWithServer } from "../cloud/client";
 import { createLogger } from "../log";
 import { attachLogging } from "../logging";
 import { ModuleManager } from "../serial/modules";
+import { defaultScreenAssets, readScreenPort, startWalkerScreen, type WalkerScreen } from "../screen";
+import { localWallTime } from "../screen/machine";
 import { WalkerService } from "../service";
 import { StateStore } from "../store";
 import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "./fakeCloud";
@@ -29,6 +31,8 @@ export interface SimulateOptions {
   state?: string;
   out?: string;
   script?: string;
+  /** Also serve the walker screen's page on 127.0.0.1 (WALKER_SCREEN_PORT, default 8740) and print its address. */
+  screen?: boolean;
 }
 
 /** What the fake cloud says on the simulator's demo path, in order. Every line says it is the fake cloud. */
@@ -92,7 +96,9 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   } else {
     fake = new FakeCloud(clock);
     fake.script = FAKE_DEMO_TURNS.map((turn) => ({ ...turn }));
-    fakeServer = await startFakeCloudServer(fake, log);
+    // WALKER_FAKE_TURN_MS: how long the fake cloud takes to answer a turn (0 unless set; at most 10 s).
+    const turnDelay = Math.min(10_000, Math.max(0, Number(process.env.WALKER_FAKE_TURN_MS) || 0));
+    fakeServer = await startFakeCloudServer(fake, log, turnDelay);
     log.info("FAKE cloud listening (not Sophi's assistant: scripted replies only)", { url: fakeServer.url });
     await pairFake();
   }
@@ -146,6 +152,29 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
   });
   service.start();
+
+  let screen: WalkerScreen | null = null;
+  if (options.screen) {
+    const screenPort = readScreenPort(process.env.WALKER_SCREEN_PORT);
+    if ("off" in screenPort) log.warn("walker screen off", { reason: screenPort.off });
+    else {
+      screen = await startWalkerScreen({
+        bus,
+        clock,
+        log,
+        service,
+        modules,
+        simulator: true,
+        port: screenPort.port,
+        assetsDir: process.env.WALKER_SCREEN_ASSETS || defaultScreenAssets(),
+        localTime: () => localWallTime(clock.now()),
+        greeting: process.env.WALKER_SCREEN_GREETING,
+        logDrawn: true,
+      });
+      if (screen.url) process.stdout.write(`Walker screen (simulator): ${screen.url}  (open it at 800x480)
+`);
+    }
+  }
 
   let finish: (code: number) => void = () => {};
   const finished = new Promise<number>((resolve) => (finish = resolve));
@@ -223,6 +252,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   // Against a real cloud the audio folder holds real replies; it goes unless the person asked for it (--out).
   if (options.server && !options.out) rmSync(outDir, { recursive: true, force: true });
   service.stop();
+  await screen?.stop();
   hand.hang();
   tof.hang();
   modules.stop();

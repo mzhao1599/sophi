@@ -13,7 +13,7 @@ import type { Bus, BusEvents } from "../bus";
  * `expect` and `absent` look only at events since the last `key` step, so an old event can't satisfy them.
  * Event names and what their text is matched against: spoke (the line), link, talk and mic (the state), cue (the
  * cue name), haptic (the pattern), config (the version), turn (the outcome), heartbeat (ok or failed),
- * module (`<instance> <health>`).
+ * module (`<instance> <health>`), screen (the walker screen's state name, with `--screen`).
  */
 export type ScriptStep =
   | { kind: "key"; key: string; line: number }
@@ -21,7 +21,7 @@ export type ScriptStep =
   | { kind: "absent"; event: keyof BusEvents; match: string; forMs: number; line: number }
   | { kind: "wait"; forMs: number; line: number };
 
-const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module"]);
+const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen"]);
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 600_000;
 
@@ -87,6 +87,8 @@ export function eventText<K extends keyof BusEvents>(name: K, payload: BusEvents
       return p.ok ? "ok" : "failed";
     case "module":
       return `${String(p.instanceId)} ${String(p.health)}`;
+    case "screen":
+      return String(p.state);
     default:
       return "";
   }

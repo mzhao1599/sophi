@@ -1,0 +1,62 @@
+# The walker screen through the demo beats, against the FAKE cloud (test/EXPECTED.md, D14).
+# Run (from devices/pi): WALKER_FAKE_TURN_MS=1500 node dist/walker.mjs simulate --screen --script test/sim/screen-beats.walk
+# (the delay makes the fake cloud take 1.5 s per turn, so "One moment" stays up long enough to see)
+# and open the printed http://127.0.0.1:8740/ at 800x480 to watch. The waits keep each screen up long
+# enough to read (and, in the headless run, to screenshot). The fake cloud transcribes nothing, so no
+# "You said" line appears; its replies say they are the fake cloud's ("Answered by the fixed replies").
+
+# Boot: the clock, with the alerts in force (configuration 1: vibration and speech).
+expect spoke Sophi is on.
+expect link online
+expect screen ambient
+wait 4000
+
+# 1. Ask: Listening while Talk is held, One moment while the turn is with the (fake) cloud, then the reply
+# as captions, then back to the clock.
+key t
+expect screen listening
+wait 1500
+key t
+expect screen thinking
+expect screen answering
+expect 30000 screen ambient
+wait 1500
+
+# 2. Change a setting: the fake cloud offers short sounds; the captions give way to Sophi's offer
+# (Confirm lit); Confirm shows Done with the new alerts, then the clock.
+key t
+expect screen listening
+wait 1500
+key t
+expect screen thinking
+expect screen answering
+expect 40000 screen model_offer
+wait 2000
+key c
+expect screen done
+expect config 2
+expect 10000 screen ambient
+wait 1500
+
+# 3. Obstacle: a hand in front of the simulated ToF. "Something close", Front left, 30 cm, Simulated.
+key n
+expect screen obstacle
+wait 2000
+key f
+expect 5000 screen ambient
+wait 1500
+
+# 4. Offline: "No internet"; a Talk press there gets the walker's own line as captions; then back online.
+key o
+expect link offline
+expect 30000 screen offline
+wait 2000
+key t
+expect screen answering
+expect 40000 screen offline
+wait 1500
+key o
+expect link online
+expect 30000 screen ambient
+wait 2000
+key q

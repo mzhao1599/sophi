@@ -80,6 +80,16 @@ done
 
 install -d -m 0755 /opt/steady-walker
 install -m 0755 "$bundle" /opt/steady-walker/walker.mjs
+# The walker screen's page, which the walker service serves on 127.0.0.1 (bundle.mjs builds it beside walker.mjs).
+page="$(dirname "$bundle")/screen-page"
+if [[ -f "$page/page.js" ]]; then
+  install -d -m 0755 /opt/steady-walker/screen-page
+  # The whole folder, subfolders too, readable by the service.
+  cp -R "$page/." /opt/steady-walker/screen-page/
+  chmod -R u=rwX,go=rX /opt/steady-walker/screen-page
+else
+  echo "Note: no screen-page folder beside $bundle, so the walker runs without its screen page." >&2
+fi
 install -d -m 0700 -o steady -g steady /var/lib/steady-walker
 if [[ ! -f /etc/steady-walker.env ]]; then
   install -m 0640 -o root -g steady "$here/systemd/steady-walker.env.example" /etc/steady-walker.env

@@ -1,10 +1,10 @@
 # Walker screen
 
-What the walker's own 800x480 screen draws: a pure `screenView(state, settings?)` that turns the Pi's `ScreenState` ([contract](../contracts/src/circle.ts), [interfaces](../../docs/interfaces.md#the-walker-screens-local-contract-pi--page-on-127001)) into a view model, a React component that draws it, its stylesheet and font, and example states for every screen. **Built and tested here only:** no Pi page serves it yet and the web app doesn't use it yet (later pieces). Nothing here decides behaviour; the Pi picks the state.
+What the walker's own 800x480 screen draws: a pure `screenView(state, settings?)` that turns the Pi's `ScreenState` ([contract](../contracts/src/circle.ts), [interfaces](../../docs/interfaces.md#the-walker-screens-local-contract-pi--page-on-127001)) into a view model, a React component that draws it, its stylesheet and font, and example states for every screen. The Pi's walker service serves it as the walker's screen page (`devices/pi/src/screen/page.tsx`, the walker's own states only so far; the circle's come later); the web app doesn't use it yet. Nothing here decides behaviour; the Pi picks the state.
 
 | File | What it is |
 | --- | --- |
-| `src/view.ts` | `screenView(state, settings?)`: the words and layout for each state, in three fixed regions (status strip, the one thing, the band over the handles). Pass draft `settings` to draw a Preview. Also `captionPages(text, textSize)`, which the Pi uses to page captions |
+| `src/view.ts` (also exported alone as `@walker/walker-screen/view`, so the Pi's Node bundle gets `captionPages` without React) | `screenView(state, settings?)`: the words and layout for each state, in three fixed regions (status strip, the one thing, the band over the handles). Pass draft `settings` to draw a Preview. Also `captionPages(text, textSize)`, which the Pi uses to page captions |
 | `src/sizes.ts` | Every size from one `PX_PER_MM` (7.35 for the 800x480, 108.9 mm wide panel): smallest text 40 px, body 48/56/64, main line 88/104/120 by text size, buttons 147 px (20 mm), at most 3 |
 | `src/WalkerScreenView.tsx` | The React view (React 19, as `apps/web`). `onPress(action)` for taps; omit it for an inert Preview |
 | `src/screen.css` | Tokens copied from `apps/web/app/globals.css`, scoped by `data-theme` (never a system dark mode), `@font-face` for the bundled font, the layout, a 240 ms cross-fade with a reduced-motion branch |
@@ -30,3 +30,5 @@ pnpm --filter @walker/walker-screen exec vitest run test/shots.test.tsx
 ```
 
 Not measured: sizes assume CSS px equal panel px (devicePixelRatio 1). Check a rendered cap height with a ruler on the panel, at the walker, before relying on them.
+
+**Not shown until built:** the "My screen" button (on the clock and offline screens) is left out until the Pi acts on it (a TODO in `view.ts`; a test checks no fixture offers it). The My screen pages themselves are drawn for the circle piece.

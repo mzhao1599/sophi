@@ -1,0 +1,39 @@
+/* The page around the walker screen: the panel is 800x480 at one CSS pixel per screen pixel. */
+html,
+body {
+  margin: 0;
+  width: 800px;
+  height: 480px;
+  overflow: hidden;
+  background: #f1f4f2;
+  /* A touch screen: no pointer, no text selection, no double-tap zoom. */
+  cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+/* Before the first state, or when the walker service stops answering: the placeholder's look (light, 88/48 px). */
+.pi-waiting {
+  box-sizing: border-box;
+  width: 800px;
+  height: 480px;
+  padding: 40px 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+  background: #f1f4f2;
+  color: #14201c;
+  font-family: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+}
+.pi-waiting p {
+  margin: 0;
+  font-size: 48px;
+  line-height: 1.2;
+}
+.pi-waiting .pi-waiting-main {
+  font-size: 88px;
+  line-height: 1;
+  font-weight: 700;
+}

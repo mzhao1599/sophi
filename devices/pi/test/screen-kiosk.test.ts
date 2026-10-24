@@ -337,9 +337,10 @@ describe("the screen's unit files and placeholder", () => {
   it("V8: the placeholder says only what is true", () => {
     const page = read("../screen/placeholder.html");
     expect(page).toContain("<h1>Sophi</h1>");
-    expect(page.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")).toContain(
-      "Screen connected. The walker's screen starts when the walker service is updated.",
-    );
+    const text = page.replace(/<script>[\s\S]*<\/script>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    expect(text).toContain("Screen connected. Waiting for the walker service.");
+    // It goes to the walker service's own page, on 127.0.0.1 only, once that answers.
+    expect(page).toContain('var page = "http://127.0.0.1:8740/";');
   });
 });
 

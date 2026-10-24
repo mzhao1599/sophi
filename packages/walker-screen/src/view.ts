@@ -284,6 +284,9 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
     }
     case "listening":
       return { key: "listening", main: { text: "Listening", size: "main" }, lines: [body("Let go of Talk when you're done.")] };
+    case "thinking":
+      // Talk was let go and the answer hasn't come: words only, nothing that moves (no spinner, no dots).
+      return { key: "thinking", main: { text: "One moment", size: "main" }, lines: [body("Your question is with Sophi.")] };
     case "answering": {
       // The same names as the /walker page (apps/web/src/lib/walkerView.ts). The walker's model is Gemini.
       const source = content.source === "model" ? "Answered by Gemini" : content.source === "fixed" ? "Answered by the fixed replies" : "On the walker, offline reply";
@@ -383,11 +386,12 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         announce: `${content.from_name} says: ${content.text}`,
       };
     case "offline":
+      // TODO(circle piece): add back the "My screen" button here and on the clock once the Pi acts on it. A
+      // control that does nothing is never shown (AGENTS.md: never present something unbuilt as working).
       return {
         key: "offline",
         main: { text: "No internet", size: "main" },
         lines: [detail("Alerts still work on the walker.")],
-        center: { buttons: [button("my_screen", "My screen")] },
       };
     case "not_set_up":
       return { key: "not_set_up", main: { text: "Not set up yet", size: "main" }, lines: [body("Ask your family to set it up.")] };
@@ -405,7 +409,8 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         lines,
         center: {
           lines: content.alerts ? [detail(`Alerts: ${listWords(content.alerts.map((c) => CUE_WORD[c]))}`)] : [],
-          buttons: [button("my_screen", "My screen")],
+          // TODO(circle piece): the "My screen" button, once it does something (see "offline").
+          buttons: [],
         },
       };
     }

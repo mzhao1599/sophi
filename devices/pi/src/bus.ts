@@ -1,3 +1,4 @@
+import type { Cue, ProposalView, ScreenStateName } from "@walker/contracts";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
 /**
@@ -39,6 +40,25 @@ export interface BusEvents {
   /** A button source can no longer report a release (a hand module went away or rebooted, or gpiomon exited). */
   buttonsLost: { source: ButtonSourceKind; detail?: string };
   turn: { outcome: "answered" | "cancelled" | "timeout" | "offline" | "unauthorized" | "failed" | "too_short" | "discarded" };
+  /**
+   * For the walker screen's captions: what a Talk press got back, as it starts being spoken. `model` and
+   * `fixed` are the server's `answered_by`; `walker` is the Pi's own line for a Talk press it can't send
+   * (offline, not paired). It holds her words and the reply: never log it (docs/interfaces.md, the logging rule).
+   */
+  answer: { id: number; heard: string | null; reply: string; source: "model" | "fixed" | "walker" };
+  /** That answer finished playing, or was stopped. */
+  answerSpoken: { id: number };
+  /** The open proposal changed (another id, or none). A heartbeat repeating the same one sends nothing. */
+  offer: { proposal: ProposalView | null };
+  /**
+   * A Confirm press settled the open proposal: applied (sent only once the new configuration is in force, with
+   * its cues), or nothing changed. A confirmed change whose configuration couldn't be fetched sends neither.
+   */
+  settled: { result: { kind: "alerts"; cues: Cue[] } | { kind: "nothing_changed" } };
+  /** A Confirm press is being answered (`started`) and has finished, however it ended (`ended`). */
+  confirming: { phase: "started" | "ended" };
+  /** The walker screen sent a new state: its name and revision only (for scripts and tests; never the body). */
+  screen: { state: ScreenStateName; revision: number };
 }
 
 type Listener<T> = (payload: T) => void;

@@ -361,6 +361,7 @@ describe("the screen's local contract", () => {
     { state: "not_set_up" },
     { state: "my_screen", view: { page: "menu" } },
     { state: "my_screen", view: { page: "circle", index: 1, owner_name: "Max", member, count: 2, confirm_remove: true } },
+    { state: "thinking" },
   ];
 
   it("parses every state", () => {

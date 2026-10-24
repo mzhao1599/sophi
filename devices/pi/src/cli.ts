@@ -21,13 +21,14 @@ const USAGE = `walker: Sophi's always-on walker service
       for a press on each hand. Run it with sudo on the Pi (the settings file and the credential are readable
       only by root and the service). --sim checks simulated serial boards instead of real ports.
   walker simulate [--script <file>] [--mic-file <16 kHz mono WAV>] [--mic mac] [--loud]
-                  [--server <url>] [--state <dir>] [--out <dir>]
+                  [--server <url>] [--state <dir>] [--out <dir>] [--screen]
       Runs the whole walker on this computer with simulated parts and, unless --server is given, a FAKE
       cloud on 127.0.0.1. Silent by default: speech is written to audio files. --loud plays it.
+      --screen also serves the walker screen's page on http://127.0.0.1:8740/ (WALKER_SCREEN_PORT).
 
 State folder: --state, else WALKER_STATE_DIR, else ${DEFAULT_STATE_DIR} (run and pair) or a new temp folder (simulate).`;
 
-const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim"]);
+const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen"]);
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];
@@ -112,6 +113,7 @@ async function main(argv: string[]): Promise<number> {
         state: text(flags.get("state")),
         out: text(flags.get("out")),
         script: text(flags.get("script")),
+        screen: flags.get("screen") === true,
       });
     }
     case undefined:

@@ -425,7 +425,11 @@ export interface FakeCloudServer {
 const DEVICE_PATH = /^\/api\/v1\/devices\/([^/]+)\/(heartbeat|configuration|turns|proposals\/([^/]+))$/;
 
 /** Serves the fake cloud on 127.0.0.1 over plain HTTP (allowed only to this machine), on the contract's device routes. */
-export async function startFakeCloudServer(cloud: FakeCloud, log: Logger): Promise<FakeCloudServer> {
+/**
+ * `turnDelayMs` holds each turn's answer that long (the simulator's WALKER_FAKE_TURN_MS), so the screen's "One moment"
+ * shows as it would while a real model answers. 0 by default: nothing else waits.
+ */
+export async function startFakeCloudServer(cloud: FakeCloud, log: Logger, turnDelayMs = 0): Promise<FakeCloudServer> {
   let network: FakeNetwork = "up";
   const sockets = new Set<Socket>();
 
@@ -462,7 +466,9 @@ export async function startFakeCloudServer(cloud: FakeCloud, log: Logger): Promi
         }
         if (request.method === "GET" && route === "configuration") return send(response, 200, cloud.configuration(device));
         if (request.method === "POST" && route === "turns") {
-          return send(response, 200, cloud.turn(device, parse(DeviceTurnRequestSchema, body, "turn")));
+          const answer = cloud.turn(device, parse(DeviceTurnRequestSchema, body, "turn"));
+          if (turnDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, turnDelayMs));
+          return send(response, 200, answer);
         }
         if (request.method === "POST" && match[3]) {
           const { answer } = parse(AnswerProposalRequestSchema, body, "answer");

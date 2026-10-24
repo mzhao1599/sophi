@@ -38,6 +38,7 @@ const BASES: Base[] = [
   { name: "ambient-no-clock", screen: { state: "ambient", alerts: null }, choices: { greeting_name: "Nan" }, strip: { clock: null } },
   { name: "ambient-dark-simulator", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan", theme: "dark" }, strip: { simulator: true } },
   { name: "listening", screen: { state: "listening" } },
+  { name: "thinking", screen: { state: "thinking" } },
   { name: "answering", screen: { state: "answering", heard: HEARD, reply: SAMPLE_REPLY, source: "model", page: 0 } },
   { name: "answering-page-2", screen: { state: "answering", heard: HEARD, reply: SAMPLE_REPLY, source: "model", page: 1 } },
   { name: "answering-offline-reply", screen: { state: "answering", heard: null, reply: "I can't reach the internet right now. Alerts still work on the walker.", source: "walker", page: 0 }, strip: { link: "offline" } },

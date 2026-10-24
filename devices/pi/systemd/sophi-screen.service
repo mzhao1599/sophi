@@ -36,7 +36,8 @@ StandardOutput=journal
 StandardError=journal
 UtmpIdentifier=tty1
 UtmpMode=user
-# The page to show. Until the walker service serves the real screen, a placeholder on the Pi. To change it:
+# The page to show: a placeholder on the Pi, which goes to the walker service's screen page on
+# http://127.0.0.1:8740/ as soon as that answers, and is what a restarted browser shows until it does. To change it:
 # `sudo systemctl edit sophi-screen` and add [Service] then Environment=SOPHI_SCREEN_URL=... (local pages only).
 Environment=SOPHI_SCREEN_URL=file:///opt/steady-walker/screen/placeholder.html
 # Everything the browser writes (profile, cache) is in memory under /run/sophi-screen and deleted when the

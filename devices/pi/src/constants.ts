@@ -65,6 +65,23 @@ export const CUE_PLAYER_MAX_MS = 2000;
 /** Placeholder: the same local line said again within this long is spoken but not sent to the page again. */
 export const LOCAL_LINE_REPEAT_MS = 30_000;
 
+// ---- The walker screen (src/screen/) ----
+
+/** The screen page's port on 127.0.0.1 (WALKER_SCREEN_PORT changes it). A choice, not a standard port. */
+export const SCREEN_DEFAULT_PORT = 8740;
+/** Placeholder, not measured: "Done" or "Nothing changed" stays this long after a Confirm settles an offer. */
+export const SCREEN_DONE_MS = 4000;
+/** Placeholder, not measured: captions stay this long after the reply finishes (none while an offer waits for Confirm). */
+export const SCREEN_ANSWER_HOLD_MS = 3000;
+/** Placeholder, not measured: speaking rate used to turn caption pages (Piper and Cartesia both sound near this). */
+export const CAPTION_CHARS_PER_S = 15;
+/** Placeholder, not measured: the shortest time a caption page shows. */
+export const CAPTION_PAGE_MIN_MS = 2500;
+/** Placeholder, not measured: "Something close" stays this long after the last near reading, so a pass is readable. */
+export const SCREEN_OBSTACLE_TAIL_MS = 1000;
+/** Placeholder: zones arrive at the sensor's rate; the screen redraws a changed distance at most this often. */
+export const SCREEN_ZONES_MIN_MS = 250;
+
 // ---- Cloud (the interval is the walker contract's; the timeouts are placeholders) ----
 
 export const HEARTBEAT_INTERVAL_MS = CONTRACT_HEARTBEAT_INTERVAL_MS;

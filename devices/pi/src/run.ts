@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { arecordCapture } from "./audio/capture";
@@ -11,6 +11,8 @@ import { createLogger } from "./log";
 import { attachLogging } from "./logging";
 import { ModuleManager } from "./serial/modules";
 import { SERIAL_BY_ID_DIR, SerialScanner } from "./serial/port";
+import { localWallTime } from "./screen/machine";
+import { defaultScreenAssets, readScreenPort, startWalkerScreen } from "./screen";
 import { WalkerService } from "./service";
 import { StateStore } from "./store";
 
@@ -33,6 +35,12 @@ export interface PiConfig {
 }
 
 export const DEFAULT_STATE_DIR = "/var/lib/steady-walker";
+
+/**
+ * systemd-timesyncd touches this file each time it has synced the clock (systemd 239 and later). Until it
+ * exists the walker screen shows no time, since an unsynced Pi 5 clock can be far off. Not yet checked on our Pi.
+ */
+export const TIME_SYNCED_FILE = "/run/systemd/timesync/synchronized";
 
 function pin(value: string | undefined, fallback: number, name: string): number {
   if (value === undefined || value === "") return fallback;
@@ -121,15 +129,35 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
     gpio: buttons ? config.gpioChip : "not declared wired (WALKER_GPIO_BUTTONS)",
     state: config.stateDir,
   });
-  scanner.start();
-  buttons?.start();
-  service.start();
-  const signal = await new Promise<string>((resolve) => {
+  const stopSignal = new Promise<string>((resolve) => {
     process.once("SIGTERM", () => resolve("SIGTERM"));
     process.once("SIGINT", () => resolve("SIGINT"));
   });
+  scanner.start();
+  buttons?.start();
+  service.start();
+  // The screen never holds up or takes down the walker: startWalkerScreen logs a failure and returns.
+  const screenPort = readScreenPort(env.WALKER_SCREEN_PORT);
+  const screen =
+    "port" in screenPort
+      ? await startWalkerScreen({
+          bus,
+          clock,
+          log,
+          service,
+          modules,
+          simulator: false,
+          port: screenPort.port,
+          assetsDir: env.WALKER_SCREEN_ASSETS || defaultScreenAssets(),
+          localTime: () => (existsSync(TIME_SYNCED_FILE) ? localWallTime(clock.now()) : null),
+          greeting: env.WALKER_SCREEN_GREETING,
+        })
+      : null;
+  if ("off" in screenPort) log.info("walker screen off", { reason: screenPort.off });
+  const signal = await stopSignal;
   log.info("stopping", { signal });
   service.stop();
+  await screen?.stop();
   buttons?.stop();
   scanner.stop();
   modules.stop();

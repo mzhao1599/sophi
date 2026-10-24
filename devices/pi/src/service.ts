@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   SERIAL_PROTOCOL_VERSION,
   type CapabilityManifest,
+  type Cue,
   type HeartbeatRequest,
   type ProposalView,
   type SensorSnapshot,
@@ -72,6 +73,8 @@ interface VoiceItem {
   wav?: Buffer;
   cancelled: boolean;
   resolve: () => void;
+  /** Called once, just before the line starts playing (never for a line stopped before it started). */
+  onStart?: () => void;
 }
 
 /** Plays spoken lines one after another; `stopAll` silences the current one and drops the rest. */
@@ -86,9 +89,9 @@ class VoiceQueue {
     private readonly onError: (error: Error) => void,
   ) {}
 
-  say(text: string, wav?: Buffer): Promise<void> {
+  say(text: string, wav?: Buffer, onStart?: () => void): Promise<void> {
     return new Promise((resolve) => {
-      this.queue.push({ text, wav, cancelled: false, resolve });
+      this.queue.push({ text, wav, cancelled: false, resolve, ...(onStart ? { onStart } : {}) });
       if (!this.running) void this.drain();
     });
   }
@@ -123,6 +126,9 @@ class VoiceQueue {
     if (item.cancelled) return true;
     let cancelLimit: Cancel = () => {};
     try {
+      const onStart = item.onStart;
+      item.onStart = undefined;
+      onStart?.();
       const utterance = start();
       this.current = { item, utterance };
       // A player that never finishes must not hold every later line: stop it and move on.
@@ -283,7 +289,7 @@ export class WalkerService {
     this.voice.stopAll();
     const blocked = this.localLine();
     if (blocked) {
-      void this.say(blocked, "local_reply");
+      this.localAnswer(blocked);
       if (this.link === "offline" || this.link === "connecting") this.scheduleHeartbeat(0);
       return;
     }
@@ -391,7 +397,7 @@ export class WalkerService {
     if (!cloud || this.link !== "online") {
       clip.wav.fill(0);
       this.endTurn(turn);
-      void this.say(this.localLine() ?? LINES.connecting, "local_reply");
+      this.localAnswer(this.localLine() ?? LINES.connecting);
       return;
     }
     // The clip exists only in this request body: never written to disk, logged, queued or retried.
@@ -416,7 +422,7 @@ export class WalkerService {
         answered_by: reply.turn.answered_by,
         voice: wav ? "server" : "walker",
       });
-      void this.say(reply.turn.reply, "reply", wav);
+      this.sayAnswer(reply.turn.heard, reply.turn.reply, reply.turn.answered_by, "reply", wav);
     } catch (error) {
       if (this.turn !== turn) return;
       this.endTurn(turn);
@@ -508,6 +514,7 @@ export class WalkerService {
     const cloud = this.cloud;
     this.confirmInFlight = true;
     this.proposalEpoch += 1;
+    this.deps.bus.emit("confirming", { phase: "started" });
     try {
       const answer = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) =>
         cloud.answerProposal(proposal.proposal_id, "confirm", signal),
@@ -520,28 +527,35 @@ export class WalkerService {
         if (error.proposal?.state === "confirmed") await this.afterConfirm(error.proposal, confirmed);
         else {
           this.forgetProposal(proposal.proposal_id);
+          this.settled({ kind: "nothing_changed" });
           this.nothingToConfirm();
         }
       } else if (error instanceof CloudError && error.code === "not_found") {
         this.forgetProposal(proposal.proposal_id);
+        this.settled({ kind: "nothing_changed" });
         this.nothingToConfirm();
       } else if (kind === "timeout" || kind === "unreachable") this.goOffline();
       else if (kind === "unauthorized") this.setUnauthorized();
       else void this.say(LINES.serverTrouble, "local_reply");
     } finally {
       this.confirmInFlight = false;
+      this.deps.bus.emit("confirming", { phase: "ended" });
     }
   }
 
   private async afterConfirm(proposal: ProposalView, confirmed: () => void): Promise<void> {
     this.forgetProposal(proposal.proposal_id);
     if (proposal.state !== "confirmed" || proposal.configuration_version === null) {
+      this.settled({ kind: "nothing_changed" });
       this.nothingToConfirm();
       return;
     }
     confirmed(); // felt at once, not after the configuration fetch
     const target = proposal.configuration_version;
     const applied = (this.configuration?.version ?? 0) >= target || ((await this.fetchConfiguration()) && (this.configuration?.version ?? 0) >= target);
+    // The screen says "Done" only once the new configuration is in force on this walker, with its own cues. If
+    // the fetch failed, it says nothing of the kind: the offer closes and the screen shows what is true now.
+    if (applied && this.configuration) this.settled({ kind: "alerts", cues: [...this.configuration.cues] });
     void this.playCue("done");
     void this.say(applied && this.configuration ? appliedLine(this.configuration.cues) : LINES.confirmedPending, "confirm_result");
   }
@@ -551,8 +565,33 @@ export class WalkerService {
   }
 
   private setOpenProposal(proposal: ProposalView | null): void {
+    const changed = (this.openProposal?.proposal_id ?? null) !== (proposal?.proposal_id ?? null);
     this.openProposal = proposal;
     this.proposalEpoch += 1;
+    if (changed) this.deps.bus.emit("offer", { proposal });
+  }
+
+  // ---- For the walker screen (the screen's listeners are wrapped: none of these can throw back here) ----
+
+  private answerCount = 0;
+
+  /**
+   * Speaks a reply to her Talk turn and captions it on the screen: `answer` goes out as the line starts playing
+   * (so the captions follow the voice), `answerSpoken` when it has played or was stopped.
+   */
+  private sayAnswer(heard: string | null, reply: string, source: "model" | "fixed" | "walker", kind: SpeechKind, wav?: Buffer): void {
+    const id = (this.answerCount += 1);
+    const spoken = this.say(reply, kind, wav, () => this.deps.bus.emit("answer", { id, heard, reply, source }));
+    void spoken.then(() => this.deps.bus.emit("answerSpoken", { id }));
+  }
+
+  /** The Pi's own line for a Talk press it can't send: spoken as before, and captioned as the walker's own reply. */
+  private localAnswer(text: string): void {
+    this.sayAnswer(null, text, "walker", "local_reply");
+  }
+
+  private settled(result: { kind: "alerts"; cues: Cue[] } | { kind: "nothing_changed" }): void {
+    this.deps.bus.emit("settled", { result });
   }
 
   private nothingToConfirm(): void {
@@ -835,11 +874,11 @@ export class WalkerService {
    * Speaks a line. The Pi's own lines (notices and local replies) also become heartbeat events for the page;
    * replies and Confirm results are already on the page as the turn and the proposal's state.
    */
-  private say(text: string, kind: SpeechKind, wav?: Buffer): Promise<void> {
+  private say(text: string, kind: SpeechKind, wav?: Buffer, onStart?: () => void): Promise<void> {
     if (kind === "notice" || kind === "local_reply") this.record(text, kind);
     else this.lastRecorded = null; // a reply or a Confirm result in between makes the next local line new
     this.deps.bus.emit("spoke", { text, kind });
-    return this.voice.say(text, wav);
+    return this.voice.say(text, wav, onStart);
   }
 
   /** Queues a local line for the page; the same line again within LOCAL_LINE_REPEAT_MS is spoken but sent once. */

@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
-  The walker screen's placeholder, shown by sophi-screen.service until the walker service serves the real
-  screen page (a later change). Installed as /opt/steady-walker/screen/placeholder.html. It only says what is
-  true: the panel works and the screen itself isn't there yet. Sized for the 800x480 panel at about 65 cm
+  The walker screen's placeholder, the page sophi-screen.service opens. Installed as
+  /opt/steady-walker/screen/placeholder.html. It only says what is true: the panel works and the walker
+  service isn't serving the screen (yet). As soon as the walker service answers on 127.0.0.1, it goes to the
+  real screen page (the script at the end). Sized for the 800x480 panel at about 65 cm
   (the screen design: main line 88 px, nothing under 40 px), in the web app's light colours, which it keeps
   even if the system asks for dark. Nothing moves. Not yet seen on the panel (2026-10-23).
 -->
@@ -61,7 +62,21 @@
 <main>
   <h1>Sophi</h1>
   <p>Screen connected.</p>
-  <p class="more">The walker's screen starts when the walker service is updated.</p>
+  <p class="more">Waiting for the walker service.</p>
 </main>
+<script>
+  // The walker service serves the real screen on http://127.0.0.1:8740/ (WALKER_SCREEN_PORT's default; change
+  // this line if you change that). Until it answers, this page stays; once it does, the screen goes there.
+  (function () {
+    var page = "http://127.0.0.1:8740/";
+    function check() {
+      fetch(page, { mode: "no-cors", cache: "no-store" }).then(
+        function () { location.replace(page); },
+        function () { setTimeout(check, 2000); }
+      );
+    }
+    check();
+  })();
+</script>
 </body>
 </html>

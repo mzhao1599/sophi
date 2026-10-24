@@ -824,7 +824,8 @@ export const MyScreenViewSchema = z.discriminatedUnion("page", [
 ]);
 
 /**
- * The one thing on screen, in the Pi's priority order: an obstacle or her own Talk first; then today's model
+ * The one thing on screen, in the Pi's priority order: an obstacle or her own Talk first (listening, thinking,
+ * answering); then today's model
  * offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message notice; then
  * the clock. An offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen
  * waits behind it; only an offer from her own Talk turn takes over. Confirm during an obstacle settles
@@ -842,6 +843,8 @@ export const ScreenContentSchema = z.discriminatedUnion("state", [
     simulated: z.boolean(),
   }),
   z.strictObject({ state: z.literal("listening") }),
+  /** Her Talk turn is with Sophi: Talk was let go and no answer has come yet ("One moment"). Added 2026-10-24. */
+  z.strictObject({ state: z.literal("thinking") }),
   z.strictObject({
     state: z.literal("answering"),
     /** What the walker heard her say; null when nothing was transcribed. */
