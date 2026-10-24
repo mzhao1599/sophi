@@ -9,6 +9,7 @@ import { realFiles, runChecks, summarize, formatLine, type CheckContext, type Ch
 import { audioCheck, gpioLine, hdmiLine, micLine, speakerLine, toneLine, touchLine, voiceLines } from "../src/check/devices";
 import { walkerCheck, type CheckDeps } from "../src/check";
 import type { SerialSource } from "../src/check/modules";
+import type { ArmSource } from "../src/check/arms";
 import {
   clockLine,
   diskLine,
@@ -393,10 +394,11 @@ describe("walker check: the whole run", () => {
     "aplay -L": { out: APLAY_L },
     "espeak-ng --version": { out: "eSpeak NG text-to-speech: 1.52.0" },
     journalctl: { out: 'starting mic="plughw:CARD=SF558,DEV=0"\nmodule said hello module="hand-left-01" type="hand" firmware="0.1.0" simulated=false\n' },
+    "gpioget --chip gpiochip0 --bias=pull-up --numeric 22": { out: "0\n" },
   };
   const CREDENTIAL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
   const PI_FILES = {
-    "/etc/steady-walker.env": PI_ENV,
+    "/etc/steady-walker.env": `${PI_ENV}WALKER_STOP_SENSE=gpio:22\n`,
     "/etc/os-release": OS_RELEASE,
     "/proc/meminfo": MEMINFO,
     "/var/lib/steady-walker/credential.json": JSON.stringify({ server_url: "https://steady-walker.onrender.com", device_id: "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f", credential: CREDENTIAL }),
@@ -405,6 +407,7 @@ describe("walker check: the whole run", () => {
     "/proc/bus/input/devices": INPUT_DEVICES,
   };
   const noSerial: SerialSource = { simulated: false, ports: () => [], open: () => { throw new Error("no"); } };
+  const noArms: ArmSource = { simulated: false, find: () => ({ adapters: [], lines: [] }), open: () => { throw new Error("no"); } };
 
   function deps(over: Partial<CheckDeps> = {}) {
     const runner = fakeRunner(PI_COMMANDS);
@@ -418,6 +421,7 @@ describe("walker check: the whole run", () => {
       env: {},
       net: { lookup: async () => ["216.24.57.4"], health: async () => "ok", configuration: async () => ({ version: 2, cues: ["sound"] }) },
       serial: noSerial,
+      arms: noArms,
       write: (line) => out.push(line),
       ...over,
     };
@@ -433,7 +437,12 @@ describe("walker check: the whole run", () => {
     expect(text).toMatch(/SKIP  serial   modules +steady-walker is running and holds the serial ports.*hellos from hand-left-01 \(hand, firmware 0\.1\.0\)/);
     expect(text).toMatch(/Summary: \d+ pass, 0 warn, 0 fail, \d+ skip/);
     // Every command the check ran, by name and first argument: each only reads.
-    const allowed = new Set(["timedatectl show", "vcgencmd get_throttled", "vcgencmd measure_temp", "df -Pk", "systemctl is-active", "systemctl is-enabled", "ip route", "nmcli -t", "arecord -q", "aplay -L", "espeak-ng --version", "journalctl -u"]);
+    const allowed = new Set([
+      "timedatectl show", "vcgencmd get_throttled", "vcgencmd measure_temp", "df -Pk", "systemctl is-active", "systemctl is-enabled", "ip route", "nmcli -t",
+      "arecord -q", "aplay -L", "espeak-ng --version", "journalctl -u", "gpioget --chip", "v4l2-ctl --list-devices",
+    ]);
+    expect(text).toMatch(/SKIP  arms     arms +steady-walker is running and may hold the arm adapters/);
+    expect(text).toContain("PASS  stop     stop switch          released: gpiochip0 line 22 reads low");
     for (const call of calls) expect(allowed, call.argv.join(" ")).toContain(call.argv.slice(0, 2).join(" "));
   });
 

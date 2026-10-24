@@ -6,13 +6,16 @@ import { silentLogger } from "../log";
 import { LineReader } from "../serial/lineReader";
 import { ModuleManager, canBuzz, type ModuleView, type SerialConnection } from "../serial/modules";
 import { SERIAL_BY_PATH_DIR, listSerialPorts, openSerialPort } from "../serial/port";
-import { SimulatedHand, SimulatedPort, SimulatedTof } from "../sim/fakeModules";
+import { SimulatedHand, SimulatedLift, SimulatedPort, SimulatedTof } from "../sim/fakeModules";
 import { NOT_A_PI, commandProblem, fail, isLinux, pass, skip, text, warn, type Check, type CheckContext, type CheckLine } from "./core";
+import { liftLineSplitter, liftLines, type LiftTap } from "./lift";
 import { SERVICE_UNIT } from "./system";
 
 /** The modules the demo walker has. `--expect` replaces the list. */
 export const EXPECTED_MODULES = ["hand-left-01", "hand-right-01", "tof-front-01"];
 export const SIM_MODULES = ["hand-left-sim", "hand-right-sim", "tof-front-sim"];
+/** `--sim` also has a lift board, which reports its status and never moves. */
+export const SIM_LIFT = "lift-sim";
 
 /** Placeholders, not measured: a board answers hello.request at once, and heartbeats come every second. */
 export const HELLO_WAIT_MS = 3000;
@@ -31,20 +34,27 @@ export interface SerialSource {
   stop?(): void;
 }
 
+/** Ports the arms check found to be servo buses (compared by the tty each link points to). */
+export function isServoPort(ctx: CheckContext, path: string): boolean {
+  const servo = ctx.facts.servoPorts ?? [];
+  return servo.includes(path) || servo.includes(ctx.files.realpath?.(path) ?? path);
+}
+
 export const realSerial: SerialSource = {
   simulated: false,
-  ports: (ctx) => ctx.options.ports ?? listSerialPorts(ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR),
+  // The arms' servo adapters are never opened here: a JSON hello at 115200 baud doesn't belong on a servo bus.
+  ports: (ctx) => (ctx.options.ports ?? listSerialPorts(ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR)).filter((path) => !isServoPort(ctx, path)),
   open: (path) => openSerialPort(path, silentLogger),
 };
 
-/** `--sim`: two simulated hands and a simulated ToF board, speaking serial v1 through the same module manager. */
+/** `--sim`: two simulated hands, a ToF board and a lift board, speaking serial through the same module manager. */
 export function simulatedSerial(clock: Clock): SerialSource {
   const ports = new Map<string, SimulatedPort>();
-  const boards: Array<SimulatedHand | SimulatedTof> = [];
-  for (const id of SIM_MODULES) {
+  const boards: Array<SimulatedHand | SimulatedTof | SimulatedLift> = [];
+  for (const id of [...SIM_MODULES, SIM_LIFT]) {
     const port = new SimulatedPort(`sim:${id}`);
     ports.set(port.id, port);
-    boards.push(id.startsWith("tof") ? new SimulatedTof(port, id, clock) : new SimulatedHand(port, id, clock));
+    boards.push(id === SIM_LIFT ? new SimulatedLift(port, id, clock) : id.startsWith("tof") ? new SimulatedTof(port, id, clock) : new SimulatedHand(port, id, clock));
   }
   return {
     simulated: true,
@@ -55,7 +65,7 @@ export function simulatedSerial(clock: Clock): SerialSource {
   };
 }
 
-interface Tap {
+export interface Tap {
   conn: SerialConnection;
   hellos: Array<Extract<SerialMessage, { type: "hello" }>>;
   lines: number;
@@ -65,11 +75,47 @@ interface Tap {
   acks: Map<string, { result: string; reason?: string }>;
   lastHapticRequest: string | null;
   lastPressRaw: string | null;
+  lift: LiftTap;
+  /** Lines the module manager tried to send that the check refused (see `write` below). */
+  blocked: string[];
 }
 
-/** Watches one port's traffic with its own line reader, alongside the module manager. */
-function tap(conn: SerialConnection): { tapped: SerialConnection; state: Tap } {
-  const state: Tap = { conn, hellos: [], lines: 0, refused: 0, zoneReports: 0, lastZones: [], acks: new Map(), lastHapticRequest: null, lastPressRaw: null };
+/** A Pi line's `type`, or null when it isn't a JSON object with one. */
+function lineType(line: string): string | null {
+  try {
+    const data = JSON.parse(line) as { type?: unknown };
+    return typeof data?.type === "string" ? data.type : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Watches one port's traffic with its own line readers (serial v1, and lift lines), alongside the module
+ * manager. Its `write` is the check's guard: only `hello.request` goes out, plus `haptic.play` to a port that
+ * isn't a lift; anything else is refused before it reaches the port.
+ */
+export function tap(conn: SerialConnection): { tapped: SerialConnection; state: Tap } {
+  const state: Tap = {
+    conn,
+    hellos: [],
+    lines: 0,
+    refused: 0,
+    zoneReports: 0,
+    lastZones: [],
+    acks: new Map(),
+    lastHapticRequest: null,
+    lastPressRaw: null,
+    lift: { hellos: [], status: null, statuses: 0 },
+    blocked: [],
+  };
+  const liftReader = liftLineSplitter((message) => {
+    if (message.type === "lift.hello") state.lift.hellos.push(message);
+    else if (message.type === "lift.status") {
+      state.lift.status = message;
+      state.lift.statuses += 1;
+    }
+  });
   const reader = new LineReader((result) => {
     state.lines += 1;
     if (!result.ok) {
@@ -88,6 +134,12 @@ function tap(conn: SerialConnection): { tapped: SerialConnection; state: Tap } {
     id: conn.id,
     simulated: conn.simulated,
     write(line) {
+      const type = lineType(line);
+      const allowed = type === "hello.request" || (type === "haptic.play" && state.lift.hellos.length === 0);
+      if (!allowed) {
+        state.blocked.push(type ?? "unreadable");
+        return false;
+      }
       const ok = conn.write(line);
       if (ok && line.includes('"haptic.play"')) state.lastHapticRequest = (JSON.parse(line) as { request_id: string }).request_id;
       return ok;
@@ -96,6 +148,7 @@ function tap(conn: SerialConnection): { tapped: SerialConnection; state: Tap } {
       conn.onData((data) => {
         fn(data);
         reader.push(data);
+        liftReader(data);
       }),
     onClose: (fn) => conn.onClose(fn),
     close: () => conn.close(),
@@ -162,12 +215,18 @@ export async function moduleLines(ctx: CheckContext, source: SerialSource): Prom
       modules.attach(tapped);
     }
     source.started?.();
-    await waitUntil(ctx.clock, HELLO_WAIT_MS, () => taps.every((t) => t.hellos.length > 0));
+    await waitUntil(ctx.clock, HELLO_WAIT_MS, () => taps.every((t) => t.hellos.length > 0 || t.lift.hellos.length > 0));
     await new Promise<void>((resolve) => ctx.clock.setTimeout(resolve, SAMPLE_MS));
 
     // One line per port: its module, or why there is none.
     const ports = new Map<string, Tap[]>();
+    const lifts = new Map<string, Tap[]>();
     for (const state of taps) {
+      const liftId = state.hellos.length === 0 ? state.lift.hellos.at(-1)?.module_id : undefined;
+      if (liftId) {
+        lifts.set(liftId, [...(lifts.get(liftId) ?? []), state]);
+        continue;
+      }
       const id = state.hellos.at(-1)?.module_id;
       if (!id) {
         lines.push(fail("serial", "port", `no hello within ${HELLO_WAIT_MS / 1000} s on ${state.conn.id} (${state.lines} lines read, ${state.refused} unreadable): not our firmware, or the board is stuck in its bootloader`));
@@ -200,8 +259,18 @@ export async function moduleLines(ctx: CheckContext, source: SerialSource): Prom
     }
     const expected = ctx.options.expect.length ? ctx.options.expect : source.simulated ? SIM_MODULES : EXPECTED_MODULES;
     for (const id of expected) {
-      if (!ports.has(id)) lines.push(fail("serial", id, `not seen on any port${id.startsWith("hand-right") ? " (not flashed yet? scripts/flash-esp32.sh hand-right-01)" : ""}`));
+      if (!ports.has(id) && !lifts.has(id)) lines.push(fail("serial", id, `not seen on any port${id.startsWith("hand-right") ? " (not flashed yet? scripts/flash-esp32.sh hand-right-01)" : ""}`));
     }
+
+    // The lift board, if fitted: its hello's built-in limits and one status. It was sent hello.request only.
+    for (const [id, states] of [...lifts].sort(([a], [b]) => a.localeCompare(b))) {
+      if (states.length > 1) {
+        lines.push(fail("lift", id, `two boards say they are ${id}: ${states.map((s) => s.conn.id).join(" and ")}. Reflash one`));
+        continue;
+      }
+      lines.push(...liftLines(id, states[0]!.conn.id, states[0]!.lift, SAMPLE_MS, source.simulated));
+    }
+    if (lifts.size === 0) lines.push(skip("lift", "lift-01", `no lift board said lift.hello on any serial port (not fitted yet?)${sim}`));
 
     const hands = [...ports.keys()].filter((id) => ports.get(id)!.length === 1 && views.get(id)?.type === "hand").sort();
     for (const id of hands) {
@@ -256,6 +325,10 @@ export async function moduleLines(ctx: CheckContext, source: SerialSource): Prom
             ? pass("serial", item, `recording ${TALK_PRESS_HAPTIC_MS} ms accepted${sim}${source.simulated ? "" : ": feel for one buzz on that hand"}`)
             : fail("serial", item, `rejected: ${ack.reason ?? "no reason"}`),
       );
+    }
+    // A refused line is a bug in the check, not the board: say so loudly.
+    for (const state of taps.filter((t) => t.blocked.length)) {
+      lines.push(fail("serial", "read-only guard", `refused to send ${[...new Set(state.blocked)].join(", ")} on ${state.conn.id}`));
     }
     return lines;
   } finally {

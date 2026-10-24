@@ -109,6 +109,8 @@ Modelled assumptions to check on the bench (they are not facts about the servo):
 
 ## Only real servos can show
 
+`walker check` on the walker (`src/check/arms.ts`, [README](../../../README.md#check-the-walker-first-walker-check)) answers the read-only parts of items 1, 2 and 8 with this driver: `detectEcho`, then PING and READ of ids 1 to 6 for model, firmware, the EEPROM voltage limits, torque enable, position, voltage and temperature. It sends nothing else (a guard on the port refuses any other packet), so items 3 to 7 still need the bench.
+
 1. The adapter's echo (`detectEcho`), and that `stty` sets 1,000,000 baud on the Pi's CH343 port; reply latency through USB, to replace the 50 ms timeout and 5 ms settle placeholders.
 2. Model number 777 and the firmware version on all 12 servos; Response Status Level (address 8) and Return Delay Time (7) as shipped.
 3. SYNC READ support in that firmware, reply order, and what the others do when one servo is missing.

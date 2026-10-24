@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { withDeadline, type Clock } from "../clock";
 import { signalChild } from "../process";
 
@@ -40,6 +40,8 @@ export interface FileAccess {
   mode(path: string): number | null;
   /** Size in bytes, or null when missing. */
   size(path: string): number | null;
+  /** Where a link finally points (a /dev/serial link's tty), or null when missing. Optional for test fakes. */
+  realpath?(path: string): string | null;
 }
 
 export interface CheckOptions {
@@ -75,7 +77,14 @@ export interface CheckContext {
   /** Prompts for the person at the walker (`--press`). */
   say(line: string): void;
   /** What earlier checks learned that later ones need. */
-  facts: { serviceActive: boolean | null };
+  facts: {
+    serviceActive: boolean | null;
+    /**
+     * Servo-bus adapters (configured arm ports, and links where a servo answered), as the ttys they point to.
+     * The ESP32 serial check never opens these: a JSON hello at 115200 baud doesn't belong on a servo bus.
+     */
+    servoPorts?: string[];
+  };
 }
 
 export const pass = (group: string, item: string, detail: string): CheckLine => ({ status: "PASS", group, item, detail });
@@ -169,6 +178,13 @@ export const realFiles: FileAccess = {
   size(path) {
     try {
       return statSync(path).size;
+    } catch {
+      return null;
+    }
+  },
+  realpath(path) {
+    try {
+      return realpathSync(path);
     } catch {
       return null;
     }

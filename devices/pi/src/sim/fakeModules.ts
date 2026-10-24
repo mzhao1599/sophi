@@ -1,4 +1,4 @@
-import { SERIAL_ANY_MODULE, parseSerialLine, type SerialMessage } from "@walker/contracts";
+import { LIFT_STATUS_HZ, SERIAL_ANY_MODULE, parseLiftSerialLine, parseSerialLine, type SerialMessage } from "@walker/contracts";
 import type { Cancel, Clock } from "../clock";
 import type { SerialConnection } from "../serial/modules";
 
@@ -190,5 +190,67 @@ export class SimulatedTof extends SimulatedModule {
         reading === "invalid" ? { name, mm: null, quality: "invalid" } : { name, mm: reading.mm, quality: "valid" },
       ),
     });
+  }
+}
+
+/**
+ * A lift board for `walker check --sim` and its tests: it answers `hello.request` with `lift.hello` and sends
+ * `lift.status` at LIFT_STATUS_HZ. It has no motion at all: it never homes or moves, and records every line
+ * the Pi sends (`port.received`) so a test can show the check sent nothing but `hello.request`. Its `hello`
+ * and `status` bodies (without v, module_id and seq) can be replaced, for example by the contract's fixtures.
+ */
+export class SimulatedLift {
+  hello: Record<string, unknown> = {
+    type: "lift.hello",
+    firmware_version: "sim-0.1.0",
+    uptime_ms: 0,
+    config: { microsteps: 8, soft_min_mm: 5, soft_max_mm: 600, max_speed_mm_s: 20, max_accel_mm_s2: 50, top_switch_mm: null },
+    stop_sense: "wired",
+  };
+  status: Record<string, unknown> = {
+    type: "lift.status",
+    uptime_ms: 0,
+    state: "unhomed",
+    homed: false,
+    position_mm: null,
+    target_mm: null,
+    driver_enabled: true,
+    limits: { top: "released", bottom: "released" },
+    stop_sense: "released",
+    faults: [],
+    request_id: null,
+    heartbeat_age_ms: null,
+  };
+  private seq = 0;
+  private cancel: Cancel | null = null;
+
+  constructor(
+    readonly port: SimulatedPort,
+    readonly moduleId: string,
+    private readonly clock: Clock,
+  ) {
+    port.onPiLine = (line) => {
+      const parsed = parseLiftSerialLine(line);
+      if (parsed.ok && parsed.message.type === "hello.request") this.send(this.hello);
+    };
+  }
+
+  private send(body: Record<string, unknown>): void {
+    this.port.sendLine({ v: 1, module_id: this.moduleId, seq: this.seq++, ...body });
+  }
+
+  start(): void {
+    this.hang();
+    this.send(this.hello);
+    const loop = () => {
+      this.send(this.status);
+      this.cancel = this.clock.setTimeout(loop, 1000 / LIFT_STATUS_HZ);
+    };
+    this.cancel = this.clock.setTimeout(loop, 1000 / LIFT_STATUS_HZ);
+  }
+
+  hang(): void {
+    this.cancel?.();
+    this.cancel = null;
   }
 }

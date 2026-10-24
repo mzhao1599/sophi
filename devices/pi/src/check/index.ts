@@ -20,7 +20,9 @@ import {
   type FileAccess,
   type Runner,
 } from "./core";
-import { audioCheck, gpioCheck, screenCheck, voiceCheck } from "./devices";
+import { armsCheck, realArms, simulatedArms, type ArmSource } from "./arms";
+import { cameraCheck } from "./cameras";
+import { audioCheck, gpioCheck, screenCheck, stopCheck, voiceCheck } from "./devices";
 import { realSerial, serialCheck, simulatedSerial, type SerialSource } from "./modules";
 import { networkCheck, pairingCheck, realNetwork, systemCheck, type NetworkDeps } from "./system";
 
@@ -51,12 +53,16 @@ export interface CheckDeps {
   env: Record<string, string | undefined>;
   net: NetworkDeps;
   serial: SerialSource;
+  arms: ArmSource;
   write(line: string): void;
 }
 
-/** Every check, in the order they print. */
-export function allChecks(net: NetworkDeps, serial: SerialSource): Check[] {
-  return [systemCheck, networkCheck(net), pairingCheck(net), audioCheck, voiceCheck, serialCheck(serial), screenCheck, gpioCheck];
+/**
+ * Every check, in the order they print. The arms go before the serial boards, so the serial check knows which
+ * ports are servo buses and leaves them alone.
+ */
+export function allChecks(net: NetworkDeps, serial: SerialSource, arms: ArmSource): Check[] {
+  return [systemCheck, networkCheck(net), pairingCheck(net), audioCheck, voiceCheck, armsCheck(arms), serialCheck(serial), stopCheck, cameraCheck, screenCheck, gpioCheck];
 }
 
 /** `walker check`: prints one line per item and a summary; resolves to the exit code (1 if anything failed). */
@@ -83,7 +89,7 @@ export async function walkerCheck(options: Omit<CheckOptions, "stateDir" | "stat
   const print = (line: CheckLine) => deps.write(formatLine(line));
   const first = settingsLine(ctx, envFile, loaded);
   print(first);
-  const lines = [first, ...(await runChecks(ctx, allChecks(deps.net, deps.serial), print))];
+  const lines = [first, ...(await runChecks(ctx, allChecks(deps.net, deps.serial, deps.arms), print))];
   const summary = summarize(lines, (deps.clock.monotonic() - started) / 1000);
   deps.write(summary.text);
   return summary.exitCode;
@@ -100,6 +106,7 @@ export function realCheckDeps(sim: boolean): CheckDeps {
     env: process.env,
     net: realNetwork,
     serial: sim ? simulatedSerial(systemClock) : realSerial,
+    arms: sim ? simulatedArms(systemClock) : realArms,
     write: (line) => process.stdout.write(`${line}\n`),
   };
 }

@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { arecordArgs } from "../audio/capture";
 import { CUE_TONES, toneWav } from "../audio/wav";
+import { MOTION_BENCH_ENV, MOTION_BENCH_ENV_VALUE } from "@walker/contracts";
 import { CLIP_BYTES_PER_MS } from "../constants";
 import { NOT_A_PI, commandProblem, fail, isLinux, pass, skip, text, warn, type Check, type CheckContext, type CheckLine } from "./core";
+import { SERVICE_UNIT } from "./system";
 
 // ---- audio ----
 
@@ -217,3 +219,54 @@ export async function gpioLine(ctx: CheckContext): Promise<CheckLine> {
 }
 
 export const gpioCheck: Check = { name: "gpio", timeoutMs: 8000, run: async (ctx) => [await gpioLine(ctx)] };
+
+// ---- the hardware stop's stop-sense input ----
+
+/**
+ * WALKER_STOP_SENSE, with the motion coordinator's rules (claude/motion-arms, not merged yet): `gpio:<BCM line>`
+ * when the stop's normally closed stop-sense contact is wired to that Pi line, or `not_wired` (the default).
+ * null when it is neither.
+ */
+export function readStopSense(value: string | undefined): { kind: "not_wired" } | { kind: "gpio"; line: number } | null {
+  if (value === undefined || value === "" || value === "not_wired") return { kind: "not_wired" };
+  const match = /^gpio:(\d{1,2})$/.exec(value);
+  if (!match) return null;
+  const line = Number(match[1]);
+  return line <= 63 ? { kind: "gpio", line } : null;
+}
+
+/** One read of the line as an input with the pull-up on (as the coordinator reads it). Never drives the line. */
+export function gpiogetArgs(flavor: string | undefined, chip: string, line: number): string[] {
+  return flavor === "v2" ? ["--chip", chip, "--bias=pull-up", "--numeric", String(line)] : ["--bias=pull-up", chip, String(line)];
+}
+
+export async function stopLine(ctx: CheckContext): Promise<CheckLine> {
+  if (!isLinux(ctx)) return skip("stop", "stop switch", NOT_A_PI(ctx));
+  const value = ctx.env.WALKER_STOP_SENSE;
+  const setting = readStopSense(value);
+  if (!setting) return fail("stop", "stop switch", `WALKER_STOP_SENSE=${value}: must be gpio:<BCM line> or not_wired (with anything else the motion coordinator turns motion off)`);
+  if (setting.kind === "not_wired") {
+    const bench = ctx.env[MOTION_BENCH_ENV] === MOTION_BENCH_ENV_VALUE;
+    return warn(
+      "stop",
+      "stop switch",
+      `not_wired (WALKER_STOP_SENSE ${value ? "is not_wired" : "unset"}): with no stop-sense input, arm and lift motion are refused` +
+        (bench ? `; ${MOTION_BENCH_ENV} is on, so only the bench limits apply and there is no hardware stop` : ` unless ${MOTION_BENCH_ENV}=${MOTION_BENCH_ENV_VALUE} (bench mode)`),
+    );
+  }
+  const chip = ctx.env.WALKER_GPIO_CHIP || "gpiochip0";
+  const result = await ctx.run("gpioget", gpiogetArgs(ctx.env.WALKER_GPIOMON, chip, setting.line));
+  const problem = commandProblem("gpioget", result);
+  const output = text(result).trim();
+  const level = output === "0" || /=inactive$/.test(output) ? "low" : output === "1" || /=active$/.test(output) ? "high" : null;
+  if (problem || level === null) {
+    const held = ctx.facts.serviceActive ? ` (${SERVICE_UNIT} may be watching it)` : "";
+    return fail("stop", "stop switch", `couldn't read ${chip} line ${setting.line}: ${problem ?? `unexpected output "${output.slice(0, 40)}"`}${held}; the coordinator counts an unreadable stop as pressed`);
+  }
+  // Normally closed to ground: released holds the line low; pressed opens it and the pull-up reads high.
+  return level === "low"
+    ? pass("stop", "stop switch", `released: ${chip} line ${setting.line} reads low (the normally closed contact is closed)`)
+    : warn("stop", "stop switch", `PRESSED, or its wire is cut: ${chip} line ${setting.line} reads high through the pull-up. Motion is refused until it is released`);
+}
+
+export const stopCheck: Check = { name: "stop", timeoutMs: 8000, run: async (ctx) => [await stopLine(ctx)] };

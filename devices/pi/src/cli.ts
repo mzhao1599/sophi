@@ -19,7 +19,8 @@ const USAGE = `walker: Sophi's always-on walker service
       Read-only bring-up checks: one PASS / WARN / FAIL / SKIP line per item, then a summary; exits 1 if
       anything failed. --sound plays one short tone, --buzz sends one short buzz to each hand, --press waits
       for a press on each hand. Run it with sudo on the Pi (the settings file and the credential are readable
-      only by root and the service). --sim checks simulated serial boards instead of real ports.
+      only by root and the service). --sim checks simulated serial boards, lift and arms instead of real
+      ports. The arms are only PINGed and READ; the lift is only sent hello.request.
   walker simulate [--script <file>] [--mic-file <16 kHz mono WAV>] [--mic mac] [--loud]
                   [--server <url>] [--state <dir>] [--out <dir>] [--screen]
       Runs the whole walker on this computer with simulated parts and, unless --server is given, a FAKE
@@ -84,7 +85,9 @@ async function main(argv: string[]): Promise<number> {
       return runOnPi(process.env);
     case "check": {
       // Each open serial port holds one libuv thread-pool thread for its blocking reads, as in the service's unit.
-      process.env.UV_THREADPOOL_SIZE ??= "8";
+      // A closed port's read stays blocked until a byte arrives, and a servo bus never sends one unasked, so
+      // each arm adapter keeps its thread until exit: room for four of them plus the ESP32 boards.
+      process.env.UV_THREADPOOL_SIZE ??= "16";
       const list = (value: string | true | undefined) => text(value)?.split(",").map((part) => part.trim()).filter(Boolean);
       const sim = flags.get("sim") === true;
       return walkerCheck(

@@ -39,7 +39,7 @@ heartbeat every 5 s ◄─► cloud: manifest + snapshot + status events out; co
 - `src/cloud/client.ts`: the cloud client interface and its HTTP version, on the walker contract's device routes.
 - `src/sim/`: the fake cloud, simulated modules, and the simulator itself.
 - `src/screen/`: the walker screen. `machine.ts` picks the state (a pure `pickScreen` and a small machine with timers), `attach.ts` feeds it from the bus with every listener wrapped, `server.ts` is the local server, `page.tsx` the page it serves. See [The walker screen's page](#the-walker-screens-page).
-- `src/check/`: `walker check`. Each check is a small function over an injected command runner and file reader (`core.ts`); `system.ts` (OS, clock, power, memory, disk, the service, network, pairing), `devices.ts` (mic, speaker, voice, screen, GPIO), `modules.ts` (the serial boards, through the service's own `openSerialPort` and `ModuleManager`).
+- `src/check/`: `walker check`. Each check is a small function over an injected command runner and file reader (`core.ts`); `system.ts` (OS, clock, power, memory, disk, the service, network, pairing), `devices.ts` (mic, speaker, voice, screen, GPIO, the stop's input), `modules.ts` (the serial boards, through the service's own `openSerialPort` and `ModuleManager`), `lift.ts` (the lift board's lines, read on those ports), `arms.ts` (the servo adapters, through the Feetech driver, PING and READ only), `cameras.ts` (`v4l2-ctl`).
 - `src/constants.ts`: every timing and threshold, each labelled measured or placeholder.
 
 ## How it behaves
@@ -149,6 +149,8 @@ The expected results were written first, in [test/EXPECTED.md](test/EXPECTED.md)
 
 It only reads. It never moves anything, never changes a setting, never stops or starts the service, sends no haptic unless you pass `--buzz` and plays no sound unless you pass `--sound`. It does record **1 s from the mic** to see a level: the audio stays in memory, is never saved or sent, and is zeroed straight away. The credential is never printed.
 
+**The arms, the lift and the stop are read, never commanded** (added 2026-10-24, tested only on a Mac against simulated servos and a simulated lift board). On each arm adapter the check sends only Feetech PING and READ packets: it never enables torque, writes a goal, or touches EEPROM, and a guard on the port refuses any other packet before it reaches the adapter. The lift board is sent only the `hello.request` every serial board gets, never a heartbeat, so it refuses every move while the check runs (`no_heartbeat`). The stop's input is read once as an input; the cameras are only listed.
+
 After copying a new bundle to the Pi (step 7; the bundle installed on 2026-10-24 predates `check`):
 
 ```bash
@@ -157,7 +159,7 @@ sudo node /opt/steady-walker/walker.mjs check
 
 It needs `sudo` because the settings file (`/etc/steady-walker.env`, mode 0640) and the credential (`/var/lib/steady-walker`, mode 0700) are readable only by root and the service. It reads the same settings file the service does.
 
-**The serial boards need the service stopped.** The running service holds every serial port, and two programs on one port corrupt each other's reads, so with the service running the module line is `SKIP` and lists the boards the service's log says hello from since boot. For the live check, with the button and buzz tests:
+**The serial boards and the arms need the service stopped.** The running service holds every serial port (today its scan opens the arm adapters too), and two programs on one port corrupt each other's reads, so with the service running the module line is `SKIP` and lists the boards the service's log says hello from since boot, and the arms line is `SKIP`. For the live check, with the button and buzz tests:
 
 ```bash
 sudo systemctl stop steady-walker
@@ -171,10 +173,10 @@ sudo systemctl start steady-walker
 | `--buzz` | One 300 ms `recording` buzz (the Talk-press buzz) to each hand that can buzz, and its `ack`. Feel for it: an `ack` proves the board accepted it, not that the motor moved. |
 | `--sound` | One short tone (the 0.2 s "listening" sound) on the speaker. |
 | `--expect <ids>` | The boards the walker should have (default `hand-left-01,hand-right-01,tof-front-01`); each one missing fails. |
-| `--port <tty,...>` | Check these ports instead of everything under `/dev/serial/by-path`. |
+| `--port <tty,...>` | Check these ports instead of everything under `/dev/serial/by-path` (servo adapters are still left out). |
 | `--server <url>` | Check this server's DNS and health instead of the paired one. |
 | `--state <dir>`, `--env <file>` | Another state folder or settings file. |
-| `--sim` | Simulated boards instead of real ports (on a Mac). |
+| `--sim` | Simulated boards, a simulated lift board and two simulated arms instead of real ports (on a Mac). |
 
 What each group checks, and the only commands it runs:
 
@@ -186,13 +188,17 @@ What each group checks, and the only commands it runs:
 | pairing | The credential exists and parses (never printed); the server accepts it, through `GET /api/v1/devices/{id}/configuration`, the one device route that changes nothing on the server (it only reads the current configuration) | the state folder, HTTPS |
 | audio | 1 s from `WALKER_ALSA_CAPTURE` with a nonzero level; `WALKER_ALSA_PLAYBACK` is listed; `--sound` plays the tone | `arecord` (the service's own format), `aplay -L`, `aplay` with the tone piped in |
 | voice | With `WALKER_PIPER_MODEL`: the voice files exist and Piper speaks "Sophi check." into a private temp file (deleted) within 15 s (*placeholder*; 3.3 to 3.8 s measured). Piper failing with espeak-ng present only warns, since the walker falls back to it | `piper`, `espeak-ng --version` |
+| arms | Runs before `serial`. The adapters named by `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT`, `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` (a link that isn't in `/dev/serial/by-id` or `by-path`, or isn't there, fails); with none set, every `/dev/serial/by-id/usb-1a86_USB_Single_Serial_*` link (the CH343 bridge of the Waveshare adapter, *assumed*: our kits' board isn't read yet), with a warning to configure them. Each is opened at 1,000,000 baud; the driver's `detectEcho` (an echoing adapter warns: its bus needs `echo: true`); PING ids 1 to 6 (SO-101 joint order); then READs of model (777 expected), firmware, voltage limits, torque enable, position, voltage, temperature and status. Per joint, a warning for a missing id, torque already on, a follower under 10.5 V (`ARM_UNDERVOLTAGE_V`), above the servo's own voltage limit, over 60 °C (`ARM_TEMPERATURE_LIMIT_C`; both *placeholders* in the contract), another model, or a fault bit. No servo answering fails ("is the arm's 12 V supply on?"). Ports configured, or where a servo answered, are left out of `serial` | the driver's `openFeetechPort` (`stty`) and `FeetechBus`, PING and READ only |
 | serial | Each port's board: id, type, firmware, protocol, capabilities, health and faults; two boards with one id; each expected id; for the ToF board, each zone's mm and quality over 1.2 s; `--press`, `--buzz` | the service's own `openSerialPort` and `ModuleManager` (so the same `hello.request`); `journalctl -u steady-walker -b` while the service runs |
+| lift | Read on the serial ports: a board answering `lift.hello` shows its firmware, built-in limits (soft range, speed, acceleration, microsteps) and whether it was built with a stop-sense input; then its latest `lift.status` from the 1.2 s sample: state, homed and height, both switches, the stop, the driver, faults, heartbeat age. Not homed, the stop pressed or not wired, a latched fault, or the driver disabled warns; no status fails; no lift board skips | the serial check's ports; only `hello.request` is sent |
+| stop | `WALKER_STOP_SENSE` (the coordinator's name): `gpio:<BCM line>` reads the line once with the pull-up: low is released (pass), high is pressed or a cut wire (warn). `not_wired` or unset warns that motion is refused outside bench mode (`WALKER_MOTION_BENCH=no-hardware-stop`); anything else fails | `gpioget` (as an input; never drives the line) |
+| camera | The USB video devices `v4l2-ctl` lists (the Pi's own video blocks are left out), and each one's capture formats with sizes and the top frame rate of each: three cameras pass, any other number warns; a camera with neither MJPG nor YUYV warns. `v4l2-ctl` missing skips (`sudo apt install v4l-utils`) | `v4l2-ctl --list-devices`, `v4l2-ctl -d /dev/videoN --list-formats-ext` (only lists; nothing streams) |
 | screen | An HDMI connector reports connected, with 800x480 among its modes (other modes warn); an input device reports an absolute X and Y (a touch screen; the ELECROW's touch is expected over USB) | `/sys/class/drm/*-HDMI-*/status` and `modes`, `/proc/bus/input/devices` |
 | gpio | Only with `WALKER_GPIO_BUTTONS=wired`: the chip has both lines. The press test is step 3 | `gpioinfo` |
 
 Every command has a time limit (5 s unless the table says otherwise), and so does each group as a whole: past it, the line is `FAIL` "no answer within N s" and the run carries on. `WARN` and `SKIP` never fail the run.
 
-Example output, **illustrative**: written by hand to show the format, from what the checks print in the tests, not captured on the Pi. It shows a Pi with the service stopped, run with `--press --buzz`, before `hand-right-01` and `tof-front-01` have been flashed:
+Example output, **illustrative**: written by hand to show the format, from what the checks print in the tests, not captured on the Pi. It shows a Pi with the service stopped, run with `--press --buzz`, before `hand-right-01` and `tof-front-01` have been flashed (and before the arm, lift, stop and camera groups existed; their lines are shown in the next example):
 
 ```text
 walker check (walker-pi 0.1.0) on walker, 2026-10-24T15:02:11.204Z. Read-only; --buzz sends one short buzz per hand.
@@ -227,7 +233,25 @@ Failed: serial hand-right-01, serial tof-front-01.
 Warnings: system service, network wifi autoconnect.
 ```
 
-**On a Mac:** `node devices/pi/dist/walker.mjs check --sim` runs the serial check against simulated boards (every such line says `simulated`), and the Pi-only lines `SKIP`. `--state ./walker-state` (after `walker pair ... --state ./walker-state` against a local server, see [Against the real server on this Mac](#against-the-real-server-on-this-mac)) adds the DNS, health and pairing lines. `--port /dev/cu.SLAB_USBtoUART` checks a real board plugged into the Mac (not tried with a real board; checked with a fake board on a pseudo-terminal).
+The arm, lift, stop and camera lines, **illustrative** in the same way (the wording is what the tests print; the numbers and names are made up, not read from our servos, lift board or cameras). It shows the first run on the assembled walker: arm ports not yet set, so the adapters are found by name; one arm's wrist servo not answering; the lift just powered on; the stop not yet declared. Only one arm's joints are shown:
+
+```text
+WARN  arms     ports                not configured; found 2 likely servo adapters by name. Once you know which arm each is, set WALKER_ARM_LEFT_PORT and WALKER_ARM_RIGHT_PORT (and WALKER_LEADER_*_PORT) in /etc/steady-walker.env
+WARN  arms     adapter 1            5 of 6 servos on usb-1a86_USB_Single_Serial_5A46083061-if00, role unknown, 1000000 baud, no echo, 12.1 to 12.2 V, 2 retries: wrist_roll: id 5 missing
+PASS  arms     adapter 1 shoulder_pan id 1, model 777, firmware 3.10, position 2047, 12.2 V, 27 °C, torque off
+...
+WARN  arms     adapter 1 wrist_roll id 5 didn't answer a PING (timeout)
+...
+PASS  lift     lift-01              firmware 0.1.0, protocol v1, port platform-xhci-hcd.1-usb-0:2.3:1.0-port0; built-in limits 5 to 600 mm, at most 20 mm/s and 50 mm/s², 8 microsteps (320 steps/mm), top switch not measured; stop-sense input wired
+WARN  lift     lift-01 status       unhomed, height unknown, top switch released, bottom switch released, stop released, driver enabled, no faults, last Pi heartbeat none (this check sends none); 24 reports in 1.2 s: not homed (normal after power-on; homing is a held move from the walker, never from this check)
+WARN  stop     stop switch          not_wired (WALKER_STOP_SENSE unset): with no stop-sense input, arm and lift motion are refused unless WALKER_MOTION_BENCH=no-hardware-stop (bench mode)
+PASS  camera   count                3 USB cameras
+PASS  camera   camera 1             "USB 2.0 Camera: USB Camera" on usb-xhci-hcd.0-1.1, /dev/video0: MJPG 1280x720@30 640x480@30; YUYV 1280x720@10 640x480@30
+```
+
+On the first run, once each adapter's arm is known (move one joint by hand and see which adapter's position changes), set its port in `/etc/steady-walker.env` and run the check again; from then on only the configured ports are opened.
+
+**On a Mac:** `node devices/pi/dist/walker.mjs check --sim` runs the serial check against simulated boards and a simulated lift board, and the arms check against two simulated arms of six servos (every such line says `simulated`), and the Pi-only lines `SKIP`. `--state ./walker-state` (after `walker pair ... --state ./walker-state` against a local server, see [Against the real server on this Mac](#against-the-real-server-on-this-mac)) adds the DNS, health and pairing lines. `--port /dev/cu.SLAB_USBtoUART` checks a real board plugged into the Mac (not tried with a real board; checked with a fake board on a pseudo-terminal).
 
 ### The setup steps
 
@@ -399,6 +423,9 @@ The status strip says Online or Offline, the time when the clock has synced, and
 | `WALKER_GPIO_BUTTONS` | unset | Set to `wired` once step 3 shows both buttons working. Only then does the Pi watch the GPIO buttons and report them as hand controls. |
 | `WALKER_STATE_DIR` | `/var/lib/steady-walker` | Credential, configuration and cue sounds. |
 | `WALKER_SERIAL_DIR` | `/dev/serial/by-path` | Where serial ports are looked for. Both CP2102 bridges report serial `0001`, so `/dev/serial/by-id` exposes only one. The Pi reads the module ID from each firmware hello. |
+| `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT` | unset | The follower arms' servo adapters: a link in `/dev/serial/by-id/` (or `/dev/serial/by-path/` for adapters that share a serial number), never `/dev/ttyACM0`. Read by `walker check` today; the motion coordinator (branch `claude/motion-arms`, not merged) reads the same names. |
+| `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` | unset | The leader (teaching) arms' adapters, the same way. |
+| `WALKER_STOP_SENSE` | `not_wired` | `gpio:<BCM line>` when the hardware stop's normally closed stop-sense contact is wired to that Pi line, else `not_wired`. Declared by the installer, never inferred. Read by `walker check` today (and by the coordinator, not merged). |
 | `WALKER_SCREEN_PORT` | `8740` | The walker screen page's port on 127.0.0.1 (1024 to 65535), or `off` for no screen page. Also read by `walker simulate --screen`. |
 | `WALKER_SCREEN_ASSETS` | `screen-page` beside `walker.mjs` | Where the page's built files are (`/opt/steady-walker/screen-page` on the Pi). |
 | `WALKER_SCREEN_GREETING` | unset | A name for "Good evening, Nan" on the clock (up to 12 characters), until the circle brings her own. |
