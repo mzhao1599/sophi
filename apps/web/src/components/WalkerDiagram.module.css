@@ -92,6 +92,33 @@
   stroke-dasharray: 0.8 3;
 }
 
+/* The live walker page's states (LiveWalkerDiagram); onboarding never sets them. Simulated is a dashed
+ * green outline and never solid ink, so a stand-in can't pass for a working part. Degraded is drawn in
+ * ink, not green; a fault is a red dashed outline. Each label says the same in words. */
+.part[data-state="simulated"] .ghost path {
+  stroke: var(--live);
+  stroke-width: 1.15;
+  stroke-dasharray: 3 2.6;
+  opacity: 1;
+  transition-delay: var(--delay);
+}
+
+.part[data-state="degraded"] .ghost path {
+  opacity: 0;
+  transition-delay: var(--delay);
+}
+
+.part[data-state="degraded"] .ink path {
+  stroke: var(--ink);
+  animation: draw var(--dur) linear calc(var(--delay) + var(--at)) forwards;
+}
+
+.part[data-state="fault"] .ghost path {
+  stroke: var(--danger);
+  stroke-dasharray: 2 2.4;
+  opacity: 1;
+}
+
 /* On: drawn in green by the pen, stroke after stroke (--delay for the module, --at and --dur per stroke). */
 .ink path {
   stroke: var(--live);
@@ -159,6 +186,27 @@
   fill: var(--live);
 }
 
+.leader[data-state="simulated"] path {
+  stroke: var(--live-soft);
+  stroke-dasharray: 0.02 0.015;
+  stroke-dashoffset: 0;
+  animation: fade-in 700ms var(--ease-out) both;
+}
+
+.leader[data-state="simulated"] circle {
+  fill: var(--paper);
+  stroke: var(--live);
+  stroke-width: 1.2;
+}
+
+.leader[data-state="fault"] path {
+  stroke: var(--danger);
+}
+
+.leader[data-state="fault"] circle {
+  fill: var(--danger);
+}
+
 .leader[data-highlight] path {
   stroke-width: 1.5;
 }
@@ -224,6 +272,20 @@ button.hotspot:hover,
 
 .dot[data-state="unavailable"] circle {
   stroke-dasharray: 1 2.4;
+}
+
+.dot[data-state="simulated"] circle {
+  stroke: var(--live);
+  stroke-dasharray: 2.5 2;
+}
+
+.dot[data-state="degraded"] circle {
+  stroke: var(--ink);
+}
+
+.dot[data-state="fault"] circle {
+  stroke: var(--danger);
+  stroke-dasharray: 2 1.6;
 }
 
 .dot path {
@@ -534,6 +596,26 @@ button.hotspot:hover,
   }
 }
 
+/* The live walker page (LiveWalkerDiagram): labels a size up, and long names wrap inside their column
+ * rather than running into the drawing. */
+.figure[data-variant="live"] .spotName,
+.figure[data-variant="live"] .spotState {
+  white-space: normal;
+}
+
+.figure[data-variant="live"] .spotText {
+  gap: 2px;
+}
+
+.figure[data-variant="live"] .spotName {
+  font-size: 15px;
+}
+
+.figure[data-variant="live"] .spotState {
+  color: var(--text-body);
+  font-size: 13px;
+}
+
 @media (prefers-color-scheme: dark) {
   button.hotspot:hover {
     filter: brightness(1.12);
@@ -694,12 +776,15 @@ button.hotspot:hover,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .part[data-state="suggested"] .ghost path {
+  .part[data-state="suggested"] .ghost path,
+  .part[data-state="simulated"] .ghost path,
+  .part[data-state="degraded"] .ghost path {
     transition-delay: 0s;
   }
   .frame path,
   .leader path,
-  .part[data-state="on"] .ink path {
+  .part[data-state="on"] .ink path,
+  .part[data-state="degraded"] .ink path {
     stroke-dashoffset: 0;
     animation: none;
   }

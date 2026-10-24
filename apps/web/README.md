@@ -68,6 +68,8 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 | `/api/v1/health` | Render's health check: `200` once the walker store is ready, `503` while its database can't be reached |
 | `/checkout/success` | Where Stripe returns after a test payment: the ordered walker drawn again, "Demo order: no money moved", the modules read from the Checkout Session on the server, and **Set up another walker** (deletes this tab's demo answers and opens a fresh first frame) |
 | `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
+| `/walker` | **Your walker**, the always-on assistant's page: pair a walker, watch it live, read and join its conversation, confirm or decline what it offers ([guide](../../docs/subsystems/web-and-onboarding.md#your-walker-page)). Uses the owner routes `/api/v1/walkers/...`; typed questions need the assistant turn route, which isn't built yet, and until then say "Steady's server can't do that yet." |
+| `/walker?fake=1` | **Development only**: the same page on a typed fake of its API, with a "Fake walker" banner and a controls panel that plays the walker's side (pair, go offline, press Confirm, fail the next action) |
 | `/dev/preview/{start,chat,walker,saved,order}` | **Development only** (404 in production): the demo page in each state, from a session the deterministic engine produced from the demo persona's lines ([script](../../docs/demo/script.md)), for design review and the taste-skill inspector; `order` is the success page's design with that session's modules at their placeholder prices (a real order is only ever read from Stripe) |
 
 ### The demo, step by step

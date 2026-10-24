@@ -17,12 +17,12 @@ const userTurns = (s: SessionView | null) => (s ? s.turns.filter((t) => t.role =
  * The assistant's mark: a small green ring beside what it says. It is "live" beside the newest
  * message and breathes while a reply is on its way; older messages keep a quiet dot.
  */
-function Mark({ state }: { state: "live" | "thinking" | "past" }) {
+export function Mark({ state }: { state: "live" | "thinking" | "past" }) {
   return <span className={styles.mark} data-state={state} aria-hidden="true" />;
 }
 
 /** A new agent message rises in word by word; an old one (or any, under reduced motion) is just text. */
-function Words({ text, animate }: { text: string; animate: boolean }) {
+export function Words({ text, animate }: { text: string; animate: boolean }) {
   if (!animate) return <>{text}</>;
   const list = words(text);
   return (

@@ -28,11 +28,25 @@ Test with keyboard only, browser zoom, at least one screen reader, a mobile view
 | --- | --- |
 | `/` | The demo, one page: a guided chat beside a live drawing of the walker, then the clickable walker to adjust, save and order (built) |
 | `/onboarding`, `/onboarding/review` | Redirect to `/` (they were the separate conversation and review pages) |
+| `/walker` | **Your walker**: pair a walker, watch it live, read and join its conversation, confirm or decline what it offers (see below) |
 | `/devices` | Paired devices, online/last-seen state, actual modules |
 | `/devices/[id]/settings` | Audio/haptic preferences, privacy, caregivers if later supported |
 | `/devices/[id]/activity` | Human-readable action and fault history |
 
 Do not show a module as “installed” merely because it was recommended. Distinguish `recommended`, `selected`, `installed`, `healthy`, and `enabled` in UI and API state.
+
+## Your walker page
+
+`/walker` is the owner's page for the always-on walker assistant ([guide](walker-assistant.md)), separate from the onboarding demo on `/`. It talks only to the owner's routes in [`walker.ts`](../../packages/contracts/src/walker.ts) (`/api/v1/walkers/...`, proven by the `walker_owner` cookie) through one interface, `WalkerPageApi` in `apps/web/src/lib/walkerApi.ts`, so a development fake (`walkerFake.ts`) can stand in for the server. The expected results it is tested against are in `apps/web/test/walker-page.EXPECTED.md`.
+
+- **No walker:** "Connect a walker" asks for a pairing code and shows it large with a countdown and the command to run on the walker (`walker pair <code> --server <this site>`). The page switches to the walker as soon as a poll lists it.
+- **Paired:** the walker's name, Online or Offline with "last seen", a Simulator badge when the whole walker is the simulator, and the pen-drawn walker with each reported part lit by what the walker says now: solid green only for a real, healthy part, dashed green and the word "Simulated" for a stand-in, a dotted outline and "Unavailable" when it isn't there. Under it, the alert settings ("Applied" only when the walker reports the current configuration version, "Waiting for the walker" until then) and the obstacle zones (a distance with its age, or "Unknown" with the reason; never "clear").
+- **Conversation:** turns and the walker's own lines, oldest first. Each says who heard it ("You said (as heard by Gemini)", "You typed", or "Steady didn't catch that"), notes when the fixed replies answered, and names the voice the server offered (Cartesia's or the walker's own). A typed question goes to `POST …/turns` with a fresh `client_turn_id`; the same words retried after a failure reuse it. The notice about Gemini, Cartesia and the hour's retention is on screen above the box before anyone types.
+- **Offers:** the open proposal as a card with the server's summary, what changes, a countdown, and Confirm and Decline. Once closed, the buttons give way to one line saying how (from the server's answer, or, when it closed elsewhere, only what the status proves).
+- **Forget this walker**, behind a modal confirm.
+- **Live:** polls `GET /api/v1/walkers` every 1.5 s while the tab is visible. After 5 s without an answer it says so, shows "Status unknown" and turns every zone "Unknown", so old readings never sit on screen looking current. Every error code has a plain sentence.
+- **Accessibility:** one polite live region reads each new reply, walker line, offer and connection change once (never the history on load, never the countdowns); every control is a real button, input or select with a name; focus follows the person's action when the pressed control goes away; the drawing is hidden from screen readers and described in words; reduced motion stops the pen and the contour field.
+- **Development fake:** `/walker?fake=1`, in development only, uses the fake, shows a "Fake walker" banner across the top, and adds a "Fake walker controls" panel to pair, speak a walker line, go offline, press Confirm on the walker, expire the offer, take the server down, and make the next action fail with any error code.
 
 ## Data handoff
 
@@ -44,4 +58,4 @@ For an optional “call the onboarding agent” integration, expose the same ses
 
 Create a Next.js app with a simple design system, authenticated/demo session boundary, static module catalog fixture, and accessible text onboarding flow. Add the real agent endpoint after the deterministic UI is usable. Document local setup, environment variables by *name* only, and a short manual accessibility checklist in `apps/web/README.md`.
 
-**Done (demo mode):** the one-page demo at `/` (a conversation with the assistant, the walker drawing itself in, the clickable walker sheet, save, Stripe test-mode order), the module catalog in `packages/contracts`, the deterministic engine and the optional LLM agent in `services/cloud-api`, and passwordless sign-in with Supabase (kept, but not linked from the demo). Not done: speech, `/devices` and settings. See [apps/web](../../apps/web/README.md).
+**Done (demo mode):** the one-page demo at `/` (a conversation with the assistant, the walker drawing itself in, the clickable walker sheet, save, Stripe test-mode order), the module catalog in `packages/contracts`, the deterministic engine and the optional LLM agent in `services/cloud-api`, and passwordless sign-in with Supabase (kept, but not linked from the demo). `/walker` (Your walker) is built, tested against its development fake, and checked on 2026-10-24 against a local server (in-memory store) with the Pi simulator from `devices/pi`: pairing from the page, the page switching to the walker, live parts and zones marked Simulated, the walker's own lines, offline and back, Forget (the walker then asks to be paired again), and the walker-side pairing lockout; typed questions wait for the assistant turn and say "Steady's server can't do that yet." until then. Not done: speech, `/devices` and settings. See [apps/web](../../apps/web/README.md).

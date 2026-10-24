@@ -1,0 +1,818 @@
+/*
+ * "Your walker" (/walker): the live walker beside its conversation, laid out for a laptop on a judging
+ * table (1440 x 900 first) and readable from across a room: the walker's name, Online or Offline, the
+ * offer and the distances are the large lines. Same paper, ink, signal green and glass as the demo
+ * (globals.css); the conversation reuses the demo's classes (Demo.module.css). Below 1000px it is one
+ * column: the walker's name, the conversation, then the drawing and its details.
+ */
+
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 470px) minmax(0, 1fr);
+  grid-template-areas:
+    "talk head"
+    "talk walker";
+  grid-template-rows: auto 1fr;
+  gap: 0 48px;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 4px 40px 28px;
+}
+
+.head {
+  grid-area: head;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  animation: rise-in 600ms var(--ease-out) both;
+}
+
+.talk {
+  grid-area: talk;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.walker {
+  grid-area: walker;
+  --canvas-h: clamp(240px, calc(100dvh - 500px), 520px);
+  container: side / inline-size;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.walker[data-stale] {
+  opacity: 0.5;
+  filter: grayscale(1);
+  transition: opacity 300ms var(--ease-out), filter 300ms var(--ease-out);
+}
+
+.walker[data-bare] {
+  --canvas-h: clamp(320px, calc(100dvh - 300px), 600px);
+  align-content: center;
+}
+
+.kicker {
+  color: var(--text-meta);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.title {
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.title:focus {
+  outline: none;
+}
+
+.title:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
+
+/* "Simulator": a dashed pill, like the dashed lines of a simulated part. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 2px 12px;
+  border: 1.5px dashed var(--live);
+  border-radius: var(--radius-pill);
+  color: var(--live);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.presence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.presenceWord {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.presenceDetail {
+  color: var(--text-meta);
+  font-size: 17px;
+}
+
+/* Filled and ringed when online, hollow when offline, dashed when unknown: shape as well as colour. */
+.presenceDot {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--text-meta);
+  border-radius: 50%;
+}
+
+.presenceDot[data-tone="online"] {
+  border-color: var(--live);
+  background: var(--live);
+}
+
+.presenceDot[data-tone="online"]::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border: 1.5px solid var(--live-soft);
+  border-radius: 50%;
+  animation: ring 2.4s ease-out infinite;
+}
+
+.presenceDot[data-tone="unknown"] {
+  border-style: dashed;
+}
+
+.meta {
+  color: var(--text-meta);
+  font-size: 14px;
+}
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-meta);
+  font-size: 14px;
+}
+
+.picker select {
+  min-height: var(--target);
+  padding: 0 12px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-field);
+  background: var(--card-solid);
+  color: var(--text-strong);
+}
+
+/* Steady's server can't be reached: what's on screen is old. */
+.stale {
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-inner);
+  background: var(--danger-wash);
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.lasting {
+  padding: 10px 14px;
+  border-radius: var(--radius-inner);
+  background: var(--wash);
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+/* ---- Details under the drawing: alerts, obstacles, parts ---- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 14px;
+}
+
+/* From 560px the drawing labels each part with its health and "Simulated" (and its caption says the
+ * same to screen readers), so the parts list would only repeat it; narrower, the labels go and the
+ * list carries the words. */
+@container side (min-width: 560px) {
+  .cards .partsCard {
+    display: none;
+  }
+}
+
+.card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-tile);
+  animation: rise-in 600ms var(--ease-out) both;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.cardTitle {
+  color: var(--text-meta);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cueList {
+  display: grid;
+  gap: 2px;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+/* Applied: a green tick. Waiting: a dashed ring. Both say it in words. */
+.applied {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.applied svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.applied[data-state="applied"] svg {
+  stroke: var(--live);
+}
+
+.applied[data-state="waiting"] {
+  color: var(--text-body);
+}
+
+.applied[data-state="waiting"] svg {
+  stroke: var(--text-meta);
+  stroke-dasharray: 3 3;
+}
+
+.rows {
+  display: grid;
+}
+
+.row {
+  display: grid;
+  gap: 1px;
+  padding: 8px 0;
+  border-top: 1px solid var(--hairline-strong);
+}
+
+.row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.rowTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 10px;
+}
+
+.rowName {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.rowWords {
+  color: var(--text-body);
+  font-size: 14px;
+}
+
+/* The distance is what a room reads; Unknown is set the same size, never smaller. */
+.distance {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.distance[data-measured="false"] {
+  color: var(--text-body);
+  font-weight: 500;
+}
+
+.rowDetail {
+  color: var(--text-meta);
+  font-size: 14px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px dashed var(--live);
+  border-radius: var(--radius-pill);
+  color: var(--live);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Zones side by side where they fit, so the distances read as one line across the card. */
+.zones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 12px 18px;
+}
+
+.zone {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+}
+
+.empty {
+  color: var(--text-meta);
+  font-size: 15px;
+}
+
+/* ---- The conversation (inside the demo's .chat panel) ---- */
+
+.chatHeight {
+  height: clamp(480px, calc(100dvh - 110px), 820px);
+  margin-top: 0;
+}
+
+.turn {
+  display: grid;
+  gap: 10px;
+}
+
+.person {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  animation: rise-in 240ms var(--ease-out) both;
+}
+
+.heardLabel {
+  color: var(--text-meta);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.notCaught {
+  color: var(--text-meta);
+  font-style: italic;
+}
+
+.notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+
+/* A line the walker said on its own: a small square mark, and "On the walker" over it. */
+.walkerLine {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+  max-width: 92%;
+  animation: rise-in 240ms var(--ease-out) both;
+}
+
+.walkerMark {
+  width: 9px;
+  height: 9px;
+  margin: 24px 2px 0;
+  border: 1.5px solid var(--text-meta);
+  border-radius: 2px;
+}
+
+.walkerText {
+  font-size: 17px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.emptyLog {
+  margin: auto 0;
+  color: var(--text-meta);
+  font-size: 16px;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.typedNotice {
+  padding: 0 6px;
+  color: var(--text-meta);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ---- The offer: the one thing to act on, so it's the strongest surface in the panel ---- */
+
+.offer {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--hairline-strong);
+  border-left: 3px solid var(--live);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  box-shadow: var(--shadow-float);
+  animation: rise-in 320ms var(--ease-out) both;
+}
+
+.offer[data-closed] {
+  border-left-color: var(--control-edge);
+  box-shadow: none;
+}
+
+.offerKicker {
+  color: var(--text-meta);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.offerKicker:focus {
+  outline: none;
+}
+
+.offerKicker:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.offerSummary {
+  font-size: 22px;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+
+.offerCues {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.offerCues dt {
+  color: var(--text-meta);
+}
+
+.offerCues dd {
+  margin: 0;
+}
+
+.offerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.offerActions .button {
+  min-width: 112px;
+  font-size: 16px;
+}
+
+.countdown {
+  margin-left: auto;
+  color: var(--text-meta);
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+
+.offerOutcome {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.alertLine {
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ---- Connect a walker ---- */
+
+.pairPanel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 28px 28px 30px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sheet);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-tile);
+  animation: rise-in 600ms var(--ease-out) 200ms both;
+}
+
+.lead {
+  color: var(--text-body);
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.codeBlock:focus {
+  outline: none;
+}
+
+.codeBlock:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
+
+.codeLabel {
+  color: var(--text-meta);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 68px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.command code {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-inner);
+  background: var(--wash);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.primary {
+  justify-self: start;
+  min-width: 200px;
+  font-size: 16px;
+}
+
+.stageNote {
+  max-width: 36ch;
+  margin: 10px auto 0;
+  color: var(--text-body);
+  font-size: 17px;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ---- Forget this walker ---- */
+
+.dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: 26px 26px 22px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 24px;
+  background: var(--card-solid);
+  box-shadow: var(--shadow-sheet);
+  color: var(--text-strong);
+}
+
+.dialog::backdrop {
+  background: rgb(16 21 19 / 0.4);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.dialog h2 {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dialog p {
+  margin-top: 10px;
+  color: var(--text-body);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ---- Development fake ---- */
+
+.fakeBanner {
+  padding: 6px 16px;
+  border-bottom: 1px dashed var(--control-edge);
+  background: var(--wash);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: center;
+}
+
+.fakeControls {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 30;
+  max-width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  border: 1px dashed var(--control-edge);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+}
+
+.fakeControls summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--target);
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.fakeBody {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 12px;
+}
+
+.fakeBody button,
+.fakeBody select {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--control-edge);
+  border-radius: 10px;
+  background: var(--card-solid);
+  font-size: 13px;
+  text-align: left;
+}
+
+.fakeRow {
+  display: flex;
+  gap: 6px;
+}
+
+.fakeRow > * {
+  flex: 1;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
+}
+
+@keyframes ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .dialog::backdrop {
+    background: rgb(0 0 0 / 0.55);
+  }
+  .danger {
+    color: #101513;
+  }
+}
+
+@media (max-width: 1150px) {
+  .main {
+    grid-template-columns: minmax(0, 430px) minmax(0, 1fr);
+    gap: 0 36px;
+  }
+}
+
+@media (max-width: 999px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "talk"
+      "walker";
+    grid-template-rows: auto;
+    gap: 20px;
+    max-width: 680px;
+  }
+  .chatHeight {
+    height: auto;
+  }
+  .chatHeight > [data-log] {
+    flex: 0 1 auto;
+    min-height: 160px;
+    max-height: max(200px, calc(100dvh - 380px));
+  }
+  .walker {
+    --canvas-h: 320px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* The walker's two buttons get their own row under the name, rather than squeezing their words. */
+  .bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding-block: 8px;
+  }
+  .bar > :last-child {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .bar > :last-child > * {
+    white-space: nowrap;
+  }
+  .main {
+    padding: 4px 16px 16px;
+  }
+  .title {
+    font-size: 36px;
+  }
+  .presence {
+    font-size: 20px;
+  }
+  .pairPanel {
+    padding: 22px 18px 22px;
+    border-radius: 26px;
+  }
+  .code {
+    font-size: 54px;
+  }
+  .countdown {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presenceDot[data-tone="online"]::after {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .card,
+  .offer,
+  .pairPanel,
+  .badge,
+  .tag {
+    border: 1px solid CanvasText;
+  }
+}

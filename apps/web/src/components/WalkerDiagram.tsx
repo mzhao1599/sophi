@@ -16,7 +16,7 @@ import { lockReason, nameOf, stateLabel, whySuggested, type PartState } from "@/
 const LIT: readonly PartState[] = ["on", "suggested", "declined"];
 const isLit = (state: PartState) => LIT.includes(state);
 /** Seconds between parts that arrive together, so each one can be read with its name (Request 3 in docs/demo/script.md). */
-const STAGGER = 0.36;
+export const STAGGER = 0.36;
 import { ModuleSwitch } from "./ModuleSwitch";
 import styles from "./WalkerDiagram.module.css";
 
@@ -26,10 +26,10 @@ import styles from "./WalkerDiagram.module.css";
  * hotspot is its label there. On a narrow stage, each hotspot is a 44px round marker on the part.
  * Both positions come from this one table, as percentages, so the HTML buttons line up with the SVG.
  */
-const DRAW_W = 320;
-const H = 380;
-const SIDE = 120;
-const WIDE_W = DRAW_W + 2 * SIDE;
+export const DRAW_W = 320;
+export const H = 380;
+export const SIDE = 120;
+export const WIDE_W = DRAW_W + 2 * SIDE;
 const LABEL_GAP = 12;
 
 // ---- Geometry: every part is a path, so each one can draw itself (pathLength = 1) ----
@@ -73,7 +73,7 @@ const FRAME: Stroke[] = [
   line(196, 265, 206, 265),
 ];
 
-const MODULES: Record<Exclude<ModuleId, "base.walker">, Stroke[]> = {
+export const MODULES: Record<Exclude<ModuleId, "base.walker">, Stroke[]> = {
   // A pod with a large button on each grip.
   "controls.hand": [box(46, 48, 22, 32, 8), circle(57, 64, 5), box(252, 48, 22, 32, 8), circle(263, 64, 5)],
   // Microphone and speaker between the handles, with a grille.
@@ -104,7 +104,7 @@ const MODULES: Record<Exclude<ModuleId, "base.walker">, Stroke[]> = {
   "location.gps": [box(58, 96, 14, 22, 4), line(65, 96, 65, 86), circle(65, 84, 2)],
 };
 
-const MODULE_ORDER = MODULE_CATALOG.modules.map((m) => m.id).filter((id): id is keyof typeof MODULES => id !== "base.walker");
+export const MODULE_ORDER = MODULE_CATALOG.modules.map((m) => m.id).filter((id): id is keyof typeof MODULES => id !== "base.walker");
 
 /** When each stroke starts and how long it takes, in seconds, at `speed` units a second. */
 function timeline(strokes: Stroke[], speed: number, least = 0.07) {
@@ -117,18 +117,18 @@ function timeline(strokes: Stroke[], speed: number, least = 0.07) {
   });
 }
 
-const FRAME_START = 0.2;
+export const FRAME_START = 0.2;
 /** Seconds the pen waits so it rides its line rather than leading it. */
 const PEN_LAG = 0.06;
-const FRAME_STEPS = timeline(FRAME, 1150);
-const FRAME_END = FRAME_START + FRAME_STEPS.reduce((t, st) => t + st.dur, 0);
-const MODULE_STEPS = Object.fromEntries(MODULE_ORDER.map((id) => [id, timeline(MODULES[id], 560)])) as Record<keyof typeof MODULES, ReturnType<typeof timeline>>;
+export const FRAME_STEPS = timeline(FRAME, 1150);
+export const FRAME_END = FRAME_START + FRAME_STEPS.reduce((t, st) => t + st.dur, 0);
+export const MODULE_STEPS = Object.fromEntries(MODULE_ORDER.map((id) => [id, timeline(MODULES[id], 560)])) as Record<keyof typeof MODULES, ReturnType<typeof timeline>>;
 
 /**
  * The pen: a small nib that travels each stroke as it draws, in time with the line (SVG animateMotion,
  * started when it mounts). Hidden from assistive tech, and never shown under reduced motion.
  */
-function Pen({ steps, delay, tone }: { steps: ReturnType<typeof timeline>; delay: number; tone: "ink" | "live" }) {
+export function Pen({ steps, delay, tone }: { steps: ReturnType<typeof timeline>; delay: number; tone: "ink" | "live" }) {
   const ref = useRef<SVGCircleElement>(null);
   const total = steps.reduce((t, st) => t + st.dur, 0);
   useLayoutEffect(() => {
@@ -145,7 +145,7 @@ function Pen({ steps, delay, tone }: { steps: ReturnType<typeof timeline>; delay
   );
 }
 
-interface Spot {
+export interface Spot {
   id: ModuleId;
   /** Where the leader line ends, and where the narrow marker sits. */
   anchor: [number, number];
@@ -155,7 +155,7 @@ interface Spot {
 }
 
 // Spaced so that, at the smallest size the stage draws them, no two 44px targets overlap.
-const SPOTS: Spot[] = [
+export const SPOTS: Spot[] = [
   { id: "controls.hand", anchor: [46, 64], side: "left", labelY: 64 },
   { id: "location.gps", anchor: [58, 107], side: "left", labelY: 140 },
   { id: "perception.tof", anchor: [86, 248], side: "left", labelY: 248 },
@@ -168,7 +168,7 @@ const SPOTS: Spot[] = [
 const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
 const labelEdge = (side: Spot["side"]) => (side === "left" ? -LABEL_GAP : DRAW_W + LABEL_GAP);
 
-function spotStyle(s: Spot): React.CSSProperties {
+export function spotStyle(s: Spot): React.CSSProperties {
   return {
     "--wx": pct((labelEdge(s.side) + SIDE) / WIDE_W),
     "--wy": pct(s.labelY / H),
@@ -177,7 +177,7 @@ function spotStyle(s: Spot): React.CSSProperties {
   } as React.CSSProperties;
 }
 
-function leader(s: Spot): string {
+export function leader(s: Spot): string {
   const x0 = labelEdge(s.side);
   const elbow = s.side === "left" ? Math.min(s.anchor[0] - 12, x0 + 22) : Math.max(s.anchor[0] + 12, x0 - 22);
   return `M${x0} ${s.labelY} H${elbow} L${s.anchor[0]} ${s.anchor[1]}`;
