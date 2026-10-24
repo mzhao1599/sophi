@@ -55,7 +55,7 @@ export interface ServiceDeps {
   /** The Pi's own GPIO Talk and Confirm buttons, only when the installer declared them wired (never in the simulator). */
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
   /** Optional GPS reader. The server's per-heartbeat opt-in is its only enable signal. */
-  location?: { setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; stop(): void };
+  location?: { connected(): boolean; setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; stop(): void };
   /**
    * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
    * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
@@ -842,8 +842,9 @@ export class WalkerService {
 
   /**
    * Every part the walker has, each once: the coordinator itself, each ESP32 module by its id, the Pi's GPIO
-   * buttons when the installer declared them wired (the Pi can't sense a button), and the USB mic and
-   * speaker. Nothing it doesn't have. Past 32, ESP32 modules are cut first, never the Pi's own parts.
+   * buttons when the installer declared them wired (the Pi can't sense a button), a connected USB GPS,
+   * and the USB mic and speaker. GPS presence does not imply a satellite fix or location sharing.
+   * Past 32, ESP32 modules are cut first, never the Pi's own parts.
    */
   manifest(): CapabilityManifest {
     const now = this.deps.clock.now();
@@ -872,7 +873,19 @@ export class WalkerService {
             },
           ]
       : [];
-    const room = 32 - 2 - gpioPart.length; // the coordinator, voice and the GPIO buttons always fit
+    const gpsPart: CapabilityManifest["modules"] = this.deps.location?.connected()
+      ? [{
+          module_id: "location.gps",
+          instance_id: "pi-usb-gps",
+          firmware_version: null,
+          protocol_version: null,
+          health: "ok",
+          faults: [],
+          observed_at: iso(now),
+          simulated: false,
+        }]
+      : [];
+    const room = 32 - 2 - gpioPart.length - gpsPart.length; // coordinator and voice always fit
     // Available modules first (in hello order), so a cut drops an old unavailable board before a live one.
     const ranked = [...serial.filter((m) => m.health !== "unavailable"), ...serial.filter((m) => m.health === "unavailable")];
     const modules: CapabilityManifest["modules"] = ranked.slice(0, room).map((module) => ({
@@ -887,6 +900,7 @@ export class WalkerService {
     }));
     modules.unshift(coordinator);
     modules.push(...gpioPart);
+    modules.push(...gpsPart);
     modules.push({
       module_id: "voice",
       instance_id: this.deps.audioInstanceId,

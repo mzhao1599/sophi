@@ -89,6 +89,11 @@ export class GpsSampler {
 
   constructor(private readonly port: string, private readonly baud: number, private readonly onError: (error: Error) => void) {}
 
+  /** A connected serial device is not proof of a satellite fix. */
+  connected(): boolean {
+    try { return statSync(this.port).isCharacterDevice(); } catch { return false; }
+  }
+
   setEnabled(enabled: boolean): void {
     if (enabled === this.enabled) return;
     this.enabled = enabled;
