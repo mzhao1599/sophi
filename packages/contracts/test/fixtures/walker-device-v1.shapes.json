@@ -5200,6 +5200,19 @@
             "walker_said"
           ],
           "additionalProperties": false
+        },
+        "tool_call": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "const": "get_location"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

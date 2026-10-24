@@ -137,7 +137,11 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       const service = serviceWith(stub.model);
       const w = await walker(service);
       const sim = await service.turn(device(w.credential), w.id, typed("Is anything in front of me?"));
-      expect(sim.turn.reply).toBe(`Something is about 64 centimetres in front of you, measured a moment ago. ${SIMULATED_READINGS}`);
+      // Distances are written by the server from the readings (get_distance), never worded by the model.
+      expect(sim.turn).toMatchObject({ answered_by: "fixed" });
+      expect(sim.turn.reply).toMatch(/^The obstacle sensors read front: 64 centimetres, just now;/);
+      expect(sim.turn.reply.endsWith(SIMULATED_READINGS)).toBe(true);
+      expect(sim.turn.reply).not.toMatch(/\b(clear|safe)\b/i);
       const real = manifest(clock);
       real.modules[1]!.simulated = false;
       const r = await walker(service, real);
@@ -210,8 +214,10 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       const r = await service.turn(device(w.credential), w.id, typed("Is anything in front of my garden gate?"));
       expect(fixed.requests).toHaveLength(2);
       expect(fixed.requests[1]?.retry).toMatch(/"clear" or "safe"/);
-      expect(r.turn).toMatchObject({ answered_by: "model", reply: `${good.reply} ${SIMULATED_READINGS}` });
-      expect(events.at(-1)).toMatchObject({ reason: null, attempts: 2 });
+      // After the retry, an obstacles answer is replaced by the server's own distance line.
+      expect(r.turn).toMatchObject({ answered_by: "fixed" });
+      expect(r.turn.reply).toMatch(/^The obstacle sensors read front: 64 centimetres/);
+      expect(r.turn.reply).not.toMatch(/\b(clear|safe)\b/i);
 
       // Tagged with another topic, the words are still caught.
       const twice = stubModel({ reply: "The way ahead is Clear.", topics: ["other"] });
@@ -547,7 +553,8 @@ describe("the walker assistant's wording", () => {
 
   it("tells the model the server adds the all-simulated line, so it leaves it out", () => {
     expect(WALKER_SYSTEM_PROMPT).toContain(`the server ends your reply with "${SIMULATED_ALL_PARTS}" itself`);
-    expect(WALKER_SYSTEM_PROMPT).toContain("reading_age");
+    // Distances are the server's to write, from the readings and their ages; the model only asks for them.
+    expect(WALKER_SYSTEM_PROMPT).toContain("request tool_call get_distance");
     expect(WALKER_SYSTEM_PROMPT).not.toMatch(/millisecond|age_ms/);
   });
 });
