@@ -42,7 +42,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
      | --- | --- | --- | --- | --- | --- |
      | Not done yet | | | | | |
 
-   - On the walker: the always-on design measures "Talk released to the answer starting" (target 4 seconds). On the simulator (2026-10-24, [walker-script.md](walker-script.md#rehearsal-results)): Talk released to the reply's text, 2.1 to 6.3 seconds, median 3.0, over 16 spoken turns. Say "on the simulator" when quoting it; the real Pi isn't measured.
+   - On the walker: the always-on design measures "Talk released to the answer starting" (target 4 seconds). On the simulator (2026-10-24, [walker-script.md](walker-script.md#rehearsal-results)): Talk released to the reply's text, 1.9 to 4.6 seconds, median 2.7, over 16 spoken turns (on `main` at `37a691c`). Say "on the simulator" when quoting it; the real Pi isn't measured.
 
 3. **Path to production (15 seconds, in the close).** "What's built: continuous integration on every change, a live deploy, row-level security on saved setups, device authentication and versioned settings for the walker, and a fallback for every model turn. What isn't: bench validation of the hardware, testing with walker users, a paid model tier for real people's words, and a regulatory review we haven't started."
 
@@ -96,7 +96,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 **Known limitations:**
 
 - Not yet heard live: no key yet, so Cartesia's latency and voice quality on the walker are unmeasured.
-- On the simulator, without Cartesia, the reply's text reached the walker 2.1 to 6.3 seconds after Talk was released (median 3.0 seconds over 16 spoken turns; [walker-script.md](walker-script.md#rehearsal-results)). Cartesia's time, at most 3 seconds, comes on top of the server's part of that.
+- On the simulator, without Cartesia, the reply's text reached the walker 1.9 to 4.6 seconds after Talk was released (median 2.7 seconds over 16 spoken turns; [walker-script.md](walker-script.md#rehearsal-results)). Cartesia's time, at most 3 seconds, comes on top of the server's part of that.
 - The whole reply is made before it plays (the bytes endpoint, not streaming), so Cartesia's time adds to the wait after Talk is released. Streaming over Cartesia's WebSocket would start sooner; it isn't built.
 - English and one stock voice only.
 - Needs the internet; offline, the walker uses its own voice.

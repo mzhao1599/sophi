@@ -26,7 +26,7 @@ The onboarding demo's script is [script.md](script.md); it stays the source for 
 
 Nothing in this script presents a simulated or planned part as working.
 
-**Labels.** UI text in quotes was seen on screen at 1440 by 900 in the rehearsal on 2026-10-24 (production build of `main` at `beab832`). Text marked † wasn't seen on screen; check it on the day. The walker's own spoken lines are quoted from the simulator's log.
+**Labels.** UI text in quotes was seen on screen at 1440 by 900 in the rehearsal on 2026-10-24 (production build of `main` at `37a691c`). Text marked † wasn't seen on screen; check it on the day. The walker's own spoken lines are quoted from the simulator's log.
 
 ## The six beats at a glance
 
@@ -47,7 +47,7 @@ Every action and line, in order. Before judges arrive, the walker is paired and 
 - **Real Pi:** hold the Talk button while you speak, then let go.
 - **Simulator:** press `t` in the simulator's terminal, speak, then press `t` again to send. A terminal can't see a key being released, so the simulator's Talk toggles.
 
-The reply's text reaches the walker 2 to 6.5 seconds after you let go, and the walker then speaks it (see the rehearsal results; the time until it's heard isn't measured). Wait for the answer before the next line.
+The reply's text reaches the walker 1.9 to 4.6 seconds after you let go, and the walker then speaks it (see the rehearsal results; the time until it's heard isn't measured). Wait for the answer before the next line.
 
 ### Beat 1. Boot (0:00 to 0:15)
 
@@ -105,7 +105,7 @@ The page's distance comes from the walker's report every 5 seconds, so it can re
    - "Or press Confirm on the walker."
 4. Press Confirm on the walker (simulator: `c`), or Confirm on the page.
 5. The walker says "Done. Obstacle alerts now use short sounds."
-6. The page's card says "Confirmed. Switching your alerts to …", and "Alerts" changes to "Version 2", "Short sounds", "Spoken messages". It shows "Waiting for the walker"† until the walker reports it has applied the change, then "Applied". In the rehearsal "Applied" took 2 to 9 seconds after Confirm; keep talking meanwhile.
+6. The page's card says "Confirmed. Switching your alerts to …", and "Alerts" changes to "Version 2", "Short sounds", "Spoken messages", then "Applied" once the walker reports it has applied the change. In the rehearsal that took 0.4 seconds after the walker's Confirm. After the page's Confirm it took about 6 seconds, because the walker only hears of it with its next report (every 5 seconds); "Waiting for the walker" shows meanwhile, so keep talking.
 7. Hand in front again (simulator: `n`, then `f`): now a short sound, no buzz.
 
 > "The model can only offer. Nothing changed until I pressed Confirm, and the page only says 'Applied' when the walker itself reports it."
@@ -124,26 +124,27 @@ The page's distance comes from the walker's report every 5 seconds, so it can re
 
 1. Cut the walker's network:
    - **Real Pi:** turn off the phone hotspot the Pi is on. The laptop stays on venue Wi-Fi, so the page keeps working.
-   - **Simulator:** see the setup checklist. Tonight's simulator can't cut its own link to a real server yet.
-2. After about 6 to 10 seconds the walker counts itself offline (measured on a relay that refused connections at once; on a hotspot that drops packets, each try can wait out its 5-second deadline, which isn't measured) and says, once: "I'm offline right now. Your short-sound alerts still work."
+   - **Simulator:** press `o` in the simulator's terminal. It cuts the walker's own requests, so the page stays connected.
+2. Within about 10 seconds (5.2 to 7.3 seconds in the rehearsal) the walker counts itself offline and says, once: "I'm offline right now. Your short-sound alerts still work."
    - It names the alerts in force now, so after beat 4 it says short sounds.
    - In the simulator it adds "The obstacle sensor is simulated."
+   - Measured with the simulator's switch, which fails each request at once. On a hotspot that drops packets, each try can wait out its 5-second deadline first; that isn't measured.
 3. Talk (any line): the walker answers at once with the same offline line. It records nothing and doesn't reach the model.
-4. The page shows "Offline" with "last seen", every part "Unavailable" and every zone "Unknown" (about 13 to 16 seconds after the cut).
-5. Turn the network back on. Once offline, the walker retries after 10 seconds and then every 15 seconds (and at once when Talk is pressed), so it's back within about 15 seconds of the network returning, plus the hotspot's own rejoin time, which isn't measured. Pressing Talk once the network is back brings it back sooner. It says "I'm back online." The page shows "Online", and its conversation now holds the lines the walker said while offline, marked "On the walker" and "On the walker, offline reply".
+4. The page shows "Offline" with "last seen", every part "Unavailable" and every zone "Unknown" (about 12 to 13 seconds after the cut).
+5. Turn the network back on (simulator: press `o` again). Once offline, the walker retries after 10 seconds and then every 15 seconds (and at once when Talk is pressed), so it's back within about 15 seconds of the network returning, plus a hotspot's own rejoin time, which isn't measured. It says "I'm back online." The page shows "Online", and its conversation now holds the offline line once, then "I'm back online.", both marked "On the walker".
 
 > "Buttons and obstacle cues never needed the internet. When it's back, the page catches up with everything the walker said."
 
 ## The spoken lines
 
-Only the presenter speaks to the walker: the Gemini key is on the free tier, which is for scripted, made-up lines (see the honesty lines). Judges type on the page instead. The alternates marked "(rehearsed)" ran once each in the fresh run below and gave the same results; the others haven't been tried.
+Only the presenter speaks to the walker: the Gemini key is on the free tier, which is for scripted, made-up lines (see the honesty lines). Judges type on the page instead. Every alternate below ran once in the rehearsal (two extra runs) and gave the same results.
 
 | Beat | Line | Alternates | Must come back |
 | --- | --- | --- | --- |
-| 2 | "What can you help me with?" | "What are you able to do for me?" (rehearsed); "What can you do?" | A short list of what it can do (obstacles, parts, alerts). Model-written, so the wording changes each time |
-| 3 | "Is anything in front of me?" | "Is there something ahead of me right now?" (rehearsed); "How far is the nearest thing?" | The measured distance with its freshness, and in the simulator "These readings are simulated." Never "clear" |
-| 4 | "Stop buzzing me, use short sounds instead." | "I'd rather hear beeps than feel the handles shake." (rehearsed); "Can you use sounds instead of vibration?" | Exactly "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." (server-written) |
-| 5 | "Can you pick up my keys?" | "Could you grab the glasses I dropped?" (rehearsed); "Can you reach the shelf for me?" | Exactly "This walker doesn't have robot arms, so I can't pick things up or move things." |
+| 2 | "What can you help me with?" | "What are you able to do for me?"; "What can you do?" | A short list of what it can do (obstacles, parts, alerts). Model-written, so the wording changes each time |
+| 3 | "Is anything in front of me?" | "Is there something ahead of me right now?"; "How far is the nearest thing?" | The measured distance with its freshness, and in the simulator "These readings are simulated." Never "clear" |
+| 4 | "Stop buzzing me, use short sounds instead." | "I'd rather hear beeps than feel the handles shake."; "Can you use sounds instead of vibration?" | Exactly "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." (server-written) |
+| 5 | "Can you pick up my keys?" | "Could you grab the glasses I dropped?"; "Can you reach the shelf for me?" | Exactly "This walker doesn't have robot arms, so I can't pick things up or move things." |
 | 6 | Any line while offline | | "I'm offline right now. Your short-sound alerts still work." (plus "The obstacle sensor is simulated." in the simulator) |
 
 **For judges, typed on the page.** Click "Ask Steady about your walker", type, press Enter. The page shows "You typed", and the reply arrives in about 2 seconds. Suggested lines:
@@ -179,13 +180,13 @@ Say these when they come up, in these words or close to them.
 
 **3. Why does it need Confirm?** A model's answer is never authority to change the walker. The model may offer one change, and the server checks it against fixed rules: a cue the walker can deliver, and never turning obstacle alerts off. The server writes the offer's words from the change itself. The change happens only when a person presses Confirm, by the offer's id, within a minute. The first answer wins. A second Confirm sees it's already done.
 
-**4. What if the internet goes down?** The buttons and obstacle cues keep working on the walker. It says it's offline and answers Talk with a local line built from its current settings. It catches up when the network returns, and the page then shows everything it said. Measured on the simulator, with a relay that refused connections at once: the walker counted itself offline 6.5 to 9.9 seconds after the cut and answered Talk at once. Once offline it retries after 10 seconds and then every 15 seconds, so it's back within about 15 seconds of the network returning (6.6 to 7.6 seconds in the rehearsal, by where the restart fell in that wait).
+**4. What if the internet goes down?** The buttons and obstacle cues keep working on the walker. It says it's offline and answers Talk with a local line built from its current settings. It catches up when the network returns, and the page then shows everything it said. Measured on the simulator, with its own network switch, which fails requests at once: the walker counted itself offline 5.2 to 7.3 seconds after the cut and answered Talk at once. Once offline it retries after 10 seconds and then every 15 seconds, so it's back within about 15 seconds of the network returning (7.1 to 7.6 seconds in the rehearsal, by where the switch fell in that wait).
 
 **5. What if the model is slow or fails?** A turn has 8 seconds on the server. If the model errors, refuses, gives two bad replies or runs out of time, a fixed answer built from the walker's status is used, and the page marks it "Answered by the fixed replies". If the server's answer doesn't arrive within 10 seconds, the walker gives up, counts itself offline and says its offline line. In the rehearsal no spoken turn needed the fallback, apart from the arms question, whose fixed line is the rule.
 
 **6. Can it move?** No. There is no motion command anywhere in this build. The only thing the walker can make a part do is play one of four fixed haptic patterns, for at most a second.
 
-**7. How fast is it?** These are our timings from the rehearsal below, on a laptop with the simulator: from releasing Talk to the reply's text arriving, 2.1 to 6.3 seconds, with a median of 3.0 seconds, over 16 spoken turns; 3 of them took over 4 seconds. The walker then has to say it: the Pi writes the whole line with its own voice before playing it, so the time until it's heard is longer, and we haven't measured it. The target in our design is 4 seconds to the start of a spoken answer. The real Pi isn't measured yet.
+**7. How fast is it?** These are our timings from the rehearsal below, on a laptop with the simulator: from releasing Talk to the reply's text arriving, 1.9 to 4.6 seconds, with a median of 2.7 seconds, over 16 spoken turns; 2 of them took over 4 seconds. The walker then has to say it: the Pi writes the whole line with its own voice before playing it, so the time until it's heard is longer, and we haven't measured it. The target in our design is 4 seconds to the start of a spoken answer. The real Pi isn't measured yet.
 
 **8. Which models?** Google's Gemini (`gemini-3.7-flash`) hears the clip and writes the answer in one call. Cartesia's text-to-speech (`sonic-3.6`, a stock voice; no one's voice is cloned) speaks it once the server has a key. Tonight there's no Cartesia key, so the walker speaks with its own voice.
 
@@ -250,7 +251,7 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
 
    Postgres 17 from Homebrew (`brew install postgresql@17`, if `/opt/homebrew/opt/postgresql@17/bin/initdb` doesn't exist), and `ffmpeg` for the Mac microphone (`brew install ffmpeg`).
 
-   **As run in the rehearsal:** the build and start commands below, with the database in a scratch folder. The pair and simulate commands differed: the rehearsal used a scratch state folder, the relay on port 3019, recorded clips and the patched bundle (see the rehearsal results). Run steps 6 and 7 once as written before judges arrive.
+   **As run in the rehearsal:** these commands as written, except that the database and the walker's state were in a scratch folder, the walker heard recorded clips (`--mic-file`, step 7) instead of the Mac's microphone, and `--out <a scratch folder>` kept its speech files. Run step 7 once with your own voice before judges arrive.
 2. **Settings.** `apps/web/.env.local` needs `GEMINI_API_KEY`. Check the names without showing values:
 
    ```bash
@@ -304,9 +305,11 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
      - `c`: Confirm;
      - `n`: a hand in front;
      - `f`: nothing in front;
+     - `o`: the walker's network down, and up again;
      - `q`: quit.
-   - **Not rehearsed:** the rehearsal used recorded clips instead of `--mic mac` and `--loud`. Run beats 1 to 5 once with your own voice before judges arrive.
-8. **Beat 6 in the simulator.** With `--server`, the simulator's network keys (`o`, `g`) don't work, and turning off the laptop's Wi-Fi doesn't cut a walker that talks to `localhost`. Until the simulator can cut its own link (see "Requests" below), skip beat 6 and say: "On the real walker, turning off its hotspot takes it offline, and it keeps its alerts working."
+   - **Without speaking:** `--mic-file <a folder of 16 kHz mono WAV clips>` instead of `--mic mac`. Number the clips (`1-ask.wav`, `2-obstacles.wav`, …): each Talk press plays the next one, starting again after the last. That's how the rehearsal ran; making clips is in [devices/pi/README.md](../../devices/pi/README.md#run-it-on-a-mac-simulator).
+   - **Not rehearsed:** `--mic mac` and `--loud` with a live voice.
+8. **Beat 6 in the simulator.** Press `o` to take the walker's network down and `o` again to bring it back. Turning off the laptop's Wi-Fi doesn't do it: the walker talks to `localhost`.
 9. **Screen.** Put the browser and the simulator's terminal side by side; the terminal is the walker's buttons. Click once on an empty part of the page, so the walker's name doesn't keep the focus ring it gets when the page switches to the walker. Close everything else. Do Not Disturb on.
 10. **Reset between judges.** On the page, "Forget this walker", then pair again (step 6) and restart the walker (step 7), so each judge sees the same starting state (vibration alerts, version 1).
 
@@ -331,66 +334,78 @@ Needs Max. None of the Pi steps has been run yet.
 
 ## Requests
 
-Found in the rehearsal; each has an owner. None is in the page.
+**Fixed since the first rehearsal** (on `main` at `37a691c`, and checked in this rehearsal):
+- #45, the Pi: `--mic-file` takes a folder or list and re-reads each clip at its press; `o` and `g` take the simulator offline against a real server; "Applied" comes within about half a second of the walker's Confirm; the offline line reaches the page once.
+- #44, the server: "All of this walker's parts are simulated." when every reported part is.
+- #43, the contract: `answered_by` is `fixed` whenever a fixed reply replaced the model's, as the server does.
 
-1. **Pi: one clip per run.** `walker simulate --mic-file` reads its clip once, so a run can only ever say one line. The rehearsal patched a scratch copy of the bundle to re-read the file at each Talk press. Smallest fix: re-read the `--mic-file` clip at each Talk press, as the rehearsal's patch did, so a script can swap the file between presses.
-2. **Pi: no offline switch against a real server.** With `--server`, the simulator's `o` and `g` keys only work with the fake cloud, so beat 6 can't be shown with the simulator. The rehearsal put a relay between the simulator and the server and stopped it. Smallest fix: with `--server`, make `o` and `g` fail or hang the HTTP client's requests in the simulator itself.
-3. **Server: a repeated "simulated" line.** On a walker whose every part is simulated, a "which parts…" answer gets "Some of this walker's parts are simulated." appended, after the model already said all of them are, for example "All of my parts are currently simulated… Some of this walker's parts are simulated." Smallest fix: when every reported part is simulated, append "All of this walker's parts are simulated." instead. (Not on `simulator` alone: a simulator can have a real part plugged in.)
-4. **Pi: "Applied" lags Confirm.** The page shows "Applied" only after the walker's next heartbeat reports the new version. That took 2.2 to 9.4 seconds after Confirm in the rehearsal (median 4.4 s). Smallest fix: send a heartbeat as soon as a new configuration is applied.
-5. **Pi: the same offline sentence twice.** Going offline, the walker says "I'm offline right now. …" once, and a Talk press then gets the same sentence. The page lists both, as "On the walker" and "On the walker, offline reply". It's correct, but reads repetitive; optional.
+**Found in this rehearsal,** each with an owner:
+1. **Server: an age in milliseconds, read aloud.** One of five obstacle answers said "…at 30 centimetres from 44 milliseconds ago." The others said "just now", "right now" or "less than a second ago". The model is shown each reading's age in milliseconds. Smallest fix: give the model the age as it should be said ("just now" under a second, then whole seconds).
+2. **Server, optional: the simulated line repeats the model.** All four "which parts…" answers already said every part is simulated before the server added "All of this walker's parts are simulated." The rule is structured and can't see the words. Optional fix: tell the model, in its policy, that the server adds this line, so it leaves it out.
+3. **Page: two announcements in the wrong order.** Now that "Applied" comes within half a second, it lands in the same poll as the offer's closing, and the live region reads "Your walker applied the new alerts. Confirmed. Switching your alerts to …". Smallest fix: in `useWalkerPage.ts`'s `applyList`, put the offer's closing line before the walker's other news. Owner: the page (this script's author).
+4. **Page Confirm, by design:** after the page's Confirm, "Applied" took about 6 seconds, because the walker hears of it with its next report (every 5 seconds). The script says to keep talking; no change needed.
 
 ## Rehearsal results
 
-**Date:** 2026-10-24, 04:38 to 04:44 PDT (the four runs; times from the simulator's logs). An earlier run at about 04:35 used a simulator bundle built from the previous branch, before #36, so "Walker and coordinator" read "Unavailable". The server's log shows its turns, offer, Confirm and arms answer went through; its results weren't kept, so it isn't in the table. **Code:** `main` at `beab832`, which includes the server (#31), the assistant turn (#39), the page (#34) and the Pi service with `base.walker` (#36). **Setup:**
+**Date:** 2026-10-24, 05:31 to 05:39 PDT (five runs; times from the simulator's logs). **Code:** `main` at `37a691c`, as merged, with no patches: the server (#31, #39, #44), the page (#34), the Pi service (#36, #45) and the contract (#43). **Setup:**
 - a production build of `apps/web` on port 3009, with a throwaway Postgres 17 (Homebrew) on port 55433 as `DATABASE_URL`;
 - Max's Gemini key from `apps/web/.env.local`, and no Cartesia key, so every spoken reply was offered "In the walker's own voice";
-- the walker simulator from `devices/pi` (bundled from `beab832`), paired from the page each run and talking to the server through a local relay on port 3019 (stopping the relay was beat 6's network cut);
+- the walker simulator, bundled from `37a691c`, paired from the page each run, talking to the server directly, with beat 6 cut by its own `o` key;
 - a headless Chromium at 1440 by 900 driving the page by keyboard;
-- a pty driver pressing the simulator's keys.
+- a terminal driver pressing the simulator's keys, holding Talk for 1.5 s from "mic open".
 
-**The spoken lines were synthetic.** macOS `say` read each line into a 16 kHz mono WAV, passed with `--mic-file`. Nothing played aloud. A scratch copy of the simulator's bundle was changed in one place, to re-read the clip at each Talk press (request 1); nothing else in it changed. Times come from the simulator's log (millisecond timestamps), the speech files' write times, and the page.
+**The spoken lines were synthetic.** macOS `say` read each line into a 16 kHz mono WAV, and each run passed a folder of them with `--mic-file`. Nothing played aloud. Times come from the simulator's log (millisecond timestamps), the speech files' write times, and the page.
 
-**Results.** Four runs: three with the scripted lines and the walker's Confirm, then one with fresh wordings and the page's Confirm. All four passed every beat:
+**Results.** Five runs, and every one passed every beat:
+- three with the scripted lines and the walker's Confirm;
+- one with the first alternates and the page's Confirm;
+- one with the second alternates and the walker's Confirm.
 
 | Run | 1. Boot | 2. Ask | 3. Obstacles | 4. Setting | 5. Arms | 6. Offline | Typed on the page |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Scripted 1 | pass | pass, 2.8 s | pass, 3.1 s | pass, 4.8 s, Applied 3.7 s | pass, 6.3 s | pass | 1.9 s |
-| Scripted 2 | pass | pass, 2.7 s | pass, 2.9 s | pass, 3.4 s, Applied 5.2 s | pass, 3.7 s | pass | 2.5 s |
-| Scripted 3 | pass | pass, 2.1 s | pass, 2.6 s | pass, 3.8 s, Applied 2.2 s | pass, 2.6 s | pass | 1.9 s |
-| Fresh (page Confirm) | pass | pass, 3.0 s | pass, 2.8 s | pass, 2.9 s, Applied 9.4 s | pass, 4.4 s | pass | 1.9 s |
+| Scripted 1 | pass | pass, 2.4 s | pass, 3.7 s | pass, 2.2 s, Applied 0.4 s | pass, 4.5 s | pass | 2.1 s |
+| Scripted 2 | pass | pass, 1.9 s | pass, 3.4 s | pass, 2.4 s, Applied 0.4 s | pass, 2.4 s | pass | 2.0 s |
+| Scripted 3 | pass | pass, 2.5 s | pass, 2.7 s | pass, 4.6 s, Applied 0.4 s | pass, 3.1 s | pass | 1.9 s |
+| Alternates 1 (page Confirm) | pass | pass, 3.3 s | pass, 2.7 s | pass, 2.4 s, Applied 6.1 s | pass, 3.0 s | pass | 1.8 s |
+| Alternates 2 | pass | pass, 4.0 s | pass, 3.3 s | pass, 3.1 s, Applied 0.4 s | pass, 3.4 s | pass | 1.6 s |
 
 Spoken beats give the time from releasing Talk to the reply's text arriving on the walker. "Applied" is from Confirm to the page showing "Applied". "Typed" is from Enter to the reply on the page.
 
 **What each beat checked, every run:**
-- **Boot:** "Steady is on." 0.1 s after start; the page "Online" within 1.5 s; every part "Healthy" and "Simulated", including "Walker and coordinator"; alerts "Version 1", "Applied".
+- **Boot:** "Steady is on." 0.1 to 0.2 s after start; the page "Online" in about 1.5 s; every part "Healthy" and "Simulated", including "Walker and coordinator"; alerts "Version 1", "Applied".
 - **Ask:** "You said (as heard by Gemini)" with the exact words, answered by the model, "In the walker's own voice".
-- **Obstacles:** the handle buzz within 0.1 s of the hand; when the page was read 6.5 s after the hand, it showed "Front left 30 cm" "Simulated", measured 2.8 to 4.5 s earlier; the answer gave 30 cm and 1.5 m and "These readings are simulated."; never "clear".
+- **Obstacles:**
+  - the handle buzz within 0.1 s of the hand;
+  - when the page was read 6.5 s after the hand, it showed "Front left 30 cm" "Simulated", measured 2.9 to 4.5 s earlier;
+  - the answer gave 30 cm and 1.5 m and "These readings are simulated."; never "clear".
 - **Setting:**
   - the exact server line and the offer card;
-  - Confirm gave configuration version 2 on the walker in under 0.1 s from its own button, or 3.1 s from the page, on its next heartbeat;
-  - the page went to "Version 2", "Short sounds", "Applied";
+  - Confirm gave configuration version 2 on the walker within 0.1 s from its own button, or 4.6 s from the page, at its next report;
+  - the page went to "Version 2", "Short sounds", "Applied", showing "Waiting for the walker" first in the page-Confirm run;
   - a hand in front then gave the short sound and no buzz.
 - **Arms:** the exact fixed line, "Answered by the fixed replies".
 - **Offline:**
-  - the walker was offline 6.5 to 9.9 s after the cut;
+  - the walker was offline 5.2 to 7.3 s after `o`;
   - a Talk press got "I'm offline right now. Your short-sound alerts still work. The obstacle sensor is simulated." at once;
-  - the page showed "Offline", every part "Unavailable" and every zone "Unknown" 13.4 to 16.2 s after the cut;
-  - after the relay restarted, the walker was online in 6.6 to 7.6 s and said "I'm back online.", and the page showed "Online" in 7.3 to 9.4 s, with the offline lines in the conversation. Those times are set by the walker's 15-second retry: in every run it came back exactly 15 s after its last failed try, and the relay happened to restart 7.4 to 8.4 s into that wait.
+  - the page showed "Offline", every part "Unavailable" and every zone "Unknown" 11.6 to 13.4 s after the cut;
+  - after `o` again, the walker was online in 7.1 to 7.6 s and said "I'm back online."; the page showed "Online" in 7.4 to 9.0 s, with the offline line once and "I'm back online." in the conversation.
 - **The page's polite live-region text,** in order, in run 2 (captured from the page; not heard through a screen reader):
   1. "Paired with My walker."
   2. each reply;
-  3. "Steady offers: Switch your alerts from buzzing to short sounds. Confirm or decline within a minute."
-  4. "Confirmed. Switching your alerts to spoken messages and short sounds."
-  5. "Your walker applied the new alerts."
-  6. "Your walker went offline."
-  7. "Your walker is back online." with the walker's offline lines.
+  3. "Steady offers: Switch your alerts from buzzing to short sounds. Confirm or decline within a minute.";
+  4. "Your walker applied the new alerts. Confirmed. Switching your alerts to spoken messages and short sounds." (in the wrong order: request 3);
+  5. "Your walker went offline.";
+  6. "Your walker is back online." with the walker's offline line;
+  7. "On the walker: I'm back online."
 
-**Timings over all 16 spoken turns:**
-- Talk released to the reply's text: 2.1 to 6.3 s, median 3.0 s. Three turns were over 4 s: 4.8, 6.3 and 4.4 s.
-- Talk released to the walker's speech file being written: 4.0 to 7.9 s, median 5.3 s; only 1 of 16 was under 4 s. That's the Mac's `say` writing the whole line to a file. The Pi's own voice also writes the whole line before playing it, so this may be closer to when a person would hear it than the text time. Time until speech is heard wasn't measured.
-- Talk released to the reply on the page: 2.9 to 6.5 s, median 4.2 s. The page asks for news every 1.5 s.
+**Timings over the 16 spoken turns of the first four runs** (the second-alternates run, 3.1 to 4.0 s, is in the table):
+- Talk released to the reply's text: 1.9 to 4.6 s, median 2.7 s. Two turns were over 4 s: 4.5 and 4.6 s.
+- Talk released to the walker's speech file being written: 3.8 to 6.9 s, median 5.0 s; 3 of 16 were under 4 s. That's the Mac's `say` writing the whole line to a file. The Pi's own voice also writes the whole line before playing it, so this may be closer to when a person would hear it than the text time. Time until speech is heard wasn't measured.
+- Talk released to the reply on the page: 2.3 to 5.4 s, median 3.5 s. The page asks for news every 1.5 s.
 
-**Screenshots** at 1440 by 900 of every beat in the first scripted run are in [walker-rehearsal/](walker-rehearsal/).
+The first rehearsal, on `beab832` before #43 to #45, used a patched simulator bundle and a relay for beat 6; its results are in this file's history.
+
+**Screenshots** at 1440 by 900 of every beat in the second scripted run are in [walker-rehearsal/](walker-rehearsal/).
 
 **Not verified here:**
 - the real Pi, its buttons, microphone and speaker, and the hotspot;
