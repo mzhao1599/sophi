@@ -4,7 +4,7 @@
  * screen that shows it carries a dashed "Sample" tag and SAMPLE_LINE. There is no community server yet.
  */
 
-export const SAMPLE_LINE = "Sample people for the demo. Sophi doesn't share anyone's location.";
+export const SAMPLE_LINE = "Sample people for the demo. This list does not use GPS or anyone's real location.";
 
 export interface SamplePerson {
   name: string;

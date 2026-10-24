@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import type { ProposalView, WalkerConfiguration, WalkerEventView, WalkerTurnView } from "@walker/contracts";
-import { OFFLINE_AFTER_MS } from "@walker/contracts";
+import { LOCATION_FIX_MAX_AGE_MS, OFFLINE_AFTER_MS } from "@walker/contracts";
 import { WALKER_MIGRATIONS } from "./migrations";
 import { decideAnswer, type Answer } from "./rules";
 import type {
@@ -134,6 +134,9 @@ export class PostgresWalkerStore implements WalkerStore {
         manifest: null,
         snapshot: null,
         snapshot_received_at: null,
+        location_sharing_enabled: false,
+        location: null,
+        location_received_at: null,
       };
       return { ok: true, device: record, configuration } as const;
     });
@@ -166,7 +169,10 @@ export class PostgresWalkerStore implements WalkerStore {
   async recordHeartbeat(deviceId: string, heartbeat: Heartbeat) {
     await this.transaction("record a heartbeat", async (db) => {
       await db.query(
-        `update walker_devices set last_heartbeat_at = $2, service_version = $3, manifest = $4, snapshot = $5, snapshot_received_at = $6 where id = $1`,
+        `update walker_devices set last_heartbeat_at = $2, service_version = $3, manifest = $4, snapshot = $5, snapshot_received_at = $6,
+           location = case when location_sharing_enabled and $7::jsonb is not null and $4::jsonb->>'simulator' = 'false' then $7::jsonb else location end,
+           location_received_at = case when location_sharing_enabled and $7::jsonb is not null and $4::jsonb->>'simulator' = 'false' then $8::timestamptz else location_received_at end
+         where id = $1`,
         [
           deviceId,
           heartbeat.at,
@@ -174,6 +180,8 @@ export class PostgresWalkerStore implements WalkerStore {
           JSON.stringify(heartbeat.manifest),
           heartbeat.snapshot && JSON.stringify(heartbeat.snapshot),
           heartbeat.snapshot ? heartbeat.at : null,
+          heartbeat.location ? JSON.stringify({ latitude: heartbeat.location.latitude, longitude: heartbeat.location.longitude }) : null,
+          heartbeat.location ? new Date(Date.parse(heartbeat.at) - heartbeat.location.age_ms).toISOString() : null,
         ],
       );
       if (heartbeat.events.length > 0) {
@@ -187,6 +195,18 @@ export class PostgresWalkerStore implements WalkerStore {
         );
       }
     });
+  }
+
+  async setLocationSharing(deviceId: string, memberId: string, enabled: boolean) {
+    const result = await this.query(
+      "set location sharing",
+      `update walker_devices set location_sharing_enabled = $3, location = null, location_received_at = null
+       where id = $1 and exists (
+         select 1 from walker_circle_members where id = $2 and device_id = $1 and role = 'walker_user' and state = 'member'
+       )`,
+      [deviceId, memberId, enabled],
+    );
+    return result.rowCount === 1;
   }
 
   async currentConfiguration(deviceId: string) {
@@ -305,6 +325,7 @@ export class PostgresWalkerStore implements WalkerStore {
 
   async sweep(now: Date, historySince: Date, triesSince: Date) {
     await this.transaction("delete old history", async (db) => {
+      await db.query("update walker_devices set location = null, location_received_at = null where location_received_at < $1", [new Date(now.getTime() - LOCATION_FIX_MAX_AGE_MS)]);
       await db.query("delete from walker_turns where created_at < $1", [historySince]);
       await db.query("delete from walker_lines where at < $1", [historySince]);
       await db.query("delete from walker_proposals where state <> 'open' and created_at < $1", [historySince]);
@@ -454,9 +475,11 @@ export class PostgresWalkerStore implements WalkerStore {
 
   async removeMember(deviceId: string, memberId: string) {
     if (!UUID.test(memberId)) return false;
-    // One statement: the cascade takes every message to or from them with it.
-    const { rowCount } = await this.query("remove a phone", "delete from walker_circle_members where device_id = $1 and id = $2", [deviceId, memberId]);
-    return rowCount === 1;
+    return this.transaction("remove a phone", async (db) => {
+      const { rows } = await db.query<{ role: string }>("delete from walker_circle_members where device_id = $1 and id = $2 returning role", [deviceId, memberId]);
+      if (rows[0]?.role === "walker_user") await db.query("update walker_devices set location_sharing_enabled = false, location = null, location_received_at = null where id = $1", [deviceId]);
+      return rows.length === 1;
+    });
   }
 
   async saveMessage(message: CircleMessageRecord, maxLive: number, now: Date) {
@@ -506,6 +529,7 @@ export class PostgresWalkerStore implements WalkerStore {
     await this.query("delete old circle data", "delete from walker_circle_invites where expires_at <= $1", [now]);
     await this.query("delete old circle data", "delete from walker_circle_messages where expires_at <= $1", [now]);
     await this.query("delete old circle data", "delete from walker_circle_members where state = 'waiting' and expires_at < $1", [lapsedBefore]);
+    await this.query("delete old location", "update walker_devices set location = null, location_received_at = null where location_received_at < $1", [new Date(now.getTime() - LOCATION_FIX_MAX_AGE_MS)]);
   }
 
   private async query<R extends object = object>(action: string, sql: string, values: unknown[]) {
@@ -579,7 +603,7 @@ async function insertConfiguration(db: PoolClient, deviceId: string, c: WalkerCo
   );
 }
 
-const DEVICE_COLUMNS = "id, owner_hash, name, service_version, created_at, last_heartbeat_at, manifest, snapshot, snapshot_received_at";
+const DEVICE_COLUMNS = "id, owner_hash, name, service_version, created_at, last_heartbeat_at, manifest, snapshot, snapshot_received_at, location_sharing_enabled, location, location_received_at";
 interface DeviceRow {
   id: string;
   owner_hash: string;
@@ -590,6 +614,9 @@ interface DeviceRow {
   manifest: DeviceRecord["manifest"];
   snapshot: DeviceRecord["snapshot"];
   snapshot_received_at: Date | null;
+  location_sharing_enabled: boolean;
+  location: DeviceRecord["location"];
+  location_received_at: Date | null;
 }
 function toDevice(r: DeviceRow): DeviceRecord {
   return {
@@ -602,6 +629,9 @@ function toDevice(r: DeviceRow): DeviceRecord {
     manifest: r.manifest,
     snapshot: r.snapshot,
     snapshot_received_at: iso(r.snapshot_received_at),
+    location_sharing_enabled: r.location_sharing_enabled,
+    location: r.location,
+    location_received_at: iso(r.location_received_at),
   };
 }
 

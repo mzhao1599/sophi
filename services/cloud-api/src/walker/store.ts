@@ -8,7 +8,7 @@ import type {
   WalkerEventView,
   WalkerTurnView,
 } from "@walker/contracts";
-import { CIRCLE_ITEM_RETENTION_MS } from "@walker/contracts";
+import { CIRCLE_ITEM_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS } from "@walker/contracts";
 import { decideAnswer, shouldExpire, type Answer } from "./rules";
 
 /**
@@ -30,6 +30,9 @@ export interface DeviceRecord {
   snapshot: SensorSnapshot | null;
   /** The server's clock when it received `snapshot`. */
   snapshot_received_at: string | null;
+  location_sharing_enabled: boolean;
+  location: { latitude: number; longitude: number } | null;
+  location_received_at: string | null;
 }
 
 /** The owner comes from the pairing code it claims. */
@@ -78,6 +81,7 @@ export interface Heartbeat {
   service_version: string;
   manifest: CapabilityManifest;
   snapshot: SensorSnapshot | null;
+  location?: { latitude: number; longitude: number; age_ms: number };
   /** Placed in time by the service; ones already stored (same event_id) are ignored. */
   events: WalkerEventView[];
 }
@@ -233,6 +237,8 @@ export interface WalkerStore extends CircleStore {
   devicesForOwner(ownerHash: string): Promise<DeviceRecord[]>;
 
   recordHeartbeat(deviceId: string, heartbeat: Heartbeat): Promise<void>;
+  /** Recheck the approved walker user's membership at write time; disabling clears the fix atomically. */
+  setLocationSharing(deviceId: string, memberId: string, enabled: boolean): Promise<boolean>;
   currentConfiguration(deviceId: string): Promise<WalkerConfiguration>;
   /** Marks the open proposal expired if it is past its expiry or the walker is offline at `now`. */
   expireProposals(deviceId: string, now: Date): Promise<void>;
@@ -344,6 +350,9 @@ export class MemoryWalkerStore implements WalkerStore {
       manifest: null,
       snapshot: null,
       snapshot_received_at: null,
+      location_sharing_enabled: false,
+      location: null,
+      location_received_at: null,
       configurations: [copy(configuration)],
       proposals: [],
       turns: [],
@@ -380,7 +389,21 @@ export class MemoryWalkerStore implements WalkerStore {
     d.manifest = copy(heartbeat.manifest);
     d.snapshot = copy(heartbeat.snapshot);
     d.snapshot_received_at = heartbeat.snapshot ? heartbeat.at : null;
+    if (d.location_sharing_enabled && heartbeat.location && !heartbeat.manifest.simulator) {
+      d.location = { latitude: heartbeat.location.latitude, longitude: heartbeat.location.longitude };
+      d.location_received_at = new Date(Date.parse(heartbeat.at) - heartbeat.location.age_ms).toISOString();
+    }
     for (const line of heartbeat.events) if (!d.lines.some((l) => l.event_id === line.event_id)) d.lines.push({ ...line });
+  }
+
+  async setLocationSharing(deviceId: string, memberId: string, enabled: boolean) {
+    const d = this.device(deviceId);
+    if (!d.members.some((m) => m.member_id === memberId && m.role === "walker_user" && m.state === "member")) return false;
+    d.location_sharing_enabled = enabled;
+    // A new opt-in must wait for a new fix; revocation erases the previous one immediately.
+    d.location = null;
+    d.location_received_at = null;
+    return true;
   }
 
   async currentConfiguration(deviceId: string) {
@@ -441,6 +464,10 @@ export class MemoryWalkerStore implements WalkerStore {
   async sweep(now: Date, historySince: Date, triesSince: Date) {
     const cutoff = historySince.getTime();
     for (const d of this.devices.values()) {
+      if (d.location_received_at && ms(d.location_received_at) < now.getTime() - LOCATION_FIX_MAX_AGE_MS) {
+        d.location = null;
+        d.location_received_at = null;
+      }
       d.turns = d.turns.filter((t) => ms(t.turn.created_at) >= cutoff);
       d.lines = d.lines.filter((l) => ms(l.at) >= cutoff);
       d.proposals = d.proposals.filter((p) => p.state === "open" || ms(p.created_at) >= cutoff);
@@ -566,6 +593,11 @@ export class MemoryWalkerStore implements WalkerStore {
   /** Removes a member wherever it is, with every message to or from it. */
   private dropMember(memberId: string) {
     for (const d of this.devices.values()) {
+      if (d.members.some((m) => m.member_id === memberId && m.role === "walker_user")) {
+        d.location_sharing_enabled = false;
+        d.location = null;
+        d.location_received_at = null;
+      }
       d.members = d.members.filter((m) => m.member_id !== memberId);
       d.messages = d.messages.filter((m) => m.from_member_id !== memberId && m.to_member_id !== memberId);
     }
@@ -573,6 +605,10 @@ export class MemoryWalkerStore implements WalkerStore {
 
   async sweepCircle(now: Date, lapsedBefore: Date) {
     for (const d of this.devices.values()) {
+      if (d.location_received_at && ms(d.location_received_at) < now.getTime() - LOCATION_FIX_MAX_AGE_MS) {
+        d.location = null;
+        d.location_received_at = null;
+      }
       d.invites = d.invites.filter((i) => ms(i.expires_at) > now.getTime());
       d.messages = d.messages.filter((m) => ms(m.expires_at) > now.getTime());
       d.members = d.members.filter((m) => m.state === "member" || m.expires_at === null || ms(m.expires_at) >= lapsedBefore.getTime());
@@ -608,5 +644,8 @@ function publicDevice(d: MemoryDevice): DeviceRecord {
     manifest: copy(d.manifest),
     snapshot: copy(d.snapshot),
     snapshot_received_at: d.snapshot_received_at,
+    location_sharing_enabled: d.location_sharing_enabled,
+    location: copy(d.location),
+    location_received_at: d.location_received_at,
   };
 }

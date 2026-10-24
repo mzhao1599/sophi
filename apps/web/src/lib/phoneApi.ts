@@ -7,6 +7,7 @@ import {
   OwnerPhonesResponseSchema,
   PRESET_REPLIES,
   PhoneHomeResponseSchema,
+  LocationSharingResponseSchema,
   PhoneMessageViewSchema,
   PhonePersonSchema,
   PhoneRoleSchema,
@@ -38,6 +39,7 @@ import type { z } from "zod";
  * - POST /api/v1/circle/messages  { client_message_id, text } (a caretaker types)
  *                                 { client_message_id, preset, to_member_id } (her phone taps a preset)
  *                                 → 201 { message: PhoneMessageView }
+ * - PUT  /api/v1/circle/location-sharing { enabled: true, consent: true } or { enabled: false } → { enabled } (walker user only)
  * Owner routes (the `walker_owner` cookie):
  * - GET    /api/v1/walkers/{id}/circle                     → OwnerPhonesResponse
  * - POST   /api/v1/walkers/{id}/circle/invites             { name, role } → 201 { invite }
@@ -64,6 +66,8 @@ export type PhoneMember = Extract<PhoneHome, { membership: "member" }>;
 export interface PhoneApi {
   /** GET /api/v1/circle. A phone with no cookie, or a removed one, fails with `unauthenticated`. */
   home(signal?: AbortSignal): Promise<PhoneHome>;
+  /** Only her approved phone can change this. Turning off erases the server's last fix. */
+  setLocationSharing(enabled: boolean): Promise<boolean>;
   /** POST /api/v1/circle/join with the 6-digit code; sets the member cookie. */
   join(code: string): Promise<PhoneHome>;
   /** A caretaker's typed message to her phone. Reusing `clientMessageId` gets the same message back. */
@@ -143,6 +147,9 @@ const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.strin
 export function createPhoneApi(fetchImpl: typeof fetch = (...args) => fetch(...args)): PhoneApi {
   return {
     home: (signal) => circleCall(fetchImpl, BASE, { method: "GET", signal }, PhoneHomeSchema),
+    async setLocationSharing(enabled) {
+      return (await circleCall(fetchImpl, `${BASE}/location-sharing`, { method: "PUT", body: JSON.stringify(enabled ? { enabled: true, consent: true } : { enabled: false }) }, LocationSharingResponseSchema)).enabled;
+    },
     join: (code) => circleCall(fetchImpl, `${BASE}/join`, post({ code, consent: { circle_data_notice: true } }), PhoneHomeSchema),
     async sendText(clientMessageId, text) {
       const body = post({ client_message_id: clientMessageId, text });

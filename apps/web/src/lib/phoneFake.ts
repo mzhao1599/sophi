@@ -109,6 +109,7 @@ export function createDemoCircle(): DemoCircle {
   let invites: Invite[] = [];
   let messages: StoredMessage[] = [];
   const walker = { walker_name: "My walker", online: true, simulator: false, alerts: ["sound", "spoken"] as Cue[] };
+  let locationSharing = false;
   let pending: PhoneFailure | null = null;
   let count = 0;
 
@@ -130,7 +131,7 @@ export function createDemoCircle(): DemoCircle {
     return PhoneHomeSchema.parse({
       membership: "member",
       me: { member_id: m.member_id, name: m.name, role: m.role },
-      walker: { ...walker, alerts: [...walker.alerts], parts: m.role === "caregiver" ? PARTS(walker.online, walker.simulator) : null, battery: "not_measured" },
+      walker: { ...walker, alerts: [...walker.alerts], parts: m.role === "caregiver" ? PARTS(walker.online, walker.simulator) : null, battery: "not_measured", ...(locationSharing ? { location_sharing_enabled: true, location: null } : {}) },
       people,
       messages: messages.filter((x) => x.from_member_id === m.member_id || x.to_member_id === m.member_id).map((x) => view(x, m)),
     });
@@ -180,6 +181,12 @@ export function createDemoCircle(): DemoCircle {
         async home() {
           take();
           return homeFor(me());
+        },
+        async setLocationSharing(enabled) {
+          take();
+          if (approvedMe().role !== "walker_user") fail("not_allowed");
+          locationSharing = enabled;
+          return enabled;
         },
         async join(code) {
           take();

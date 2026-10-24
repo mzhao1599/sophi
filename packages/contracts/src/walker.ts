@@ -28,6 +28,8 @@ export const OFFLINE_AFTER_MS = 15_000;
  * one heartbeat, so readings don't flicker to unknown between reports; a turn carries its own snapshot.
  */
 export const SNAPSHOT_MAX_AGE_MS = HEARTBEAT_INTERVAL_MS + 2_000;
+/** The latest shared GPS fix is shown for at most one minute; sweeps erase expired fixes. */
+export const LOCATION_FIX_MAX_AGE_MS = 60_000;
 /** A proposal not answered by then is expired. */
 export const PROPOSAL_TTL_MS = 60_000;
 export const PAIRING_CODE_TTL_MS = 10 * 60_000;
@@ -407,6 +409,8 @@ export const HeartbeatRequestSchema = z.strictObject({
   manifest: CapabilityManifestSchema,
   /** null when the walker has no obstacle sensors attached. */
   snapshot: SensorSnapshotSchema.nullable(),
+  /** Present only after the server has enabled sharing; absent on older Pi software. */
+  location: z.strictObject({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), age_ms: z.int().min(0).max(30_000) }).optional(),
   /** Lines said since the last heartbeat that succeeded, newest MAX_QUEUED_EVENTS at most. */
   events: z
     .array(WalkerEventSchema)
@@ -421,6 +425,8 @@ export type HeartbeatRequest = z.infer<typeof HeartbeatRequestSchema>;
  */
 export const HeartbeatResponseSchema = z.strictObject({
   configuration_version: z.int().positive(),
+  /** Missing on older servers means off. Only the walker user's phone can change this. */
+  location_sharing_enabled: z.boolean().optional(),
   open_proposal: ProposalViewSchema.refine((p) => p.state === "open", "Only an open proposal is open.").nullable(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponseSchema>;

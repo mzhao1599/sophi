@@ -17,7 +17,7 @@ The demonstration should show a complete path: accessible onboarding → explain
 | 2. Local assistance | Buttons and ToF cause appropriate haptic cues offline | Debounce, stale-sensor behavior, visible logs, Pi disconnect behavior |
 | 3. Conversational walker | Push-to-talk turn uses current capabilities and settings | Authenticated Pi-to-cloud request, transcript, tool audit, offline fallback |
 | 4. Supervised arm demo | One or both arms execute a bounded pick/place task | Physical stop, homing, workspace/lift limits, user start/cancel, fault recovery |
-| Later | GPS/caregiver location, richer autonomy, broader connectors | Separate consent and safety reviews |
+| Later | GPS hardware verification, richer autonomy, broader connectors | Confirm the receiver, USB adapter, antenna placement and fix accuracy before any location demo |
 
 Two SO-101 arms, overhead/gripper cameras, and a lift are the target hardware. Stage 4 can demonstrate one arm first while the second arm and lift are integrated; the architecture and contracts should support both from the start. Do not represent a simulated arm as a working assistive feature.
 
@@ -47,7 +47,7 @@ These are proposals, not installed dependencies. Pin versions and commit lockfil
 | `voice` | Push-to-talk input and spoken output | Ask a question without typing | Microphone/speaker and consent | Optional |
 | `manipulation.arm` | Supervised reach/grasp | Retrieve a light object in a tested workspace | Camera, arm(s), power, stop circuit, user start | Optional |
 | `manipulation.lift` | Change arm working height | Reach objects at tested heights | Homed lift, hard limits, guarded motion | Optional |
-| `location.gps` | Location display/sharing | Locate a device after an opt-in request | Receiver, connectivity, caregiver consent | Deferred |
+| `location.gps` | Location display/sharing | Show a recent GPS fix to approved caretakers after the walker user's phone opts in | Receiver, connectivity, consent | Software written; hardware unverified |
 
 Catalog metadata should also carry cost/weight/power estimates, compatibility, availability, limitations, and a human-readable rationale. Unknown estimates must be labeled unknown rather than filled with guesses. The agent may recommend from this catalog but cannot invent modules or treat a disability label as consent.
 
@@ -70,7 +70,7 @@ Catalog metadata should also carry cost/weight/power estimates, compatibility, a
 5. ToF sensor model/count/mounting, interference/crosstalk, effective range under daylight, and haptic mapping with user feedback.
 6. Whether voice hardware uses an ESP32 audio path or a Pi USB microphone/speaker for the first demo. Both fit the same app-level contract.
 7. Model, speech providers, data retention durations, and costs. Pick only after measuring latency and accessibility of the full voice turn.
-8. GPS use case, caregiver authorization, and consent UX. Leave disabled until specified.
+8. GPS hardware bring-up and accuracy remain to be checked. Software sharing is off by default; the walker user's linked phone controls it, and approved caregivers alone see a recent fix.
 
 Record each resolved decision with date, owner, evidence, and affected files in this document or a small `docs/decisions/` entry. Bench measurements supersede design assumptions.
 

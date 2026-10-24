@@ -292,15 +292,15 @@ What it ran on (2026-10-24): a Raspberry Pi 5, 4 GB, on the official 27 W USB-C 
 
 To stop it: `sudo systemctl stop steady-walker`. To keep it from starting at boot: `sudo systemctl disable steady-walker`.
 
-### USB GPS bring-up (local only)
+### USB GPS bring-up and sharing
 
 `walker gps` was installed on the Pi on 2026-10-24 for a USB receiver that exposes a Linux serial tty and sends NMEA RMC sentences. The purchased receiver has **not** yet been plugged into this Pi, so its USB adapter, baud rate, and ability to get a fix are unverified. A bare UART GPS board needs a USB-to-UART adapter; a USB power cable alone does not carry its data.
 
 1. Plug the GPS in and compare `ls -l /dev/serial/by-path/` with the two existing hand-controller ports. Pick the new GPS link, not a `/dev/ttyUSB0` number (those numbers can change after reboot). If no new serial link appears, inspect `lsusb` and the receiver's USB wiring before changing software.
-2. Add `WALKER_GPS_PORT=/dev/serial/by-path/<GPS link>` to `/etc/steady-walker.env` and restart `steady-walker`. This makes the ESP32 scanner skip that tty. The service does **not** read, store, report, or share coordinates.
+2. Add `WALKER_GPS_PORT=/dev/serial/by-path/<GPS link>` to `/etc/steady-walker.env` and restart `steady-walker`. This makes the ESP32 scanner skip that tty. `WALKER_GPS_BAUD` defaults to 9600; set it to the receiver's actual baud if different. Sharing remains off until the walker user turns it on from their own phone.
 3. Run `sudo -u steady node /opt/steady-walker/walker.mjs gps --port /dev/serial/by-path/<GPS link> --wait 90`. It listens for at most 90 seconds and prints one receiver-reported fix to **that terminal only**, then exits. It validates each RMC checksum and the valid-fix flag. No fix means the receiver is talking but has not reported a valid position; no RMC data means check the path, NMEA mode, and baud. `--baud` defaults to 9600 as a bring-up choice, **not** a confirmed setting for this unit. Use the receiver's documented baud if different.
 
-Try for a fix outdoors with a view of the sky. The reported coordinates do not establish navigation-grade accuracy, and GPS often fails indoors. Location is not in the walker manifest, cloud context, caregiver page, or activity log. Sharing needs a separate opt-in design and implementation.
+Try for a fix outdoors with a view of the sky. The reported coordinates do not establish navigation-grade accuracy, and GPS often fails indoors. Once the walker user enables sharing in **My walker** on their phone, the running Pi samples this port, sends a fresh fix in its heartbeat, and the server shows only the latest fix to approved caretakers. If sharing is off, the Pi closes the GPS port and the server ignores any coordinates; turning it off erases the saved fix. A fix older than one minute or from an offline walker is hidden. The server does not store a trail, send coordinates to the assistant, or write them to ordinary logs. The receiver has still not been plugged in for a hardware check. While sharing is on, stop the service before running `walker gps` directly, since both processes would otherwise read the same tty.
 
 ### Optional: the Piper voice
 
@@ -441,7 +441,8 @@ The status strip says Online or Offline, the time when the clock has synced, and
 | `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT` | unset | The follower arms' servo adapters: a link in `/dev/serial/by-id/` (or `/dev/serial/by-path/` for adapters that share a serial number), never `/dev/ttyACM0`. Read by `walker check` today; the motion coordinator (branch `claude/motion-arms`, not merged) reads the same names. |
 | `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` | unset | The leader (teaching) arms' adapters, the same way. |
 | `WALKER_STOP_SENSE` | `not_wired` | `gpio:<BCM line>` when the hardware stop's normally closed stop-sense contact is wired to that Pi line, else `not_wired`. Declared by the installer, never inferred. Read by `walker check` today (and by the coordinator, not merged). |
-| `WALKER_GPS_PORT` | unset | Explicit USB serial path for an optional NMEA GPS receiver. The service excludes the same tty from ESP32 scanning. It reads no coordinates; `walker gps` is a separate local check. |
+| `WALKER_GPS_PORT` | unset | Explicit USB serial path for an optional NMEA GPS receiver. The service excludes the same tty from ESP32 scanning. It reads fixes only after the user's opt-in arrives from the server. |
+| `WALKER_GPS_BAUD` | `9600` | GPS serial baud rate. Confirm it from the receiver or bring-up command. |
 | `WALKER_SCREEN_PORT` | `8740` | The walker screen page's port on 127.0.0.1 (1024 to 65535), or `off` for no screen page. Also read by `walker simulate --screen`. |
 | `WALKER_SCREEN_ASSETS` | `screen-page` beside `walker.mjs` | Where the page's built files are (`/opt/steady-walker/screen-page` on the Pi). |
 | `WALKER_SCREEN_GREETING` | unset | A name for "Good evening, Nan" on the clock (up to 12 characters), until the circle brings her own. |

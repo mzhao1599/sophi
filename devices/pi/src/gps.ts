@@ -31,8 +31,9 @@ export function parseRmc(line: string): GpsReading | null {
   return latitude === null || longitude === null ? { status: "no_fix" } : { status: "fix", latitude, longitude };
 }
 
-/** One local bring-up read. Coordinates go only to the invoking terminal, never to the walker cloud. */
-export async function readGps(port: string, baud: number, waitMs: number): Promise<GpsResult> {
+/** One bounded receiver read. The CLI prints its result locally; the sampler uses it only after opt-in. */
+export async function readGps(port: string, baud: number, waitMs: number, signal?: AbortSignal): Promise<GpsResult> {
+  if (signal?.aborted) throw new Error("GPS read cancelled.");
   if (!Number.isInteger(baud) || baud < 1200 || baud > 230400) throw new Error("GPS baud must be 1200–230400.");
   if (!Number.isInteger(waitMs) || waitMs < 1000 || waitMs > 180000) throw new Error("GPS wait must be 1–180 seconds.");
   if (!port.startsWith("/dev/") || !statSync(port).isCharacterDevice()) throw new Error("GPS port must be a /dev/ serial device.");
@@ -49,7 +50,8 @@ export async function readGps(port: string, baud: number, waitMs: number): Promi
       settled = true;
       clearTimeout(timer);
       clearInterval(poll);
-      closeSync(fd);
+      signal?.removeEventListener("abort", abort);
+      try { closeSync(fd); } catch { /* The receiver may have been unplugged. */ }
       if (result instanceof Error) reject(result);
       else resolve(result);
     };
@@ -71,5 +73,58 @@ export async function readGps(port: string, baud: number, waitMs: number): Promi
         if ((error as NodeJS.ErrnoException).code !== "EAGAIN") finish(error as Error);
       }
     }, 100);
+    const abort = () => finish(new Error("GPS read cancelled."));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
   });
+}
+
+/** Keeps only one fresh fix in memory, and opens the USB GPS only after sharing is enabled by the server. */
+export class GpsSampler {
+  private enabled = false;
+  private epoch = 0;
+  private abort: AbortController | null = null;
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  private fix: { latitude: number; longitude: number; at: number } | null = null;
+
+  constructor(private readonly port: string, private readonly baud: number, private readonly onError: (error: Error) => void) {}
+
+  setEnabled(enabled: boolean): void {
+    if (enabled === this.enabled) return;
+    this.enabled = enabled;
+    this.epoch += 1;
+    this.abort?.abort();
+    if (this.retry) clearTimeout(this.retry);
+    this.abort = null;
+    this.retry = null;
+    this.fix = null;
+    if (enabled) void this.sample(this.epoch);
+  }
+
+  current(): { latitude: number; longitude: number; age_ms: number } | null {
+    if (!this.enabled || !this.fix) return null;
+    const age = Math.max(0, Math.floor(performance.now() - this.fix.at));
+    return age <= 30_000 ? { latitude: this.fix.latitude, longitude: this.fix.longitude, age_ms: age } : null;
+  }
+
+  stop(): void { this.setEnabled(false); }
+
+  private async sample(epoch: number): Promise<void> {
+    const abort = new AbortController();
+    this.abort = abort;
+    try {
+      const result = await readGps(this.port, this.baud, 4_000, abort.signal);
+      if (epoch === this.epoch) this.fix = result.status === "fix" ? { latitude: result.latitude, longitude: result.longitude, at: performance.now() } : null;
+    } catch (error) {
+      if (epoch === this.epoch) {
+        this.fix = null;
+        this.onError(error as Error);
+      }
+    } finally {
+      if (epoch === this.epoch && this.enabled) {
+        this.abort = null;
+        this.retry = setTimeout(() => void this.sample(epoch), 5_000);
+      }
+    }
+  }
 }

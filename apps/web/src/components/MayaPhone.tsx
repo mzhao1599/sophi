@@ -13,8 +13,8 @@ const HEADING = "maya-heading";
 
 /**
  * The caretaker's phone: whether her walker is online, its part health and the alerts in force; messages
- * with her phone; and the sample of people nearby. Never her conversation, her location or any activity time
- * (the server sends none). There is no "suggest a change" here: the server has no route for one yet.
+ * with her phone; and the sample of people nearby. A recent GPS position appears only while she has opted
+ * in on her own phone. There is no "suggest a change" here: the server has no route for one yet.
  */
 export function MayaPhone({
   home,
@@ -123,6 +123,16 @@ function WalkerStatus({ home }: { home: PhoneMember }) {
             ))}
           </ul>
         )}
+      </section>
+      <section className={styles.card} aria-labelledby="location-title">
+        <h2 id="location-title" className={styles.cardTitle}>Walker's location</h2>
+        {w.location ? (
+          <>
+            <p>{w.location.latitude.toFixed(5)}, {w.location.longitude.toFixed(5)}</p>
+            <p>GPS fix from about {w.location.age_seconds} seconds ago. Accuracy is not verified.</p>
+            <a href={`https://www.openstreetmap.org/?mlat=${w.location.latitude}&mlon=${w.location.longitude}#map=16/${w.location.latitude}/${w.location.longitude}`} target="_blank" rel="noopener noreferrer">Open in OpenStreetMap (shares this position with OpenStreetMap)</a>
+          </>
+        ) : <p>{w.location_sharing_enabled ? "No recent GPS fix available." : "Location sharing is off."}</p>}
       </section>
       <p className={styles.card}>{BATTERY_LINE}</p>
     </section>

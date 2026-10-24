@@ -14,6 +14,8 @@ import {
   PHONE_JOIN_TTL_MS,
   PRESET_REPLIES,
   PhoneHomeResponseSchema,
+  LOCATION_FIX_MAX_AGE_MS,
+  LocationSharingResponseSchema,
   PhoneSendMessageResponseSchema,
   type AddPhoneRequest,
   type ApproveJoinRequest,
@@ -21,8 +23,10 @@ import {
   type CircleInvite,
   type CircleMember,
   type JoinCircleRequest,
+  type LocationSharingRequest,
   type OwnerPhonesResponse,
   type PhoneHomeResponse,
+  type PhoneWalkerView,
   type PhoneMessageView,
   type PhonePerson,
   type PhoneSendMessageRequest,
@@ -205,6 +209,14 @@ export class CircleService {
     return this.homeFor(member, this.now());
   }
 
+  /** Her approved phone alone can enable or revoke caregiver GPS sharing. */
+  async locationSharing(caller: MemberCaller, request: LocationSharingRequest): Promise<{ enabled: boolean }> {
+    const member = await this.member(caller);
+    if (member.state !== "member" || member.role !== "walker_user") throw new CircleError("not_allowed", "Only the walker user's phone can change location sharing.");
+    if (!(await this.store.setLocationSharing(member.device_id, member.member_id, request.enabled))) throw unauthenticated();
+    return LocationSharingResponseSchema.parse({ enabled: request.enabled });
+  }
+
   /** A caretaker types to her phone; her phone sends a preset to one caretaker. */
   async sendMessage(caller: MemberCaller, request: PhoneSendMessageRequest): Promise<{ message: PhoneMessageView }> {
     const member = await this.member(caller);
@@ -272,6 +284,7 @@ export class CircleService {
         alerts: configuration.cues,
         parts: member.role === "caregiver" ? partViews(device, configuration, online) : null,
         battery: "not_measured",
+        ...(device.location_sharing_enabled ? { location_sharing_enabled: true, location: visibleLocation(device, member.role, online, now) } : {}),
       },
       people: circle.members.filter((m) => m.state === "member").map(person),
       messages: messages.map((m) => messageView(m, member.member_id, names)),
@@ -313,6 +326,13 @@ function memberView(m: CircleMemberRecord): CircleMember {
 
 function person(m: CircleMemberRecord): PhonePerson {
   return { member_id: m.member_id, name: m.name, role: m.role };
+}
+
+function visibleLocation(device: DeviceRecord, role: CircleMemberRecord["role"], online: boolean, now: Date): PhoneWalkerView["location"] {
+  if (role !== "caregiver" || !online || !device.location_sharing_enabled || !device.location || !device.location_received_at) return null;
+  const age = now.getTime() - Date.parse(device.location_received_at);
+  if (!Number.isFinite(age) || age < 0 || age > LOCATION_FIX_MAX_AGE_MS) return null;
+  return { ...device.location, age_seconds: Math.floor(age / 1_000) };
 }
 
 function messageView(m: CircleMessageRecord, me: string, names: Map<string, string>): PhoneMessageView {

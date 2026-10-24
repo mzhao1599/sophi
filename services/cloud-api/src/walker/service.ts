@@ -261,11 +261,15 @@ export class WalkerService {
       .filter((e) => Date.parse(e.at) >= historySince);
     await this.store.recordHeartbeat(
       device.device_id,
-      storable({ at: now.toISOString(), service_version: request.service_version, manifest: request.manifest, snapshot: request.snapshot, events }),
+      storable({ at: now.toISOString(), service_version: request.service_version, manifest: request.manifest, snapshot: request.snapshot, location: request.location, events }),
     );
     await this.sweep(now);
-    const [configuration, proposal] = await Promise.all([this.store.currentConfiguration(device.device_id), this.store.openProposal(device.device_id)]);
-    return HeartbeatResponseSchema.parse({ configuration_version: configuration.version, open_proposal: proposal ?? null });
+    const [configuration, proposal, latest] = await Promise.all([
+      this.store.currentConfiguration(device.device_id),
+      this.store.openProposal(device.device_id),
+      this.store.deviceForOwner(device.device_id, device.owner_hash),
+    ]);
+    return HeartbeatResponseSchema.parse({ configuration_version: configuration.version, open_proposal: proposal ?? null, ...(latest?.location_sharing_enabled ? { location_sharing_enabled: true } : {}) });
   }
 
   async configuration(caller: DeviceCaller, deviceId: string): Promise<{ configuration: WalkerConfiguration }> {

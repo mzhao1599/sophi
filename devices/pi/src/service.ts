@@ -53,6 +53,8 @@ export interface ServiceDeps {
   coordinatorInstanceId: string;
   /** The Pi's own GPIO Talk and Confirm buttons, only when the installer declared them wired (never in the simulator). */
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
+  /** Optional GPS reader. The server's per-heartbeat opt-in is its only enable signal. */
+  location?: { setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; stop(): void };
   newId?: () => string;
 }
 
@@ -207,6 +209,7 @@ export class WalkerService {
   private lastRecorded: { text: string; mono: number } | null = null;
   private cancelHeartbeat: Cancel | null = null;
   private stopped = false;
+  private locationSharingEnabled = false;
   private readonly audioFaults = new Set<string>();
   private readonly voice: VoiceQueue;
   private readonly cues: CuePolicy;
@@ -241,6 +244,7 @@ export class WalkerService {
 
   stop(): void {
     this.stopped = true;
+    this.deps.location?.stop();
     this.cancelHeartbeat?.();
     this.recording?.session?.abort();
     this.recording?.cancelMax?.();
@@ -674,11 +678,13 @@ export class WalkerService {
       if (!cloud) return;
       const events = this.deps.store.pendingEvents(this.deps.clock.monotonic());
       const epoch = this.proposalEpoch;
+      const location = this.locationSharingEnabled ? this.deps.location?.current() : null;
       const body: HeartbeatRequest = {
         sent_at: iso(this.deps.clock.now()),
         service_version: SERVICE_VERSION,
         manifest: this.manifest(),
         snapshot: this.snapshotIfSensors(),
+        ...(location ? { location } : {}),
         events,
       };
       try {
@@ -689,6 +695,8 @@ export class WalkerService {
         const wasOffline = this.link === "offline";
         this.failures = 0;
         this.setLink("online");
+        this.locationSharingEnabled = response.location_sharing_enabled === true;
+        this.deps.location?.setEnabled(this.locationSharingEnabled);
         if (wasOffline) void this.say(LINES.backOnline, "notice");
         const open = response.open_proposal;
         if (open && this.unheardTurns.includes(open.client_turn_id)) {
@@ -945,6 +953,10 @@ export class WalkerService {
   private setLink(state: LinkState): void {
     if (this.link === state) return;
     this.link = state;
+    if (state !== "online") {
+      this.locationSharingEnabled = false;
+      this.deps.location?.setEnabled(false);
+    }
     this.deps.bus.emit("link", { state });
   }
 }

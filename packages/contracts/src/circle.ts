@@ -580,7 +580,8 @@ export const SendMessageResponseSchema = z.strictObject({ message: MemberMessage
 // change to what it parses (walker.ts, device.ts). The member routes are the ones above (`walker_member`
 // cookie, path /api/v1/circle) with these shapes. A phone sees whether the walker is online, the alerts in
 // force, part health (caretaker only) and the messages between the phones. Never her conversation, her
-// location or any activity time: no member shape here carries a time except a waiting join's expiry.
+// location by default or any activity time: the optional current GPS fix below is caregiver-only after
+// the walker user's separate opt-in, and carries age rather than a history timestamp.
 
 /** The roles a phone can be added as. */
 export const PhoneRoleSchema = z.enum(["walker_user", "caregiver"]);
@@ -617,7 +618,7 @@ export type OwnerPhonesResponse = z.infer<typeof OwnerPhonesResponseSchema>;
  */
 export function caregiverConsentLine(caregiverName: string, walkerUserName: string | null): string {
   const who = walkerUserName ?? "The person who uses this walker";
-  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and its alerts, and exchange short messages with ${walkerUserName ? "her" : "them"}.`;
+  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"}, and see a recent GPS position only if location sharing is turned on later.`;
 }
 
 /** POST /api/v1/walkers/{id}/circle/joins/{member_id}: the owner approves a waiting caretaker. Declining is DELETE on the member. */
@@ -676,8 +677,20 @@ export const PhoneWalkerViewSchema = z.strictObject({
   parts: z.array(PartViewSchema).max(32).nullable(),
   /** No walker measures its battery yet: the app says "Battery: not measured on this walker". */
   battery: z.literal("not_measured"),
+  /** Caregiver only; null when off, stale, offline or no fix. Never shown on the walker user's phone. */
+  location: z.strictObject({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), age_seconds: z.int().min(0).max(60) }).nullable().optional(),
+  /** The walker user may see the toggle state. A caregiver may see it, but cannot change it. */
+  location_sharing_enabled: z.boolean().optional(),
 });
 export type PhoneWalkerView = z.infer<typeof PhoneWalkerViewSchema>;
+
+/** PUT /api/v1/circle/location-sharing, only from the walker user's member cookie. Revocation needs no consent flag. */
+export const LocationSharingRequestSchema = z.union([
+  z.strictObject({ enabled: z.literal(true), consent: z.literal(true) }),
+  z.strictObject({ enabled: z.literal(false) }),
+]);
+export const LocationSharingResponseSchema = z.strictObject({ enabled: z.boolean() });
+export type LocationSharingRequest = z.infer<typeof LocationSharingRequestSchema>;
 
 /**
  * GET /api/v1/circle in the two-phone app, and the answer to POST /api/v1/circle/join. `waiting`: a

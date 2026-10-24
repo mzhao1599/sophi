@@ -135,15 +135,32 @@ export function RosePhone({
           Back
         </button>
       )}
-      {screen === "walker" ? <MyWalker home={home} /> : null}
+      {screen === "walker" ? <MyWalker home={home} api={api} refresh={refresh} announce={announce} /> : null}
       {screen === "messages" ? <Messages home={home} api={api} refresh={refresh} announce={announce} /> : null}
       {screen === "nearby" ? <NearbySample role="walker_user" heading="People nearby" headingId={HEADING} /> : null}
     </div>
   );
 }
 
-function MyWalker({ home }: { home: PhoneMember }) {
+function MyWalker({ home, api, refresh, announce }: { home: PhoneMember; api: PhoneApi; refresh(): Promise<void>; announce(text: string): void }) {
   const w = home.walker;
+  const [changing, setChanging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function changeSharing() {
+    if (changing) return;
+    const enabled = !w.location_sharing_enabled;
+    setChanging(true);
+    setError(null);
+    try {
+      await api.setLocationSharing(enabled);
+      await refresh();
+      announce(enabled ? "Location sharing is on." : "Location sharing is off. The saved position was erased.");
+    } catch {
+      setError("Couldn't change location sharing. Try again.");
+    } finally {
+      setChanging(false);
+    }
+  }
   return (
     <section className={styles.screen} aria-labelledby={HEADING}>
       <div className={styles.titleRow}>
@@ -157,8 +174,17 @@ function MyWalker({ home }: { home: PhoneMember }) {
         <span className={styles.big}>{statusSentence(w)}</span>
       </p>
       <p className={styles.bigBody}>{alertsSentence(w.alerts)}</p>
+      <section className={styles.card} aria-labelledby="location-sharing-title">
+        <h2 id="location-sharing-title" className={styles.cardTitle}>Location sharing</h2>
+        <p>Only approved caretakers can see your walker's latest GPS position. Sharing starts off. You can turn it off at any time; that erases the saved position.</p>
+        <p>{w.location_sharing_enabled ? "Sharing is on." : "Sharing is off."}</p>
+        <button type="button" className={styles.primary} aria-pressed={w.location_sharing_enabled === true} disabled={changing} onClick={() => void changeSharing()}>
+          {changing ? "Changing…" : w.location_sharing_enabled ? "Stop sharing my location" : "Share my location with approved caretakers"}
+        </button>
+        {error ? <p role="alert">{error}</p> : null}
+      </section>
       {w.simulator ? <p className={styles.bigNote}>This walker is the simulator, running on a computer.</p> : null}
-      <p className={styles.bigNote}>Nothing on this phone changes your walker. To change your alerts, ask Sophi on the walker.</p>
+      <p className={styles.bigNote}>To change your alerts, ask Sophi on the walker.</p>
     </section>
   );
 }

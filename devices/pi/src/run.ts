@@ -8,6 +8,7 @@ import { GpioButtons, type GpiomonFlavor } from "./buttons";
 import { systemClock } from "./clock";
 import { HttpCloudClient } from "./cloud/client";
 import { createLogger } from "./log";
+import { GpsSampler } from "./gps";
 import { attachLogging } from "./logging";
 import { ModuleManager } from "./serial/modules";
 import { SERIAL_BY_PATH_DIR, SerialScanner } from "./serial/port";
@@ -88,6 +89,9 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   const cues = writeCueSounds(join(config.stateDir, "cues"));
   const modules = new ModuleManager({ clock, log, bus });
   const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir, excludedPort: env.WALKER_GPS_PORT });
+  const location = env.WALKER_GPS_PORT
+    ? new GpsSampler(env.WALKER_GPS_PORT, Number(env.WALKER_GPS_BAUD || "9600"), (error) => log.warn("GPS read failed", { code: (error as NodeJS.ErrnoException).code ?? error.name }))
+    : null;
   // The Pi can't sense a button, so it watches (and reports) the GPIO buttons only when declared wired.
   const buttons = config.gpioWired
     ? new GpioButtons(
@@ -122,6 +126,7 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
     simulator: false,
     audioInstanceId: "pi-usb-audio",
     coordinatorInstanceId: "pi-coordinator",
+    ...(location ? { location } : {}),
     ...(buttons ? { gpioButtons: buttons } : {}),
     makeCloud: (credential) => new HttpCloudClient(credential.server_url, credential.device_id, credential.credential),
   });

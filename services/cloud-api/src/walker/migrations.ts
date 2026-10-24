@@ -175,4 +175,14 @@ create index walker_circle_messages_device on walker_circle_messages (device_id,
 create index walker_circle_messages_expires on walker_circle_messages (expires_at);
 `,
   },
+  {
+    id: "0004_walker_location_sharing",
+    sql: `
+-- One current fix only. No trail, and sharing starts disabled on every walker.
+alter table walker_devices
+  add column location_sharing_enabled boolean not null default false,
+  add column location jsonb,
+  add column location_received_at timestamptz;
+`,
+  },
 ];
