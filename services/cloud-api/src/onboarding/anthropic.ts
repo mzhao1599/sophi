@@ -20,7 +20,8 @@ export function createAnthropicModel({ apiKey, model = DEFAULT_AGENT_MODEL, fetc
   // One quick retry for a dropped connection or an overloaded API; the agent's deadline bounds the total.
   const client = new Anthropic({ apiKey, maxRetries: 1, ...(fetch ? { fetch } : {}) });
   return {
-    async generate({ system, context, retry, schema }, signal) {
+    async generate({ system, context, retry, schema, audio }, signal) {
+      if (audio) throw new Error("The Claude client takes text only; voice turns use Gemini.");
       const message = await client.beta.messages.create(
         {
           model,

@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "rehearse": "vitest run test/rehearsal.test.ts --silent=false",
+    "walker-live": "vitest run test/walker/live-turns.test.ts --silent=false",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

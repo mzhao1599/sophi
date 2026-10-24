@@ -39,10 +39,12 @@ export function createGeminiModel({ apiKey, model = DEFAULT_GEMINI_MODEL, fetch:
   const url = `${API_BASE}/models/${encodeURIComponent(name)}:generateContent`;
   const thinking = thinkingFor(name);
   return {
-    async generate({ system, context, retry, schema }, signal) {
+    async generate({ system, context, retry, schema, audio }, signal) {
+      // A voice clip goes inline after the context, in the same call as the schema (checked live 2026-10-24).
+      const clip = audio ? [{ inlineData: { mimeType: audio.mime, data: audio.data_base64 } }] : [];
       const body = JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts: [{ text: context }, ...(retry ? [{ text: retry }] : [])] }],
+        contents: [{ role: "user", parts: [{ text: context }, ...clip, ...(retry ? [{ text: retry }] : [])] }],
         generationConfig: {
           responseMimeType: "application/json",
           responseJsonSchema: schema,

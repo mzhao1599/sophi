@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { MemoryWalkerStore, type WalkerBackend } from "@walker/cloud-api";
-import { AnswerProposalResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, type HeartbeatRequest } from "@walker/contracts";
+import { MemoryWalkerStore, type WalkerAgent, type WalkerBackend } from "@walker/cloud-api";
+import { AnswerProposalResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, WalkerTurnResponseSchema, type HeartbeatRequest } from "@walker/contracts";
 import { clientAddress } from "@/server/walker";
 import * as health from "../app/api/v1/health/route";
 import * as pairingCodes from "../app/api/v1/walkers/pairing-codes/route";
@@ -12,6 +12,8 @@ import * as heartbeat from "../app/api/v1/devices/[id]/heartbeat/route";
 import * as configuration from "../app/api/v1/devices/[id]/configuration/route";
 import * as deviceAnswer from "../app/api/v1/devices/[id]/proposals/[proposalId]/route";
 import * as pageAnswer from "../app/api/v1/walkers/[id]/proposals/[proposalId]/route";
+import * as deviceTurns from "../app/api/v1/devices/[id]/turns/route";
+import * as pageTurns from "../app/api/v1/walkers/[id]/turns/route";
 
 /**
  * The walker routes over HTTP, against the in-memory store (no DATABASE_URL in tests): which proof
@@ -64,11 +66,32 @@ async function pairOverHttp(address = "198.51.100.20") {
 }
 
 // The process-wide backend, set here so no test depends on which one ran first.
-const shared = globalThis as unknown as { __walkerBackend?: WalkerBackend };
+const shared = globalThis as unknown as { __walkerBackend?: WalkerBackend; __walkerAgent?: WalkerAgent };
 const store = new MemoryWalkerStore();
 beforeAll(() => {
   shared.__walkerBackend = { kind: "memory", store };
+  // No model or voice in these tests, whatever the shell has: turns get the fixed line.
+  shared.__walkerAgent = { assistant: null, voice: null };
 });
+
+/** A 16 kHz mono 16-bit WAV of silence. */
+function wav(ms: number): Buffer {
+  const data = 32 * ms;
+  const b = Buffer.alloc(44 + data);
+  b.write("RIFF", 0, "ascii");
+  b.writeUInt32LE(36 + data, 4);
+  b.write("WAVEfmt ", 8, "ascii");
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(16_000, 24);
+  b.writeUInt32LE(32_000, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write("data", 36, "ascii");
+  b.writeUInt32LE(data, 40);
+  return b;
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -167,6 +190,32 @@ describe("walker routes", () => {
     expect(AnswerProposalResponseSchema.parse(await confirmed.json()).proposal.configuration_version).toBe(2);
     const late = await pageAnswer.POST(request(`/api/v1/walkers/${w.deviceId}/proposals/${proposalId}`, { cookie: w.cookie, body: { answer: "decline" } }), params);
     expect((await expectError(late, "proposal_closed")).error.proposal?.state).toBe("confirmed");
+  });
+
+  it("takes a voice turn from the walker and a typed turn from the page, each with its own proof", async () => {
+    const w = await pairOverHttp();
+    await heartbeat.POST(request(`/api/v1/devices/${w.deviceId}/heartbeat`, { bearer: w.credential, body: beat() }), ctx({ id: w.deviceId }));
+    const params = ctx({ id: w.deviceId });
+    // 3 s of audio: about 128 KB in base64, past the 64 KB limit of the other routes.
+    const voice = { client_turn_id: crypto.randomUUID(), input: { type: "audio", mime: "audio/wav", data_base64: wav(3000).toString("base64"), duration_ms: 3000 }, snapshot: null };
+    const spoken = await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: voice }), params);
+    expect(spoken.status).toBe(200);
+    const turn = WalkerTurnResponseSchema.parse(await spoken.json()).turn;
+    expect(turn).toMatchObject({ source: "walker", answered_by: "fixed", heard: null, heard_by: null, voiced_by: "walker" });
+    const typed = { client_turn_id: crypto.randomUUID(), input: { type: "text", text: "What can you help me with?" } };
+    const page = await pageTurns.POST(request(`/api/v1/walkers/${w.deviceId}/turns`, { cookie: w.cookie, body: typed }), params);
+    expect(WalkerTurnResponseSchema.parse(await page.json()).turn).toMatchObject({ source: "page", heard_by: "typed", voiced_by: null });
+    await expectError(await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { cookie: w.cookie, body: voice }), params), "unauthenticated");
+    await expectError(await pageTurns.POST(request(`/api/v1/walkers/${w.deviceId}/turns`, { bearer: w.credential, body: typed }), params), "unauthenticated");
+    // The page sends text only.
+    await expectError(await pageTurns.POST(request(`/api/v1/walkers/${w.deviceId}/turns`, { cookie: w.cookie, body: voice }), params), "invalid_request");
+    // A full 1 MB clip (about 31 s of audio) is within the body limit; a body past 1.5 MB is refused before parsing.
+    const full = { ...voice, client_turn_id: crypto.randomUUID(), input: { ...voice.input, data_base64: wav(31_248).toString("base64") } };
+    expect(full.input.data_base64.length).toBeGreaterThan(1_330_000);
+    expect((await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: full }), params)).status).toBe(200);
+    const huge = { ...voice, client_turn_id: crypto.randomUUID(), padding: "A".repeat(1_500_000) };
+    const refused = await expectError(await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: huge }), params), "invalid_request");
+    expect(refused.error.message).toBe("That request is too large.");
   });
 
   it("refuses a pairing code asked for by another site, and accepts a lowercase bearer scheme", async () => {

@@ -63,8 +63,8 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 | `/setups` | **Your setups**: a signed-in user's saved setups, newest first, with delete; carry on with an unfinished setup; sign out; delete the account. Not linked from the demo |
 | `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface). `POST …/{id}/checkout` starts the mock purchase |
 | `/api/v1/checkout/status` | Whether the mock purchase button is on, and why not |
-| `/api/v1/walkers/…` | The walker API for the owner's page (`walker_owner` cookie): pairing codes, the owner's walkers and their status, Confirm or Decline, Forget; see [interfaces](../../docs/interfaces.md#cloud-api-surface). The assistant turn isn't built yet |
-| `/api/v1/devices/…` | The walker API for the Pi (`Authorization: Bearer` credential): pair, heartbeat, configuration, the Confirm button |
+| `/api/v1/walkers/…` | The walker API for the owner's page (`walker_owner` cookie): pairing codes, the owner's walkers and their status, Confirm or Decline, Forget, and typed questions to the assistant; see [interfaces](../../docs/interfaces.md#cloud-api-surface) |
+| `/api/v1/devices/…` | The walker API for the Pi (`Authorization: Bearer` credential): pair, heartbeat, configuration, voice or text questions, the Confirm button |
 | `/api/v1/health` | Render's health check: `200` once the walker store is ready, `503` while its database can't be reached |
 | `/checkout/success` | Where Stripe returns after a test payment: the ordered walker drawn again, "Demo order: no money moved", the modules read from the Checkout Session on the server, and **Set up another walker** (deletes this tab's demo answers and opens a fresh first frame) |
 | `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
@@ -203,7 +203,7 @@ Both are on Render's free plan. The web service spins down after 15 minutes with
 4. Name the Blueprint `steady`, keep the branch **main**, and leave the Blueprint path as `render.yaml`. Render then lists what it will create: a web service **steady-walker** and a database **steady-walker-db**, both Free.
 5. Render asks for two values it won't take from the file:
    - **GEMINI_API_KEY**: paste your Gemini key (from Google AI Studio).
-   - **CARTESIA_API_KEY**: paste your Cartesia key if you have one. If you don't yet, leave it empty. If Render won't continue with it empty, type `none`; the voice part isn't built yet, and once it is, a key Cartesia refuses only means the walker speaks with its own voice. Put the real key in later under **steady-walker → Environment**.
+   - **CARTESIA_API_KEY**: paste your Cartesia key if you have one. If you don't yet, leave it empty. If Render won't continue with it empty, type `none`: the server treats that as no key, and the walker speaks replies with its own voice. Put the real key in later under **steady-walker → Environment**.
    These two go only into Render. Never paste them into chat, a file in the repository, or a commit.
 6. Click **Deploy Blueprint**. The database takes a minute or two, then the web service builds (pnpm install and `next build`, several minutes on the free plan).
 7. When **steady-walker** shows **Live**, copy its address from the top of its page (something like `https://steady-walker.onrender.com`; Render adds a suffix if the name is taken) and open `/api/v1/health` on it. It should say `{"status":"ok","walker_store":"postgres"}`.

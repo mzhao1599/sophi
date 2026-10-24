@@ -204,7 +204,7 @@ export class PostgresWalkerStore implements WalkerStore {
   async recentTurns(deviceId: string, limit: number) {
     const { rows } = await this.query<TurnRow>(
       "read turns",
-      `select * from (select ${TURN_COLUMNS} from walker_turns where device_id = $1 order by created_at desc, id desc limit $2) t order by created_at, id`,
+      `select * from (select ${TURN_COLUMNS}, seq from walker_turns where device_id = $1 order by created_at desc, seq desc limit $2) t order by created_at, seq`,
       [deviceId, limit],
     );
     return rows.map(toTurn);
@@ -242,19 +242,21 @@ export class PostgresWalkerStore implements WalkerStore {
     });
   }
 
-  async saveTurn(deviceId: string, turn: WalkerTurnView, proposal: ProposalView | null, now: Date): Promise<SavedTurn> {
+  async findTurn(deviceId: string, clientTurnId: string) {
+    if (!UUID.test(clientTurnId)) return undefined;
+    try {
+      return await turnIn(this.pool, deviceId, clientTurnId);
+    } catch (error) {
+      throw new PostgresStoreError("read a turn", pgCode(error));
+    }
+  }
+
+  async saveTurn(deviceId: string, turn: WalkerTurnView, proposal: ProposalView | null, now: Date): Promise<SavedTurn | null> {
     return this.transaction("save a turn", async (db) => {
-      await db.query("select 1 from walker_devices where id = $1 for update", [deviceId]);
-      const { rows: prior } = await db.query<TurnRow & { proposal_id: string | null }>(
-        `select ${TURN_COLUMNS}, proposal_id from walker_turns where device_id = $1 and client_turn_id = $2`,
-        [deviceId, turn.client_turn_id],
-      );
-      if (prior[0]) {
-        const { rows } = prior[0].proposal_id
-          ? await db.query<ProposalRow>(`select ${PROPOSAL_COLUMNS} from walker_proposals where id = $1`, [prior[0].proposal_id])
-          : { rows: [] };
-        return { turn: toTurn(prior[0]), proposal: rows[0] ? toProposal(rows[0]) : null, created: false };
-      }
+      const { rowCount } = await db.query("select 1 from walker_devices where id = $1 for update", [deviceId]);
+      if (rowCount === 0) return null;
+      const prior = await turnIn(db, deviceId, turn.client_turn_id);
+      if (prior) return { ...prior, created: false };
       if (proposal) {
         await expireIn(db, deviceId, now);
         await db.query("update walker_proposals set state = 'superseded' where device_id = $1 and state = 'open'", [deviceId]);
@@ -334,6 +336,18 @@ export class PostgresWalkerStore implements WalkerStore {
 
 function pgCode(error: unknown): string | undefined {
   return error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
+}
+
+async function turnIn(db: Pool | PoolClient, deviceId: string, clientTurnId: string) {
+  const { rows } = await db.query<TurnRow & { proposal_id: string | null }>(
+    `select ${TURN_COLUMNS}, proposal_id from walker_turns where device_id = $1 and client_turn_id = $2`,
+    [deviceId, clientTurnId],
+  );
+  if (!rows[0]) return undefined;
+  const { rows: opened } = rows[0].proposal_id
+    ? await db.query<ProposalRow>(`select ${PROPOSAL_COLUMNS} from walker_proposals where id = $1`, [rows[0].proposal_id])
+    : { rows: [] };
+  return { turn: toTurn(rows[0]), proposal: opened[0] ? toProposal(opened[0]) : null };
 }
 
 /** The same rule as rules.ts shouldExpire: past expiry, or no heartbeat within OFFLINE_AFTER_MS. */

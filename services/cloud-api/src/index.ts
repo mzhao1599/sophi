@@ -35,10 +35,13 @@ export {
   type DeviceCaller,
   type OwnerCaller,
   type WalkerCaller,
+  type TurnEvent,
   type WalkerServiceOptions,
 } from "./walker/service";
+export { WALKER_SYSTEM_PROMPT, createWalkerAssistant, type WalkerAssistant, type Words } from "./walker/assistant";
+export { createCartesiaVoice, type WalkerVoice } from "./walker/speech";
 export { MemoryWalkerStore, newSecret, sha256, type DeviceRecord, type WalkerStore } from "./walker/store";
 export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
 export { WALKER_MIGRATIONS } from "./walker/migrations";
 export { buildStatusView } from "./walker/status";
-export { sharedWalkerBackend, walkerBackendFromEnv, type WalkerBackend } from "./walker/config";
+export { sharedWalkerAgent, sharedWalkerBackend, walkerAgentFromEnv, walkerBackendFromEnv, type WalkerAgent, type WalkerBackend } from "./walker/config";

@@ -121,12 +121,15 @@ export interface WalkerStore {
 
   /** Answers one proposal by id in one atomic step (rules.ts decides): the first answer wins. */
   answerProposal(deviceId: string, proposalId: string, answer: Answer, now: Date): Promise<AnswerResult>;
+  /** A stored turn by its client_turn_id, with the proposal it opened as that stands now. */
+  findTurn(deviceId: string, clientTurnId: string): Promise<{ turn: WalkerTurnView; proposal: ProposalView | null } | undefined>;
   /**
    * Stores a turn and, when it opened one, its proposal, in one step: an open proposal that has expired
    * by `now` is marked expired, and one still open is superseded. A client_turn_id already stored
-   * returns that turn and its proposal instead, so a retry never opens a second.
+   * returns that turn and its proposal instead, so a retry never opens a second. Null when the walker
+   * no longer exists (forgotten during the turn).
    */
-  saveTurn(deviceId: string, turn: WalkerTurnView, proposal: ProposalView | null, now: Date): Promise<SavedTurn>;
+  saveTurn(deviceId: string, turn: WalkerTurnView, proposal: ProposalView | null, now: Date): Promise<SavedTurn | null>;
 
   /** Deletes turns, walker lines and closed proposals from before `historySince`, expired codes and old wrong tries. */
   sweep(now: Date, historySince: Date, triesSince: Date): Promise<void>;
@@ -271,13 +274,17 @@ export class MemoryWalkerStore implements WalkerStore {
     return { outcome: decision.answered ? "answered" : "closed", proposal: copy(decision.proposal) };
   }
 
-  async saveTurn(deviceId: string, turn: WalkerTurnView, proposal: ProposalView | null, now: Date): Promise<SavedTurn> {
-    const d = this.device(deviceId);
-    const prior = d.turns.find((t) => t.turn.client_turn_id === turn.client_turn_id);
-    if (prior) {
-      const opened = d.proposals.find((p) => p.proposal_id === prior.proposal_id);
-      return { turn: copy(prior.turn), proposal: opened ? copy(opened) : null, created: false };
-    }
+  async findTurn(deviceId: string, clientTurnId: string) {
+    const d = this.devices.get(deviceId);
+    return d && this.storedTurn(d, clientTurnId);
+  }
+
+  async saveTurn(deviceId: string, turn: WalkerTurnView, proposal: ProposalView | null, now: Date): Promise<SavedTurn | null> {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    // Synchronous from here on, so two saves of one turn can't both get past this check.
+    const prior = this.storedTurn(d, turn.client_turn_id);
+    if (prior) return { ...prior, created: false };
     if (proposal) {
       for (const p of d.proposals) if (shouldExpire(p, d.last_heartbeat_at, now)) p.state = "expired";
       for (const p of d.proposals) if (p.state === "open") p.state = "superseded";
@@ -309,6 +316,13 @@ export class MemoryWalkerStore implements WalkerStore {
     const d = this.devices.get(deviceId);
     if (!d) throw new Error("No such walker.");
     return d;
+  }
+
+  private storedTurn(d: MemoryDevice, clientTurnId: string) {
+    const found = d.turns.find((t) => t.turn.client_turn_id === clientTurnId);
+    if (!found) return undefined;
+    const opened = d.proposals.find((p) => p.proposal_id === found.proposal_id);
+    return { turn: copy(found.turn), proposal: opened ? copy(opened) : null };
   }
 
   private current(d: MemoryDevice): WalkerConfiguration {

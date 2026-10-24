@@ -2,7 +2,7 @@
 
 Owns onboarding sessions, the onboarding conversation and its recommendations, and (later) assistant runs, typed tools and the device API. For now it is a TypeScript package that the Next.js route handlers in `apps/web` call; it has no HTTP server of its own. Read [cloud agents](../../docs/subsystems/cloud-agents.md) and the [runtime blueprint](../../docs/agent-runtime.md).
 
-**Status:** the onboarding service works with a **deterministic engine** and two stores: **in memory** (local demos, the default) and **Supabase Postgres** with row-level security, tested against a local Supabase stack but **not yet against a hosted project**. An **LLM onboarding agent** (Claude through the Anthropic TypeScript SDK, or Google's Gemini over its REST API) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, and live on Gemini (`gemini-3.7-flash`, 2026-10-23); **not yet live on Claude**. The **walker API** (pairing, device credentials, heartbeats, the status view and answering proposals, for the always-on assistant) works with an in-memory store and **Postgres** through node-postgres, tested against a local Postgres 17 cluster; it is **not deployed yet**, and the assistant turn isn't built yet (see [Walker store](#walker-store)).
+**Status:** the onboarding service works with a **deterministic engine** and two stores: **in memory** (local demos, the default) and **Supabase Postgres** with row-level security, tested against a local Supabase stack but **not yet against a hosted project**. An **LLM onboarding agent** (Claude through the Anthropic TypeScript SDK, or Google's Gemini over its REST API) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, and live on Gemini (`gemini-3.7-flash`, 2026-10-23); **not yet live on Claude**. The **walker API** (pairing, device credentials, heartbeats, the status view and answering proposals, for the always-on assistant) works with an in-memory store and **Postgres** through node-postgres, tested against a local Postgres 17 cluster; it is **not deployed yet** (see [Walker store](#walker-store)). Its **assistant turn** (voice or text, on Gemini, with Cartesia speech) is built and checked live on Gemini with the demo's lines; Cartesia is tested with a stub only, since there's no key yet (see [Walker assistant](#walker-assistant)).
 
 ## What's here
 
@@ -25,7 +25,10 @@ Owns onboarding sessions, the onboarding conversation and its recommendations, a
 | `src/walker/status.ts` | `buildStatusView`: the status view from stored data, with the contract's `zoneViews`, parsed with `WalkerStatusViewSchema`. |
 | `src/walker/store.ts` | `WalkerStore` interface, the in-memory store, secrets and hashing. |
 | `src/walker/postgres-store.ts`, `src/walker/migrations.ts` | `PostgresWalkerStore` and its SQL migrations. |
-| `src/walker/config.ts` | `walkerBackendFromEnv`: Postgres when `DATABASE_URL` is set, memory otherwise, off in production without a database. |
+| `src/walker/config.ts` | `walkerBackendFromEnv`: Postgres when `DATABASE_URL` is set, memory otherwise, off in production without a database. `walkerAgentFromEnv`: the turn's Gemini model and Cartesia voice. |
+| `src/walker/assistant.ts` | The turn's model step: the policy prompt, the context, the reply schema, one retry and the 8-second deadline. |
+| `src/walker/lines.ts` | The lines the server writes itself: proposal summaries, why a change was dropped, arms, simulated readings, Press Confirm, the fallback. |
+| `src/walker/speech.ts` | Cartesia's text-to-speech, and the WAV check for clips and speech. |
 
 ```bash
 pnpm --filter @walker/cloud-api test
@@ -152,7 +155,7 @@ The always-on walker assistant's server side ([walker assistant guide](../../doc
 
 | | |
 | --- | --- |
-| Stored | The walker's name, its configurations, its last manifest and sensor snapshot, proposals, turns (what she said as typed or transcribed, and the reply) and the walker's own lines. Only the SHA-256 of the owner cookie and the device credential, and a keyed hash of a wrong-code client address. Never a voice clip. A NUL character or half a surrogate pair in any text becomes U+FFFD, since Postgres can't store them |
+| Stored | The walker's name, its configurations, its last manifest and sensor snapshot, proposals, turns (what the person said, as typed or transcribed, and the reply) and the walker's own lines. Only the SHA-256 of the owner cookie and the device credential, and a keyed hash of a wrong-code client address. Never a voice clip. A NUL character or half a surrogate pair in any text becomes U+FFFD, since Postgres can't store them |
 | Kept | Turns, walker lines and answered proposals: an hour after they happen, deleted on every heartbeat, every page read and at server start. Pairing codes: 10 minutes. Wrong-code tries: 10 minutes. The walker itself, its configurations and its last manifest and snapshot: until Forget |
 | Deleted by | **Forget this walker** on the page (`DELETE /walkers/{id}`): one statement, so one transaction, removes the walker and, by cascade, everything about it, and its credential stops working. The sweep above |
 | Access | The server only, by device id found through a credential or an owner, as above |
@@ -167,6 +170,41 @@ WALKER_TEST_DATABASE_URL=postgres://walker@127.0.0.1:55432/postgres pnpm --filte
 ```
 
 Each test run makes its own database and drops it afterwards; a URL that isn't on this machine is refused. `fsync=off` is for a throwaway cluster only: on a slow disk, each file sync otherwise takes seconds. Without `WALKER_TEST_DATABASE_URL` the Postgres cases skip with a message saying so. The expected results are in [`test/walker/EXPECTED.md`](test/walker/EXPECTED.md).
+
+## Walker assistant
+
+One question and its answer (`WalkerService.turn`, routes `POST /devices/{id}/turns` and `POST /walkers/{id}/turns`).
+
+**The model.** Always Gemini (`GEMINI_API_KEY`; `WALKER_AGENT_MODEL` overrides `gemini-3.7-flash`), whatever the onboarding provider is, because voice turns need audio input. A voice clip goes to Gemini as `inlineData` (`audio/wav`) in the same `generateContent` call as the JSON schema; a live check on 2026-10-24 returned the exact transcript with the reply. The model sees, in order: the policy (the system prompt), the walker and how the person asked, its configuration, its parts with health and `simulated`, its zones (measured with the reading's age, or unknown), the suggestion waiting for Confirm, the last 10 turns, and the person's words, as data. A walker's turn uses the snapshot it carries, received now, instead of the heartbeat's. The reply is `{ transcript, reply, topics, cues_change }`; a reply over 350 characters, or one off the schema, is retried once with a note naming the rule (never the person's words).
+
+**The server's rules,** all from structured fields, never from the words:
+
+| When | What the server does |
+| --- | --- |
+| `topics` has `arms` | The reply is a fixed line from the manifest ("This walker doesn't have robot arms…"), `answered_by: "fixed"`, and any change is dropped. No action request exists |
+| A `cues_change` fails `checkCuesChange` | Dropped; the reply is a fixed line saying why, `answered_by: "fixed"` |
+| A valid `cues_change` while the walker is offline | No proposal; a fixed line says the walker is offline |
+| A valid `cues_change` | A proposal opens: summary written from the payload ("Switch your alerts from buzzing to short sounds."), the turn's `client_turn_id`, 60 s to answer. The reply is written from the same payload ("I can switch your alerts from buzzing to short sounds. Press Confirm to do it."), so the person hears exactly what Confirm will do, never the model's description of it; it stays `answered_by: "model"`, since the model chose the change |
+| A proposal is already open | The reply gets "Still waiting for you: … Press Confirm to do it." |
+| `topics` has `obstacles` and a ToF part is simulated | The reply gets "These readings are simulated." |
+| `topics` has `parts` and a reported part is simulated (and the line above didn't apply) | The reply gets "Some of this walker's parts are simulated." |
+| An error, a refusal, a bad reply twice, 8 s, or no key | A fixed line from the status view, `answered_by: "fixed"`; a voice turn with no transcript has `heard: null` |
+
+The model can't confirm anything: only Confirm by id changes a walker (piece 2). A turn's response reads its proposal after expiry, so a replay of an expired proposal, or a walker that dropped offline while the model answered, never comes back as `open`. The rules are one pure function, `applyRules` in `service.ts`.
+
+**Time.** The Pi gives up on a turn after 10 s. The server's part, counted from when the route starts reading the upload, stays within 8 s: the model gets at most 8 s and only what's left, then the voice at most 3 s and only what's left (skipped under half a second). That leaves time for the audio's download over a phone hotspot.
+
+**Idempotency.** A `client_turn_id` already stored returns that turn and its proposal with a fresh status and `speech: null`, without calling the model. Two uploads of one turn at once store one turn and at most one proposal (the store's `saveTurn` is one transaction).
+
+**Speech.** With `CARTESIA_API_KEY` (not `none`), a walker turn's reply text goes to Cartesia (`POST https://api.cartesia.ai/tts/bytes`, `Cartesia-Version: 2026-08-14`, model `sonic-3.6`, the stock voice "Skylar" unless `CARTESIA_VOICE_ID` names another stock one, 16 kHz mono 16-bit WAV, checked against docs.cartesia.ai on 2026-10-24). It returns as `speech` and the turn is `voiced_by: "cartesia"`. With no key, an error, more than 3 s (or less of the turn's 8 s left), audio over `SPEECH_MAX_BYTES`, or audio the Pi's player can't play (anything but PCM 16 kHz mono 16-bit with samples), `speech` is null and `voiced_by` is `"walker"`. Page turns are never spoken. Tested with a stubbed Cartesia only; the live check waits for a key.
+
+**Measured** (live on `gemini-3.7-flash`, 2026-10-24, 30 turns a run: the demo's lines 3 of 3 typed and 3 of 3 spoken, plus 3 fresh wordings each way, on a walker reported the way devices/pi's simulator reports it, including `base.walker` (`sim-coordinator`, added in #36); without it, a "which parts work?" turn heard that the walker itself wasn't responding): every check passed and every voice transcript was exact, at a median of 2.5 to 3.7 s and at most 6.8 to 8.0 s a turn over five runs. To run it again (a Mac with `say` and `ffmpeg`; the clips are written to a temporary folder and never played):
+
+```bash
+WALKER_LIVE=1 pnpm --filter @walker/cloud-api walker-live
+```
+
+**Data.** The person's clip goes to Gemini with the turn and is then dropped: never stored or logged. Their transcript or typed words and the reply are stored as the turn (an hour, as above), and the reply text goes to Cartesia when speech is on. Logs carry one line per turn: ids, who answered, why not the model, attempts, model and voice milliseconds, whether a proposal opened. Never words or audio. The expected results are in [`test/walker/EXPECTED-turns.md`](test/walker/EXPECTED-turns.md).
 
 ## Next steps
 

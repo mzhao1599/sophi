@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
-import { WalkerService, isWalkerError, sharedWalkerBackend, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
+import { WalkerService, isWalkerError, sharedWalkerAgent, sharedWalkerBackend, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
 import { WALKER_ERROR_STATUS, type ProposalView, type WalkerError, type WalkerErrorCode } from "@walker/contracts";
 import type { z } from "zod";
 
@@ -17,13 +17,16 @@ const COOKIE = "walker_owner";
 const COOKIE_PATH = "/api/v1/walkers";
 /** The walker is kept until its owner forgets it, so the cookie lasts as long as browsers allow (400 days). */
 const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
-/** Every walker route except the turns takes a small JSON body; a heartbeat at its largest is about 30 KB. */
+/** Every walker route except the walker's turns takes a small JSON body; a heartbeat at its largest is about 30 KB. */
 export const MAX_BODY_BYTES = 64_000;
+/** A walker's turn: a voice clip of up to 1 MB is about 1.34 MB in base64, plus its snapshot. */
+export const MAX_TURN_BODY_BYTES = 1_500_000;
 
 /** The service for one request. It's only a few references; the store and its connection pool are shared. */
 export function walkerService(): WalkerService {
   const backend = sharedWalkerBackend();
-  return new WalkerService(backend.store, { blocked: backend.blocked });
+  const { assistant, voice } = sharedWalkerAgent();
+  return new WalkerService(backend.store, { blocked: backend.blocked, assistant, voice });
 }
 
 export function ownerCaller(request: NextRequest): OwnerCaller {

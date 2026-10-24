@@ -109,4 +109,11 @@ create table walker_pairing_tries (
 create index walker_pairing_tries_address on walker_pairing_tries (address_key, at);
 `,
   },
+  {
+    id: "0002_walker_turn_order",
+    sql: `
+-- Arrival order, so turns stored at the same moment are listed in the order they were saved.
+alter table walker_turns add column seq bigint generated always as identity;
+`,
+  },
 ];

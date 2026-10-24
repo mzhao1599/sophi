@@ -1,5 +1,8 @@
 import { Pool } from "pg";
+import { createGeminiModel } from "../onboarding/gemini";
+import { createWalkerAssistant, type WalkerAssistant } from "./assistant";
 import { PostgresWalkerStore } from "./postgres-store";
+import { createCartesiaVoice, type WalkerVoice } from "./speech";
 import { MemoryWalkerStore, type WalkerStore } from "./store";
 
 /** Where walkers are kept, chosen by walkerBackendFromEnv. */
@@ -32,7 +35,34 @@ export function walkerBackendFromEnv(env: Record<string, string | undefined>, wa
   return { kind: "memory", store: new MemoryWalkerStore() };
 }
 
-const globalForWalker = globalThis as unknown as { __walkerBackend?: WalkerBackend };
+export interface WalkerAgent {
+  assistant: WalkerAssistant | null;
+  voice: WalkerVoice | null;
+}
+
+/**
+ * The walker assistant's model and voice from the server's environment:
+ *
+ * - GEMINI_API_KEY: the walker always uses Gemini, whatever ONBOARDING_AGENT_PROVIDER says, because
+ *   voice turns need audio input. WALKER_AGENT_MODEL optionally overrides the model. Without the key
+ *   every turn gets a fixed line, marked as such.
+ * - CARTESIA_API_KEY: Steady's spoken voice (CARTESIA_VOICE_ID optionally picks another stock voice).
+ *   Without it (or set to "none"), the walker speaks replies with its own voice.
+ */
+export function walkerAgentFromEnv(env: Record<string, string | undefined>): WalkerAgent {
+  const set = (name: string) => {
+    const value = env[name]?.trim();
+    return value && value.toLowerCase() !== "none" ? value : undefined;
+  };
+  const gemini = set("GEMINI_API_KEY");
+  const cartesia = set("CARTESIA_API_KEY");
+  return {
+    assistant: gemini ? createWalkerAssistant({ model: createGeminiModel({ apiKey: gemini, model: set("WALKER_AGENT_MODEL") }) }) : null,
+    voice: cartesia ? createCartesiaVoice({ apiKey: cartesia, voiceId: set("CARTESIA_VOICE_ID") }) : null,
+  };
+}
+
+const globalForWalker = globalThis as unknown as { __walkerBackend?: WalkerBackend; __walkerAgent?: WalkerAgent };
 
 /**
  * One backend per server process, shared by the start-up hook and every route (Next.js bundles them
@@ -41,4 +71,9 @@ const globalForWalker = globalThis as unknown as { __walkerBackend?: WalkerBacke
  */
 export function sharedWalkerBackend(env: Record<string, string | undefined> = process.env): WalkerBackend {
   return (globalForWalker.__walkerBackend ??= walkerBackendFromEnv(env));
+}
+
+/** The model and voice, made once per server process. The keys stay on the server. */
+export function sharedWalkerAgent(env: Record<string, string | undefined> = process.env): WalkerAgent {
+  return (globalForWalker.__walkerAgent ??= walkerAgentFromEnv(env));
 }

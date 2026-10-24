@@ -38,6 +38,11 @@ export interface AgentRequest {
   retry: string | null;
   /** JSON schema for the reply (structured output). */
   schema: Record<string, unknown>;
+  /**
+   * A voice clip sent with the context in the same call (the walker assistant; onboarding never sends
+   * one). Only Gemini takes it; the Claude client refuses a request that has one.
+   */
+  audio?: { mime: "audio/wav"; data_base64: string };
 }
 
 export interface AgentReply {
