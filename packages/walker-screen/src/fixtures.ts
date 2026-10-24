@@ -1,0 +1,95 @@
+import { DEFAULT_SCREEN_CHOICES, TEXT_SIZES, type ScreenChoices, type ScreenContent, type ScreenState, type StatusStrip, type TextSize } from "@walker/contracts";
+
+/**
+ * Example states for every screen in the design, at every text size: for tests, screenshots and the web
+ * app's Preview. Illustrative data, not a recording of a walker. Names come in two lengths: the demo's
+ * (Nan, Max, Cooper) and the longest the contract allows (12 characters), so the screenshots prove the
+ * worst case fits.
+ */
+export interface ScreenFixture {
+  /** `<state>--<text size>`, also the screenshot's file name. */
+  name: string;
+  textSize: TextSize;
+  state: ScreenState;
+}
+
+const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const LONG = "Christabelle";
+const LONG_OWNER = "Maximilianus";
+const LONG_MEMBER = { member_id: uuid(2), name: LONG, role: "caregiver", joined_at: "2026-10-24T18:00:00.000Z" } as const;
+
+/** A reply of about two caption pages at Large. */
+export const SAMPLE_REPLY =
+  "Something is about 30 centimetres ahead on your left. I can't tell what it is. Go slowly, and press Talk if you want me to check again in a moment.";
+
+interface Base {
+  name: string;
+  screen: ScreenContent;
+  choices?: Partial<ScreenChoices>;
+  strip?: Partial<StatusStrip>;
+}
+
+const HEARD = "Is there anything in front of me right now?";
+
+const BASES: Base[] = [
+  // The walker's own states first.
+  { name: "ambient", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan" } },
+  { name: "ambient-long-greeting", screen: { state: "ambient", alerts: ["vibration", "sound", "spoken"] }, choices: { greeting_name: LONG } },
+  { name: "ambient-no-clock", screen: { state: "ambient", alerts: null }, choices: { greeting_name: "Nan" }, strip: { clock: null } },
+  { name: "ambient-dark-simulator", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan", theme: "dark" }, strip: { simulator: true } },
+  { name: "listening", screen: { state: "listening" } },
+  { name: "answering", screen: { state: "answering", heard: HEARD, reply: SAMPLE_REPLY, source: "model", page: 0 } },
+  { name: "answering-page-2", screen: { state: "answering", heard: HEARD, reply: SAMPLE_REPLY, source: "model", page: 1 } },
+  { name: "answering-offline-reply", screen: { state: "answering", heard: null, reply: "I can't reach the internet right now. Alerts still work on the walker.", source: "walker", page: 0 }, strip: { link: "offline" } },
+  { name: "answering-no-captions", screen: { state: "answering", heard: "What time is it?", reply: "It's about a quarter to eight.", source: "model", page: 0 }, choices: { captions: false } },
+  { name: "model-offer", screen: { state: "model_offer", proposal_id: uuid(50), from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"] } },
+  { name: "obstacle-simulated", screen: { state: "obstacle", zone: "front_left", distance: { status: "measured", mm: 300 }, simulated: true }, strip: { simulator: true } },
+  { name: "obstacle-unknown", screen: { state: "obstacle", zone: "front_right", distance: { status: "unknown" }, simulated: false } },
+  { name: "offline", screen: { state: "offline" }, strip: { link: "offline" } },
+  { name: "not-set-up", screen: { state: "not_set_up" }, strip: { link: "unpaired", clock: null } },
+  { name: "done-alerts", screen: { state: "done", result: { kind: "alerts", cues: ["vibration", "sound", "spoken"] }, change_back: false } },
+  { name: "done-change-back", screen: { state: "done", result: { kind: "change", change: { kind: "text_size", text_size: "larger" } }, change_back: true } },
+  { name: "done-nothing-changed", screen: { state: "done", result: { kind: "nothing_changed" }, change_back: false } },
+  // Her circle (secondary): kept minimal.
+  { name: "suggestion-text-size", screen: { state: "suggestion", item_id: uuid(10), from_name: "Cooper", change: { kind: "text_size", text_size: "largest" }, minutes_left: 5, one_moment: false } },
+  { name: "suggestion-text-size-dark", screen: { state: "suggestion", item_id: uuid(10), from_name: "Cooper", change: { kind: "text_size", text_size: "largest" }, minutes_left: 5, one_moment: false }, choices: { theme: "dark" } },
+  { name: "suggestion-greeting-long", screen: { state: "suggestion", item_id: uuid(12), from_name: LONG, change: { kind: "greeting", greeting_name: LONG }, minutes_left: 4, one_moment: false } },
+  { name: "suggestion-voice-one-moment", screen: { state: "suggestion", item_id: uuid(13), from_name: "Cooper", change: { kind: "voice", voice: "calm" }, minutes_left: 5, one_moment: true } },
+  { name: "join", screen: { state: "member_join", item_id: uuid(14), name: "Cooper", role: "family", invited_by_name: "Max", step: "first", minutes_left: 5, one_moment: false } },
+  { name: "join-long", screen: { state: "member_join", item_id: uuid(15), name: LONG, role: "caregiver", invited_by_name: LONG_OWNER, step: "first", minutes_left: 5, one_moment: false } },
+  { name: "join-again-long", screen: { state: "member_join", item_id: uuid(15), name: LONG, role: "caregiver", invited_by_name: LONG_OWNER, step: "again", minutes_left: 5, one_moment: true } },
+  { name: "message-waiting", screen: { state: "message_waiting", message_id: uuid(20), from_name: "Cooper", more: 0 } },
+  /** The longest message (30 characters, wide letters) from the longest name. */
+  { name: "message-longest", screen: { state: "message", message_id: uuid(21), from_name: LONG, text: "Mmm, wonderful dinner with Mom" } },
+  { name: "my-screen", screen: { state: "my_screen", view: { page: "menu" } } },
+  { name: "my-screen-text-size", screen: { state: "my_screen", view: { page: "text_size" } } },
+  { name: "my-screen-reading", screen: { state: "my_screen", view: { page: "reading" } } },
+  { name: "my-screen-circle-member", screen: { state: "my_screen", view: { page: "circle", index: 2, owner_name: "Max", member: LONG_MEMBER, count: 3, confirm_remove: false } } },
+  { name: "my-screen-circle-remove", screen: { state: "my_screen", view: { page: "circle", index: 2, owner_name: "Max", member: LONG_MEMBER, count: 3, confirm_remove: true } } },
+];
+
+export function screenFixtures(): ScreenFixture[] {
+  return TEXT_SIZES.flatMap((textSize) =>
+    BASES.map((base, i) => ({
+      name: `${base.name}--${textSize}`,
+      textSize,
+      state: {
+        v: 1,
+        revision: i,
+        screen: base.screen,
+        settings: {
+          version: 3,
+          ...DEFAULT_SCREEN_CHOICES,
+          ...base.choices,
+          text_size: textSize,
+          changed_at: "2026-10-24T18:30:00.000Z",
+          pending_local: false,
+        },
+        strip: { link: "online", simulator: false, clock: { local_time: "2026-10-24T19:42:00" }, ...base.strip },
+      },
+    })),
+  );
+}
+
+/** Every state name the fixtures cover (each must appear). */
+export const FIXTURE_STATE_NAMES = [...new Set(BASES.map((b) => b.screen.state))];

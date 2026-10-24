@@ -82,7 +82,7 @@ The profile patch is a proposal until confirmed. Use server-side session revisio
 
 ## Sophi Circle and the walker screen (proposed, not built)
 
-**Status: proposed, not built.** The schemas are written in [`circle.ts`](../packages/contracts/src/circle.ts) and tested as schemas only. No route, table, Pi code or page uses them yet. Everything below specifies what the next pieces (cloud, Pi, web app) will build. The screen's drawing package (`packages/walker-screen`, a separate change) renders fixtures only.
+**Status: proposed, not built.** The schemas are written in [`circle.ts`](../packages/contracts/src/circle.ts) and tested as schemas only. No route, table, Pi code or page uses them yet. Everything below specifies what the next pieces (cloud, Pi, web app) will build. The screen's drawing package, [`packages/walker-screen`](../packages/walker-screen/README.md), renders fixtures only.
 
 **What it is.** The walker's own screen belongs to the person who walks with it ("Nan" below). Family and caregivers join her circle from a web app on their phones. Family can send short messages and suggest one change at a time to her screen or to Sophi's voice. Nothing reaches her walker until she presses Confirm on it. It is a separate system from the walker assistant above: today's turns, proposals, Confirm and heartbeat don't change, and no `walker.ts` or `device.ts` shape changes (a test pins them, [`unchanged-shapes.test.ts`](../packages/contracts/test/unchanged-shapes.test.ts)). So today's deployed Pi and server keep working whichever is deployed first.
 
