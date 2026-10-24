@@ -1,4 +1,4 @@
-// The USB serial link both boards share: serial protocol v1 at 115200 baud (the Pi's SERIAL_BAUD).
+// The USB serial link every board shares: serial protocol v1 at 115200 baud (the Pi's SERIAL_BAUD).
 // Not yet run on hardware.
 #pragma once
 
@@ -28,8 +28,10 @@ inline void beginSerial() {
   Serial.begin(kBaud);
 }
 
-// Hands the core whatever arrived since the last loop, at most 256 bytes per call so the loop stays quick.
-inline void pumpSerial(walker::ModuleCore& core, uint32_t now) {
+// Hands the core (walker::ModuleCore or walker::lift::LiftCore) whatever arrived since the last loop, at most
+// 256 bytes per call so the loop stays quick.
+template <typename Core>
+inline void pumpSerial(Core& core, uint32_t now) {
   uint8_t buffer[256];
   const int available = Serial.available();
   if (available <= 0) return;

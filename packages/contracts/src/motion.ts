@@ -1194,7 +1194,7 @@ export const MOTION_COMMAND_POLICY: Readonly<Record<MotionCommandKind, MotionCom
     hold_to_run: false,
     refuses_when: ["busy", ...CONFIRM_CHECKS, "part_missing", "no_hand_control", "lift_may_drop"],
     limits:
-      "Sends lift.enable(false) only when liftMayDisable (a passed drop test, a brake, or the carriage on the bottom switch). Allowed with a fault latched (allowedWhileFaulted). Nothing else on the Pi ever disables the lift driver: no fault reaction does.",
+      "Sends lift.enable(false) only when liftMayDisable (a passed drop test, a brake, or the carriage on the bottom switch); the lift firmware refuses it (disable_unsafe) off the bottom switch unless it was built disable-safe. Allowed with a fault latched (allowedWhileFaulted). Nothing else on the Pi ever disables the lift driver: no fault reaction does.",
     cancelled_by: "Not applicable (immediate).",
     watchdog: "None needed.",
     on_lost: NOTHING_LOST,

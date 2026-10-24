@@ -1,11 +1,14 @@
 #include "serial_protocol.h"
 
+#include "protocol_internal.h"
+
 #include <cmath>
 #include <cstdlib>
 
 namespace walker {
 
-namespace {
+// Shared with lift_protocol.cpp through protocol_internal.h; nothing outside lib/protocol uses it.
+namespace internal {
 
 // ---------------------------------------------------------------------------------------------
 // Names on the wire
@@ -75,73 +78,7 @@ bool isCapability(const char* s) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Building lines
-
-// Appends to a fixed buffer. Any overflow or forbidden value marks the line failed, and finish()
-// then returns 0, so a caller never sends part of a line.
-class LineWriter {
- public:
-  LineWriter(char* out, size_t capacity)
-      : out_(out), capacity_(capacity < kMaxLineBytes ? capacity : kMaxLineBytes) {}
-
-  LineWriter& raw(const char* text) {
-    while (*text != '\0') put(*text++);
-    return *this;
-  }
-
-  // A JSON string whose characters never need escaping (checked here).
-  LineWriter& text(const char* value) {
-    if (value == nullptr) {
-      ok_ = false;
-      return *this;
-    }
-    put('"');
-    for (const char* p = value; *p != '\0'; ++p) {
-      if (!isPlainChar(*p)) ok_ = false;
-      put(*p);
-    }
-    put('"');
-    return *this;
-  }
-
-  LineWriter& number(uint32_t value) {
-    char digits[10];
-    size_t n = 0;
-    do {
-      digits[n++] = static_cast<char>('0' + value % 10);
-      value /= 10;
-    } while (value != 0);
-    while (n > 0) put(digits[--n]);
-    return *this;
-  }
-
-  // The envelope every line starts with.
-  LineWriter& begin(const char* type, const char* moduleId, uint32_t seq) {
-    if (!isProvisionableModuleId(moduleId)) ok_ = false;
-    return raw("{\"v\":1,\"type\":").text(type).raw(",\"module_id\":").text(moduleId).raw(",\"seq\":").number(seq);
-  }
-
-  void fail() { ok_ = false; }
-
-  size_t finish() {
-    put('\n');
-    return ok_ ? length_ : 0;
-  }
-
- private:
-  void put(char c) {
-    if (length_ >= capacity_) {
-      ok_ = false;
-      return;
-    }
-    out_[length_++] = c;
-  }
-
-  char* out_;
-  size_t capacity_;
-  size_t length_ = 0;
-  bool ok_ = true;
-};
+// Building lines: LineWriter is in protocol_internal.h
 
 const char* healthName(Health health) {
   switch (health) {
@@ -202,26 +139,10 @@ bool isUtf8(const char* text, size_t length) {
   return true;
 }
 
-enum class Kind : uint8_t { Missing, String, Number, True, False, Null, Container };
-
-// One JSON value inside the line. For a string, start/length cover its contents without the quotes
-// (escapes still in place); for a number, the token itself.
-struct Value {
-  Kind kind = Kind::Missing;
-  const char* start = nullptr;
-  size_t length = 0;
-};
-
-enum Key : uint8_t { kV, kType, kModuleId, kSeq, kRequestId, kPattern, kDurationMs, kCode, kDetail, kUptimeMs, kKeyCount };
+// Kind, Value, Key, Fields: protocol_internal.h. The key names, in Key order:
 const char* const kKeyNames[kKeyCount] = {
     "v", "type", "module_id", "seq", "request_id", "pattern", "duration_ms", "code", "detail", "uptime_ms",
-};
-constexpr uint16_t bit(Key key) { return static_cast<uint16_t>(1u << key); }
-
-// The top-level members of the line's object. A repeated key keeps its last value, as JSON.parse does.
-struct Fields {
-  Value values[kKeyCount];
-  bool otherKey = false;
+    "target_mm", "speed_mm_s", "enabled", "hold_request_id",
 };
 
 bool isDigit(int c) { return c >= '0' && c <= '9'; }
@@ -555,9 +476,6 @@ bool onlyKeys(const Fields& fields, uint16_t allowed) {
   return true;
 }
 
-// v, type, module_id and seq: present on every line.
-constexpr uint16_t kEnvelope = bit(kV) | bit(kType) | bit(kModuleId) | bit(kSeq);
-
 bool readEnvelope(const Fields& fields, uint16_t allowed, PiLine* line) {
   return onlyKeys(fields, allowed) && readModuleId(fields.values[kModuleId], line->module_id) &&
          isNonNegativeInteger(fields.values[kSeq]);
@@ -593,33 +511,37 @@ Problem readHapticPlay(const Fields& fields, PiLine* line) {
   return Problem::None;
 }
 
-Problem readError(const Fields& fields, PiLine* line) {
-  const uint16_t allowed = kEnvelope | bit(kCode) | bit(kRequestId) | bit(kDetail) | bit(kUptimeMs);
-  if (!readEnvelope(fields, allowed, line)) return Problem::InvalidField;
-
+bool errorFieldsValid(const Fields& fields) {
   const Value& code = fields.values[kCode];
-  if (code.kind != Kind::String) return Problem::InvalidField;
+  if (code.kind != Kind::String) return false;
   char name[24];
   const long n = decodeAscii(code, name, sizeof name);
   bool known = false;
   for (size_t p = 1; p < sizeof kProblemNames / sizeof kProblemNames[0]; ++p) {
     if (equals(name, n, kProblemNames[p])) known = true;
   }
-  if (!known) return Problem::InvalidField;
+  if (!known) return false;
 
   char requestId[kMaxRequestIdLength + 1] = {};
   const Value& request = fields.values[kRequestId];
-  if (request.kind != Kind::Missing && !readRequestId(request, requestId)) return Problem::InvalidField;
+  if (request.kind != Kind::Missing && !readRequestId(request, requestId)) return false;
   const Value& detail = fields.values[kDetail];
   if (detail.kind != Kind::Missing && (detail.kind != Kind::String || codePointLength(detail) > kMaxDetailLength)) {
-    return Problem::InvalidField;
+    return false;
   }
   const Value& uptime = fields.values[kUptimeMs];
-  if (uptime.kind != Kind::Missing && !isNonNegativeInteger(uptime)) return Problem::InvalidField;
+  if (uptime.kind != Kind::Missing && !isNonNegativeInteger(uptime)) return false;
+  return true;
+}
+
+Problem readError(const Fields& fields, PiLine* line) {
+  if (!readEnvelope(fields, kErrorKeys, line) || !errorFieldsValid(fields)) return Problem::InvalidField;
   return Problem::None;
 }
 
-}  // namespace
+}  // namespace internal
+
+using namespace internal;
 
 const char* problemName(Problem problem) { return kProblemNames[static_cast<size_t>(problem)]; }
 

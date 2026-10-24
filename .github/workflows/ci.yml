@@ -80,6 +80,9 @@ jobs:
       - name: Build the obstacle board
         run: WALKER_MODULE_ID=tof-front-01 pio run -e tof
 
+      - name: Build the lift board
+        run: WALKER_MODULE_ID=lift-01 pio run -e lift
+
       - name: A board provisioned as "any" must not build
         run: |
           if WALKER_MODULE_ID=any pio run -e hand >any.log 2>&1; then

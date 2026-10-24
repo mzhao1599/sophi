@@ -298,7 +298,7 @@ Firmware sends a hello on boot and on each `hello.request`, then heartbeat/healt
 
 ## Pi ↔ lift ESP32 USB serial (proposed)
 
-**Proposed, not built:** no lift firmware or Pi code exists, and every timing is a placeholder. Where to find the details:
+**Proposed; the lift firmware is written, not run on hardware:** the lift ESP32 firmware ([`firmware/`](../firmware/README.md#lift-board), env `lift`) implements these lines and is tested on a computer only; no Pi code exists, and every timing is a placeholder. Where to find the details:
 
 - the schemas and the firmware's exact rules (numbered 1 to 10 in its header): [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts)
 - the limits: [`motion.ts`](../packages/contracts/src/motion.ts)
@@ -336,7 +336,7 @@ Example lines (from the fixtures, not captured from a board):
   - the target and the request being carried out
   - whether the driver is enabled, both limit switches, and the lift's own stop-sense reading
   - the latched faults, and the time since the last Pi heartbeat
-- **`lift.ack`**, for every command. A rejection names a reason: a serial problem code, or `stale_seq`, `request_used`, `no_heartbeat`, `not_held`, `stop_pressed`, `fault_latched`, `busy`, `driver_disabled`, `not_homed`, `out_of_range` or `cause_present`.
+- **`lift.ack`**, for every command. A rejection names a reason: a serial problem code, or `stale_seq`, `request_used`, `no_heartbeat`, `not_held`, `stop_pressed`, `fault_latched`, `busy`, `driver_disabled`, `not_homed`, `out_of_range`, `cause_present` or `disable_unsafe`.
 - **`lift.done`**, once per accepted move or homing:
   - `completed`;
   - `stopped`: by a stop, a disable, a `hello.request`, or the person letting go;
@@ -360,7 +360,7 @@ Example lines (from the fixtures, not captured from a board):
   - The driver always stays enabled while it holds.
   - A stopping or finished request never resumes, whatever later heartbeats name. A move or homing whose request id counter isn't above the highest the lift accepted under the same boot prefix is rejected with `request_used`.
   - The Pi stops heartbeating after 300 ms without a `lift.status`, so a break in either direction stops the lift.
-- **Always accepted.** `lift.stop` and `lift.enable(false)` are accepted whatever the state, sequence number or heartbeat. Disabling frees the motor and clears homed. The Pi sends it only for a confirmed `lift.disable`.
+- **Always accepted.** `lift.stop` is accepted whatever the state, sequence number or heartbeat. `lift.enable(false)` skips the same checks but frees the motor only when the bottom switch reads pressed or the firmware was built disable-safe (`WALKER_LIFT_DISABLE_SAFE=1`, set only after a recorded passed drop test or with a brake fitted); then it frees the motor and clears homed. Otherwise it is rejected `disable_unsafe`, the driver stays enabled, and any running move or homing ramps down and holds. The Pi sends it only for a confirmed `lift.disable`.
 - **Homing,** in four phases:
   1. A fast approach down at 15 mm/s to the bottom switch.
   2. A back-off up 5 mm at 2 mm/s. The switch must release within 8 mm.

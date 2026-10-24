@@ -8,6 +8,7 @@ import {
   MotionFaultCodeSchema,
   SERIAL_MAX_LINE_BYTES,
   isAlwaysAcceptedLiftCommand,
+  skipsLiftSeqCheck,
   parseLiftSerialLine,
   parseSerialLine,
 } from "../src";
@@ -61,7 +62,7 @@ describe("lift serial v1 (proposed)", () => {
     for (const fault of LiftSerialFaultSchema.options) expect(MotionFaultCodeSchema.options).toContain(fault);
   });
 
-  it("always accepts a stop and a disable, and nothing else", () => {
+  it("always accepts a stop and nothing else; a disable skips only the seq check", () => {
     const parse = (line: string) => {
       const result = parseLiftSerialLine(line);
       if (!result.ok) throw new Error(result.detail);
@@ -69,7 +70,11 @@ describe("lift serial v1 (proposed)", () => {
     };
     const cmd = (type: string, extra = "") => `{"v":1,"type":"${type}","module_id":"lift-01","seq":1,"request_id":"k3x9q2-1"${extra}}`;
     expect(isAlwaysAcceptedLiftCommand(parse(cmd("lift.stop")))).toBe(true);
-    expect(isAlwaysAcceptedLiftCommand(parse(cmd("lift.enable", ',"enabled":false')))).toBe(true);
+    expect(isAlwaysAcceptedLiftCommand(parse(cmd("lift.enable", ',"enabled":false')))).toBe(false);
+    expect(skipsLiftSeqCheck(parse(cmd("lift.stop")))).toBe(true);
+    expect(skipsLiftSeqCheck(parse(cmd("lift.enable", ',"enabled":false')))).toBe(true);
+    expect(skipsLiftSeqCheck(parse(cmd("lift.enable", ',"enabled":true')))).toBe(false);
+    expect(skipsLiftSeqCheck(parse(cmd("lift.home")))).toBe(false);
     expect(isAlwaysAcceptedLiftCommand(parse(cmd("lift.enable", ',"enabled":true')))).toBe(false);
     expect(isAlwaysAcceptedLiftCommand(parse(cmd("lift.home")))).toBe(false);
     expect(isAlwaysAcceptedLiftCommand(parse(cmd("lift.clear")))).toBe(false);

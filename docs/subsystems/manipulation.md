@@ -2,7 +2,7 @@
 
 **For:** the robotics and Pi developers integrating two SO-101 arms (with their leader arms), the cameras, and the ball-screw lift.
 
-**Status, 2026-10-24: proposed, not built.** The motion contract exists as schemas and tests in [`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts) and [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts). Nothing uses it yet: there is no servo driver, lift firmware, Pi motion coordinator, simulator or screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it. Nothing here moves hardware today.
+**Status, 2026-10-24: proposed, not built.** The motion contract exists as schemas and tests in [`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts) and [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts). Only the lift ESP32 firmware uses it so far, written and tested on a computer but not run on hardware ([firmware/README.md](../../firmware/README.md#lift-board)); there is no servo driver, Pi motion coordinator, simulator or screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it. Nothing here moves hardware today.
 
 ## The rule
 
@@ -187,7 +187,7 @@ What each reaction does (`FAULT_REACTION`). In every case all other motion stops
 - **Switches and stop-sense** are wired normally closed. Both limit switches reading pressed latches `limit_wiring`.
 - **Limits live in the firmware,** reported in `lift.hello`. A mismatch refuses lift motion (`lift_config_mismatch`).
 - **Boot:** not stepping, unhomed, driver enabled and holding. ENA is wired so that a resetting ESP32 leaves the driver enabled.
-- **Serial:** a heartbeat or command whose `seq` isn't above the last is ignored or rejected. A `hello.request` stops the lift. Request ids carry the Pi service's boot prefix. `lift.stop` and `lift.enable(false)` are always accepted. The exact firmware rules are numbered 1 to 10 at the top of `lift-serial.ts`; see also [interfaces, Pi ↔ lift ESP32](../interfaces.md#pi--lift-esp32-usb-serial-proposed).
+- **Serial:** a heartbeat or command whose `seq` isn't above the last is ignored or rejected. A `hello.request` stops the lift. Request ids carry the Pi service's boot prefix. `lift.stop` is always accepted. `lift.enable(false)` is never refused for its sequence number, state or heartbeat, but the firmware frees the motor only on the bottom switch or on a build made disable-safe after a passed drop test (or with a brake); otherwise it answers `disable_unsafe` and keeps holding. The exact firmware rules are numbered 1 to 10 at the top of `lift-serial.ts`; see also [interfaces, Pi ↔ lift ESP32](../interfaces.md#pi--lift-esp32-usb-serial-proposed).
 
 ## Feetech behaviour the design relies on (check on the received servos)
 

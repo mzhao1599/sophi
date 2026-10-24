@@ -2,7 +2,7 @@
 
 **Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. The first hand board was flashed and answered USB serial commands on a Mac; its connected control reported a press and triggered a haptic cue felt by the owner. It was later identified as the physical right board, reflashed as `hand-right-01`, and verified on the Pi. Both hand boards now announce distinct IDs to the Pi. The obstacle firmware has not run on hardware. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
 
-Nothing in this firmware can move the arms or the lift. The hand board's only output is the haptic buzz, and the obstacle board has no output at all.
+The lift board's firmware is also written and tested on a computer only; it has not run on hardware, and the Pi code that would command it doesn't exist yet (see [Lift board](#lift-board)). It is the only firmware here that can move anything: the hand board's only output is the haptic buzz, the obstacle board has no output at all, and nothing here moves the arms.
 
 ## What is here
 
@@ -10,17 +10,21 @@ Nothing in this firmware can move the arms or the lift. The hand board's only ou
 | --- | --- | --- |
 | `hand` | One ESP32-WROOM-32 per handle (`hand-left-01`, `hand-right-01`) | Reports the **Talk** and **Confirm** button inputs, and plays the four haptic cues the Pi asks for. The intended physical Talk control is on the right handle. |
 | `tof` | One ESP32 (`tof-front-01`) | Reads four VL53L1X time-of-flight distance sensors and reports them as obstacle zones. |
+| `lift` | One ESP32-WROOM-32 (`lift-01`) | Drives the lift's stepper driver (STEP, DIR, ENA) and reads its two end switches and the stop's sense contact; moves only while the Pi's heartbeat holds the request. |
 | `native` | Your computer | Runs the unit tests (`pio test -e native`). |
 
 ```text
 firmware/
-  platformio.ini        the three environments, with pinned versions
-  lib/protocol/         serial protocol v1 in plain C++ (no Arduino code): builds and reads lines
+  platformio.ini        the four environments, with pinned versions
+  lib/protocol/         serial protocol v1 in plain C++ (no Arduino code): builds and reads lines, the lift's too
   lib/module/           board-independent behaviour: hello, heartbeat, replies, haptic cue, buttons, zones
+  lib/lift/             the lift's behaviour: commands, hold lease, homing, switches, step math
   src/hand/main.cpp     hand board: pins, I2C, the DRV2605L haptic driver
   src/tof/main.cpp      obstacle board: pins, I2C, the multiplexer and the VL53L1X sensors
-  src/common/           the USB serial link both boards share
-  test/                 expected results, native tests, the scripted session, run-native.sh
+  src/lift/             lift board: pins and build settings, FastAccelStepper, the inputs
+  src/common/           the USB serial link every board shares
+  tools/                bench loopbacks from a computer (press_to_haptic.py, lift_bench.py)
+  test/                 expected results, native tests, the scripted sessions, run-native.sh
 ```
 
 The split matters: everything that decides what the board says or does lives in `lib/` and has no Arduino code, so it is tested on a computer on a fake clock. `src/` only reads pins and talks to the chips.
@@ -145,6 +149,92 @@ build_src_flags = ${board.build_src_flags} '-D WALKER_ZONE_2="left_low"'
 
 The build stops if a name isn't snake_case, is over 24 characters, or repeats another.
 
+## Lift board
+
+**Status, 2026-10-24: written and tested on a computer only.** Nothing below has run on the lift's ESP32, driver, motor, screw or switches, and nothing about them has been measured. The firmware implements rules 1 to 10 in the header of [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts) (the contract, PR #71); the expected behaviour is in [test/EXPECTED.md](test/EXPECTED.md#lift-board-lift-01), rows LS to LB. The Pi side (the motion coordinator that sends these lines) is not built, so today the lift moves only from the bench tool below.
+
+### What it does (AGENTS.md rule 8)
+
+The lift is a NEMA 17 stepper turning a 5 mm-per-turn ball screw that raises a carriage on two rails. A stepper moves one small step for each pulse on the driver's STEP (PUL) input, in the direction set by DIR, while ENA lets the driver hold or free the motor. This board makes those pulses and counts them; the count is the height (there is no height sensor).
+
+- **Authorization and user initiation.** It moves only for a `lift.home` or `lift.move` from the Pi, addressed to `lift-01`, with a sequence number above the last one it accepted, whose request id it has never accepted before, and only while the Pi's heartbeat (every 100 ms) names that request as the one a person is holding the screen's hold control for. The Pi decides whether a person started it; this board checks every command again.
+- **Range and speed.** Soft limits 5 to 600 mm above the bottom switch, 20 mm/s and 50 mm/s², built into the firmware, reported in `lift.hello`, checked at build time against the contract's ceilings (50 mm/s, 200 mm/s²). Nothing over serial changes them. *(Placeholders: the usable travel, the top switch position and the speed without lost steps are not measured.)*
+- **Cancellation.** Letting go (the next heartbeat names nobody), `lift.stop` (always accepted), or a `hello.request` ramps down at 200 mm/s² and holds. A request that stopped never resumes. `lift.enable` `false` stops stepping at once and frees the motor, but only with the carriage on the bottom switch, or on a build made disable-safe (`WALKER_LIFT_DISABLE_SAFE=1`) after a recorded passed drop test or with a brake fitted; anywhere else it is refused `disable_unsafe`, the driver keeps holding, and any motion ramps down as for a stop (rule 6).
+- **Watchdog and lost link.** No heartbeat for 300 ms: it ramps down, holds, and latches `watchdog_expired`. The driver stays enabled, so the motor keeps holding the carriage (`LIFT_WATCHDOG_DRIVER_ACTION` `hold`). If the board's loop stops for 1 s, the ESP32's task watchdog restarts it (set to 1 s in `setup()`; the core's default is 5 s); a restart stops the pulses and, wired as below, leaves the driver enabled. Until that reset, a running move keeps going towards its target, because the pulses come from hardware timers and FastAccelStepper's own task, not the loop: for up to 1 s nothing checks the lease or the switches (the hardware stop still cuts STEP).
+- **Switches and the stop.** Either end switch pressing while homed stops stepping at once (`limit_hit`); both at once means a wiring fault (`limit_wiring`). The hardware stop switch cuts the STEP signal itself, outside the firmware; a second contact on it tells the board (stop-sense), which latches `stop_circuit_opened`. Every fault clears homed: the lift must home again.
+
+### Parts (from [hardware/current-build.md](../hardware/current-build.md))
+
+- One ESP32-WROOM-32 development board, provisioned `lift-01`. The inventory's two ESP32s are the hand boards, so this is a third board.
+- An Ophiner TB6600-type step/dir driver (9 to 42 V; opto-isolated PUL, DIR and ENA inputs).
+- A STEPPERONLINE 17HS19-2004S1 NEMA 17 (2.0 A per phase, 1.8°, so 200 full steps a turn).
+- The RM1605 ball screw (5 mm a turn) and HGR20 rails.
+- Two roller limit switches with normally open (NO), normally closed (NC) and common (C) terminals; one at the bottom (home), one at the top.
+- The hardware stop: a latching switch with two normally closed contacts, one to cut STEP and one for stop-sense (the switch itself is not chosen yet).
+
+### Wiring (not yet run on hardware)
+
+Signals use the "common cathode" wiring: every `-` input of the driver goes to the ESP32's GND, and each `+` input is driven by a GPIO, so a GPIO at 3.3 V pushes current through that input's opto-coupler and 0 V doesn't.
+
+| ESP32 pin | Goes to | Why this pin |
+| --- | --- | --- |
+| GPIO25 | Stop switch contact 1 (NC), then the driver's PUL+ | STEP. A plain output, not a strapping pin, so it is low and quiet while the ESP32 boots. The stop switch opens this line, so no pulse reaches the driver while the stop is pressed. |
+| GPIO26 | DIR+ | DIR. A plain output. |
+| GPIO27 | ENA+ | ENA. A plain output; floating while the ESP32 resets, which (with no current through ENA) leaves a typical TB6600 enabled and holding. |
+| GPIO32 | Bottom switch C; the switch's NC to GND | Home switch. Closed (released) reads LOW, pressed or a cut wire reads HIGH, so a broken wire stops the lift. |
+| GPIO33 | Top switch C; NC to GND | Same. |
+| GPIO13 | Stop switch contact 2 (NC) to GND | Stop-sense. Read on an interrupt, so a quick tap is caught. |
+| GND | PUL-, DIR-, ENA-, both switches' NC, the stop-sense contact | Common ground for the signals only. The motor supply's ground stays on the driver's power side. |
+
+**Each switch and stop-sense line also gets an external pull-up and a capacitor at the ESP32 end:** 1 to 4.7 kΩ from the pin to 3.3 V, and about 100 nF from the pin to GND. The internal pull-ups (about 45 kΩ) are too weak for leads that run the length of the rail past the stepper's wiring: noise could read as pressed (a spurious stop, which is safe) or hold a pin low (a missed press, which isn't). The capacitor slows the edge by well under a millisecond with these values. The firmware also wants two pressed samples in a row (about 2 ms) before homing counts the bottom switch as tripped; any switch pressing still stops homed motion on its first sample.
+
+Pins avoided, as rule 1 requires: the strapping pins GPIO 0, 2, 5, 12 and 15 (their level at reset changes how the ESP32 boots, and some pulse during boot), the flash pins GPIO 6 to 11, GPIO 34 to 39 (inputs only, no pull-ups), and GPIO 1 and 3 (the USB serial port). The build checks this (`src/lift/build_settings.h`).
+
+The motor's four wires go to the driver's A+, A-, B+ and B- (one coil to A, the other to B, per the motor's datasheet), and the driver's power input to the 12 V lift branch with its own fuse. **Assumptions to check:** that this TB6600 unit's inputs switch reliably at 3.3 V (many are specified for 5 V; if pulses are missed, drive them through a 5 V buffer such as a 74HCT245, or ULN-style transistors); that its PUL input accepts FastAccelStepper's pulse width; and the switch's NC terminal markings.
+
+### The hardware stop (documented, not firmware)
+
+The stop is a physical switch that works without the ESP32, the Pi or the cloud:
+
+1. **It cuts STEP, never ENA.** Contact 1 sits in the wire from GPIO25 to PUL+. Pressed, the driver gets no pulses, so the motor holds the carriage (it stays powered and enabled) but cannot step. ENA is never wired through the stop, because freeing the motor could let the loaded carriage slide down the ball screw.
+2. **Contact 2 tells the board** (GPIO13): the board latches `stop_circuit_opened` and refuses moves (`stop_pressed`). The steps it sent while the stop cut them were counted but never taken, so the height is no longer known and the lift must home again.
+3. **Cutting the lift's motor power** (rather than only STEP) is allowed only after the drop test below has passed, or with a brake fitted, and is recorded in the installation record (`stop_cuts_lift_power`, motion.ts).
+
+### Driver settings (DIP switches) to start with
+
+- **Microsteps: 8** (1,600 pulses a turn, so 320 steps per mm). On the common TB6600 label that is S1 OFF, S2 ON, S3 OFF, but **use the table printed on this unit**. The firmware must be built with the same number (`WALKER_LIFT_MICROSTEPS`), or every height is wrong; `lift.hello` reports it so the Pi can refuse a mismatch.
+- **Current:** the lowest setting on the unit's printed table that still lifts the measured load, and never above the motor's 2.0 A. For the decoupled bench steps below, start at the lowest setting. Record it (`driver_current_setting`). The lift's computed thrust is a crushing force (motion.ts), which is why the current stays low and pinch guards are required.
+
+### Build settings
+
+Set in `[env:lift]` in `platformio.ini` (or as `-D` flags); the build stops on a value outside the allowed ones.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `WALKER_LIFT_MICROSTEPS` | 8 | The driver's microstep DIP setting: 1, 2, 4, 8, 16 or 32. |
+| `WALKER_LIFT_ENA_ENABLE_LEVEL` | 0 | The GPIO27 level that leaves the driver **enabled** (holding). 0 suits a driver whose ENA is an active-disable input, the usual TB6600: a resetting ESP32 (pin floating) then leaves it holding. Check it (below). If the unit only holds with current through ENA, **rewire, don't rebuild**: an inverter, or a pull-up that keeps ENA enabled while the pin floats. Level 1 builds only together with `WALKER_LIFT_HW_INVERTER=1`, which says that hardware is fitted. |
+| `WALKER_LIFT_HW_INVERTER` | 0 | 1 only when ENA is wired through an inverter or pull-up as above; allows `WALKER_LIFT_ENA_ENABLE_LEVEL=1`. |
+| `WALKER_LIFT_DIR_UP_LEVEL` | 1 | The GPIO26 level that moves the carriage **up**. Check it (below). |
+| `WALKER_LIFT_STOP_SENSE` | 1 | 1: the stop's second contact is wired to GPIO13. 0 only on a bench without it: `lift.hello` then says `not_wired`, and the Pi refuses motion outside bench mode. |
+| `WALKER_LIFT_DISABLE_SAFE` | 0 | 1 lets `lift.enable` `false` free the motor away from the bottom switch. Set it only after the drop test passed and is recorded in hardware/current-build.md, or with a brake fitted. |
+
+Build and flash with the id, as for the other boards: `WALKER_MODULE_ID=lift-01 pio run -e lift -t upload`. The build stops for any id that isn't a lift id. The library doing the pulses is FastAccelStepper 1.2.8 (pinned; it uses the ESP32's hardware pulse timers and counts every step).
+
+### Bench procedure (do these in order; the motor decoupled from the screw first)
+
+Run each step with the bench tool, which speaks the lift's lines from a computer: `python3 firmware/tools/lift_bench.py --port <port> <command>` (standard library only; not yet run against a board; its lines are checked against the contract's parser in `packages/contracts/test/lift-bench-tool.test.ts`). Each run uses a fresh request-id prefix, so the lift never sees an id twice. For `home` and `move` it is hold-to-run: it keeps naming the request in its heartbeats while it runs, for at most `--hold-seconds` (10); **Ctrl-C is letting go** (the lift ramps down and holds). Record every result in [hardware/current-build.md](../hardware/current-build.md).
+
+1. **Decouple the motor from the screw** (loosen the coupler), switches unplugged, carriage resting on a soft landing. Driver current at its lowest setting. Power the driver, plug the ESP32 into the computer.
+2. **Boot.** `status`: a `lift.hello` for `lift-01` with the configuration above and `stop_sense` `wired`, then statuses: `unhomed`, `driver=on`. With the switch harness unplugged it must read `limit_wiring` (both switches read pressed): that is the safe failure.
+3. **Enable polarity.** With the board running (driver enabled), try to turn the motor shaft by hand: it should resist (holding). `enable off` (accepted here because the unplugged harness reads the bottom switch as pressed): it should turn freely. `enable on`: it holds again. If it is the other way round, rewire ENA (an inverter, or a pull-up so a floating pin still holds; see Build settings) rather than rebuilding, then build with `WALKER_LIFT_ENA_ENABLE_LEVEL=1 WALKER_LIFT_HW_INVERTER=1` and repeat. Then press the ESP32's reset button and hold the shaft during the reset: it should keep holding (a resetting ESP32 must leave the driver enabled, rule 1). If it goes free, the ENA wiring or the polarity is wrong; fix it before going on.
+4. **Switches and stop.** Plug the switch harness in. Press each switch by hand: the status shows it `pressed` at once and `released` about 20 ms after letting go. Press the stop: `stop_sense` `pressed` and `stop_circuit_opened`; release it and `clear`.
+5. **Direction, decoupled.** Hold the bottom switch's lever away from anything. `home`: the shaft turns (fast approach, 15 mm/s is 4,800 pulses a second at 8 microsteps). Note which way; press the bottom switch's lever by hand: it stops and turns the other way slowly; let the lever go within a few turns (the back-off needs the switch released within 8 mm, about 1.6 turns); it reverses slowly; press the lever again: it backs off once more (let go again) and reports `completed` at 5 mm. If the first turn was "up" for the screw's thread, build with `WALKER_LIFT_DIR_UP_LEVEL=0`. Letting go (Ctrl-C) mid-homing must stop it with `lift.done` `stopped`.
+6. **Steps per mm, decoupled.** Mark the shaft; `move 10 --speed 5` from home (5 mm) to 10 mm is exactly one turn at 5 mm a turn. Repeat to 25 mm (four turns). A shortfall means the microstep DIP and the build setting differ, or pulses are being missed (see the 3.3 V assumption above).
+7. **Stop cuts STEP, in hardware.** The firmware also stops on stop-sense, so a live test on the normal build can't show the switch itself cuts the pulses. Do both of these: (a) power off, and with a meter on continuity between GPIO25's wire and the driver's PUL+ terminal: closed with the stop released, open with it pressed; (b) on a bench build with `WALKER_LIFT_STOP_SENSE=0`, start a slow decoupled `move` and press the stop: the shaft must stop and hold while the status still says `moving` (the firmware doesn't know, so only the switch can have stopped it); release it and Ctrl-C. Then reflash the normal build and check pressing the stop during a move latches `stop_circuit_opened`.
+8. **Couple the screw, carriage unloaded,** pinch guards and physical end stops fitted. A bottom switch that is stuck released (or whose wire is shorted to GND) never trips: homing then drives the carriage into the bottom end at 15 mm/s until the switch releases, the 1000 mm of travel runs out or the homing deadline passes. That is why the guards and end stops are required before coupling. Home from a few millimetres up. Check homing repeats: home five times and measure the carriage height above a fixed mark each time. Then a slow `move 50 --speed 5` and back, measuring the real height against `position_mm`.
+9. **Drop test (required before normal lift motion, and before any `WALKER_LIFT_DISABLE_SAFE=1` build).** With the arms mounted and the carriage raised a little over a soft landing, cut the lift's motor power and measure how far the carriage slides down in 10 s. Record `drop_test` as `passed` (it stays put) or `failed`. Outside bench mode the Pi refuses lift motion until it passed or a brake is fitted, and only then may the stop also cut motor power.
+10. **Speed and current.** Raise speed in small steps to the built-in 20 mm/s with the loaded carriage and check for lost steps (home, move up and down ten times, home again: `position_mm` should still match a measured height). Record the lowest current that lifts the load without lost steps, the motor's temperature after a run, and the usable travel and top switch position (`top_switch_mm`).
+
 ## Building and flashing
 
 1. Install PlatformIO Core (`pip install platformio==6.1.19`) or the PlatformIO extension for VS Code. The first build downloads the ESP32 toolchain, about 1.5 GB.
@@ -166,6 +256,10 @@ The build stops if a name isn't snake_case, is over 24 characters, or repeats an
 
    ```bash
    WALKER_MODULE_ID=tof-front-01 pio run -e tof -t upload
+   ```
+
+   ```bash
+   WALKER_MODULE_ID=lift-01 pio run -e lift -t upload
    ```
 
    With more than one board plugged in, add `--upload-port <port>` from step 2. If the upload can't connect, hold the board's BOOT button while it says "Connecting...".
@@ -199,6 +293,15 @@ WALKER_MODULE_ID=tof-front-01 pio run -e tof
 mkdir -p ~/firmware-images/tof-front-01
 cp .pio/build/tof/bootloader.bin .pio/build/tof/partitions.bin .pio/build/tof/firmware.bin ~/firmware-images/tof-front-01/
 cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin ~/firmware-images/tof-front-01/
+```
+
+The lift board the same way (built on this Mac on 2026-10-24 with FastAccelStepper 1.2.8; not flashed onto a board yet):
+
+```bash
+WALKER_MODULE_ID=lift-01 pio run -e lift
+mkdir -p ~/firmware-images/lift-01
+cp .pio/build/lift/bootloader.bin .pio/build/lift/partitions.bin .pio/build/lift/firmware.bin ~/firmware-images/lift-01/
+cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin ~/firmware-images/lift-01/
 ```
 
 **Copy each image out before building the next one.** Changing `WALKER_MODULE_ID` changes the project's checksum, and PlatformIO then empties `.pio/build` for every environment: on 2026-10-23 building `tof-front-01` deleted the `hand` build. `boot_app0.bin` comes with the Arduino core, not the build.
@@ -265,9 +368,9 @@ Run every native check with your computer's own C++ compiler (no PlatformIO or E
 firmware/test/run-native.sh
 ```
 
-It runs the unit tests (with the address and undefined-behaviour sanitizers, so any read outside a buffer fails), checks that bad ids and zone names stop the build, and checks that `test/session/transcript.txt` matches what the code prints now. After changing the firmware's output on purpose, run it with `--update` and commit the new transcript. The contract's tests (`pnpm test`) then read that transcript with the real `parseSerialLine` (`packages/contracts/test/firmware-session.test.ts`).
+It runs the unit tests (with the address and undefined-behaviour sanitizers, so any read outside a buffer fails), checks that bad ids, zone names and lift settings stop the build, and checks that `test/session/transcript.txt` and `test/session/lift_transcript.txt` match what the code prints now. After changing the firmware's output on purpose, run it with `--update` and commit the new transcripts. The contract's tests (`pnpm test`) then read them with the real `parseSerialLine` and `parseLiftSerialLine` (`packages/contracts/test/firmware-session.test.ts` and `lift-firmware-session.test.ts`). The lift's tests drive the same code with a simulated stepper and carriage (`test/support/sim_stepper.h`, `lift_rig.h`), so they prove the logic, not the motor.
 
-The expected results were written before the code, in [test/EXPECTED.md](test/EXPECTED.md). CI's `firmware` job runs `run-native.sh`, `pio test -e native`, both board builds, and a build with the id `any`, which must fail.
+The expected results were written before the code, in [test/EXPECTED.md](test/EXPECTED.md). CI's `firmware` job runs `run-native.sh`, `pio test -e native`, the hand, obstacle and lift board builds, and a build with the id `any`, which must fail.
 
 ## Remaining bench checklist
 
@@ -285,4 +388,4 @@ Do these once the boards are wired, and record what you measured in [hardware/cu
 
 ## Assumptions in one place
 
-Pins (GPIO32 Talk, GPIO33 Confirm, GPIO21/22 I2C); I2C at 100 kHz with on-board pull-ups; DRV2605L at 0x5A with id 7 or 3; ERM motor, library 1, open loop, OD_CLAMP at its default; the four effect sequences; TCA9548A at 0x70 with sensors on channels 0 to 3; VL53L1X long mode, 50 ms budget and period; range status 3 counted as valid; 4,000 mm ceiling; 250 ms freshness; 80 ms report interval; 20 ms debounce; 3 s silence stop; 500 ms without a result before a sensor counts as missing; one sensor retried per second; 115200 baud; the ESP32's task watchdog at its default 5 s. Versions: PlatformIO platform `espressif32` 6.12.0 (Arduino-ESP32 core 2.0.17), Pololu VL53L1X 1.3.1, `native` 1.2.1, PlatformIO Core 6.1.19 in CI. Unity, the test framework, is the one PlatformIO picks (`throwtheswitch/Unity@^2.6.1`; 2.6.1 when tested).
+Pins (GPIO32 Talk, GPIO33 Confirm, GPIO21/22 I2C); I2C at 100 kHz with on-board pull-ups; DRV2605L at 0x5A with id 7 or 3; ERM motor, library 1, open loop, OD_CLAMP at its default; the four effect sequences; TCA9548A at 0x70 with sensors on channels 0 to 3; VL53L1X long mode, 50 ms budget and period; range status 3 counted as valid; 4,000 mm ceiling; 250 ms freshness; 80 ms report interval; 20 ms debounce; 3 s silence stop; 500 ms without a result before a sensor counts as missing; one sensor retried per second; 115200 baud; the ESP32's task watchdog at its default 5 s. Lift: pins GPIO25 STEP, GPIO26 DIR, GPIO27 ENA, GPIO32 bottom, GPIO33 top, GPIO13 stop-sense; common-cathode signal wiring at 3.3 V; external 1 to 4.7 kΩ pull-ups and 100 nF on the switch and stop-sense lines; ENA active-disable (enabled at level 0); 8 microsteps; DIR level 1 is up; 50 µs DIR-change delay; 20 ms switch release report delay; two samples for a homing trip; a 1 s task watchdog; sixteen remembered request prefixes (a seventeenth is refused until the lift restarts); four lines of serial outbox; the contract's homing, stop, watchdog and status timings; the simulated stepper's ramp standing in for FastAccelStepper's. Versions: PlatformIO platform `espressif32` 6.12.0 (Arduino-ESP32 core 2.0.17), Pololu VL53L1X 1.3.1, FastAccelStepper 1.2.8, `native` 1.2.1, PlatformIO Core 6.1.19 in CI. Unity, the test framework, is the one PlatformIO picks (`throwtheswitch/Unity@^2.6.1`; 2.6.1 when tested).

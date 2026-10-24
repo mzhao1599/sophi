@@ -10,7 +10,9 @@ import {
 } from "./serial";
 
 /**
- * Pi ↔ lift ESP32 serial lines, version 1. PROPOSED, NOT BUILT: no lift firmware or Pi code exists yet.
+ * Pi ↔ lift ESP32 serial lines, version 1. PROPOSED. The lift firmware (firmware/, env `lift`) implements it and
+ * is tested on a computer only (firmware/test/EXPECTED.md, "Lift board"); it hasn't run on hardware, and no Pi
+ * code exists yet.
  * See docs/interfaces.md ("Pi ↔ lift ESP32"). Same transport and envelope as serial.ts (UTF-8 JSON Lines,
  * at most SERIAL_MAX_LINE_BYTES a line, `v`, `type`, `module_id`, `seq`, strict objects), and the same
  * `hello.request` and `error` lines, unchanged. The lift's own lines all start with `lift.`, so a hand or
@@ -50,11 +52,15 @@ import {
  *    the lift again. An idle lift that stops hearing heartbeats latches nothing; it just refuses moves until
  *    they return.
  *    LIFT_WATCHDOG_DRIVER_ACTION is `hold`: stopping never disables the driver.
- * 6. `lift.stop` and `lift.enable` with `enabled: false` are always accepted: no `stale_seq`, `busy`,
- *    `no_heartbeat`, `not_homed`, `fault_latched` or any other refusal. A stop ramps down and holds. Disabling
- *    first stops stepping at once, then frees the motor, and clears `homed`. The Pi sends it only for a
- *    confirmed `lift.disable` (a passed drop test, a brake, or the carriage on the bottom switch); no fault
- *    reaction sends it. `lift.enable` with `enabled: true` is refused only for `stale_seq`.
+ * 6. `lift.stop` is always accepted: no `stale_seq`, `busy`, `no_heartbeat`, `not_homed`, `fault_latched` or
+ *    any other refusal; it ramps down and holds. `lift.enable` with `enabled: false` skips the same checks but
+ *    frees the motor only when the bottom switch reads pressed, or when the firmware was built disable-safe
+ *    (`WALKER_LIFT_DISABLE_SAFE=1`, set only after a recorded passed drop test or with a brake fitted): then it
+ *    first stops stepping at once, frees the motor, and clears `homed`. Otherwise it is rejected
+ *    `disable_unsafe`, the driver stays enabled, and a running move or homing ramps down and holds as for a
+ *    stop. The Pi sends it only for a confirmed `lift.disable` (a passed drop test, a brake, or the carriage on
+ *    the bottom switch); no fault reaction sends it. `lift.enable` with `enabled: true` is refused only for
+ *    `stale_seq`.
  * 7. Homing, in four phases: fast approach down at LIFT_HOMING_FAST_MM_S until the bottom switch presses
  *    (skipped if it is already pressed); back off up at LIFT_HOMING_SLOW_MM_S by LIFT_HOMING_BACKOFF_MM, the
  *    switch releasing within LIFT_HOMING_BACKOFF_MM + LIFT_HOMING_RELEASE_MARGIN_MM of travel; slow approach down
@@ -219,6 +225,8 @@ export const LiftAckReasonSchema = z.enum([
   "request_used",
   /** `lift.clear` while a fault's cause (the stop, a pressed switch, missing heartbeat) is still present. */
   "cause_present",
+  /** `lift.enable` false off the bottom switch on a build that isn't disable-safe: the carriage could drop. */
+  "disable_unsafe",
 ]);
 export type LiftAckReason = z.infer<typeof LiftAckReasonSchema>;
 
@@ -284,8 +292,13 @@ export const LiftSerialMessageSchema = z.discriminatedUnion("type", [
 ]);
 export type LiftSerialMessage = z.infer<typeof LiftSerialMessageSchema>;
 
-/** Rule 6: the commands the lift accepts whatever its state, sequence or heartbeat. */
+/** Rule 6: the one command the lift accepts whatever its state, sequence, heartbeat or switches. */
 export function isAlwaysAcceptedLiftCommand(message: LiftSerialMessage): boolean {
+  return message.type === "lift.stop";
+}
+
+/** Rule 6: the commands that skip the sequence check (a disable can still be refused `disable_unsafe`). */
+export function skipsLiftSeqCheck(message: LiftSerialMessage): boolean {
   return message.type === "lift.stop" || (message.type === "lift.enable" && !message.enabled);
 }
 

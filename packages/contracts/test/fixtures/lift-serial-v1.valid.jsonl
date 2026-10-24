@@ -21,5 +21,6 @@
 {"v":1,"type":"lift.status","module_id":"lift-01","seq":450,"uptime_ms":42000,"state":"fault","homed":false,"position_mm":null,"target_mm":null,"driver_enabled":true,"limits":{"top":"released","bottom":"released"},"stop_sense":"pressed","faults":["stop_circuit_opened"],"request_id":null,"heartbeat_age_ms":40}
 {"v":1,"type":"lift.clear","module_id":"lift-01","seq":402,"request_id":"k3x9q2-7"}
 {"v":1,"type":"lift.enable","module_id":"lift-01","seq":500,"request_id":"k3x9q2-8","enabled":false}
+{"v":1,"type":"lift.ack","module_id":"lift-01","seq":501,"request_id":"k3x9q2-10","result":"rejected","reason":"disable_unsafe","uptime_ms":43000}
 {"v":1,"type":"hello.request","module_id":"lift-01","seq":0}
 {"v":1,"type":"error","module_id":"lift-01","seq":13,"code":"malformed","uptime_ms":2000}
