@@ -105,6 +105,8 @@ export function recordedSkill(input: {
   calibration: ArmCalibration;
   speedDegS: number;
   letGoDeg: number | null;
+  /** The lift height it was taught at (the lift can't move while recording), or null on a walker without a lift. */
+  liftMm?: number | null;
 }): { ok: true; skill: Skill } | { ok: false; error: string } {
   if (input.samples.length < 2) return { ok: false, error: "it is too short: nothing was recorded" };
   const samples = clampSamples(input.samples, input.calibration);
@@ -127,7 +129,7 @@ export function recordedSkill(input: {
     waypoints: samples.map((s, i) => ({ t_ms: times[i]!, joints: { [input.arm]: s.joints } })),
     gripper_events: input.events.map((e) => ({ t_ms: retimeEvent(e.t, samples, times), arm: input.arm, kind: e.kind })),
     let_go: holding ? [{ arm: input.arm, gripper_open_deg: round2(input.letGoDeg!) }] : [],
-    lift_mm: null,
+    lift_mm: input.liftMm ?? null,
   };
   return { ok: true, skill };
 }

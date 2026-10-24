@@ -1,0 +1,72 @@
+# E9. The demo flow: walker simulate --arms --lift --script test/sim/lift/01-demo-flow.walk
+# Home the lift, raise it to the tray, run the tray skill, "Let go?", fold the arm, lower the lift. SIMULATED lift
+# board and arms under the real motion coordinator; the skill is the simulator's made-up sample
+# (src/sim/sampleSkill.ts, "taught" at the made-up tray height of 300 mm), never a taught one. Every motion starts
+# with a Confirm press `c`; the lift moves only while `lift-hold-on` plays the screen's hold control.
+# Real time: about 60 s.
+
+expect lift state unhomed
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key torque-on-right
+wait 2100
+key c
+expect motion torque right on
+
+# 1. Home the lift, held on the screen.
+key lift-hold-on
+key lift-home
+expect motion target lift.home operator_cli: Home the lift
+wait 2100
+key c
+expect motion command lift.home started operator_cli
+expect 40000 motion lift ended lift.home completed
+
+# 2. Raise it to the tray.
+key lift-up
+expect motion target lift.move operator_cli: Raise the lift to 300 mm
+wait 2100
+key c
+expect 30000 motion lift ended lift.move completed
+expect 1000 lift state idle homed at 300 mm
+key lift-hold-off
+
+# 3. The arm to where the tray skill starts, then the skill: it grasps and ends holding.
+key pose-ready-left
+wait 2100
+key c
+expect 8000 motion command arm.go_to_pose completed operator_cli
+key object-left
+key skill-run-sample
+expect motion target skill.run operator_cli: SIMULATED sample: hold it out
+wait 2100
+key c
+expect motion command skill.run started operator_cli
+expect 3000 motion skill grasp left
+expect 8000 motion command skill.run completed operator_cli
+
+# 4. "Let go?": she takes it, then Confirm opens the hand.
+expect motion target gripper.release walker_local: Let go?
+key object-left
+wait 2100
+key c
+expect 3000 motion command gripper.release completed walker_local
+
+# 5. Fold the arm away, then lower the lift.
+key pose-stowed-left
+wait 2100
+key c
+expect 10000 motion command arm.go_to_pose completed operator_cli
+key lift-hold-on
+key lift-down
+expect motion target lift.move operator_cli: Lower the lift to 50 mm
+wait 2100
+key c
+expect 30000 motion lift ended lift.move completed
+expect 1000 lift state idle homed at 50 mm
+key lift-hold-off
+absent 1000 motion fault
+key q

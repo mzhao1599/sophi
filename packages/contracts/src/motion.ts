@@ -31,7 +31,10 @@ import { z } from "zod";
  *   step (PUL) signal; it may also cut the lift's motor power only once the drop test passed or a brake is
  *   fitted. Its normally closed stop-sense contact is read edge-triggered by the Pi and separately by the lift
  *   ESP32; either latches `stop_circuit_opened` on any press, and afterwards the lift must home again. Without
- *   a wired stop-sense input, all motion is refused unless the Pi was started in bench mode (MOTION_BENCH_ENV).
+ *   a wired stop-sense input, all arm motion is refused unless the Pi was started in bench mode
+ *   (MOTION_BENCH_ENV). The lift never moves without it, bench mode or not: both the Pi's stop-sense and the
+ *   lift ESP32's must be wired (`no_hardware_stop`). For the lift, bench mode waives only the installation
+ *   checks (guards, drop test), and its lower limits apply (`lift_over_limits`).
  * - Any new handle press (Talk or Confirm) after motion started is a `motion.stop`; the press that started
  *   it, held or released, is not. A bounce that looks like a new press also stops (fail-safe). A handle
  *   `pressed` line can be lost on the serial link; the hardware stop is the backstop for that.
@@ -1068,6 +1071,11 @@ export const MotionRefusalSchema = z.enum([
   "lift_guards_missing",
   /** Lift, outside bench mode: the drop test isn't recorded as passed and no brake is fitted. */
   "lift_drop_test_missing",
+  /**
+   * Lift: its built-in acceleration (the configuration the lift reports) is above this mode's
+   * `lift_accel_mm_s2`, or homing's fixed speeds (LIFT_HOMING_FAST_MM_S) are above its `lift_speed_mm_s`.
+   */
+  "lift_over_limits",
   /** lift.disable: the carriage could drop (no passed drop test, no brake, not on the bottom switch). */
   "lift_may_drop",
   "torque_off",
@@ -1104,6 +1112,7 @@ export const REFUSAL_SENTENCES: Readonly<Record<MotionRefusal, string>> = {
   not_held: "Keep holding the lift control to move it.",
   lift_guards_missing: "The lift's guards aren't recorded as fitted, so it won't move.",
   lift_drop_test_missing: "The lift's power-off test isn't recorded as passed, so it won't move.",
+  lift_over_limits: "The lift's built-in speed is above this mode's limit, so it won't move.",
   lift_may_drop: "The lift could slide down with its motor off, so it stays on.",
   torque_off: "That arm's motors are off. Turn them on first.",
   unknown_pose: "That arm doesn't know that position.",
@@ -1170,7 +1179,7 @@ const MOVING_PRECONDITIONS = [
   "no_hand_control",
   "feedback_stale",
 ] as const;
-const LIFT_PRECONDITIONS = [...MOVING_PRECONDITIONS, "not_held", "lift_guards_missing", "lift_drop_test_missing", "arms_not_stowed"] as const;
+const LIFT_PRECONDITIONS = [...MOVING_PRECONDITIONS, "not_held", "lift_guards_missing", "lift_drop_test_missing", "lift_over_limits", "arms_not_stowed"] as const;
 const ARM_WATCHDOG =
   "Control loop at MOTION_CONTROL_HZ: stale feedback (FEEDBACK_STALE_MS) freezes and latches; divergence (FEEDBACK_DIVERGENCE_DEG for FEEDBACK_DIVERGENCE_MS) goes compliant and latches; past motionTimeoutMs(expected) it stops, holds and latches motion_timeout.";
 const LIFT_WATCHDOG =

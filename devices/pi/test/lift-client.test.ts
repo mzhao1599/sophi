@@ -12,7 +12,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { Bus } from "../src/bus";
 import { HELLO_REQUEST_MIN_GAP_MS, LIFT_ACK_TIMEOUT_MS, LIFT_STOP_RETRIES } from "../src/constants";
-import { LiftClient, liftVerdict, type LiftCheckInputs, type LiftEvent, type LiftView } from "../src/motion/lift";
+import { LiftClient, liftMoveSpeed, liftOverLimits, liftVerdict, type LiftCheckInputs, type LiftEvent, type LiftView } from "../src/motion/lift";
 import type { LiftPiLine, LiftPortLink } from "../src/serial/liftPort";
 import { ModuleManager } from "../src/serial/modules";
 import { SIM_LIFT_CONFIG } from "../src/sim/fakeLift";
@@ -498,6 +498,41 @@ describe("lift client: acks, done and rejections", () => {
     expect(r.events.at(-1)).toMatchObject({ type: "ended", requestId: c, outcome: "refused", reason: "not_held" });
   });
 
+  it("L9: a request the lift stops naming after its ack, with no lift.done seen: lift.stop, ended lost, unhomed, lift_unhomed", () => {
+    const r = homedRig();
+    r.client.holdRefresh(r.now);
+    const s = r.client.start({ kind: "lift.move", target_mm: 100 }, OK_INPUTS, r.now);
+    if (!s.ok) throw new Error(s.refusal);
+    r.run(r.now + 20, IDLE_HOMED, true);
+    r.ack(s.requestId);
+    r.status({ ...IDLE_HOMED, state: "moving", request_id: s.requestId, target_mm: 100 });
+    const stops = r.link.of("lift.stop").length;
+    r.status(IDLE_HOMED);
+    expect(r.events).toContainEqual({ type: "ended", requestId: s.requestId, kind: "lift.move", outcome: "lost" });
+    expect(r.events.at(-1)).toEqual({ type: "fault", code: "lift_unhomed" });
+    expect(r.link.of("lift.stop").length).toBe(stops + 1);
+    expect(r.client.state(r.now).homed).toBe(false);
+  });
+
+  it("L9: the Pi counts the lift unhomed from the moment it sends lift.home, until that homing completes", () => {
+    const r = homedRig();
+    expect(r.client.state(r.now).homed).toBe(true);
+    r.client.holdRefresh(r.now);
+    const s = r.client.start({ kind: "lift.home" }, OK_INPUTS, r.now);
+    if (!s.ok) throw new Error(s.refusal);
+    // Queued, not sent yet: still homed.
+    expect(r.client.state(r.now).homed).toBe(true);
+    r.run(r.now + 20, IDLE_HOMED, true);
+    expect(r.link.of("lift.home")).toHaveLength(2);
+    expect(r.client.state(r.now).homed).toBe(false);
+    // A homing stopped part way leaves it unhomed, whatever the lift's status says.
+    r.ack(s.requestId);
+    r.done(s.requestId, "stopped");
+    r.status(IDLE_HOMED);
+    expect(r.client.state(r.now).homed).toBe(false);
+    expect(r.events.filter((e) => e.type === "fault")).toEqual([]);
+  });
+
   it("L9: a stop sent before the lift processed the command ends stopped, not lost: a status older than the ack doesn't count", () => {
     const r = rig();
     r.hello();
@@ -604,12 +639,19 @@ describe("lift client: stop and disable", () => {
   });
 
   it("L13: disable only when liftMayDisable; accepted unhomes; disable_unsafe is reported and leaves it homed; allowed with a fault", () => {
-    const r = homedRig({ installation: NOT_DROP_TESTED, bench: true });
-    expect(r.client.disable(OK_INPUTS, r.now)).toEqual({ ok: false, refusal: "lift_may_drop" });
-    expect(r.link.of("lift.enable").filter((l) => l.enabled === false)).toEqual([]);
-    const onBottom = { ...IDLE_HOMED, limits: { top: "released" as const, bottom: "pressed" as const } };
-    r.run(r.now + 40, onBottom);
-    expect(r.client.disable({ ...OK_INPUTS, faultLatched: true }, r.now)).toEqual({ ok: true });
+    // Not drop-tested (the lift can't home then, so this part is unhomed): refused off the bottom switch.
+    const n = rig({ installation: NOT_DROP_TESTED, bench: true });
+    n.hello();
+    n.status();
+    n.run(200);
+    expect(n.client.disable(OK_INPUTS, n.now)).toEqual({ ok: false, refusal: "lift_may_drop" });
+    expect(n.link.of("lift.enable").filter((l) => l.enabled === false)).toEqual([]);
+    n.run(n.now + 40, { limits: { top: "released" as const, bottom: "pressed" as const } });
+    expect(n.client.disable({ ...OK_INPUTS, faultLatched: true }, n.now)).toEqual({ ok: true });
+    expect(n.link.lines.at(-1)).toMatchObject({ type: "lift.enable", enabled: false });
+    // Drop-tested and homed, but the board wasn't built disable-safe: it refuses, and the lift stays homed.
+    const r = homedRig();
+    r.client.disable({ ...OK_INPUTS, faultLatched: true }, r.now);
     const first = r.link.lines.at(-1)!;
     expect(first).toMatchObject({ type: "lift.enable", enabled: false });
     r.ack(first.request_id as string, "disable_unsafe");
@@ -804,10 +846,25 @@ describe("lift preconditions", () => {
     expect(liftVerdict({ ...VIEW, held: false }, { kind: "lift.home" }, OK_INPUTS, "start")).toBe("not_held");
   });
 
-  it("LP2: bench mode skips no_hardware_stop and the installation checks, never stop_pressed", () => {
-    const bench = { ...VIEW, bench: true, liftStopSense: "not_wired" as const, installation: { ...NOT_DROP_TESTED, guards_fitted: false } };
-    expect(liftVerdict(bench, { kind: "lift.home" }, { ...OK_INPUTS, stopCircuit: "not_wired" }, "start")).toBeNull();
-    expect(liftVerdict(bench, { kind: "lift.home" }, { ...OK_INPUTS, stopCircuit: "pressed" }, "start")).toBe("stop_pressed");
+  it("LP2: bench mode skips only the installation checks; never the hardware stop; its lower limits apply", () => {
+    const slow = { ...SIM_LIFT_CONFIG, max_accel_mm_s2: 25 };
+    const bench = { ...VIEW, bench: true, config: slow, installation: { ...NOT_DROP_TESTED, guards_fitted: false } };
+    const move = { kind: "lift.move" as const, target_mm: 300 };
+    expect(liftVerdict(bench, move, OK_INPUTS, "start")).toBeNull();
+    // The lift never moves without the hardware stop, bench or not: the Pi's or the lift board's not wired.
+    expect(liftVerdict(bench, move, { ...OK_INPUTS, stopCircuit: "not_wired" }, "start")).toBe("no_hardware_stop");
+    expect(liftVerdict({ ...bench, liftStopSense: "not_wired" }, move, OK_INPUTS, "start")).toBe("no_hardware_stop");
+    expect(liftVerdict(bench, move, { ...OK_INPUTS, stopCircuit: "pressed" }, "start")).toBe("stop_pressed");
+    // The lift's built-in 50 mm/s² is over bench's 25; homing's fixed 15 mm/s is over bench's 10 mm/s.
+    expect(liftVerdict({ ...bench, config: SIM_LIFT_CONFIG }, move, OK_INPUTS, "start")).toBe("lift_over_limits");
+    expect(liftVerdict(bench, { kind: "lift.home" }, OK_INPUTS, "start")).toBe("lift_over_limits");
+    // Outside bench mode both fit (50 mm/s², 20 mm/s); an acceleration over 50 doesn't.
+    expect(liftVerdict(VIEW, { kind: "lift.home" }, OK_INPUTS, "start")).toBeNull();
+    expect(liftVerdict({ ...VIEW, config: { ...SIM_LIFT_CONFIG, max_accel_mm_s2: 60 } }, move, OK_INPUTS, "start")).toBe("lift_over_limits");
+    expect(liftOverLimits(SIM_LIFT_CONFIG, false, "lift.home")).toBe(false);
+    expect(liftOverLimits(slow, true, "lift.move")).toBe(false);
+    // Not stowed comes after the limits (the policy's order).
+    expect(liftVerdict({ ...bench, config: SIM_LIFT_CONFIG }, move, { ...OK_INPUTS, armsStowed: false }, "start")).toBe("lift_over_limits");
   });
 
   it("LP3: disable checks only busy, part_missing and lift_may_drop, and is allowed with a fault", () => {
@@ -832,11 +889,13 @@ describe("lift preconditions", () => {
   });
 
   it("LP5: a move runs at the lower of the configuration's and the mode's speed", () => {
-    const r = homedRig({ bench: true });
+    // In bench mode the lift can't home (LP2), so bench's 10 mm/s is checked on the function itself.
+    expect(liftMoveSpeed(SIM_LIFT_CONFIG, true)).toBe(10);
+    const r = homedRig();
     r.client.holdRefresh(r.now);
-    r.client.start({ kind: "lift.move", target_mm: 100 }, { ...OK_INPUTS, stopCircuit: "not_wired" }, r.now);
+    r.client.start({ kind: "lift.move", target_mm: 100 }, OK_INPUTS, r.now);
     r.run(r.now + 20, IDLE_HOMED, true);
-    expect(r.link.lines.at(-1)).toMatchObject({ type: "lift.move", speed_mm_s: 10 });
+    expect(r.link.lines.at(-1)).toMatchObject({ type: "lift.move", speed_mm_s: 20 });
     const slow = homedRig({ config: { ...SIM_LIFT_CONFIG, max_speed_mm_s: 8 } });
     slow.client.holdRefresh(slow.now);
     slow.client.start({ kind: "lift.move", target_mm: 100 }, OK_INPUTS, slow.now);

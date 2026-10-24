@@ -5,14 +5,17 @@ import { parseScript } from "../src/sim/script";
 import { makeMotionHarness } from "./support/motion";
 
 /**
- * Runs every `test/sim/motion/*.walk` script (rows M1 to M10, M31) and every `test/sim/skills/*.walk` script
- * (rows T1 to T7), the same files `walker simulate --arms --script` runs, on a fake clock, through the real
+ * Runs every `test/sim/motion/*.walk` script (rows M1 to M10, M31), every `test/sim/skills/*.walk` script
+ * (rows T1 to T7) and every `test/sim/lift/*.walk` script (rows E9 and E10, with the SIMULATED lift), the same
+ * files `walker simulate --arms [--lift] --script` runs, on a fake clock, through the real
  * coordinator, the real Feetech bus class and simulated STS3215 servos. Every motion state published along the
  * way must pass the contract's MotionStateSchema.
  */
 const SUITES = [
-  { dir: join(__dirname, "sim", "motion"), row: "M", count: 11 },
-  { dir: join(__dirname, "sim", "skills"), row: "T", count: 7 },
+  { dir: join(__dirname, "sim", "motion"), row: "M", count: 11, lift: false },
+  { dir: join(__dirname, "sim", "skills"), row: "T", count: 7, lift: false },
+  // The lift under the coordinator (rows E9 and E10), with the SIMULATED lift board: `--arms --lift`.
+  { dir: join(__dirname, "sim", "lift"), row: "E", count: 2, lift: true },
 ];
 
 for (const suite of SUITES) {
@@ -26,8 +29,8 @@ for (const suite of SUITES) {
     });
 
     for (const name of scripts) {
-      it(`${suite.row}${Number(name.slice(0, 2))}: ${name.replace(/\.walk$/, "")}`, async () => {
-        const h = makeMotionHarness();
+      it(`${suite.row}${suite.lift ? Number(name.slice(0, 2)) + 8 : Number(name.slice(0, 2))}: ${name.replace(/\.walk$/, "")}`, async () => {
+        const h = makeMotionHarness({ lift: suite.lift });
         const steps = parseScript(readFileSync(join(suite.dir, name), "utf8"));
         await h.start();
         const report: string[] = [];

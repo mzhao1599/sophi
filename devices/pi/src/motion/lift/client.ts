@@ -119,7 +119,8 @@ const MOVING_STATES = new Set(["moving", "homing", "stopping"]);
 
 /**
  * The Pi side of the lift (packages/contracts/src/lift-serial.ts, rules 1 to 10; motion.ts for the policy).
- * SIMULATED ONLY so far: tested against `src/sim/fakeLift.ts`, never against the lift board.
+ * SIMULATED ONLY so far: tested against `src/sim/fakeLift.ts`, never against the lift board. The motion
+ * coordinator (src/motion/coordinator.ts) drives it: README.md, "Wired into the coordinator".
  *
  * The motion coordinator owns Confirm targets and presses, faults and the motion state; this client owns the
  * lift's serial lines. It sends nothing on a timer of its own: the coordinator's control loop calls
@@ -177,6 +178,11 @@ export class LiftClient implements LiftLineHandler {
     this.moduleId = deps.moduleId ?? "lift-01";
     this.newPrefix = deps.newPrefix ?? randomPrefix;
     this.prefix = this.newPrefix();
+  }
+
+  /** The Pi's lift configuration and installation record, as given (the motion setup's `lift`). */
+  get setup(): { config: LiftConfig; installation: LiftInstallation } {
+    return this.deps.setup;
   }
 
   on(listener: (event: LiftEvent) => void): () => void {
@@ -469,9 +475,14 @@ export class LiftClient implements LiftLineHandler {
     }
     // Acked, but the lift no longer names it, and no lift.done arrived: we lost track of how it ended. Before the
     // ack, a status that doesn't name it is just older than the command (a stop may already have followed it).
+    // Not knowing how it ended, the Pi stops the lift, counts it unhomed and reports `lift_unhomed` (it must home
+    // again before it moves).
     if (request && request.acked && status.request_id !== request.id) {
-      this.deps.log.warn("the lift stopped running a request without a lift.done the walker saw", { request: request.id });
+      this.deps.log.warn("the lift stopped running a request without a lift.done the walker saw: stopping, unhomed", { request: request.id });
+      this.stop();
       this.end(request, "lost");
+      this.piHomed = false;
+      this.emit({ type: "fault", code: "lift_unhomed" });
     }
   }
 
@@ -686,6 +697,8 @@ export class LiftClient implements LiftLineHandler {
     if (command && request) {
       request.phase = "sent";
       request.sentAt = now;
+      // Homing starts by losing the height it had: the Pi counts it unhomed until this homing completes.
+      if (request.kind === "lift.home") this.piHomed = false;
       const from = this.status?.position_mm ?? null;
       request.deadline =
         request.kind === "lift.home"

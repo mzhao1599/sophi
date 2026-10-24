@@ -460,9 +460,9 @@ describe("walker check: stop switch", () => {
     const clock = new FakeClock();
     const runner = fakeRunner({});
     expect((await stopLine(ctxFor(clock, { run: runner.run }))).detail).toBe(
-      "not_wired (WALKER_STOP_SENSE unset): with no stop-sense input, arm and lift motion are refused unless WALKER_MOTION_BENCH=no-hardware-stop (bench mode)",
+      "not_wired (WALKER_STOP_SENSE unset): with no stop-sense input, the lift never moves, and arm motion is refused unless WALKER_MOTION_BENCH=no-hardware-stop (bench mode)",
     );
-    expect((await stopLine(ctxFor(clock, { env: { WALKER_STOP_SENSE: "not_wired", WALKER_MOTION_BENCH: "no-hardware-stop" } }))).detail).toMatch(/is not_wired.*WALKER_MOTION_BENCH is on, so only the bench limits apply/);
+    expect((await stopLine(ctxFor(clock, { env: { WALKER_STOP_SENSE: "not_wired", WALKER_MOTION_BENCH: "no-hardware-stop" } }))).detail).toMatch(/is not_wired.*the lift never moves.*WALKER_MOTION_BENCH is on, so the arms move under the bench limits/);
     expect(await stopLine(ctxFor(clock, { env: { WALKER_STOP_SENSE: "22" } }))).toMatchObject({ status: "FAIL", detail: expect.stringContaining("must be gpio:<BCM line> or not_wired") });
     expect(await stopLine(ctxFor(clock, { platform: "darwin", env: { WALKER_STOP_SENSE: "gpio:22" } }))).toMatchObject({ status: "SKIP" });
     expect(runner.calls).toEqual([]);

@@ -250,8 +250,8 @@ export async function stopLine(ctx: CheckContext): Promise<CheckLine> {
     return warn(
       "stop",
       "stop switch",
-      `not_wired (WALKER_STOP_SENSE ${value ? "is not_wired" : "unset"}): with no stop-sense input, arm and lift motion are refused` +
-        (bench ? `; ${MOTION_BENCH_ENV} is on, so only the bench limits apply and there is no hardware stop` : ` unless ${MOTION_BENCH_ENV}=${MOTION_BENCH_ENV_VALUE} (bench mode)`),
+      `not_wired (WALKER_STOP_SENSE ${value ? "is not_wired" : "unset"}): with no stop-sense input, the lift never moves, and arm motion is refused` +
+        (bench ? `; ${MOTION_BENCH_ENV} is on, so the arms move under the bench limits with no hardware stop` : ` unless ${MOTION_BENCH_ENV}=${MOTION_BENCH_ENV_VALUE} (bench mode)`),
     );
   }
   const chip = ctx.env.WALKER_GPIO_CHIP || "gpiochip0";

@@ -15,8 +15,9 @@ import type { Logger } from "../log";
 import { MotionCoordinator } from "../motion/coordinator";
 import type { FeetechPort } from "../motion/feetech/port";
 import { MotionFiles, skillJson } from "../motion/files";
-import { ManualStopSense } from "../motion/stopSense";
+import { ManualStopSense, NotWiredStopSense } from "../motion/stopSense";
 import { FakeStsBus } from "./fakeFeetech";
+import { SIM_TRAY_HEIGHT_MM, type LiftSim } from "./liftSim";
 import { SIM_SAMPLE_SKILL_ID, simSampleSkill } from "./sampleSkill";
 
 /** The skill the simulator's own teaching (`record-left`) records. SIMULATED. */
@@ -30,6 +31,11 @@ const SIM_OBJECT_DEG = 12;
  * dangerous default (`torqueOnHoldsPosition: false`: torque on drives to whatever goal is in the register), so
  * a coordinator that forgot goal = present would be caught. Nothing here is hardware, and the simulator's
  * calibrations and poses are made up for it, not measured.
+ *
+ * With the SIMULATED lift (`lift`, `walker simulate --arms --lift`), the coordinator also drives the lift's real
+ * client, the followers start folded at their made-up `stowed` pose (torque still off: it must be turned on, so
+ * the arms count as stowed), the walker's one stop switch also opens the lift board's stop-sense input, and the
+ * sample skill is "taught" at the made-up tray height SIM_TRAY_HEIGHT_MM.
  */
 
 /** Ticks either side of the middle the simulated calibration allows (about ±97°). */
@@ -124,6 +130,10 @@ export class MotionSim {
       walkerProposalOpen?: () => boolean;
       say: (text: string) => void;
       newId?: () => string;
+      /** The SIMULATED lift board and the real lift client (src/sim/liftSim.ts), or none. */
+      lift?: LiftSim;
+      /** Tests: no stop-sense input declared (WALKER_STOP_SENSE=not_wired); default the simulated stop switch. */
+      stopSense?: "switch" | "not_wired";
     },
   ) {
     const files = new MotionFiles(deps.stateDir, deps.log);
@@ -138,6 +148,11 @@ export class MotionSim {
     for (const { side, role } of arms) {
       const fake = new FakeStsBus(deps.clock, { torqueOnHoldsPosition: false });
       this.buses.set(`${side}/${role}`, fake);
+      if (deps.lift && role === "follower") {
+        // SIMULATED: a walker with a lift parks with its arms folded.
+        const stowed = SIM_POSES.find((p) => p.name === "stowed")!.joints;
+        for (const [i, joint] of ARM_JOINTS.entries()) fake.servo(i + 1).moveByHand(2048 + degToTicks(stowed[joint]));
+      }
       for (const servo of fake.servos.values()) {
         servo.onTorqueOn = (goal, present) =>
           this.sim(`torque-on ${side} ${role} servo ${servo.id} ${Math.abs(goal - present) <= 1 ? "goal-at-present" : `goal-away ${goal - present}`}`);
@@ -153,8 +168,11 @@ export class MotionSim {
       }
       files.writePoses(poses);
     }
-    // The SIMULATED sample skill, made up (sampleSkill.ts): only ever written into a simulator's state folder.
-    if (!files.skillExists(SIM_SAMPLE_SKILL_ID)) files.writeSkill(simSampleSkill(at), { replace: false, stamp: at });
+    // The SIMULATED sample skill, made up (sampleSkill.ts): only ever written into a simulator's state folder. It
+    // names the made-up tray height exactly when the simulator has a lift (rewritten if a folder had the other).
+    const sample = files.readSkill(SIM_SAMPLE_SKILL_ID);
+    if (sample.kind === "missing") files.writeSkill(simSampleSkill(at, this.sampleLiftMm()), { replace: false, stamp: at });
+    else if (sample.kind === "ok" && sample.skill.lift_mm !== this.sampleLiftMm()) files.writeSkill(simSampleSkill(at, this.sampleLiftMm()), { replace: true, stamp: at });
     // Where the arm was at each handle press: the moment a stop happens (registered before the coordinator's).
     deps.bus.on("button", (event) => {
       if (event.edge === "pressed") this.mark();
@@ -174,13 +192,19 @@ export class MotionSim {
           return fakeConnection(this.buses.get(key)!, () => this.sim(`goal-write ${side} ${role}`));
         },
       })),
-      stopSense: this.stopSwitch,
+      stopSense: deps.stopSense === "not_wired" ? new NotWiredStopSense() : this.stopSwitch,
       bench: deps.bench,
       handControls: deps.handControls,
       ...(deps.walkerProposalOpen ? { walkerProposalOpen: deps.walkerProposalOpen } : {}),
       say: deps.say,
       ...(deps.newId ? { newId: deps.newId } : {}),
+      lift: deps.lift?.client ?? null,
     });
+  }
+
+  /** The sample skill's lift height: the made-up tray height with a lift, else none. */
+  private sampleLiftMm(): number | null {
+    return this.deps.lift ? SIM_TRAY_HEIGHT_MM : null;
   }
 
   private sim(text: string): void {
@@ -229,6 +253,8 @@ export class MotionSim {
             servo.faults.silent = !this.powered;
           }
         }
+        // The one stop switch also opens the lift's own stop-sense input (the lift board reads it separately).
+        this.deps.lift?.setStopPressed(next === "pressed");
         this.stopSwitch.set(next);
         this.sim(`stop switch ${next}`);
       },
@@ -242,6 +268,8 @@ export class MotionSim {
       "torque-off-left": () => operator(c.operatorTorque(false, ["left"])),
       "pose-ready-left": () => operator(c.operatorGoToPose("left", "ready")),
       "pose-handover-left": () => operator(c.operatorGoToPose("left", "handover")),
+      "pose-stowed-left": () => operator(c.operatorGoToPose("left", "stowed")),
+      "pose-stowed-right": () => operator(c.operatorGoToPose("right", "stowed")),
       "offer-ready-left": () => {
         // SIMULATED offer source: stands in for a later request by ids (MotionOfferRequestSchema).
         if (!c.requestOffer({ target: { kind: "arm.go_to_pose", arm: "left", pose: "ready" } })) this.sim("offer dropped");
@@ -375,14 +403,14 @@ export class MotionSim {
       },
       "skill-edit-too-fast": () => {
         // Someone edits the sample skill's file by hand: one waypoint jumps 40° (far over its 30°/s).
-        const skill = simSampleSkill(new Date(this.deps.clock.now()).toISOString());
+        const skill = simSampleSkill(new Date(this.deps.clock.now()).toISOString(), this.sampleLiftMm());
         skill.waypoints[60]!.joints.left!.shoulder_pan += 40;
         writeFileSync(this.files.skillPath(SIM_SAMPLE_SKILL_ID), skillJson(skill));
         this.sim("sample skill edited: too fast");
       },
       "skill-edit-out-of-range": () => {
         // The same, with the wrist turned to 95° throughout: past this arm's calibrated range less the margin.
-        const skill = simSampleSkill(new Date(this.deps.clock.now()).toISOString());
+        const skill = simSampleSkill(new Date(this.deps.clock.now()).toISOString(), this.sampleLiftMm());
         skill.start.joints.left!.wrist_roll = 95;
         for (const wp of skill.waypoints) wp.joints.left!.wrist_roll = 95;
         writeFileSync(this.files.skillPath(SIM_SAMPLE_SKILL_ID), skillJson(skill));
@@ -390,7 +418,7 @@ export class MotionSim {
       },
       "skill-restore-sample": () => {
         const at = new Date(this.deps.clock.now()).toISOString();
-        this.files.writeSkill(simSampleSkill(at), { replace: true, stamp: at });
+        this.files.writeSkill(simSampleSkill(at, this.sampleLiftMm()), { replace: true, stamp: at });
         this.sim("sample skill restored");
       },
     };
@@ -460,6 +488,8 @@ export const MOTION_KEYS: Record<string, string> = {
   "8": "skill-restore-sample",
   "9": "skills-list",
   b: "finger-left",
+  "[": "pose-stowed-left",
+  "]": "pose-stowed-right",
 };
 
 export const MOTION_HELP = `Arms (SIMULATED): s stop switch press/release   h unplug/replug the handle   1/2 torque on left/right (then c)
@@ -470,4 +500,5 @@ export const MOTION_HELP = `Arms (SIMULATED): s stop switch press/release   h un
 Skills (SIMULATED): R record the left arm as "sim_taught" (then M first, and c)   T teach: move the left leader through a pick
       3 mark a grasp   4 mark a release   S end the recording   E save it   X an object in the left gripper / taken away
       5 run "sim_taught" (then c)   N run the made-up sample skill (then c)   Q offer the sample (then c)   6 "Let go?" again
-      7 edit the sample file to be too fast   8 put the sample back   9 list the skills   b a finger in the left gripper / out`;
+      7 edit the sample file to be too fast   8 put the sample back   9 list the skills   b a finger in the left gripper / out
+      [ fold the left arm away ("stowed", then c)   ] fold the right arm away (then c)`;

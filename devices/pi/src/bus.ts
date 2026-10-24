@@ -60,7 +60,7 @@ export interface BusEvents {
   confirming: { phase: "started" | "ended" };
   /** The walker screen sent a new state: its name and revision only (for scripts and tests; never the body). */
   screen: { state: ScreenStateName; revision: number };
-  /** `walker simulate --lift` only: what the lift client, the simulated lift and the stand-in loop did. */
+  /** `walker simulate --arms --lift` only: what the simulated lift board did and its injected faults (the coordinator's own lift events are `motion` `lift ...`). */
   lift: { kind: string; text: string };
   /**
    * A hand module said hello, went away, or its line numbers jumped (a lost line) or went back (a reboot):

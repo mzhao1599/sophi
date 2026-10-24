@@ -7,7 +7,7 @@ import { pairWalker } from "./pair";
 import { StateStore } from "./store";
 import { realCheckDeps, walkerCheck } from "./check";
 import { readGps } from "./gps";
-import { ARMS_USAGE, armsCommand, motionCommand } from "./motion/cli";
+import { ARMS_USAGE, armsCommand, liftCommand, motionCommand } from "./motion/cli";
 
 const USAGE = `walker: Sophi's always-on walker service
 
@@ -31,8 +31,8 @@ const USAGE = `walker: Sophi's always-on walker service
       Runs the whole walker on this computer with simulated parts and, unless --server is given, a FAKE
       cloud on 127.0.0.1. Silent by default: speech is written to audio files. --loud plays it.
       --screen also serves the walker screen's page on http://127.0.0.1:8740/ (WALKER_SCREEN_PORT).
-      --lift adds a SIMULATED lift board driven by the real lift client from a stand-in loop (the motion
-      coordinator isn't wired in); press ? for its keys.
+      --lift adds a SIMULATED lift board, driven by the real lift client under the motion coordinator (it
+      needs --arms, which it turns on); press ? for its keys.
       --arms adds SIMULATED arms (fake servo buses) and a simulated stop switch; press ? for their keys.
 ${ARMS_USAGE}
 
@@ -134,6 +134,8 @@ async function main(argv: string[]): Promise<number> {
       return armsCommand(positional, flags);
     case "motion":
       return motionCommand(positional, flags);
+    case "lift":
+      return liftCommand(positional, flags);
     case "simulate": {
       const mic = text(flags.get("mic"));
       if (mic !== undefined && mic !== "mac") throw new Error("--mic only takes mac.");

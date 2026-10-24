@@ -309,7 +309,7 @@ Firmware sends a hello on boot and on each `hello.request`, then heartbeat/healt
 
 ## Pi ↔ lift ESP32 USB serial (proposed)
 
-**Proposed; the lift firmware is written, not run on hardware:** the lift ESP32 firmware ([`firmware/`](../firmware/README.md#lift-board), env `lift`) implements these lines and is tested on a computer only. The Pi's lift client ([`devices/pi/src/motion/lift/`](../devices/pi/src/motion/lift/README.md)) is written and tested only against a simulated lift, and the walker service doesn't use it yet. Every timing is a placeholder. Where to find the details:
+**Proposed; the lift firmware is written, not run on hardware:** the lift ESP32 firmware ([`firmware/`](../firmware/README.md#lift-board), env `lift`) implements these lines and is tested on a computer only. The Pi's lift client ([`devices/pi/src/motion/lift/`](../devices/pi/src/motion/lift/README.md)) is written, driven by the Pi's motion coordinator, and tested only against a simulated lift. Every timing is a placeholder. Where to find the details:
 
 - the schemas and the firmware's exact rules (numbered 1 to 10 in its header): [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts)
 - the limits: [`motion.ts`](../packages/contracts/src/motion.ts)

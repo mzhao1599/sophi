@@ -1,6 +1,6 @@
 import { chmodSync, unlinkSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
-import { ArmRoleSchema, ArmSideSchema } from "@walker/contracts";
+import { ArmRoleSchema, ArmSideSchema, LIFT_RAIL_LENGTH_MM } from "@walker/contracts";
 import { z } from "zod";
 import type { Logger } from "../log";
 import type { MotionCoordinator } from "./coordinator";
@@ -41,6 +41,9 @@ export const OperatorRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("skill.run"), skill_id: z.string().max(64) }),
   z.object({ op: z.literal("skill.rm"), skill_id: z.string().max(64) }),
   z.object({ op: z.literal("let_go"), arm: side.optional(), deg: z.number().min(-180).max(180).optional() }),
+  z.object({ op: z.literal("lift.home") }),
+  z.object({ op: z.literal("lift.move"), target_mm: z.number().min(0).max(LIFT_RAIL_LENGTH_MM) }),
+  z.object({ op: z.literal("lift.disable") }),
 ]);
 export type OperatorRequestMessage = z.infer<typeof OperatorRequestSchema>;
 
@@ -94,6 +97,12 @@ export async function answerOperator(coordinator: MotionCoordinator, raw: unknow
       return coordinator.operatorSkillRemove(request.skill_id);
     case "let_go":
       return coordinator.operatorLetGo(request.arm ?? null, request.deg ?? null);
+    case "lift.home":
+      return coordinator.operatorLiftHome();
+    case "lift.move":
+      return coordinator.operatorLiftMove(request.target_mm);
+    case "lift.disable":
+      return coordinator.operatorLiftDisable();
   }
 }
 

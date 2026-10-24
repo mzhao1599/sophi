@@ -2,6 +2,8 @@ import { chmodSync, copyFileSync, linkSync, mkdirSync, readFileSync, readdirSync
 import { join } from "node:path";
 import {
   ArmCalibrationSchema,
+  LiftConfigSchema,
+  LiftInstallationSchema,
   MOTION_CONTRACT_VERSION,
   NamedPoseSchema,
   SkillIdSchema,
@@ -9,6 +11,8 @@ import {
   type ArmCalibration,
   type ArmRole,
   type ArmSide,
+  type LiftConfig,
+  type LiftInstallation,
   type NamedPose,
   type Skill,
 } from "@walker/contracts";
@@ -19,6 +23,10 @@ import type { Logger } from "../log";
  * The arm files the Pi keeps in its state folder (`<state>/motion/`, 0700; files 0600):
  * - `calibration-<side>-<role>.json`: one `ArmCalibrationSchema` file per arm, as the contract defines it.
  * - `poses.json`: the named follower poses, each a `NamedPoseSchema`.
+ * - `lift.json`: the lift, when one is fitted (`LiftFileSchema`): its motion configuration (the contract's
+ *   LiftConfigSchema, which must match the one built into the lift board) and the installer's safety record
+ *   (LiftInstallationSchema: guards, drop test, brake). Written by hand by the installer; the Pi only reads it.
+ *   No file: no lift on this walker. A file that doesn't parse: no lift either (logged), so lift motion is refused.
  * - `skills/<skill_id>.json` (folder 0700): one taught movement per file, each a contract `SkillSchema` whose
  *   `skill_id` is the file's name. Written atomically. An old one is renamed aside (`.replaced-<time>`,
  *   `.removed-<time>`), never deleted.
@@ -35,6 +43,20 @@ export const PosesFileSchema = z.strictObject({
   version: z.literal(MOTION_CONTRACT_VERSION),
   poses: z.array(NamedPoseSchema).max(64),
 });
+
+/** `lift.json`: the motion setup's `lift` (motion.ts MotionSetupSchema), in its own file. */
+export const LiftFileSchema = z.strictObject({
+  format: z.literal("sophi.lift"),
+  version: z.literal(MOTION_CONTRACT_VERSION),
+  config: LiftConfigSchema,
+  installation: LiftInstallationSchema,
+});
+export interface LiftSetup {
+  config: LiftConfig;
+  installation: LiftInstallation;
+}
+/** What reading `lift.json` found: none (no lift fitted), one that doesn't parse (and why), or the setup. */
+export type LiftLoad = { kind: "missing" } | { kind: "invalid"; reason: string } | { kind: "ok"; setup: LiftSetup };
 
 /** What reading one skill file found: none, one that fails the contract's schema (and why), or a valid skill. */
 export type SkillLoad = { kind: "missing" } | { kind: "invalid"; reason: string } | { kind: "ok"; skill: Skill };
@@ -186,6 +208,34 @@ export class MotionFiles {
   /** Puts a poses backup back (the copy is kept). */
   restorePoses(backup: string): void {
     copyFileSync(backup, join(this.dir, "poses.json"));
+  }
+
+  liftPath(): string {
+    return join(this.dir, "lift.json");
+  }
+
+  /** The lift's configuration and installation record: none (no file: no lift fitted), malformed (logged), or the setup. */
+  readLift(): LiftLoad {
+    const raw = this.readJson(this.liftPath());
+    if (raw === undefined) return { kind: "missing" };
+    if (raw === null) {
+      this.log.error("lift file isn't JSON; the lift is off");
+      return { kind: "invalid", reason: "lift.json is malformed: it isn't JSON" };
+    }
+    const parsed = LiftFileSchema.safeParse(raw);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const problem = `${issue?.path.join(".") || "file"}: ${issue?.message ?? "invalid"}`;
+      this.log.error("lift file doesn't match the contract; the lift is off", { problem });
+      return { kind: "invalid", reason: `lift.json is malformed (${problem})` };
+    }
+    return { kind: "ok", setup: { config: parsed.data.config, installation: parsed.data.installation } };
+  }
+
+  /** Writes `lift.json` (the simulator and tests; on a walker the installer writes it). */
+  writeLift(setup: LiftSetup): void {
+    const valid = LiftFileSchema.parse({ format: "sophi.lift", version: MOTION_CONTRACT_VERSION, ...setup });
+    this.writeAtomic(this.liftPath(), JSON.stringify(valid, null, 2));
   }
 
   readPoses(): NamedPose[] {

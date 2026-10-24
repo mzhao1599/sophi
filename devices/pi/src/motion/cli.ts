@@ -20,11 +20,16 @@ export const ARMS_USAGE = `  walker arms status
   walker arms skill run <skill-id>
   walker arms skill rm <skill-id>
   walker arms let-go [--arm left|right] [--deg <degrees>]
+  walker lift home
+  walker lift move <millimetres>
+  walker lift disable
+  walker lift status
   walker motion stop
   walker motion clear --reason "<why it is safe>"
   walker motion status
       Talk to the running walker service's motion coordinator (socket: --socket, else WALKER_MOTION_SOCKET, else
-      ${DEFAULT_MOTION_SOCKET}). Needs sudo on the Pi. Everything but a stop waits for Confirm on the walker.`;
+      ${DEFAULT_MOTION_SOCKET}). Needs sudo on the Pi. Everything but a stop waits for Confirm on the walker.
+      The lift also moves only while someone holds the lift control on the walker's screen: letting go stops it.`;
 
 type Flags = Map<string, string | true>;
 const text = (value: string | true | undefined) => (typeof value === "string" ? value : undefined);
@@ -97,6 +102,14 @@ function printState(state: MotionState): void {
           : "";
     out(`Active: ${active.kind}${more}`);
   }
+  const lift = state.lift;
+  if (lift) {
+    const where = lift.position_mm === null ? "height unknown" : `at ${lift.position_mm.toFixed(1)} mm`;
+    out(
+      `Lift: ${lift.connected ? "connected" : "NOT connected"}, ${lift.homed ? "homed" : "NOT homed"}, ${where}${lift.moving ? `, moving${lift.target_mm === null ? "" : ` to ${lift.target_mm} mm`}` : ""}${lift.driver_enabled === false ? ", motor off" : ""}, switches top ${lift.limits.top} bottom ${lift.limits.bottom}${lift.faults.length ? `, faults ${lift.faults.join(", ")}` : ""}`,
+    );
+  }
+  if (active && (active.kind === "lift.home" || active.kind === "lift.move")) out(`  The lift is ${active.phase === "running" ? "running: held on the screen" : "stopping (let go or stopped; it won't resume)"}.`);
   const grasping = state.arms.filter((a) => a.grasp_active).map((a) => a.arm);
   if (grasping.length > 0) out(`Grasping: ${grasping.join(", ")} (walker arms let-go)`);
   if (state.confirm_target) out(`Waiting for Confirm (prepared by ${state.confirm_target.prepared_by}): "${state.confirm_target.prompt}"`);
@@ -408,6 +421,42 @@ export async function armsCommand(positional: string[], flags: Flags): Promise<n
           return await confirmed(client, { op: "pose.go", name, arm: side }, true);
         }
         break;
+      }
+    }
+    out(`Usage:\n${ARMS_USAGE}`);
+    return 2;
+  } finally {
+    client.close();
+  }
+}
+
+/** `walker lift ...`: lift targets, Confirmed at the walker and held on its screen. */
+export async function liftCommand(positional: string[], flags: Flags): Promise<number> {
+  const [sub, value] = positional;
+  const client = await OperatorClient.connect(socketPath(flags));
+  const holdNote = () => out("Hold the lift control on the walker's screen, then press Confirm on the handle. It moves only while held; letting go stops it.");
+  try {
+    switch (sub) {
+      case "home":
+        holdNote();
+        return await confirmed(client, { op: "lift.home" }, true);
+      case "move": {
+        const mm = Number(value);
+        if (value === undefined || !Number.isFinite(mm)) {
+          out("walker lift move <millimetres above the bottom switch>");
+          return 2;
+        }
+        holdNote();
+        return await confirmed(client, { op: "lift.move", target_mm: mm }, true);
+      }
+      case "disable":
+        out("The lift's motor turns off: it frees, and the lift needs homing before it moves again. The walker refuses it if the lift could slide down.");
+        return await confirmed(client, { op: "lift.disable" }, true);
+      case "status": {
+        const reply = await client.send({ op: "status" });
+        if (reply.ok !== true) return fail(reply);
+        printState(reply.state as MotionState);
+        return 0;
       }
     }
     out(`Usage:\n${ARMS_USAGE}`);

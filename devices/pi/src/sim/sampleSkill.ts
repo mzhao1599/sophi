@@ -26,7 +26,11 @@ const KEYS: Array<[number, ArmJoints]> = [
 const GRASP_AT_MS = 1600;
 const STEP_MS = 20;
 
-export function simSampleSkill(createdAt: string): Skill {
+/**
+ * `liftMm`: the made-up tray height when the simulator has a lift (a skill names its lift height exactly when the
+ * walker has a lift: the contract's checkSkillAgainstSetup), else null.
+ */
+export function simSampleSkill(createdAt: string, liftMm: number | null = null): Skill {
   const waypoints: Skill["waypoints"] = [];
   for (let k = 0; k + 1 < KEYS.length; k += 1) {
     const [t0, a] = KEYS[k]!;
@@ -51,6 +55,6 @@ export function simSampleSkill(createdAt: string): Skill {
     waypoints,
     gripper_events: [{ t_ms: GRASP_AT_MS, arm: "left", kind: "grasp" }],
     let_go: [{ arm: "left", gripper_open_deg: 30 }],
-    lift_mm: null,
+    lift_mm: liftMm,
   };
 }

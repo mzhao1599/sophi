@@ -1,26 +1,21 @@
-import {
-  FAULTS_THAT_UNHOME_LIFT,
-  MOTION_BENCH_ENV,
-  MOTION_BENCH_ENV_VALUE,
-  MOTION_CONTROL_PERIOD_MS,
-  type LiftInstallation,
-  type MotionFaultCode,
-} from "@walker/contracts";
+import { MOTION_BENCH_ENV, MOTION_BENCH_ENV_VALUE, type LiftConfig, type LiftInstallation } from "@walker/contracts";
 import type { Bus } from "../bus";
 import type { Cancel, Clock } from "../clock";
 import type { Logger } from "../log";
-import { LiftClient, type LiftAction, type LiftCheckInputs, type LiftEvent } from "../motion/lift";
+import type { MotionCoordinator } from "../motion/coordinator";
+import { LiftClient } from "../motion/lift";
+import { HOLD_SEND_MS } from "../screen/hold";
 import type { ModuleManager } from "../serial/modules";
 import { SimulatedPort } from "./fakeModules";
 import { SIM_LIFT_CONFIG, SimulatedLiftBoard } from "./fakeLift";
 
 /**
- * `walker simulate --lift`: the real lift client (src/motion/lift/) over the real module manager, talking to a
- * SIMULATED lift board (fakeLift.ts) on a simulated port. The motion coordinator isn't wired here, so a
- * STAND-IN loop plays its part: it ticks the client every MOTION_CONTROL_PERIOD_MS, refreshes the hold while
- * the hold key is on (as the screen's hold control would), latches the faults the client reports and stops
- * the lift on each, and treats a key as the handle Confirm press on a lift target. There is no Confirm target,
- * no screen and no arms in this mode; the logs and bus events say so.
+ * `walker simulate --arms --lift`: a SIMULATED lift board (fakeLift.ts) on a simulated port, found by the real
+ * module manager and driven by the real lift client under the real motion coordinator, as on the walker. The
+ * lift keys only do what a person or a fault would: prepare a lift target (as the terminal does; Confirm is
+ * still `c`), hold or let go of the screen's lift control (it posts "still held" every HOLD_SEND_MS, as the
+ * screen's page does, through the same `screenHold` bus event the screen server raises), or inject a fault into
+ * the simulated board. Nothing here plays the coordinator.
  */
 
 /** SIMULATED installation record: no real lift has been inspected or drop-tested. */
@@ -32,6 +27,10 @@ export const SIM_LIFT_INSTALLATION: LiftInstallation = {
   driver_current_setting: null,
   recorded_at: "2026-10-24T00:00:00.000Z",
 };
+
+/** The simulator's made-up tray height (its sample skill is "taught" there), and the lowered height. SIMULATED. */
+export const SIM_TRAY_HEIGHT_MM = 300;
+export const SIM_LOW_HEIGHT_MM = 50;
 
 /** Keyboard letters for the lift actions (scripts use the names: `key lift-home`). */
 export const LIFT_KEYS: Readonly<Record<string, string>> = {
@@ -50,11 +49,11 @@ export const LIFT_KEYS: Readonly<Record<string, string>> = {
   D: "lift-disable",
 };
 
-export const LIFT_HELP = `Lift (SIMULATED board; a STAND-IN loop plays the motion coordinator, which isn't wired here):
-      l hold the screen's lift control / let go   e home (as Confirm on a lift.home)   u move to 300 mm   d move to 50 mm
-      k stop   y stop switch press / release   w bottom switch stuck pressed / fixed   j cut the switch harness / fixed
-      v line from the lift lost / back   a freeze the lift board (it restarts after 5 s)   z pause the control loop / resume
-      K clear lift faults (as Confirm on fault.clear)   D disable the lift driver (as Confirm on lift.disable)`;
+export const LIFT_HELP = `Lift (SIMULATED board, the real lift client under the real motion coordinator; the arms start folded):
+      l hold the screen's lift control / let go   e home   u raise to ${SIM_TRAY_HEIGHT_MM} mm   d lower to ${SIM_LOW_HEIGHT_MM} mm (each: then hold l, then c)
+      k stop   y the stop switch (the same one as s)   w bottom switch stuck pressed / fixed   j cut the switch harness / fixed
+      v line from the lift lost / back   a freeze the lift board (it restarts after 5 s)   z the control loop stops calling the lift / resumes
+      K clear the faults (then c)   D turn off the lift's motor (then c)`;
 
 export interface LiftSimDeps {
   clock: Clock;
@@ -63,6 +62,12 @@ export interface LiftSimDeps {
   modules: ModuleManager;
   /** Bench mode, as MOTION_BENCH_ENV says (read once). */
   bench: boolean;
+  /** Tests: the Pi's lift.json configuration, when it should differ from the simulated board's built-in one. */
+  config?: LiftConfig;
+  /** Tests: the Pi's installation record (default SIM_LIFT_INSTALLATION). */
+  installation?: LiftInstallation;
+  /** Tests: whether the simulated board was built with its stop-sense input (default wired). */
+  boardStopSense?: "wired" | "not_wired";
 }
 
 /** Bench mode for the lift simulator: MOTION_BENCH_ENV set to exactly MOTION_BENCH_ENV_VALUE. */
@@ -73,87 +78,100 @@ export function liftSimBench(env: NodeJS.ProcessEnv): boolean {
 export class LiftSim {
   readonly port = new SimulatedPort("sim:lift");
   readonly board: SimulatedLiftBoard;
+  /** The real lift client, for the coordinator (MotionSim passes it on). */
   readonly client: LiftClient;
-  /** The faults the stand-in latched, as the coordinator would (only a lift.clear the lift accepts clears them). */
-  readonly faults = new Set<MotionFaultCode>();
   private holding = false;
-  private ticking = true;
+  private holdTimer: Cancel | null = null;
+  private ticksPaused = false;
   private cancels: Cancel[] = [];
   private lastState: string | null = null;
   private stopped = false;
 
   constructor(private readonly deps: LiftSimDeps) {
+    const installation = deps.installation ?? SIM_LIFT_INSTALLATION;
     this.board = new SimulatedLiftBoard(this.port, deps.clock, {
       config: SIM_LIFT_CONFIG,
-      disableSafe: SIM_LIFT_INSTALLATION.drop_test === "passed" || SIM_LIFT_INSTALLATION.brake_fitted,
+      disableSafe: installation.drop_test === "passed" || installation.brake_fitted,
+      stopSense: deps.boardStopSense ?? "wired",
     });
     this.client = new LiftClient({
       log: deps.log,
-      setup: { config: SIM_LIFT_CONFIG, installation: SIM_LIFT_INSTALLATION },
+      setup: { config: deps.config ?? SIM_LIFT_CONFIG, installation },
       bench: deps.bench,
       monotonic: () => deps.clock.monotonic(),
     });
-    this.client.on((event) => this.onEvent(event));
+    // SIMULATED control-loop stall (`lift-pause-ticks`): the coordinator's loop keeps running, but its calls into
+    // the lift are dropped, as if the loop had stopped. Only the simulator does this.
+    const tick = this.client.tick.bind(this.client);
+    this.client.tick = (now: number) => {
+      if (!this.ticksPaused) tick(now);
+    };
   }
 
+  /** The lift board on its port: call before the coordinator ticks (the handler is set first, as on the Pi). */
   start(): void {
     this.deps.modules.setLiftHandler(this.client);
     this.deps.modules.attach(this.port);
     this.board.start();
-    this.deps.log.info("SIMULATED lift board started; a STAND-IN loop drives the lift client (no motion coordinator here)");
-    const tick = () => {
+    this.deps.log.info("SIMULATED lift board started; the real lift client runs under the motion coordinator");
+    const report = () => {
       if (this.stopped) return;
-      const now = this.deps.clock.monotonic();
-      if (this.holding) this.client.holdRefresh(now); // the screen refreshes at least every HOLD_CONTROL_REFRESH_MS
-      if (this.ticking) this.client.tick(now);
       this.reportState();
-      this.cancels.push(this.deps.clock.setTimeout(tick, MOTION_CONTROL_PERIOD_MS));
+      this.cancels.push(this.deps.clock.setTimeout(report, 50));
     };
-    this.cancels.push(this.deps.clock.setTimeout(tick, MOTION_CONTROL_PERIOD_MS));
+    report();
   }
 
   stop(): void {
     this.stopped = true;
+    this.holdTimer?.();
     for (const cancel of this.cancels) cancel();
     this.board.powerOff();
   }
 
-  /** The stand-in's inputs: no arms (so nothing to stow), the lift's stop as the walker's stop, its own faults. */
-  inputs(): LiftCheckInputs {
-    return {
-      stopCircuit: this.board.stopPressed ? "pressed" : "released",
-      faultLatched: this.faults.size > 0,
-      armsStowed: true,
-      otherMotion: false,
-    };
+  /** The walker's one stop switch also opens the lift board's own stop-sense input (MotionSim calls this). */
+  setStopPressed(pressed: boolean): void {
+    this.board.stopPressed = pressed;
   }
 
-  /** Named actions for scripts (`key lift-home`) and LIFT_KEYS. */
-  actions(): Record<string, () => void> {
+  /**
+   * Named actions for scripts (`key lift-home`) and LIFT_KEYS. `stopSwitch` presses or releases the walker's
+   * one stop switch (MotionSim's `stop-switch`).
+   */
+  actions(coordinator: MotionCoordinator, stopSwitch: () => void): Record<string, () => void> {
     const say = (kind: string, text: string) => this.emit(kind, text);
+    const operator = (what: string, result: { ok: boolean; error?: string }) => {
+      if (!result.ok) say("refused", `${what}: ${result.error ?? ""}`);
+    };
+    const holdOn = () => {
+      if (this.holding) return;
+      this.holding = true;
+      say("hold", "on");
+      // As the screen's page does: "still held" now and every HOLD_SEND_MS, stamped by the Pi on receipt.
+      const refresh = () => {
+        if (!this.holding || this.stopped) return;
+        this.deps.bus.emit("screenHold", { pressed: true, atMono: this.deps.clock.monotonic() });
+        this.holdTimer = this.deps.clock.setTimeout(refresh, HOLD_SEND_MS);
+      };
+      refresh();
+    };
+    const holdOff = () => {
+      if (!this.holding) return;
+      this.holding = false;
+      this.holdTimer?.();
+      this.holdTimer = null;
+      this.deps.bus.emit("screenHold", { pressed: false, atMono: this.deps.clock.monotonic(), reason: "page" });
+      say("hold", "off");
+    };
     return {
-      "lift-hold": () => (this.holding ? this.actions()["lift-hold-off"]!() : this.actions()["lift-hold-on"]!()),
-      "lift-hold-on": () => {
-        this.holding = true;
-        this.client.holdRefresh(this.deps.clock.monotonic());
-        say("hold", "on");
-      },
-      "lift-hold-off": () => {
-        this.holding = false;
-        this.client.holdRelease(this.deps.clock.monotonic());
-        say("hold", "off");
-      },
-      "lift-home": () => this.confirm({ kind: "lift.home" }),
-      "lift-up": () => this.confirm({ kind: "lift.move", target_mm: 300 }),
-      "lift-down": () => this.confirm({ kind: "lift.move", target_mm: 50 }),
-      "lift-stop": () => {
-        this.client.stop();
-        say("stop", "sent");
-      },
-      "lift-stop-switch": () => {
-        this.board.stopPressed = !this.board.stopPressed;
-        say("sim", `stop switch ${this.board.stopPressed ? "pressed" : "released"}`);
-      },
+      "lift-hold": () => (this.holding ? holdOff() : holdOn()),
+      "lift-hold-on": holdOn,
+      "lift-hold-off": holdOff,
+      "lift-home": () => operator("lift.home", coordinator.operatorLiftHome()),
+      "lift-up": () => operator("lift.move", coordinator.operatorLiftMove(SIM_TRAY_HEIGHT_MM)),
+      "lift-down": () => operator("lift.move", coordinator.operatorLiftMove(SIM_LOW_HEIGHT_MM)),
+      "lift-stop": () => operator("stop", coordinator.operatorStop()),
+      "lift-stop-switch": stopSwitch,
       "lift-stuck-bottom": () => {
         this.board.switchFaults.bottom = this.board.switchFaults.bottom === "ok" ? "stuck_pressed" : "ok";
         say("sim", `bottom switch ${this.board.switchFaults.bottom}`);
@@ -173,48 +191,12 @@ export class LiftSim {
         say("sim", "lift board frozen");
       },
       "lift-pause-ticks": () => {
-        this.ticking = !this.ticking;
-        say("sim", `control loop ${this.ticking ? "running" : "paused"}`);
+        this.ticksPaused = !this.ticksPaused;
+        say("sim", `control loop ${this.ticksPaused ? "not calling the lift" : "calling the lift again"}`);
       },
-      "lift-clear": () => {
-        say("standin", "Confirm on fault.clear");
-        if (!this.client.clearFaults()) say("refused", "fault.clear part_missing");
-      },
-      "lift-disable": () => {
-        say("standin", "Confirm on lift.disable");
-        const result = this.client.disable(this.inputs(), this.deps.clock.monotonic());
-        if (!result.ok) say("refused", `lift.disable ${result.refusal}`);
-      },
+      "lift-clear": () => operator("fault.clear", coordinator.operatorClear("simulator: checked")),
+      "lift-disable": () => operator("lift.disable", coordinator.operatorLiftDisable()),
     };
-  }
-
-  /** As if a handle Confirm press answered a lift target: the coordinator would then call `start`. */
-  private confirm(action: Extract<LiftAction, { kind: "lift.home" | "lift.move" }>): void {
-    this.emit("standin", `Confirm on ${action.kind}`);
-    const result = this.client.start(action, this.inputs(), this.deps.clock.monotonic());
-    if (!result.ok) this.emit("refused", `${action.kind} ${result.refusal}`);
-  }
-
-  private onEvent(event: LiftEvent): void {
-    switch (event.type) {
-      case "link":
-        return this.emit("link", event.connected ? "connected" : "lost");
-      case "accepted":
-        return this.emit("accepted", `${event.kind} ${event.requestId}`);
-      case "ended":
-        return this.emit("ended", [event.kind, event.outcome, event.reason, event.fault].filter(Boolean).join(" "));
-      case "fault":
-        // What the coordinator does with a fault: latch it, stop the lift, and unhome it if the fault says so.
-        this.faults.add(event.code);
-        this.client.stop();
-        if (FAULTS_THAT_UNHOME_LIFT.includes(event.code)) this.client.markUnhomed();
-        return this.emit("fault", event.code);
-      case "clear":
-        if (event.outcome === "cleared") this.faults.clear();
-        return this.emit("clear", [event.outcome, event.reason].filter(Boolean).join(" "));
-      case "disable":
-        return this.emit("disable", [event.outcome, event.reason].filter(Boolean).join(" "));
-    }
   }
 
   private reportState(): void {

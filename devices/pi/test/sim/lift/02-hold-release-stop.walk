@@ -1,0 +1,90 @@
+# E10. walker simulate --arms --lift --script test/sim/lift/02-hold-release-stop.walk
+# SIMULATED lift board (src/sim/fakeLift.ts) and SIMULATED arms, the real lift client under the real motion
+# coordinator. `lift-hold-on` / `lift-hold-off` play the screen's hold control (a "still held" every 50 ms, as the
+# page sends it); every lift motion is prepared (as the terminal does) and started by the Confirm press `c`.
+# Real time: about 45 s.
+
+expect lift state unhomed
+expect motion mode ready
+# The SIMULATED arms start folded at "stowed": their motors go on, so they count as stowed.
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key torque-on-right
+wait 2100
+key c
+expect motion torque right on
+
+# Confirm with nothing held: refused, nothing moves.
+key lift-home
+wait 2100
+key c
+expect motion command lift.home refused:not_held operator_cli
+
+# Home while holding the screen's lift control.
+key lift-hold-on
+expect lift hold on
+key lift-home
+expect motion target lift.home operator_cli: Home the lift
+wait 2100
+key c
+expect motion command lift.home started operator_cli
+expect motion lift accepted lift.home
+expect 40000 motion lift ended lift.home completed
+
+# Raise, and let go partway: it ramps down and stops, still homed, and never resumes.
+key lift-up
+expect motion target lift.move operator_cli: Raise the lift to 300 mm
+wait 2100
+key c
+expect motion lift accepted lift.move
+wait 3000
+key lift-hold-off
+expect 2000 motion lift ended lift.move stopped
+expect motion command lift.move stopped operator_cli
+
+# Raise again; a Talk press mid-move stops it.
+key lift-hold-on
+key lift-up
+wait 2100
+key c
+expect motion lift accepted lift.move
+wait 1000
+key t
+expect motion stop handle_press
+expect 2000 motion lift ended lift.move stopped
+
+# Again; the stop switch mid-move stops the arms and the lift, which both latch stop_circuit_opened.
+key lift-up
+wait 2100
+key c
+expect motion lift accepted lift.move
+wait 1000
+key lift-stop-switch
+expect motion fault stop_circuit_opened system
+expect 2000 motion lift ended lift.move failed stop_circuit_opened
+expect motion fault stop_circuit_opened lift
+key lift-clear
+expect motion command fault.clear refused:cause_present operator_cli
+key lift-stop-switch
+wait 500
+key lift-clear
+wait 2100
+key c
+expect 2000 motion lift clear cleared
+expect motion mode ready
+
+# The stop cut the arms' power (they are limp) and unhomed the lift: the motors go on again, and a move is then
+# refused until it homes again.
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key torque-on-right
+wait 2100
+key c
+expect motion torque right on
+key lift-up
+expect motion command lift.move refused:lift_not_homed operator_cli
+key q

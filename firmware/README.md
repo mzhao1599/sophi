@@ -151,7 +151,7 @@ The build stops if a name isn't snake_case, is over 24 characters, or repeats an
 
 ## Lift board
 
-**Status, 2026-10-24: written and tested on a computer only.** Nothing below has run on the lift's ESP32, driver, motor, screw or switches, and nothing about them has been measured. The firmware implements rules 1 to 10 in the header of [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts) (the contract, PR #71); the expected behaviour is in [test/EXPECTED.md](test/EXPECTED.md#lift-board-lift-01), rows LS to LB. The Pi's lift client is written ([`devices/pi/src/motion/lift/`](../devices/pi/src/motion/lift/README.md)) and tested only against a simulated lift; the motion coordinator doesn't use it yet, so today the lift moves only from the bench tool below.
+**Status, 2026-10-24: written and tested on a computer only.** Nothing below has run on the lift's ESP32, driver, motor, screw or switches, and nothing about them has been measured. The firmware implements rules 1 to 10 in the header of [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts) (the contract, PR #71); the expected behaviour is in [test/EXPECTED.md](test/EXPECTED.md#lift-board-lift-01), rows LS to LB. The Pi's lift client ([`devices/pi/src/motion/lift/`](../devices/pi/src/motion/lift/README.md)) is driven by the Pi's motion coordinator (held on the walker's screen, started by a Confirm press), tested only against a simulated lift; until the Pi's bench steps ([devices/pi/README.md](../devices/pi/README.md#the-lift-under-the-motion-coordinator)), the lift moves only from the bench tool below.
 
 ### What it does (AGENTS.md rule 8)
 

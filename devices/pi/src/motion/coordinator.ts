@@ -16,8 +16,11 @@ import {
   FAULT_SENTENCES,
   FEEDBACK_DIVERGENCE_DEG,
   FEEDBACK_DIVERGENCE_MS,
+  FAULTS_THAT_UNHOME_LIFT,
   FEEDBACK_STALE_MS,
   GRIPPER_HOLD_TORQUE_PCT,
+  LIFT_AT_HEIGHT_TOLERANCE_MM,
+  LIFT_HEARTBEAT_INTERVAL_MS,
   MAX_GOAL_LEAD_DEG,
   MOTION_COMMAND_POLICY,
   MOTION_CONTRACT_VERSION,
@@ -65,6 +68,7 @@ import {
   type ConfirmPressEvidence,
   type ConfirmTarget,
   type JointCalibration,
+  type LiftAckReason,
   type MotionCommand,
   type MotionCommandKind,
   type MotionFault,
@@ -104,12 +108,24 @@ import {
 } from "./limits";
 import { recordedSkill, replayCaps, replayStretch, skillPoint, startGap, type RecordedEvent, type RecordedSample } from "./skills";
 import type { StopReading, StopSense } from "./stopSense";
+import type { LiftAction, LiftCheckInputs, LiftClient, LiftEvent, LiftRequestOutcome } from "./lift";
 
 /**
  * The Pi's motion coordinator for the two SO-101 arms (arms, safety, calibration, poses, teleop, and taught
- * skills: recording a teleop session, replaying it, and "Let go?"), following the motion contract
- * (packages/contracts/src/motion.ts, docs/subsystems/manipulation.md). The lift is wired separately
- * (src/motion/lift/): its commands are refused here (`part_missing`).
+ * skills: recording a teleop session, replaying it, and "Let go?") and the lift, following the motion contract
+ * (packages/contracts/src/motion.ts, docs/subsystems/manipulation.md).
+ *
+ * The lift (src/motion/lift/, its README's "Wired into the coordinator"). The LiftClient owns the lift's serial
+ * lines; the coordinator owns its Confirm targets, presses, faults and the motion state, exactly as for an arm.
+ * `lift.home`, `lift.move` and `lift.disable` are prepared only at the terminal (and, once built, the screen),
+ * checked with the client's verdict, and started only by a handle Confirm press on that target. A home or move
+ * then runs only while the screen's hold control is held (`screenHold` on the bus, the client's hold lease) and
+ * every arm holds its stowed pose; letting go of the control stops it, and so does any stop or fault. The
+ * client's `tick` is called from this control loop and nowhere else, so a stalled loop stops the heartbeat and
+ * the lift's own watchdog stops the lift. One motion at a time: an arm command waits for the lift and the
+ * lift for the arms. Every motion.stop and every fault latched sends `lift.stop`; a fault in
+ * FAULTS_THAT_UNHOME_LIFT also unhomes it. A lift fault the lift board latched clears only when the lift accepts
+ * `lift.clear`.
  *
  * Skills. Recording is teleop with `record_skill_id`, prepared and Confirmed like any teleop: it samples the
  * follower's own readings (never the leader's) each control tick, and the terminal marks grasp and release.
@@ -174,6 +190,10 @@ export interface CoordinatorDeps {
   /** Speaks one of the Pi's own lines (and shows it on the walker page). */
   say: (text: string) => void;
   newId?: () => string;
+  /** The lift's client, when the motion setup has a lift (`<state>/motion/lift.json`); null or absent: no lift. */
+  lift?: LiftClient | null;
+  /** Why there is no lift, for refusals (no lift.json, or one that doesn't parse). */
+  liftAbsent?: string;
 }
 
 /** Placeholder, not measured: how often a missing or failed arm is tried again. */
@@ -311,6 +331,8 @@ interface Recording {
   events: RecordedEvent[];
   /** The gripper's angle at the last grasp mark (open, just before it closed): the side its let-go must be on. */
   graspOpenDeg: number | null;
+  /** The lift's height when it began (it can't move while recording), or null without a lift. */
+  liftMm: number | null;
 }
 
 /** A finished recording waiting for the terminal to save it (or the reason it can't be). */
@@ -372,6 +394,17 @@ type Active =
       /** Where the skill's own timeline is, in its ms (it waits only at a gripper event, for that arm to arrive). */
       skillMs: number;
       startedMono: number;
+      deadlineMono: number;
+      lastStepMono: number;
+      lastBenchLog: number;
+    }
+  | {
+      /** A lift home or move: the LiftClient runs it; it ends on the client's `ended` event. */
+      kind: "lift";
+      command: ConfirmedCommand & { kind: "lift.home" | "lift.move" };
+      requestId: string;
+      startedMono: number;
+      /** The client keeps the lift's own deadline (LIFT_HOMING_TIMEOUT_MS, motionTimeoutMs(distance / speed)). */
       deadlineMono: number;
       lastStepMono: number;
       lastBenchLog: number;
@@ -570,9 +603,17 @@ export class MotionCoordinator {
   private draft: Draft | null = null;
   /** "Let go?" targets still to prepare after a skill ended holding with more than one arm (one at a time). */
   private letGoQueue: Array<{ arm: ArmSide; deg: number }> = [];
+  private readonly lift: LiftClient | null;
+  /** A confirmed lift.disable waiting for the lift's answer (the `disable` event). */
+  private liftDisable: { command: ConfirmedCommand; request: OperatorRequest | null } | null = null;
+  /** When a repeated fault last sent lift.stop (monotonic ms): at most every LIFT_HEARTBEAT_INTERVAL_MS. */
+  private lastRepeatLiftStop = -Infinity;
+  /** The lift's faults a confirmed fault.clear kept until the lift answers `lift.clear` (the `clear` event), or null. */
+  private liftClear: MotionFault[] | null = null;
 
   constructor(private readonly deps: CoordinatorDeps) {
     this.newId = deps.newId ?? randomUUID;
+    this.lift = deps.lift ?? null;
     this.slots = deps.arms.map((port) => ({
       side: port.side,
       role: port.role,
@@ -621,6 +662,14 @@ export class MotionCoordinator {
     this.startedMono = this.mono();
     this.poses = this.deps.files.readPoses();
     for (const slot of this.slots) this.loadCalibration(slot);
+    const lift = this.lift;
+    if (lift) {
+      this.unsubscribe.push(
+        lift.on((event) => this.onLiftEvent(event)),
+        // The screen's hold control, stamped with the Pi's monotonic time on receipt: the lift's hold lease.
+        bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono))),
+      );
+    }
     this.unsubscribe.push(
       bus.on("button", (event) => {
         this.handlePress(event);
@@ -635,7 +684,7 @@ export class MotionCoordinator {
     );
     stopSense.onChange((reading) => this.onStopReading(reading));
     stopSense.start();
-    log.info("motion coordinator starting", { bench: this.deps.bench, stop_sense: stopSense.reading(), arms: this.slots.map((s) => s.label).join(", ") });
+    log.info("motion coordinator starting", { bench: this.deps.bench, stop_sense: stopSense.reading(), arms: this.slots.map((s) => s.label).join(", "), lift: lift ? "lift-01" : "none" });
     if (this.deps.bench) log.warn("BENCH MODE: no hardware stop is required; bench limits apply and every motion is logged");
     this.handsWereConnected = this.deps.handControls();
     // The first reading of the stop-sense input (a GPIO is read once before it is watched): an unread input
@@ -655,6 +704,8 @@ export class MotionCoordinator {
     this.stopped = true;
     this.cancelTick?.();
     this.cancelReconnect?.();
+    // The lift stops first; with no more ticks its heartbeats end too, so its own watchdog stops it anyway.
+    this.lift?.stop();
     for (const off of this.unsubscribe) off();
     this.deps.stopSense.stop();
     const writes = this.holdAll();
@@ -837,6 +888,27 @@ export class MotionCoordinator {
     return this.prepareRequest({ kind: "teleop.start", pairs: [{ leader: side, follower: side }] }, `The ${side} arm will copy its teaching arm`);
   }
 
+  // ---- The lift (prepared here; started only by a handle Confirm press; held only by the screen's control) ----
+
+  /** `walker lift home`: homing, held on the screen. */
+  operatorLiftHome(): OperatorResult<{ request: OperatorRequest }> {
+    return this.prepareRequest({ kind: "lift.home" }, "Home the lift");
+  }
+
+  /** `walker lift move <mm>`: to a height inside the lift's soft limits, held on the screen. */
+  operatorLiftMove(targetMm: number): OperatorResult<{ request: OperatorRequest }> {
+    if (!Number.isFinite(targetMm)) return { ok: false, error: "a lift height is a number of millimetres" };
+    const at = this.lift?.state(this.deps.clock.monotonic()).position_mm ?? null;
+    const mm = `${round1(targetMm)} mm`;
+    const title = at === null || Math.abs(targetMm - at) < 0.05 ? `Move the lift to ${mm}` : targetMm > at ? `Raise the lift to ${mm}` : `Lower the lift to ${mm}`;
+    return this.prepareRequest({ kind: "lift.move", target_mm: targetMm }, title);
+  }
+
+  /** `walker lift disable`: the lift's motor off (it frees and must home again). Never a stop. */
+  operatorLiftDisable(): OperatorResult<{ request: OperatorRequest }> {
+    return this.prepareRequest({ kind: "lift.disable" }, "Turn off the lift's motor; it then needs homing");
+  }
+
   // ---- Skills: recording, replay, listing, removal, "Let go?" ----
 
   /**
@@ -851,6 +923,10 @@ export class MotionCoordinator {
     if (!this.follower(side) || !this.slot(side, "leader")) return { ok: false, error: `the ${side} arm and its teaching arm must both be configured` };
     if (!replace && this.deps.files.skillExists(skillId)) {
       return { ok: false, error: `a skill called ${skillId} exists; add --replace to record over it (the old file is kept aside)` };
+    }
+    // A skill names the lift height it was taught at (the contract's lift_mm), so the lift must be homed.
+    if (this.lift && this.lift.state(this.deps.clock.monotonic()).position_mm === null) {
+      return { ok: false, error: "the lift isn't homed, so the height this movement is taught at isn't known: home it first (walker lift home)" };
     }
     return this.prepareRequest(
       { kind: "teleop.start", pairs: [{ leader: side, follower: side }], record_skill_id: skillId },
@@ -924,6 +1000,7 @@ export class MotionCoordinator {
       calibration: slot.calibration,
       speedDegS: draft.speedDegS,
       letGoDeg: holding ? letGoDeg : null,
+      liftMm: recording.liftMm,
     });
     if (!built.ok) return { ok: false, error: `not saved: ${built.error}` };
     const parsed = SkillSchema.safeParse(built.skill);
@@ -1287,7 +1364,7 @@ export class MotionCoordinator {
       stop_circuit: this.deps.stopSense.reading(),
       hand_controls_connected: this.deps.handControls(),
       arms: this.slots.map((slot) => this.armState(slot)),
-      lift: null,
+      lift: this.lift ? this.lift.state(this.deps.clock.monotonic()) : null,
       active: active === null ? null : this.activeState(active),
       confirm_target: this.pending ? { ...this.pending.target } : null,
       last_command: this.lastCommand,
@@ -1306,6 +1383,14 @@ export class MotionCoordinator {
         return { ...base, kind: "skill.run", skill_id: active.skill.skill_id, title: active.skill.title, progress: Math.max(0, Math.min(1, active.progress)) };
       case "gripper.release":
         return { ...base, kind: "gripper.release", arm: active.command.arm };
+      case "lift": {
+        // Running exactly while the screen's hold control holds it; once let go or stopped it is stopping, and
+        // never resumes (the client never names it in a heartbeat again).
+        const now = this.lift?.active();
+        const running = !!now && now.requestId === active.requestId && now.held && now.phase !== "stopping";
+        const lift = { ...base, phase: running ? ("running" as const) : ("stopping" as const), hold_source: running ? ("screen_hold_control" as const) : null };
+        return active.command.kind === "lift.home" ? { ...lift, kind: "lift.home" } : { ...lift, kind: "lift.move", target_mm: active.command.target_mm };
+      }
     }
   }
 
@@ -1320,6 +1405,8 @@ export class MotionCoordinator {
         return active.pairs.flatMap((p) => (leaders ? [p.follower, p.leader] : [p.follower]));
       case "skill.run":
         return active.arms.map((a) => a.slot);
+      case "lift":
+        return [];
     }
   }
 
@@ -1483,9 +1570,13 @@ export class MotionCoordinator {
       else if (active.kind === "arm.go_to_pose") this.stepPose(active, now);
       else if (active.kind === "teleop") this.stepTeleop(active, now);
       else if (active.kind === "skill.run") this.stepSkill(active, now);
+      else if (active.kind === "lift") this.stepLift(active);
       else this.stepRelease(active, now);
     }
     if (this.pending && this.mono() >= this.pending.target.expires_mono_ms) this.endPending("expired", "no Confirm press in time");
+    // The lift's heartbeats and commands are written here, every tick, and nowhere else: if this loop stalls, the
+    // heartbeats stop and the lift's own watchdog stops it (LIFT_WATCHDOG_TIMEOUT_MS).
+    this.lift?.tick(now);
     this.publish(false);
   }
 
@@ -1792,6 +1883,17 @@ export class MotionCoordinator {
   }
 
   /**
+   * A lift motion runs in the lift client; it ends on the client's `ended` event. This only notices one gone
+   * without it: not knowing how it ended, the lift gets lift.stop and `lift_unhomed` latches (it must home again).
+   */
+  private stepLift(active: Extract<Active, { kind: "lift" }>): void {
+    const running = this.lift?.active();
+    if (running?.requestId === active.requestId) return;
+    this.deps.log.warn("the lift client no longer runs the lift motion; stopping the lift", { request: active.requestId });
+    this.latch("lift_unhomed", "lift", null, "the lift motion ended without an end the walker saw");
+  }
+
+  /**
    * "Let go?": only the gripper moves, and only opening: toward the let-go angle at the pose speed, with the
    * same step and lead limits, and never to the closing side of where it is. Nothing else is written, so it
    * also runs on an arm gone soft (compliant) or with a fault latched (LETTING GO IS ALWAYS POSSIBLE).
@@ -1977,7 +2079,14 @@ export class MotionCoordinator {
   private latch(code: MotionFaultCode, part: MotionPart, joint: ArmJoint | null, detail: string, affected?: Slot[]): void {
     if (this.faults.some((f) => f.code === code && f.part === part)) {
       // Already latched (once per code and part), but whatever is running now (letting go, with the fault
-      // latched) still ends and holds: a deadline passed again must never leave a motion running for ever.
+      // latched) still ends and holds: a deadline passed again must never leave a motion running for ever. A lift
+      // that runs or reports itself moving gets lift.stop again, at most every LIFT_HEARTBEAT_INTERVAL_MS (the
+      // pressed stop repeats every tick; each stop the lift doesn't ack is also resent by the client).
+      const now = this.deps.clock.monotonic();
+      if (this.lift && (this.active?.kind === "lift" || this.liftBusy()) && now - this.lastRepeatLiftStop >= LIFT_HEARTBEAT_INTERVAL_MS) {
+        this.lastRepeatLiftStop = now;
+        this.lift.stop();
+      }
       if (this.active) {
         this.deps.log.error("motion fault again", { code, part, joint: joint ?? undefined, detail });
         this.endActive("faulted");
@@ -1995,6 +2104,11 @@ export class MotionCoordinator {
     const owner = this.slots.find((s) => s.part === part);
     const targets = affected ?? (owner ? [owner] : part === "system" ? this.slots.filter((s) => s.role === "follower") : []);
     this.endActive("faulted");
+    // Every fault stops the lift (lift.stop is always accepted); some mean its counted height may be wrong.
+    if (this.lift) {
+      this.lift.stop();
+      if (FAULTS_THAT_UNHOME_LIFT.includes(code)) this.lift.markUnhomed();
+    }
     if (this.pending && this.pending.target.action.kind !== "fault.clear") this.endPending("withdrawn", "a fault latched");
     const reaction = FAULT_REACTION[code];
     if (reaction === "freeze") {
@@ -2056,13 +2170,19 @@ export class MotionCoordinator {
         return !slot || !this.fresh(slot) || [...slot.reading!.values.values()].some((f) => f.presentTemperature > ARM_TEMPERATURE_LIMIT_C);
       case "undervoltage":
         return !slot || !this.fresh(slot) || [...slot.reading!.values.values()].some((f) => f.presentVoltage / 10 < ARM_UNDERVOLTAGE_V);
+      case "lift_module_lost":
+        return this.lift !== null && !this.lift.state(this.deps.clock.monotonic()).connected;
+      case "lift_config_mismatch":
+        return this.lift !== null && this.lift.state(this.deps.clock.monotonic()).faults.includes("lift_config_mismatch");
       default:
+        // A fault the lift board latched: the board judges its cause when it gets lift.clear.
         return false;
     }
   }
 
-  private clearFaults(): void {
-    this.faults = [];
+  /** Clears every latched fault but `keep` (the lift board's own, until the lift accepts lift.clear). */
+  private clearFaults(keep: MotionFault[] = []): void {
+    this.faults = [...keep];
     for (const slot of this.slots) {
       slot.divergeSince.clear();
       slot.overloadSince.clear();
@@ -2070,7 +2190,7 @@ export class MotionCoordinator {
       slot.loadSince.clear();
       slot.frozen = false;
     }
-    this.event("cleared", "all faults");
+    this.event("cleared", keep.length === 0 ? "all faults" : `all but the lift's (${keep.map((f) => f.code).join(", ")}): asking the lift`);
     // Read every arm before anything holds or moves: a frozen arm kept its last goal (at most 5° away), and after
     // a power loss its servos rebooted with torque off and their limits reset (so limitsWritten is gone).
     for (const slot of this.slots) void this.refreshTorque(slot);
@@ -2086,7 +2206,10 @@ export class MotionCoordinator {
     const had = this.active !== null;
     // A torque on still running stops at its next step and turns that arm's torque off.
     if (this.commandBusy) this.torqueAbort = true;
-    this.endActive("stopped");
+    // The lift stops on every motion.stop, whatever runs (lift.stop is always accepted, rule 6). A lift motion
+    // shows as stopping while it ramps down, and ends on the client's `ended`; nothing of it resumes.
+    this.lift?.stop();
+    if (this.active?.kind !== "lift") this.endActive("stopped");
     if (this.pending && source !== "handle_press") this.endPending("withdrawn", "stopped");
     this.holdAll();
     if (!had) this.lastCommand = { command_id: command.command_id, kind: "motion.stop", outcome: "completed", at: raw.issued_at };
@@ -2515,17 +2638,25 @@ export class MotionCoordinator {
       case "arm.torque":
         void this.runTorque(command, request, pending.thenCalibrate);
         return;
-      case "fault.clear":
-        this.clearFaults();
+      case "fault.clear": {
+        // Faults the lift board latched clear only when it accepts lift.clear (it judges their cause): they stay
+        // until its answer (the `clear` event). Everything else clears now.
+        const board: readonly string[] = this.lift?.lastStatus()?.faults ?? [];
+        const kept = this.faults.filter((f) => f.part === "lift" && board.includes(f.code));
+        this.clearFaults(kept);
+        if ((kept.length > 0 || board.length > 0) && this.lift?.clearFaults()) this.liftClear = kept;
         this.recordLast(command, "completed");
         this.finishRequest(command.target_id, "completed");
         // Still holding something: "Let go?" again (the one offered during the fault went with it).
         this.offerLetGo();
         this.publish(true);
         return;
-      default:
-        // The lift isn't wired into this coordinator.
-        this.refuseCommand(command, "part_missing", "no lift on this walker yet", request);
+      }
+      case "lift.home":
+      case "lift.move":
+        return this.startLift(command, request);
+      case "lift.disable":
+        return this.disableLift(command, request);
     }
   }
 
@@ -2539,6 +2670,7 @@ export class MotionCoordinator {
     when: "prepare" | "press",
     skillLoad: SkillLoad | null = null,
   ): { refusal: MotionRefusal; detail: string | null } | null {
+    if (action.kind === "lift.home" || action.kind === "lift.move" || action.kind === "lift.disable") return this.liftRefusalFor(action, when === "press" ? "start" : "prepare");
     let reasons: readonly MotionRefusal[] = MOTION_COMMAND_POLICY[action.kind].refuses_when;
     // Turning torque off is refused only while busy (or for the Confirm checks); part_missing because a
     // disconnected arm can't be written to at all.
@@ -2564,7 +2696,61 @@ export class MotionCoordinator {
     return null;
   }
 
-  /** The walker's setup as checkSkillAgainstSetup reads it: the calibrated arms, and no lift (it isn't wired here). */
+  /**
+   * A lift action's first refusal, in its policy's order: the lift client's verdict (its own preconditions and
+   * the inputs only this coordinator knows), plus `no_hand_control`, which the coordinator owns. The Confirm
+   * checks belong to the press. `start` (the press) adds `not_held`: the screen's hold control must be held.
+   */
+  private liftRefusalFor(action: LiftAction, stage: "prepare" | "start"): { refusal: MotionRefusal; detail: string | null } | null {
+    const lift = this.lift;
+    if (!lift) return { refusal: "part_missing", detail: `this walker has no lift: ${this.deps.liftAbsent ?? "no lift.json"}` };
+    const inputs = this.liftInputs();
+    const verdict = lift.verdict(action, inputs, stage, this.deps.clock.monotonic());
+    for (const reason of MOTION_COMMAND_POLICY[action.kind].refuses_when) {
+      if (reason === "no_hand_control") {
+        if (!this.deps.bench && !this.deps.handControls()) return { refusal: reason, detail: null };
+      } else if (reason === verdict) {
+        return { refusal: verdict, detail: verdict === "arms_not_stowed" ? this.stowedProblem() : verdict === "busy" && this.liftBusy() ? "the lift is moving" : null };
+      }
+    }
+    // A verdict the policy doesn't list for this action still refuses it.
+    return verdict ? { refusal: verdict, detail: null } : null;
+  }
+
+  /** What only the coordinator knows, for the lift client's verdict. */
+  private liftInputs(): LiftCheckInputs {
+    return {
+      stopCircuit: this.deps.stopSense.reading(),
+      faultLatched: this.faults.length > 0,
+      armsStowed: this.stowedProblem() === null,
+      otherMotion: this.active !== null || this.commandBusy || this.calibration !== null || this.starting,
+    };
+  }
+
+  /**
+   * Null when every fitted follower holds its `stowed` pose (torque on, every joint within AT_POSE_TOLERANCE_DEG
+   * of it, from a fresh reading); otherwise which arm doesn't, in words for the terminal.
+   */
+  private stowedProblem(): string | null {
+    for (const slot of this.slots) {
+      if (slot.role !== "follower") continue;
+      const pose = this.findPose(slot.side, "stowed");
+      if (!pose) return `the ${slot.side} arm has no stowed pose (walker arms pose save stowed --arm ${slot.side})`;
+      const at = this.degrees(slot);
+      if (!at || this.torqueOf(slot) !== "on") return `the ${slot.side} arm isn't holding with its motors on`;
+      const gap = largestGap(pose.joints, at);
+      if (gap.deg > AT_POSE_TOLERANCE_DEG) return `the ${slot.side} arm's ${gap.joint} is ${round1(gap.deg)}° from stowed: walker arms pose go stowed --arm ${slot.side}`;
+    }
+    return null;
+  }
+
+  /** The lift has a request open or reports itself moving (ramping down after a fault, say). */
+  private liftBusy(): boolean {
+    if (!this.lift) return false;
+    return this.lift.active() !== null || this.lift.state(this.deps.clock.monotonic()).moving === true;
+  }
+
+  /** The walker's setup as checkSkillAgainstSetup reads it: the calibrated arms, and the lift if one is fitted. */
   private setup(): MotionSetup {
     return {
       format: "sophi.motion_setup",
@@ -2572,7 +2758,7 @@ export class MotionCoordinator {
       stop_sense: this.deps.stopSense.reading() === "not_wired" ? "not_wired" : "wired",
       arms: this.slots.flatMap((s) => (s.calibration ? [s.calibration] : [])),
       poses: this.poses,
-      lift: null,
+      lift: this.lift ? { config: this.lift.setup.config, installation: this.lift.setup.installation } : null,
     };
   }
 
@@ -2601,9 +2787,11 @@ export class MotionCoordinator {
       case "fault_latched":
         return this.faults.length > 0 ? this.faults.map((f) => f.code).join(", ") : false;
       case "busy":
-        return this.active || this.calibration || this.commandBusy || this.starting ? null : false;
+        if (this.active || this.calibration || this.commandBusy || this.starting) return null;
+        // One motion at a time: the lift moving (or ramping down) holds up any arm command, except letting go,
+        // which only opens a gripper (LETTING GO IS ALWAYS POSSIBLE).
+        return action.kind !== "gripper.release" && this.liftBusy() ? "the lift is moving" : false;
       case "part_missing":
-        if (action.kind.startsWith("lift.")) return "no lift on this walker yet";
         return parts.some((s) => !s?.link) ? "an arm isn't connected" : false;
       case "no_hand_control":
         return !this.deps.bench && !this.deps.handControls() ? null : false;
@@ -2672,7 +2860,18 @@ export class MotionCoordinator {
         const present = this.faults.filter((f) => this.causePresent(f));
         return present.length > 0 ? present.map((f) => `${f.code}/${f.part}`).join(", ") : false;
       }
-      // The lift's own preconditions (part B) and skill checks.
+      // A skill taught at a lift height runs only with the lift homed and at that height (never moving it).
+      case "lift_not_homed":
+        if (action.kind !== "skill.run" || !this.lift || skillLoad?.kind !== "ok" || skillLoad.skill.lift_mm === null) return false;
+        return this.lift.state(this.deps.clock.monotonic()).homed ? false : "home the lift first: walker lift home";
+      case "lift_not_at_height": {
+        if (action.kind !== "skill.run" || !this.lift || skillLoad?.kind !== "ok" || skillLoad.skill.lift_mm === null) return false;
+        const want = skillLoad.skill.lift_mm;
+        const at = this.lift.state(this.deps.clock.monotonic()).position_mm;
+        if (at !== null && Math.abs(at - want) <= LIFT_AT_HEIGHT_TOLERANCE_MM) return false;
+        return `the lift is ${at === null ? "at an unknown height" : `at ${round1(at)} mm`}; this movement was taught at ${want} mm: walker lift move ${want}`;
+      }
+      // The lift's own preconditions are the lift client's (liftRefusalFor).
       default:
         return false;
     }
@@ -2737,6 +2936,7 @@ export class MotionCoordinator {
         samples: [{ t: 0, joints: this.degrees(follower)! }],
         events: follower.graspActive ? [{ t: 0, kind: "grasp" }] : [],
         graspOpenDeg: follower.graspActive ? follower.graspOpenDeg : null,
+        liftMm: this.lift?.state(now).position_mm ?? null,
       };
     }
     this.active = {
@@ -2800,6 +3000,10 @@ export class MotionCoordinator {
     const now = this.deps.clock.monotonic();
     // The gripper's goal starts from where it is (no squeeze); no other servo is written.
     slot.goalDeg = { ...(slot.goalDeg ?? measured), gripper: measured.gripper };
+    // Letting go moves the gripper away from where the skill had it, on purpose: no taught goal applies any
+    // more, so grasp_mismatch can't fire on the opening (it did, on a slow opening after a completed skill).
+    slot.graspTaughtDeg = null;
+    slot.graspShortSince = null;
     // Opening is the other way from how this grasp closed (fixed once per grasp); unknown, toward the target.
     const openSign = slot.graspCloseSign !== null ? -slot.graspCloseSign : Math.sign(command.gripper_open_deg - measured.gripper) || 1;
     this.active = {
@@ -2822,6 +3026,120 @@ export class MotionCoordinator {
       return;
     }
     this.publish(true);
+  }
+
+  /**
+   * A confirmed lift.home or lift.move: the client re-checks its start verdict (the hold must be held now) and
+   * queues it; the next control tick writes the heartbeat naming it and the command. It runs only while the
+   * screen's hold control holds it.
+   */
+  private startLift(command: ConfirmedCommand & { kind: "lift.home" | "lift.move" }, request: OperatorRequest | null): void {
+    const lift = this.lift;
+    if (!lift) return this.refuseCommand(command, "part_missing", "this walker has no lift", request);
+    const action: LiftAction = command.kind === "lift.home" ? { kind: "lift.home" } : { kind: "lift.move", target_mm: command.target_mm };
+    const now = this.deps.clock.monotonic();
+    const started = lift.start(action as Extract<LiftAction, { kind: "lift.home" | "lift.move" }>, this.liftInputs(), now);
+    if (!started.ok) return this.refuseCommand(command, started.refusal, null, request);
+    this.active = { kind: "lift", command, requestId: started.requestId, startedMono: now, deadlineMono: Infinity, lastStepMono: now, lastBenchLog: -Infinity };
+    this.event("command", `${command.kind} started ${command.prepared_by}`);
+    this.publish(true);
+  }
+
+  /** A confirmed lift.disable: `lift.enable` false, answered by the lift (the `disable` event). */
+  private disableLift(command: ConfirmedCommand, request: OperatorRequest | null): void {
+    const lift = this.lift;
+    if (!lift) return this.refuseCommand(command, "part_missing", "this walker has no lift", request);
+    const sent = lift.disable(this.liftInputs(), this.deps.clock.monotonic());
+    if (!sent.ok) return this.refuseCommand(command, sent.refusal, null, request);
+    this.liftDisable = { command, request };
+    this.event("command", `lift.disable sent ${command.prepared_by}`);
+    this.publish(true);
+  }
+
+  /** What the lift client reports. Never throws back into it: a failure here stops motion. */
+  private onLiftEvent(event: LiftEvent): void {
+    try {
+      this.liftEvent(event);
+    } catch (error) {
+      this.deps.log.error("lift event handling failed; stopping motion", { error: (error as Error).message });
+      this.emergencyStop("lift event handling failed");
+    }
+  }
+
+  private liftEvent(event: LiftEvent): void {
+    switch (event.type) {
+      case "link":
+        this.event("lift", `link ${event.connected ? "connected" : "lost"}`);
+        break;
+      case "accepted":
+        this.event("lift", `accepted ${event.kind}`);
+        break;
+      case "ended":
+        this.event("lift", ["ended", event.kind, event.outcome, event.reason, event.fault].filter(Boolean).join(" "));
+        this.endLift(event.requestId, event.outcome, event.reason);
+        break;
+      case "fault":
+        // Latch it (part lift): every fault stops the lift and holds the arms; some unhome it (latch).
+        this.latch(event.code, "lift", null, "reported by the lift client");
+        break;
+      case "clear": {
+        this.event("lift", ["clear", event.outcome, event.reason].filter(Boolean).join(" "));
+        const asked = this.liftClear;
+        if (!asked) break;
+        this.liftClear = null;
+        if (event.outcome === "cleared") {
+          // Only the faults latched when lift.clear was sent: one the lift latched since stays.
+          this.faults = this.faults.filter((f) => !asked.includes(f));
+          this.event("cleared", "the lift's faults");
+          this.offerLetGo();
+        } else this.deps.say(event.outcome === "refused" ? REFUSAL_SENTENCES.cause_present : "The lift didn't answer, so its faults are still there.");
+        break;
+      }
+      case "disable": {
+        this.event("lift", ["disable", event.outcome, event.reason].filter(Boolean).join(" "));
+        const pending = this.liftDisable;
+        this.liftDisable = null;
+        if (!pending) break;
+        if (event.outcome === "disabled") {
+          this.recordLast(pending.command, "completed");
+          this.finishRequest(pending.command.target_id, "completed");
+        } else if (event.outcome === "refused") {
+          this.refuseCommand(pending.command, "lift_may_drop", `the lift refused it${event.reason ? ` (${event.reason})` : ""}`, pending.request);
+        } else {
+          this.recordLast(pending.command, "faulted");
+          if (pending.request) {
+            pending.request.state = "error";
+            pending.request.detail = "the lift didn't answer";
+          }
+        }
+        break;
+      }
+    }
+    this.publish(true);
+  }
+
+  /** The lift's request ended: the motion it was ends the same way. */
+  private endLift(requestId: string, outcome: LiftRequestOutcome, reason: LiftAckReason | "not_held" | undefined): void {
+    const active = this.active;
+    if (active?.kind !== "lift" || active.requestId !== requestId) return;
+    switch (outcome) {
+      case "completed":
+        return this.endActive("completed");
+      case "stopped":
+      case "no_ack":
+        return this.endActive("stopped");
+      case "refused": {
+        // It never started: refused, with the lift's reason where the contract has one (not held, not homed...).
+        const refusal = liftAckRefusal(reason);
+        if (!refusal) return this.endActive("stopped");
+        this.active = null;
+        this.refuseCommand(active.command, refusal, `the lift refused it${reason ? ` (${reason})` : ""}`, this.requests.get(active.command.target_id) ?? null);
+        return;
+      }
+      default:
+        // failed, timeout, lost: a fault is (or was) latched with it, or it ended unseen.
+        return this.endActive("faulted");
+    }
   }
 
   /**
@@ -3029,6 +3347,24 @@ export class MotionCoordinator {
       return;
     }
     this.deps.bus.emit("motionState", { state: parsed.data });
+  }
+}
+
+/** A lift's refusal of a home or move, as the contract's refusal, where one says the same; null otherwise. */
+export function liftAckRefusal(reason: LiftAckReason | "not_held" | undefined): MotionRefusal | null {
+  switch (reason) {
+    case "not_held":
+    case "no_heartbeat":
+      return "not_held";
+    case "not_homed":
+      return "lift_not_homed";
+    case "out_of_range":
+    case "fault_latched":
+    case "stop_pressed":
+    case "busy":
+      return reason;
+    default:
+      return null;
   }
 }
 

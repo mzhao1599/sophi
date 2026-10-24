@@ -4,7 +4,7 @@
 
 On 2026-10-24, the Pi's `/dev/serial/by-id` showed only one CP2102 symlink because both bridges reported serial `0001`. The deployed service now scans `/dev/serial/by-path`, removes duplicate aliases for the same tty, and saw `hand-right-01` and `hand-left-01` simultaneously, both healthy. The right board was reflashed and its app image verified before deployment. After the service restarted it logged the new fixed boot notice, "Sophi is on." Its systemd unit was active and its cloud link online. The owner's physical press check for right Talk and left Confirm is still pending.
 
-With no arm ports configured (the default), nothing in this service can move the arms or the lift, and the only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second. With arm ports set in its settings file, it also runs the **motion coordinator for the two SO-101 arms** ([The arms](#the-arms-motion-coordinator)), built 2026-10-24 and tested only against simulated servos: **not yet run on a real servo, adapter or Pi.** It includes taught skills (record a movement with the teaching arm, replay it, "Let go?"), also tested only against simulated servos. A lift client exists in `src/motion/lift/`, but only `walker simulate --lift` uses it, against a simulated lift; the coordinator doesn't drive the lift.
+With no arm ports configured (the default), nothing in this service can move the arms or the lift, and the only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second. With arm ports set in its settings file, it also runs the **motion coordinator for the two SO-101 arms** ([The arms](#the-arms-motion-coordinator)), built 2026-10-24 and tested only against simulated servos: **not yet run on a real servo, adapter or Pi.** It includes taught skills (record a movement with the teaching arm, replay it, "Let go?"), also tested only against simulated servos. With a lift file (`motion/lift.json`) it also drives the lift ([The lift](#the-lift-under-the-motion-coordinator)), held on the walker's screen: tested only against a simulated lift board, **never run on the lift board.**
 
 ## What runs where
 
@@ -40,7 +40,7 @@ heartbeat every 5 s ◄─► cloud: manifest + snapshot + status events out; co
 - `src/cues.ts`: the local obstacle cue policy. `src/notices.ts`: every fixed line the Pi says on its own.
 - `src/cloud/client.ts`: the cloud client interface and its HTTP version, on the walker contract's device routes.
 - `src/sim/`: the fake cloud, simulated modules, and the simulator itself. `fakeLift.ts` is a SIMULATED lift board (a TypeScript port of the lift firmware's rules) and `liftSim.ts` the `--lift` mode.
-- `src/motion/lift/`: the lift client (simulated only, not wired into the service); see [its README](src/motion/lift/README.md). Lift lines reach it through `src/serial/modules.ts`: the first `hello` or `lift.hello` on a port decides its parser (`liftPort.ts`).
+- `src/motion/lift/`: the lift client, driven by the motion coordinator (tested against a simulated lift only); see [its README](src/motion/lift/README.md). Lift lines reach it through `src/serial/modules.ts`: the first `hello` or `lift.hello` on a port decides its parser (`liftPort.ts`).
 - `src/screen/`: the walker screen. `machine.ts` picks the state (a pure `pickScreen` and a small machine with timers), `motion.ts` turns the motion coordinator's state into motion screens, `attach.ts` feeds it from the bus with every listener wrapped, `server.ts` is the local server, `page.tsx` the page it serves (`pageView.tsx` what it draws, `hold.ts` the lift's hold control). See [The walker screen's page](#the-walker-screens-page).
 - `src/check/`: `walker check`. Each check is a small function over an injected command runner and file reader (`core.ts`); `system.ts` (OS, clock, power, memory, disk, the service, network, pairing), `devices.ts` (mic, speaker, voice, screen, GPIO, the stop's input), `modules.ts` (the serial boards, through the service's own `openSerialPort` and `ModuleManager`), `lift.ts` (the lift board's lines, read on those ports), `arms.ts` (the servo adapters, through the Feetech driver, PING and READ only), `cameras.ts` (`v4l2-ctl`).
 - `src/constants.ts`: every timing and threshold, each labelled measured or placeholder.
@@ -93,7 +93,7 @@ node devices/pi/dist/walker.mjs simulate
 
 Keys: `t` Talk, `c` Confirm, `n` hand in front of the ToF, `f` nothing in front, `i` invalid readings, `x` the ToF stops responding (and `x` again brings it back), `o` network down and up, `g` network hangs (no answers) and back, `r` the fake cloud forgets the walker (401), `p` pair again, `?` help, `q` quit. The `o` and `g` keys act on the walker's own requests, so they work against a real server too (`--server`): that is how the offline beat can be shown on a Mac.
 
-**`--lift`** adds a SIMULATED lift board driven by the real lift client over the real module manager. The motion coordinator isn't wired in, so a labelled stand-in loop ticks the client at 50 Hz, refreshes the hold while `l` is on (as the screen's hold control would), and treats `e` (home), `u` (to 300 mm) and `d` (to 50 mm) as the Confirm press on a lift target. Also `k` stop, `y` the stop switch, `w` a stuck bottom switch, `j` a cut switch harness, `v` the line from the lift lost, `a` a frozen lift board, `z` the control loop paused, `K` clear (as Confirm on `fault.clear`), `D` disable; `?` lists them. `node devices/pi/dist/walker.mjs simulate --lift --script devices/pi/test/sim/lift.walk` runs home, a release partway, the stop switch and clearing in about 15 s (passed 3 of 3, 2026-10-24).
+**`--lift`** adds a SIMULATED lift board, found by the real module manager and driven by the real lift client under the real motion coordinator, with the SIMULATED arms (`--lift` turns `--arms` on): see [The lift](#the-lift-under-the-motion-coordinator) for its keys. `node devices/pi/dist/walker.mjs simulate --arms --lift --script devices/pi/test/sim/lift/01-demo-flow.walk` runs the demo flow (home, raise to the tray, the tray skill, "Let go?", fold, lower) in about 60 s, and `.../02-hold-release-stop.walk` the hold, a release, a Talk press and the stop switch in about 45 s (each passed 3 of 3 in a row in real time, 2026-10-24, after one demo run had failed on a "Let go?" bug, now fixed: E14).
 
 - **Silent by default.** Speech is written by `say -o` into numbered `.aiff` files and cues into `.wav` files in the run's folder (printed at start). `--loud` plays them through the Mac's speakers instead.
 - **The microphone is a file.** By default each recording is a generated 2-second tone. To send a spoken question, make a clip and pass it:
@@ -249,7 +249,7 @@ WARN  arms     adapter 1 wrist_roll id 5 didn't answer a PING (timeout)
 ...
 PASS  lift     lift-01              firmware 0.1.0, protocol v1, port platform-xhci-hcd.1-usb-0:2.3:1.0-port0; built-in limits 5 to 600 mm, at most 20 mm/s and 50 mm/s², 8 microsteps (320 steps/mm), top switch not measured; stop-sense input wired
 WARN  lift     lift-01 status       unhomed, height unknown, top switch released, bottom switch released, stop released, driver enabled, no faults, last Pi heartbeat none (this check sends none); 24 reports in 1.2 s: not homed (normal after power-on; homing is a held move from the walker, never from this check)
-WARN  stop     stop switch          not_wired (WALKER_STOP_SENSE unset): with no stop-sense input, arm and lift motion are refused unless WALKER_MOTION_BENCH=no-hardware-stop (bench mode)
+WARN  stop     stop switch          not_wired (WALKER_STOP_SENSE unset): with no stop-sense input, the lift never moves, and arm motion is refused unless WALKER_MOTION_BENCH=no-hardware-stop (bench mode)
 PASS  camera   count                3 USB cameras
 PASS  camera   camera 1             "USB 2.0 Camera: USB Camera" on usb-xhci-hcd.0-1.1, /dev/video0: MJPG 1280x720@30 640x480@30; YUYV 1280x720@10 640x480@30
 ```
@@ -427,7 +427,7 @@ The walker service draws its own screen: it decides which state shows, and a pag
 
 The status strip says Online or Offline, the time when the clock has synced, "Simulator" under `walker simulate`, and "Bench mode" when the motion coordinator runs in bench mode (not on the simulator, whose tag takes the room). Timings are placeholders in `src/constants.ts`. No screen shows a button yet: "My screen" is hidden until the circle piece makes it do something.
 
-**Motion on the screen** *(added 2026-10-24; tested with fake clocks, on a real socket and in headless Chromium on a Mac; not yet seen with the real coordinator driving real arms or the lift, and the lift isn't wired into the coordinator yet, so the hold control never shows on a walker today).* The screen draws the motion coordinator's state (the `motionState` bus event, 5 times a second) and decides nothing about motion. Every motion screen says "Bench mode: no hardware stop" in full when it is on.
+**Motion on the screen** *(added 2026-10-24; tested with fake clocks, on a real socket and in headless Chromium on a Mac; not yet seen with the real coordinator driving real arms or the lift; with the coordinator and a simulated lift, the hold control is tested end to end in `test/lift-screen.test.ts`, row E11).* The screen draws the motion coordinator's state (the `motionState` bus event, 5 times a second) and decides nothing about motion. Every motion screen says "Bench mode: no hardware stop" in full when it is on.
 
 | State | When | Shows |
 | --- | --- | --- |
@@ -438,7 +438,7 @@ The status strip says Online or Offline, the time when the clock has synced, "Si
 
 A motion state older than 1 s shows nothing about motion (and so no hold control): the coordinator has stopped publishing, and the lift stops on its own when its heartbeats stop.
 
-**The lift's hold control.** A 147 px button, shown only while a hold-to-run lift target (`lift.home`, `lift.move`) is pending or its motion runs held. While her finger (or Space or Enter) is on it, the page posts `{ pressed: true, at }` to `POST /screen/hold` at once and then every 50 ms, four times per `HOLD_CONTROL_REFRESH_MS` (200 ms), because the lift's lease ends for good the first time a refresh is late. It posts one `{ pressed: false }` on the first of: pointerup, pointercancel, touchend, touchcancel, blur, visibilitychange (the contract's `SCREEN_HOLD_RELEASE_EVENTS`, heard on the whole page so a release is never missed when the button moves or goes) or keyup; the control leaving the screen; the stream from the Pi dropping (at once, not 5 s later). Long-press menus and panning are off on it, so a long hold isn't cancelled by the browser. The server stamps every message with the Pi's monotonic clock on receipt and never trusts the page's `at` for freshness; it uses `at` only to drop a "still held" that a release overtook. It counts a "still held" only while a stream is open and the state it last sent shows the control, and treats a stream closing and its own shutdown as releases. Each one goes on the bus as `screenHold` (`{ pressed: true, atMono }` or `{ pressed: false, atMono, reason }`). The motion coordinator turns that into the lift's hold lease with one line, not wired yet (`src/motion/lift/README.md`):
+**The lift's hold control.** A 147 px button, shown only while a hold-to-run lift target (`lift.home`, `lift.move`) is pending or its motion runs held. While her finger (or Space or Enter) is on it, the page posts `{ pressed: true, at }` to `POST /screen/hold` at once and then every 50 ms, four times per `HOLD_CONTROL_REFRESH_MS` (200 ms), because the lift's lease ends for good the first time a refresh is late. It posts one `{ pressed: false }` on the first of: pointerup, pointercancel, touchend, touchcancel, blur, visibilitychange (the contract's `SCREEN_HOLD_RELEASE_EVENTS`, heard on the whole page so a release is never missed when the button moves or goes) or keyup; the control leaving the screen; the stream from the Pi dropping (at once, not 5 s later). Long-press menus and panning are off on it, so a long hold isn't cancelled by the browser. The server stamps every message with the Pi's monotonic clock on receipt and never trusts the page's `at` for freshness; it uses `at` only to drop a "still held" that a release overtook. It counts a "still held" only while a stream is open and the state it last sent shows the control, and treats a stream closing and its own shutdown as releases. Each one goes on the bus as `screenHold` (`{ pressed: true, atMono }` or `{ pressed: false, atMono, reason }`). The motion coordinator turns that into the lift's hold lease with one line (`coordinator.ts`, `start`; wired 2026-10-24):
 
 ```ts
 bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono)));
@@ -452,7 +452,7 @@ bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdR
 
 ## The arms (motion coordinator)
 
-**Status, 2026-10-24: built and tested on a Mac against simulated STS3215 servos only. Not yet run on a real servo, adapter, Pi, stop switch or person.** The coordinator follows the motion contract ([`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts), [manipulation guide](../../docs/subsystems/manipulation.md)). It covers the arms: safety, calibration, named poses, teleop, **taught skills** (recording, replay and "Let go?", [below](#taught-skills-record-and-replay)) and the simulator. The lift isn't wired into it (its client is in `src/motion/lift/`), so lift commands are refused here (`part_missing`). Every number not from the contract is a placeholder, not measured.
+**Status, 2026-10-24: built and tested on a Mac against simulated STS3215 servos only. Not yet run on a real servo, adapter, Pi, stop switch or person.** The coordinator follows the motion contract ([`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts), [manipulation guide](../../docs/subsystems/manipulation.md)). It covers the arms: safety, calibration, named poses, teleop, **taught skills** (recording, replay and "Let go?", [below](#taught-skills-record-and-replay)) and the simulator. It also drives the lift ([below](#the-lift-under-the-motion-coordinator); its client is in `src/motion/lift/`). Every number not from the contract is a placeholder, not measured.
 
 **The rule: motors move only while a person at the walker is acting.** Nothing but a handle Confirm press starts anything:
 
@@ -493,6 +493,7 @@ bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdR
 **Kept on the Pi** in `/var/lib/steady-walker/motion/` (0700, files 0600, no secrets and no one's words):
 - `calibration-<side>-<follower|leader>.json`, each a contract `ArmCalibrationSchema`. A calibration made on another adapter (`bus_id`) isn't used.
 - `poses.json`, the follower poses, each a `NamedPoseSchema`.
+- `lift.json`, the lift's configuration and installation record ([The lift](#the-lift-under-the-motion-coordinator)); no file means no lift.
 - `skills/<skill_id>.json` (folder 0700), each a contract `SkillSchema` whose `skill_id` is its file name, one waypoint a line. Written atomically. A file that fails the schema is listed as unable to run, never repaired.
 
 Every file carries the motion contract's version, now **2** (2026-10-24: two new faults, and letting go allowed with a fault latched). A file written under version 1 doesn't parse, so it counts as missing and must be made again. None exists on a walker yet: the arms haven't been calibrated.
@@ -514,10 +515,16 @@ walker arms skills
 walker arms skill run <skill-id>
 walker arms skill rm <skill-id>
 walker arms let-go [--arm left|right] [--deg <degrees>]
+walker lift home
+walker lift move <millimetres>
+walker lift disable
+walker lift status
 walker motion stop
 walker motion clear --reason "<why it is safe>"
 walker motion status
 ```
+
+The lift's commands also need someone holding the lift control on the walker's screen while it moves: letting go stops it.
 
 **In the simulator:** `node dist/walker.mjs simulate --arms` adds four SIMULATED servo buses (two followers, two leaders) with made-up calibrations and poses (`stowed`, `ready`, `handover`), and a simulated stop switch. The simulated servos use the dangerous default, where turning torque on drives to whatever goal is in the register. Press `?` for the keys (`s` stop switch, `h` unplug the handle, `1` torque on left, then `c`, and so on). For skills: `M` then `R` (then `c`) records the left arm, `T` moves its teaching arm through a made-up pick, `3` marks a grasp, `S` ends it, `E` saves it, `X` puts an object in the left gripper (or takes it away), `b` a finger-sized blocker, `5` replays it, `N` runs a made-up sample skill (`sim_sample_handover`, titled "SIMULATED sample: hold it out"; written only into a simulator's state folder, never a taught skill). The terminal commands work against it with `--socket <state folder>/motion.sock` (a relative `--state` folder keeps the socket path under macOS's 104-byte limit). The scripts in `test/sim/motion/*.walk` and `test/sim/skills/*.walk` run there too (`simulate --arms --script ...`), and `test/motion-walk.test.ts` runs them all on a fake clock.
 
@@ -720,6 +727,58 @@ Only the real arms can show:
 - whether replay lands within the tray's tolerance each time (repeatability);
 - how much the arm sags under the object at `handover`;
 - whether its own weight trips the load rule while it holds out the object.
+
+## The lift (under the motion coordinator)
+
+**Status, 2026-10-24: wired into the motion coordinator and tested on a Mac against a SIMULATED lift board (`src/sim/fakeLift.ts`) and simulated servos only. It has never talked to the lift board, driver, motor or switches, and nothing about them is measured.** The lift client ([`src/motion/lift/`](src/motion/lift/README.md)) owns the lift's serial lines; the coordinator owns its Confirm targets, presses, faults and the motion state, exactly as for an arm. Expected results: [test/EXPECTED.md](test/EXPECTED.md#the-lift-under-the-motion-coordinator-added-2026-10-24-simulated-lift-and-servos-only), rows E1 to E17.
+
+**The rule for the lift** (AGENTS.md rule 8; the contract's `lift.home`, `lift.move`, `lift.disable`):
+
+- **Prepared** only at the terminal (`walker lift home`, `walker lift move <mm>`, `walker lift disable`), and later at the screen. It becomes the walker's one pending Confirm target, worded by the Pi ("Raise the lift to 300 mm. Park the walker and lock the brakes, then press Confirm."), and the screen shows the lift's hold control under it.
+- **Started** only by a handle Confirm press on that target, and only while someone holds the hold control on the walker's screen and every fitted arm holds its `stowed` pose with its motors on. Otherwise the press is refused (`not_held`, `arms_not_stowed`), and nothing goes to the lift.
+- **Held** only by the screen's hold control: the page posts "still held" every 50 ms, the Pi stamps each on receipt, and each 100 ms heartbeat names the running request only while the latest is at most 200 ms old. Letting go, an obstacle or a Talk press taking the screen, or the page losing its stream, stops it. A stopped request never resumes.
+- **Never without the hardware stop.** The Pi's stop-sense input and the lift board's must both be wired (`no_hardware_stop`), bench mode or not: bench mode waives the stop for the arms only. For the lift, bench mode waives just the installation checks, and its lower limits refuse every lift target today (`lift_over_limits`: homing's fixed 15 mm/s and the lift's built-in 50 mm/s² are above bench's 10 mm/s and 25 mm/s²). Outside bench mode the lift's built-in acceleration must be within 50 mm/s².
+- **Stopped** by any handle press, `walker motion stop`, any fault (an arm's too, and a fault repeated while the lift still moves), and the stop switch (which also cuts the lift's step signal itself). `lift.stop` goes out at once on every motion.stop and every fault; a fault in the contract's FAULTS_THAT_UNHOME_LIFT also means it must home again.
+- **One motion at a time.** An arm command is refused `busy` while the lift moves or ramps down (letting go excepted, which only opens a gripper), and a lift target while an arm moves.
+- **Lost communication.** The coordinator's control loop is the only caller of the client's `tick`, which writes the heartbeats: if the loop stalls, or the lift's status stops for 300 ms (`lift_module_lost`), the heartbeats stop and the lift's own watchdog stops it within 300 ms.
+- **Faults the lift board latched** clear only when the lift accepts `lift.clear`: `walker motion clear` clears the Pi's own faults at once and the lift's when the lift answers `cleared`.
+- **Taught skills and the lift.** A skill names the lift height it was taught at (`lift_mm`): recording needs the lift homed, and a skill runs only with the lift homed and within 1 mm of that height (`lift_not_homed`, `lift_not_at_height`, whose reason gives the `walker lift move` that fixes it). A skill never moves the lift.
+
+**The lift file**, `/var/lib/steady-walker/motion/lift.json` (0600), written by the installer, read at start. No file: no lift on this walker. A file that fails the contract's schemas: no lift either, logged. Example (illustrative: the firmware's default build settings, an installation not yet inspected):
+
+```json
+{
+  "format": "sophi.lift",
+  "version": 2,
+  "config": { "microsteps": 8, "soft_min_mm": 5, "soft_max_mm": 600, "max_speed_mm_s": 20, "max_accel_mm_s2": 50, "top_switch_mm": null },
+  "installation": { "guards_fitted": false, "drop_test": "not_done", "brake_fitted": false, "stop_cuts_lift_power": false, "driver_current_setting": null, "recorded_at": "2026-10-25T00:00:00.000Z" }
+}
+```
+
+`config` must equal the configuration built into the lift board, which `lift.hello` reports (a mismatch refuses lift motion: `lift_config_mismatch`). Outside bench mode, motion is also refused until `guards_fitted` is true and `drop_test` is `passed` (or a brake is fitted). A file that isn't JSON or fails the schemas means no lift, and the log and every lift refusal say it is malformed.
+
+**In the simulator:** `node dist/walker.mjs simulate --arms --lift` (`--lift` turns `--arms` on), without `WALKER_MOTION_BENCH`: in bench mode the lift refuses every target, as on the walker. The SIMULATED arms start folded at `stowed`; turn both on first (`1` then `c`, `2` then `c`). `l` holds the screen's control (or let go), `e` prepares homing, `u` raising to 300 mm, `d` lowering to 50 mm, each then `c`; `[` and `]` fold the left or right arm away. Fault keys: `k` stop, `y` the stop switch (the same as `s`), `w` a stuck bottom switch, `j` a cut switch harness, `v` the line from the lift lost, `a` a frozen lift board, `z` the control loop stops calling the lift, `K` clear (then `c`), `D` the lift's motor off (then `c`). With `--screen` the page's own hold control works too. The scripts: `test/sim/lift/01-demo-flow.walk` (home, raise to the tray, the tray skill, "Let go?", fold, lower) and `test/sim/lift/02-hold-release-stop.walk` (a Confirm with nothing held, a release partway, a Talk press, the stop switch and clearing).
+
+### Bench bring-up with the real lift, after the arms (2026-10-25 plan; nothing below has been done yet)
+
+**The lift never moves without the hardware stop, and it can't run in bench mode.** Bench mode waives the stop for the arms only; for the lift it waives just the installation checks (guards, drop test), and its lower limits apply (10 mm/s, 25 mm/s²). Homing runs at the contract's fixed 15 mm/s fast approach, above bench's 10 mm/s, and the firmware's built-in 50 mm/s² is above bench's 25, so in bench mode every lift target is refused `lift_over_limits` ("The lift's built-in speed is above this mode's limit, so it won't move."). The Pi's lift steps therefore run in normal mode: the real stop wired, guards fitted, the drop test passed. The decoupled direction and homing checks are the firmware's own, with its bench tool.
+
+Do this only after:
+- the arms' bring-up above has passed, including step 21 (the real stop wired, `WALKER_MOTION_BENCH` removed);
+- the lift board's own bench steps 1 to 10 in [firmware/README.md](../../firmware/README.md#lift-board) passed with `lift_bench.py`: boot, switches, direction and homing with the motor decoupled, the drop test (its step 9) with the carriage coupled, speed and current;
+- the pinch guards are fitted and checked.
+
+Two people: one at the lift with a hand on the **lift's 12 V switch**, one at the terminal and the screen. Nobody else within reach of the carriage or the arms. Record every result in `hardware/current-build.md`.
+
+1. **Wire the stop to the lift too.** The latching stop's second contact goes to the lift board's stop-sense input (GPIO13, built with `WALKER_LIFT_STOP_SENSE=1`), and the stop cuts the driver's PUL signal (firmware/README.md, "The stop"). Press the stop with the lift board connected: both the Pi (`stop_circuit_opened`, part `system`) and the lift (`stop_circuit_opened`, part `lift`) latch it (`walker lift status`). Release, `walker motion clear`, Confirm. The lift refuses every target until both read wired (`no_hardware_stop`).
+2. **The lift file.** Write `lift.json` as above, with the configuration the board was built with, the drop test as measured (`passed`, or `failed` and a brake fitted: otherwise the lift won't move), `guards_fitted` true, the driver current as set, and no `WALKER_MOTION_BENCH`. Plug the lift board into the Pi and restart the service. The log shows `lift fitted (lift.json)`; `walker lift status` shows it connected and `NOT homed`. A `lift_config_mismatch` fault means the file and the firmware differ: fix the file, never the check. A malformed file shows `the lift is off` with the reason.
+3. **The hold control and the arms.** Open the walker screen: the kiosk, or a laptop's browser at `http://127.0.0.1:8740/` through `ssh -L 8740:127.0.0.1:8740 <pi>` (untested). Turn both arms on and fold them (`walker arms pose go stowed`, with Confirm): the lift won't move otherwise.
+4. **Homing, with the hold.** Hand on the lift's 12 V switch. `walker lift home`; the screen shows the hold control under "Home the lift". Press Confirm **without** holding: refused ("Keep holding the lift control to move it."), nothing moves. Hold the control and press Confirm: it approaches the bottom switch at 15 mm/s, backs off, approaches at 2 mm/s and ends homed at 5 mm. Start it again and **let go** mid-homing: it ramps down at once and the request ends `stopped`, unhomed. Then the same with a Talk press, `walker motion stop`, and the stop switch: each stops it.
+5. **First move.** Hold, `walker lift move 50`, Confirm: the carriage rises 45 mm at up to 20 mm/s (normal limits, 50 mm/s²) and stops at 50 mm. Measure the real height against `walker lift status` (counted steps, not measured).
+6. **Stop tests on a move.** Let go, a Talk press, a Confirm press, `walker motion stop`, the stop switch, an arm fault (unplug the handle: `hand_controls_lost`), and unplugging the lift board's USB (`lift_module_lost`, then the lift's own watchdog). Each must stop it; record how far it went after each.
+7. **Then the demo heights.** Move to the tray height the skill will be taught at, and only then teach `tray_pick_handover` (it records that height).
+
+Only the real lift can show: whether the TB6600 takes the ESP32's 3.3 V pulses; how far the carriage coasts after a release, a stop or a lost heartbeat (the 200 mm/s² ramp, the 300 ms watchdog); whether the counted height matches the measured one after many moves (lost steps); the drop test; whether the stop switch's two contacts and the end switches are wired as assumed; the motor's temperature and the current that lifts the load; and whether a person can keep the screen's hold control held comfortably for a 15 s move.
 
 ## Settings (environment variables)
 

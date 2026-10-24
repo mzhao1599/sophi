@@ -137,6 +137,8 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
           clock,
           log,
           bus,
+          // Before scanner.start() below: the lift board's lines go to the lift client from its first hello.
+          modules,
           gpio: { flavor: config.gpiomon, chip: config.gpioChip },
           handControls: () => handControlsConnected(modules, buttons),
           walkerProposalOpen: () => proposalOpen(),

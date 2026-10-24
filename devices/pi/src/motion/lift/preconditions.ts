@@ -1,4 +1,6 @@
 import {
+  LIFT_HOMING_FAST_MM_S,
+  LIFT_HOMING_SLOW_MM_S,
   MOTION_LIMITS,
   liftInstallationAllowsMotion,
   liftMayDisable,
@@ -65,7 +67,9 @@ export function liftVerdict(view: LiftView, action: LiftAction, inputs: LiftChec
     return null;
   }
   if (inputs.stopCircuit === "pressed" || view.statusStop === "pressed") return "stop_pressed";
-  if (!view.bench && (inputs.stopCircuit === "not_wired" || view.liftStopSense === "not_wired")) return "no_hardware_stop";
+  // The lift never moves without the hardware stop, bench mode or not (the contract's): bench mode waives the
+  // stop for the arms only. Both the Pi's stop-sense and the lift board's must be wired.
+  if (inputs.stopCircuit === "not_wired" || view.liftStopSense === "not_wired") return "no_hardware_stop";
   if (inputs.faultLatched || view.liftFaults.length > 0 || view.configOk === false) return "fault_latched";
   if (view.busy || inputs.otherMotion) return "busy";
   if (!view.heard) return "part_missing";
@@ -73,12 +77,27 @@ export function liftVerdict(view: LiftView, action: LiftAction, inputs: LiftChec
   if (stage === "start" && !view.held) return "not_held";
   if (!view.bench && !view.installation.guards_fitted) return "lift_guards_missing";
   if (!view.bench && !liftInstallationAllowsMotion(view.installation)) return "lift_drop_test_missing";
+  if (liftOverLimits(view.config, view.bench, action.kind)) return "lift_over_limits";
   if (!inputs.armsStowed) return "arms_not_stowed";
   if (action.kind === "lift.move") {
     if (!view.homed) return "lift_not_homed";
     if (!(action.target_mm >= view.config.soft_min_mm && action.target_mm <= view.config.soft_max_mm)) return "out_of_range";
   }
   return null;
+}
+
+/**
+ * Whether the lift would run above this mode's limits (MOTION_LIMITS). `lift.move` carries no acceleration, so
+ * the lift uses its built-in `max_accel_mm_s2` (the configuration, which must equal what `lift.hello` reports):
+ * above the mode's `lift_accel_mm_s2` it is refused. A move's speed is capped to the mode's (`liftMoveSpeed`),
+ * but homing runs at the contract's fixed LIFT_HOMING_FAST_MM_S and LIFT_HOMING_SLOW_MM_S: above the mode's
+ * `lift_speed_mm_s` homing is refused. With today's numbers that is bench mode (15 mm/s against 10), so the lift
+ * can't home, and so can't move, in bench mode at all.
+ */
+export function liftOverLimits(config: LiftConfig, bench: boolean, kind: "lift.home" | "lift.move"): boolean {
+  const limits = MOTION_LIMITS[bench ? "bench" : "normal"];
+  if (config.max_accel_mm_s2 > limits.lift_accel_mm_s2) return true;
+  return kind === "lift.home" && Math.max(LIFT_HOMING_FAST_MM_S, LIFT_HOMING_SLOW_MM_S) > limits.lift_speed_mm_s;
 }
 
 /** A move's speed: the lower of the configuration's and the mode's (MOTION_LIMITS). */

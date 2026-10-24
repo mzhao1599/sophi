@@ -38,7 +38,7 @@ export interface SimulateOptions {
   script?: string;
   /** Also serve the walker screen's page on 127.0.0.1 (WALKER_SCREEN_PORT, default 8740) and print its address. */
   screen?: boolean;
-  /** A SIMULATED lift board driven by the real lift client, from a stand-in loop (no motion coordinator). */
+  /** A SIMULATED lift board, driven by the real lift client under the real motion coordinator (turns on `arms`). */
   lift?: boolean;
   /** SIMULATED arms: fake servo buses through the real motion coordinator, and a simulated stop switch. */
   arms?: boolean;
@@ -140,14 +140,15 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   modules.attach(tofPort);
   hand.start();
   tof.start();
-  // ---- SIMULATED lift (--lift): the real lift client against a simulated lift board ----
+  // ---- SIMULATED lift (--lift): a simulated lift board, its real client under the motion coordinator ----
   const lift = options.lift ? new LiftSim({ clock, log, bus, modules, bench: liftSimBench(process.env) }) : null;
+  if (lift && !options.arms) log.info("--lift turns on --arms: the lift runs under the motion coordinator, with the arms");
 
   // ---- SIMULATED arms (--arms): fake servo buses through the real motion coordinator ----
   let announce: (text: string) => void = () => {};
   let proposalOpen: () => boolean = () => false;
   let motion: { sim: MotionSim; socket: OperatorSocket; actions: Record<string, () => void> } | null = null;
-  if (options.arms) {
+  if (options.arms || lift) {
     const bench = readBench(process.env);
     if (!bench.ok) {
       log.error(bench.reason);
@@ -181,8 +182,12 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       handControls: () => handControlsConnected(modules, null),
       walkerProposalOpen: () => proposalOpen(),
       say: (text) => announce(text),
+      ...(lift ? { lift } : {}),
     });
-    motion = { sim, socket: new OperatorSocket(join(stateDir, "motion.sock"), sim.coordinator, log), actions: sim.actions() };
+    const actions = sim.actions();
+    // The lift's keys prepare its targets with the real coordinator, as the terminal does; `y` is the one stop switch.
+    if (lift) Object.assign(actions, lift.actions(sim.coordinator, () => actions["stop-switch"]!()));
+    motion = { sim, socket: new OperatorSocket(join(stateDir, "motion.sock"), sim.coordinator, log), actions };
   }
 
   // ---- Service ----
@@ -208,10 +213,11 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   announce = (text) => service.announce(text);
   proposalOpen = () => service.hasOpenProposal();
   service.start();
-  // After the script runner exists, so a script sees the lift's first events.
-  lift?.start();
   if (motion) {
-    await motion.sim.coordinator.start();
+    const started = motion.sim.coordinator.start();
+    // After the script runner and the coordinator's listeners exist, so both see the lift's first lines.
+    lift?.start();
+    await started;
     // A Unix socket path over about 104 bytes (macOS) can't be opened: the arms still run, without the terminal.
     await motion.socket.listen().catch((error: unknown) =>
       log.error("the terminal's socket couldn't open (a shorter --state path helps)", { error: (error as Error).message }),
@@ -285,10 +291,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       default: {
         // Lift and arms: a script names the action ("key lift-home", "key torque-on-left"); the keyboard uses
         // LIFT_KEYS and MOTION_KEYS.
-        const action =
-          (lift ? (lift.actions()[key] ?? lift.actions()[LIFT_KEYS[key] ?? ""]) : undefined) ??
-          motion?.actions[key] ??
-          motion?.actions[MOTION_KEYS[key] ?? ""];
+        const action = motion?.actions[key] ?? motion?.actions[LIFT_KEYS[key] ?? ""] ?? motion?.actions[MOTION_KEYS[key] ?? ""];
         if (action) return action();
         return log.warn("unknown key", { key });
       }
@@ -303,7 +306,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       finish(failure ? 1 : 0);
     });
   } else if (process.stdin.isTTY) {
-    process.stdout.write(`${HELP}\n${lift ? `${LIFT_HELP}\n` : ""}`);
+    process.stdout.write(`${HELP}\n${lift ? `${LIFT_HELP}\n` : ""}${motion ? `${MOTION_HELP}\n` : ""}`);
     emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     const onKey = (text: string, key: { ctrl?: boolean; name?: string }) => {
@@ -325,9 +328,9 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   restoreTty();
   // Against a real cloud the audio folder holds real replies; it goes unless the person asked for it (--out).
   if (options.server && !options.out) rmSync(outDir, { recursive: true, force: true });
-  lift?.stop();
   motion?.socket.close();
   await motion?.sim.stop();
+  lift?.stop();
   service.stop();
   await screen?.stop();
   hand.hang();

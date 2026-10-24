@@ -14,7 +14,8 @@ import type { Bus, BusEvents } from "../bus";
  * Event names and what their text is matched against: spoke (the line), link, talk and mic (the state), cue (the
  * cue name), haptic (the pattern), config (the version), turn (the outcome), heartbeat (ok or failed),
  * module (`<instance> <health>`), screen (the walker screen's state name, with `--screen`), lift (`<kind> <text>`,
- * with `--lift`: the lift client's requests, faults and the simulated lift's state), motion (`<kind> <text>`, what
+ * with `--lift`: the simulated lift board's state, its injected faults and the hold control; the coordinator's
+ * lift requests are `motion lift ...`), motion (`<kind> <text>`, what
  * the motion coordinator did) and sim (what the simulated servos saw, with `--arms`).
  */
 export type ScriptStep =

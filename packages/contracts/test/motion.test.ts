@@ -668,7 +668,7 @@ describe("command policy (AGENTS.md rule 8)", () => {
       expect(MOTION_COMMAND_POLICY[kind].hold_to_run).toBe(kind === "lift.home" || kind === "lift.move");
     }
     for (const kind of ["lift.home", "lift.move"] as const) {
-      expect(MOTION_COMMAND_POLICY[kind].refuses_when).toEqual(expect.arrayContaining(["not_held", "lift_guards_missing", "lift_drop_test_missing", "arms_not_stowed"]));
+      expect(MOTION_COMMAND_POLICY[kind].refuses_when).toEqual(expect.arrayContaining(["not_held", "lift_guards_missing", "lift_drop_test_missing", "lift_over_limits", "arms_not_stowed"]));
     }
     expect(MOTION_COMMAND_POLICY["lift.move"].refuses_when).toContain("lift_not_homed");
     expect(MOTION_COMMAND_POLICY["skill.run"].refuses_when).toEqual(expect.arrayContaining(["lift_not_homed", "lift_not_at_height"]));

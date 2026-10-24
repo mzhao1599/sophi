@@ -1,6 +1,6 @@
 # The lift client (`src/motion/lift/`)
 
-**Status, 2026-10-24: written and tested against a simulated lift only.** It has never talked to the lift board, and the walker service and the motion coordinator don't use it yet. Only `walker simulate --lift` runs it, from a labelled stand-in loop. Expected results: [test/EXPECTED.md](../../../test/EXPECTED.md#the-lift-adapter-srcmotionlift-added-2026-10-24), rows L, LP, LF and LW.
+**Status, 2026-10-24: written and tested against a simulated lift only.** It has never talked to the lift board. The motion coordinator drives it ([Wired into the coordinator](#wired-into-the-coordinator)), on the walker when `<state>/motion/lift.json` exists and in `walker simulate --arms --lift`. Expected results: [test/EXPECTED.md](../../../test/EXPECTED.md#the-lift-adapter-srcmotionlift-added-2026-10-24), rows L, LP, LF and LW, and the coordinator's rows E1 to E14.
 
 It is the Pi side of the lift's serial lines ([`lift-serial.ts`](../../../../../packages/contracts/src/lift-serial.ts), rules 1 to 10). The motion coordinator owns Confirm targets and presses, faults and the motion state. This client owns the lift's lines and gives the coordinator verdicts and events.
 
@@ -44,19 +44,19 @@ lift.on((event) => { /* see Events */ });
 - `clear`: the answer to `lift.clear` (`cleared`, `refused` with `cause_present`, or `no_ack`).
 - `disable`: the answer to a disable (`disabled`, `refused` with `disable_unsafe`, or `no_ack`).
 
-## Wiring it into the coordinator (not done here)
+## Wired into the coordinator
 
-This branch doesn't edit the coordinator's files (`claude/motion-arms`). To wire the client in:
+Done 2026-10-24 (`claude/motion-wiring`), tested only against the simulated lift (`test/lift-coordinator.test.ts`, `test/lift-screen.test.ts`, `test/sim/lift/*.walk`):
 
-1. In `createPiMotion` (or wherever `MotionSetup` is loaded): when `setup.lift` isn't null, build the `LiftClient` with `setup.lift`, the bench flag and the coordinator's clock, and call `modules.setLiftHandler(lift)` before `scanner.start()`. In `run.ts`, that means passing `modules` into `createPiMotion`.
-2. In the coordinator's control loop, call `lift.tick(now)` on every tick, and from nowhere else.
-3. Route the screen's hold-control refresh and release to `holdRefresh` and `holdRelease`. The walker screen's server already stamps each with the Pi's monotonic receive time and puts it on the bus as `screenHold` (`src/screen/server.ts`), so this is one line: `bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono)))`.
-4. When preparing a lift Confirm target, call `lift.verdict(action, inputs, "prepare", now)`. When the press is accepted, call `lift.start` (home or move) or `lift.disable`. For `fault.clear`, call `lift.clearFaults()` along with the coordinator's own clear, and clear lift faults only on the `clear` event's `cleared`.
-5. On `motion.stop` and on every latched fault, call `lift.stop()`. On a fault in FAULTS_THAT_UNHOME_LIFT, also call `lift.markUnhomed()`.
-6. Map events to the motion state: `fault` → latch with part `lift`; `ended` → `last_command`; `state()` and `active()` → `MotionState.lift` and `active`.
-7. `walker simulate --arms --lift`: drop the stand-in in `src/sim/liftSim.ts` and give the real coordinator the `SimulatedLiftBoard`, keeping its fault keys.
+1. `createPiMotion` (`../runtime.ts`) reads `<state>/motion/lift.json` (`MotionFiles.readLift`, the contract's LiftConfigSchema and LiftInstallationSchema). When there is one, it builds the client with it, the bench flag and the service's clock, calls `modules.setLiftHandler(lift)` and passes the client to the coordinator. `run.ts` passes `modules` in, and calls it before `scanner.start()`.
+2. The coordinator's control loop calls `lift.tick(now)` on every tick (`afterRead`), and nothing else does.
+3. The coordinator routes `screenHold` from the bus: `bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono)))`.
+4. Preparing a lift target and pressing Confirm on it run `lift.verdict` (`prepare`, then `start`), in the policy's order with the coordinator's own `no_hand_control`; its inputs are the coordinator's stop reading, its latched faults, whether every follower holds `stowed` with torque on, and whether anything else runs. An accepted press calls `lift.start` (home, move) or `lift.disable`. `fault.clear` clears the Pi's faults at once and calls `lift.clearFaults()` when the lift board reports faults; those stay latched until the `clear` event says `cleared`.
+5. Every `motion.stop` and every newly latched fault (an arm's too) calls `lift.stop()`; a fault in FAULTS_THAT_UNHOME_LIFT also calls `lift.markUnhomed()`.
+6. Events: `fault` latches with part `lift`; `ended` ends the coordinator's lift motion (`completed`, `stopped`, a refusal with the contract's reason, else `faulted`) and so `last_command`; `state()` is `MotionState.lift`; `active()` gives the active motion's phase: `running` with `hold_source: "screen_hold_control"` exactly while the hold lease still names it, else `stopping`.
+7. `walker simulate --arms --lift`: `src/sim/liftSim.ts` no longer plays the coordinator. It puts the `SimulatedLiftBoard` on a simulated port, hands the real client to the real coordinator, plays the screen's hold control on the bus, prepares lift targets as the terminal does, and keeps the fault keys.
 
 ## What isn't here
 
-- Accel: `lift.move` carries no acceleration, so the bench mode's lower `lift_accel_mm_s2` (MOTION_LIMITS) can't be applied. The firmware uses its built-in `max_accel_mm_s2`.
+- Accel on the line: `lift.move` carries no acceleration; the firmware uses its built-in `max_accel_mm_s2`. So the verdict refuses lift motion (`lift_over_limits`) when that (the configuration, equal to what `lift.hello` reports) is above the mode's `lift_accel_mm_s2`, and homing when its fixed speeds are above the mode's `lift_speed_mm_s`: today, everything in bench mode. The verdict also refuses `no_hardware_stop` in bench mode: the lift never moves without the hardware stop.
 - The lift isn't listed in the walker's manifest (`manipulation.lift`). The module list holds serial-v1 modules only.
