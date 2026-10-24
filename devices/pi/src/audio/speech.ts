@@ -105,8 +105,7 @@ function sequence(steps: Array<() => Running>, cleanup: () => void): Utterance {
 }
 
 /**
- * The Pi: Piper when a voice model is configured, falling back to espeak-ng per utterance, played through
- * aplay on a named ALSA device. Not yet run on a Pi.
+ * The Pi: the server's voice when reachable, with Piper or espeak-ng as a local fallback.
  */
 export class PiSpeaker implements Speaker {
   readonly simulated = false;
@@ -114,14 +113,14 @@ export class PiSpeaker implements Speaker {
   private counter = 0;
 
   constructor(
-    private readonly options: { playbackDevice: string; piperModel: string | null; tmpDir: string; cues: Record<CueName, string> },
+    private readonly options: { playbackDevice: string; piperModel: string | null; tmpDir: string; cues: Record<CueName, string>; remoteVoice?: (text: string, signal: AbortSignal) => Promise<Buffer | null> },
     private readonly log: Logger,
   ) {
     // The folder holds synthesized replies for a moment; leftovers from a crash or power cut are removed here.
     // Its contents are emptied rather than the folder recreated, so the private folder is never given up.
     mkdirSync(options.tmpDir, { recursive: true, mode: 0o700 });
     for (const name of readdirSync(options.tmpDir)) rmSync(join(options.tmpDir, name), { recursive: true, force: true });
-    this.label = `${options.piperModel ? "piper (espeak-ng fallback)" : "espeak-ng"} on ${options.playbackDevice}`;
+    this.label = `${options.remoteVoice ? "server voice, " : ""}${options.piperModel ? "piper (espeak-ng fallback)" : "espeak-ng"} on ${options.playbackDevice}`;
   }
 
   speak(text: string): Utterance {
@@ -129,6 +128,8 @@ export class PiSpeaker implements Speaker {
     const file = join(this.options.tmpDir, `speech-${this.counter}.wav`);
     const { piperModel, playbackDevice } = this.options;
     let synth: Running | null = null;
+    let remotePlayer: Running | null = null;
+    const remoteAbort = new AbortController();
     let stopped = false;
     const synthesize = async () => {
       if (piperModel) {
@@ -147,6 +148,21 @@ export class PiSpeaker implements Speaker {
     let player: Running | null = null;
     const done = (async () => {
       try {
+        if (this.options.remoteVoice) {
+          try {
+            const signal = AbortSignal.any([remoteAbort.signal, AbortSignal.timeout(3000)]);
+            const remoteWav = await this.options.remoteVoice(text, signal);
+            if (stopped) return;
+            if (remoteWav) {
+              remotePlayer = run("aplay", ["-q", "-D", playbackDevice, "-"], remoteWav);
+              await remotePlayer.done;
+              return;
+            }
+          } catch (error) {
+            if (stopped) return;
+            this.log.warn("server voice unavailable; using local voice", { error: (error as Error).message });
+          }
+        }
         await synthesize();
         if (stopped) return;
         player = run("aplay", ["-q", "-D", playbackDevice, file]);
@@ -159,6 +175,8 @@ export class PiSpeaker implements Speaker {
       done,
       stop: () => {
         stopped = true;
+        remoteAbort.abort();
+        (remotePlayer as Running | null)?.kill();
         (synth as Running | null)?.kill();
         (player as Running | null)?.kill();
       },

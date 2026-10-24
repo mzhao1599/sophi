@@ -103,6 +103,10 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
       piperModel: config.piperModel,
       tmpDir: env.RUNTIME_DIRECTORY ? join(env.RUNTIME_DIRECTORY, "speech") : mkdtempSync(join(tmpdir(), "steady-speech-")),
       cues,
+      remoteVoice: async (text, signal) => {
+        const credential = store.readCredential();
+        return credential ? new HttpCloudClient(credential.server_url, credential.device_id, credential.credential).voiceLine(text, signal) : null;
+      },
     },
     log,
   );

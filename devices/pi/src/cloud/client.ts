@@ -1,6 +1,7 @@
 import {
   AnswerProposalResponseSchema,
   ConfigurationResponseSchema,
+  DeviceSpeechResponseSchema,
   HeartbeatResponseSchema,
   PairDeviceResponseSchema,
   WalkerErrorSchema,
@@ -25,6 +26,7 @@ export const DEVICE_ROUTES = {
   heartbeat: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/heartbeat`,
   configuration: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/configuration`,
   turns: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/turns`,
+  speech: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/speech`,
   proposal: (deviceId: string, proposalId: string) =>
     `/api/v1/devices/${encodeURIComponent(deviceId)}/proposals/${encodeURIComponent(proposalId)}`,
 } as const;
@@ -205,6 +207,16 @@ export class HttpCloudClient implements CloudClient {
       { method: "POST", body, credential: this.credential, signal },
       WalkerTurnResponseSchema,
     );
+  }
+
+  async voiceLine(text: string, signal: AbortSignal): Promise<Buffer | null> {
+    const response = await request(
+      this.server,
+      DEVICE_ROUTES.speech(this.deviceId),
+      { method: "POST", body: { text }, credential: this.credential, signal },
+      DeviceSpeechResponseSchema,
+    );
+    return response.speech ? Buffer.from(response.speech.data_base64, "base64") : null;
   }
 
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal) {

@@ -277,6 +277,11 @@ export const SpeechSchema = z.strictObject({
   data_base64: base64(SPEECH_MAX_BYTES),
 });
 
+/** A paired Pi may voice one of its own short notices without creating a conversation turn. */
+export const DeviceSpeechRequestSchema = z.strictObject({ text: z.string().trim().min(1).max(200) });
+export const DeviceSpeechResponseSchema = z.strictObject({ speech: SpeechSchema.nullable() });
+export type DeviceSpeechResponse = z.infer<typeof DeviceSpeechResponseSchema>;
+
 // ---- Status view ----
 
 export const ZoneViewSchema = z.strictObject({

@@ -16,6 +16,7 @@ import {
   type AnswerProposalRequest,
   type AnswerProposalResponse,
   type DeviceTurnRequest,
+  type DeviceSpeechResponse,
   type HeartbeatRequest,
   type HeartbeatResponse,
   type PageTurnRequest,
@@ -176,6 +177,13 @@ export class WalkerService {
     this.turnBudgetMs = options.turnBudgetMs ?? TURN_BUDGET_MS;
     this.voiceTimeoutMs = options.voiceTimeoutMs ?? VOICE_TIMEOUT_MS;
     this.activity = options.activity ?? null;
+  }
+
+  /** Voice a local Pi line with the same stock voice as replies. No model call or stored turn. */
+  async deviceSpeech(caller: DeviceCaller, deviceId: string, text: string): Promise<DeviceSpeechResponse> {
+    await this.resolve(caller, deviceId);
+    const audio = await this.speak(text, this.voiceTimeoutMs, () => {});
+    return { speech: audio ? { mime: "audio/wav", data_base64: audio } : null };
   }
 
   /** At server start: the store's migrations, then the history sweep. */
