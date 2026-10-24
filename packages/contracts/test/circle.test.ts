@@ -415,7 +415,7 @@ describe("the two-phone app", () => {
     bad(ApproveJoinRequestSchema, { consent: { walker_user_agreed: false } });
     bad(ApproveJoinRequestSchema, {});
     expect(caregiverConsentLine("Maya", "Rose")).toBe(
-      "Rose agreed that Maya can see whether the walker is on, its part health and its alerts, and exchange short messages with her.",
+      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her, and see a recent GPS position only if location sharing is turned on later.",
     );
     expect(caregiverConsentLine("Maya", null)).toMatch(/^The person who uses this walker agreed that Maya/);
   });

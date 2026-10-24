@@ -79,8 +79,10 @@ describe("Rose's phone (simple mode)", () => {
     const t = text(html);
     expect(t).toContain("Your walker is on.");
     expect(t).toContain("Alerts: short sounds and spoken messages.");
-    expect(t).toContain("Nothing on this phone changes your walker.");
-    expect(buttons(html).map((b) => b.name)).toEqual(["Back"]);
+    expect(t).toContain("To change your alerts, ask Sophi on the walker.");
+    // Location sharing is hers alone, and starts off.
+    expect(t).toContain("Sharing is off.");
+    expect(buttons(html).map((b) => b.name)).toEqual(["Back", "Share my location with approved caretakers"]);
   });
 
   it("messages: the newest from Maya big, then three one-tap replies, no typing", async () => {
@@ -97,7 +99,7 @@ describe("Rose's phone (simple mode)", () => {
   it("people nearby: tagged Sample in the heading, with the line, and no actions", async () => {
     const html = await rose("nearby");
     expect(html).toMatch(/<h1[^>]*>People nearby <span[^>]*>Sample<\/span><\/h1>/);
-    expect(text(html)).toContain("Sample people for the demo. Sophi doesn't share anyone's location.");
+    expect(text(html)).toContain("Sample people for the demo. This list does not use GPS or anyone's real location.");
     expect(text(html)).toContain("Step-free places");
     expect(text(html)).not.toContain("Caretakers nearby");
     expect(buttons(html).map((b) => b.name)).toEqual(["Back"]);
@@ -116,8 +118,10 @@ describe("Maya's phone (caretaker)", () => {
     expect(t).toContain("Parts");
     expect(t).toContain("Healthy");
     expect(t).toContain("Battery: not measured on this walker");
-    // No suggestion button while the server has no route for one, and nothing about her conversation or location.
-    expect(t).not.toMatch(/Suggest|location|last seen|ago/i);
+    // No suggestion button while the server has no route for one, and nothing about her conversation; her
+    // location only says sharing is off until she turns it on herself (no position, no coordinates).
+    expect(t).toContain("Location sharing is off.");
+    expect(t).not.toMatch(/Suggest|last seen|ago|latitude|longitude|GPS position:/i);
     expect(buttons(html).map((b) => b.name)).toEqual(["Walker", "Messages", "Nearby"]);
     expect(html).toMatch(/aria-current="page"[^>]*>Walker</);
   });
@@ -149,7 +153,7 @@ describe("Maya's phone (caretaker)", () => {
     const html = await maya("nearby");
     expect(html).toMatch(/<h1[^>]*>Nearby <span[^>]*>Sample<\/span><\/h1>/);
     expect(text(html)).toContain("Caretakers nearby");
-    expect(text(html)).toContain("Sample people for the demo. Sophi doesn't share anyone's location.");
+    expect(text(html)).toContain("Sample people for the demo. This list does not use GPS or anyone's real location.");
   });
 });
 

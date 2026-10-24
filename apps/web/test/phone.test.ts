@@ -263,7 +263,7 @@ describe("the app's words", () => {
 
 describe("people nearby: a labelled sample", () => {
   it("is made up, says so and carries no coordinates", () => {
-    expect(SAMPLE_LINE).toBe("Sample people for the demo. Sophi doesn't share anyone's location.");
+    expect(SAMPLE_LINE).toBe("Sample people for the demo. This list does not use GPS or anyone's real location.");
     const all = JSON.stringify([SAMPLE_WALKERS, SAMPLE_CARETAKERS, SAMPLE_GROUPS, SAMPLE_PLACES]);
     expect(all).not.toMatch(/\b(lat|lng|latitude|longitude|coords?)\b|-?\d+\.\d{4,}/i);
   });
