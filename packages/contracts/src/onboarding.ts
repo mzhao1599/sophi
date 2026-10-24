@@ -135,12 +135,16 @@ export type Turn = z.infer<typeof TurnSchema>;
 export const SessionStateSchema = z.enum(["collecting", "review", "confirmed", "expired"]);
 export type SessionState = z.infer<typeof SessionStateSchema>;
 
+/** How the walker gets her attention. Shared by onboarding setups and the walker's own configuration. */
+export const CueSchema = z.enum(["vibration", "spoken", "sound", "screen"]);
+export type Cue = z.infer<typeof CueSchema>;
+
 export const DeviceConfigurationSchema = z.object({
   configuration_version: z.number().int().positive(),
   catalog_version: z.number().int().positive(),
   selected_module_ids: z.array(ModuleIdSchema),
   preferences: z.object({
-    cues: z.array(z.enum(["vibration", "spoken", "sound", "screen"])),
+    cues: z.array(CueSchema),
     request_start: z.array(z.enum(["left_button", "right_button", "voice", "app"])),
   }),
   confirmed_at: z.iso.datetime(),

@@ -63,15 +63,21 @@ describe("capability manifest v1", () => {
     const manifest = {
       device_configuration_version: 7,
       generated_at: "2026-10-23T19:58:00Z",
+      simulator: false,
       modules: [
         { module_id: "controls.hand", instance_id: "hand-left-01", firmware_version: "0.1.0", protocol_version: 1,
-          health: "ok", faults: [], observed_at: "2026-10-23T19:57:59Z" },
+          health: "ok", faults: [], observed_at: "2026-10-23T19:57:59Z", simulated: false },
         { module_id: "perception.tof", instance_id: "tof-front-01", firmware_version: null, protocol_version: 1,
-          health: "unavailable", faults: ["heartbeat_lost"], observed_at: "2026-10-23T19:50:00Z" },
+          health: "unavailable", faults: ["heartbeat_lost"], observed_at: "2026-10-23T19:50:00Z", simulated: true },
       ],
     };
     expect(CapabilityManifestSchema.safeParse(manifest).success).toBe(true);
     expect(CapabilityManifestSchema.safeParse({ ...manifest, modules: [{ ...manifest.modules[0], module_id: "jetpack" }] }).success).toBe(false);
+    // Every part says whether it is simulated, and so does the walker as a whole.
+    const { simulated: _, ...unmarked } = manifest.modules[0]!;
+    expect(CapabilityManifestSchema.safeParse({ ...manifest, modules: [unmarked] }).success).toBe(false);
+    const { simulator: __, ...noFlag } = manifest;
+    expect(CapabilityManifestSchema.safeParse(noFlag).success).toBe(false);
   });
 });
 

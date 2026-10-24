@@ -24,9 +24,9 @@ The intended modules are two SO-101 arms with overhead and gripper cameras on a 
 | Everyone | [Architecture](docs/architecture.md), [project scope and decisions](docs/project-plan.md) |
 | Future coding agents | [AGENTS.md](AGENTS.md), then the relevant subsystem guide |
 | Web and onboarding developers | [Web app](docs/subsystems/web-and-onboarding.md) |
-| Cloud/AI developers | [Agent design](docs/subsystems/cloud-agents.md), [interfaces](docs/interfaces.md) |
+| Cloud/AI developers | [Agent design](docs/subsystems/cloud-agents.md), [walker assistant (always on)](docs/subsystems/walker-assistant.md), [interfaces](docs/interfaces.md) |
 | Agent implementers | [Detailed runtime blueprint](docs/agent-runtime.md) |
-| Pi developers | [Pi runtime](docs/subsystems/pi-runtime.md), [interfaces](docs/interfaces.md) |
+| Pi developers | [Pi runtime](docs/subsystems/pi-runtime.md), [walker assistant (always on)](docs/subsystems/walker-assistant.md), [interfaces](docs/interfaces.md) |
 | ESP32 developers | [ESP32 firmware](docs/subsystems/esp32-firmware.md), [interfaces](docs/interfaces.md) |
 | Robot developers | [Arms and lift](docs/subsystems/manipulation.md) |
 | Electrical/mechanical developers | [Current hardware inventory](hardware/current-build.md), [hardware and power](docs/subsystems/hardware-and-power.md) |

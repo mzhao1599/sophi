@@ -10,8 +10,10 @@ import {
 
 /**
  * Pi ↔ cloud device contract, version 1: what the Pi reports about its hardware and sensors, and the
- * action requests and status reports for physical tasks. Carried by the proposed `/api/v1/devices/...`
- * routes in docs/interfaces.md. Specified only: no Pi or cloud code uses it yet. Objects are strict.
+ * action requests and status reports for physical tasks. The manifest and snapshot travel in the walker
+ * heartbeat (walker.ts); the action schemas are specified only, and nothing sends them yet. Objects are
+ * strict. Version 1 is unreleased until a walker ships, so fields can still be added to it, as long as
+ * both the Pi and the cloud move together.
  */
 
 export const DEVICE_API_VERSION = 1;
@@ -33,6 +35,8 @@ export const ManifestModuleSchema = z.strictObject({
   faults: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/).max(32)).max(8),
   /** When the Pi last heard from the part. */
   observed_at: z.iso.datetime(),
+  /** True when a fake adapter stands in for the part (no hardware). Shown as "Simulated", never as working. */
+  simulated: z.boolean(),
 });
 
 /** Built from detected, healthy hardware, not from the user's selected configuration. */
@@ -40,6 +44,8 @@ export const CapabilityManifestSchema = z.strictObject({
   /** null until the Pi has fetched a configuration. */
   device_configuration_version: z.int().positive().nullable(),
   generated_at: z.iso.datetime(),
+  /** True when the whole walker is the simulator running on a computer, not a Pi. */
+  simulator: z.boolean(),
   modules: z.array(ManifestModuleSchema).max(32),
 });
 export type CapabilityManifest = z.infer<typeof CapabilityManifestSchema>;
