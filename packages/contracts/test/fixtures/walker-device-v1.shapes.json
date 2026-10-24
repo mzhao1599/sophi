@@ -1396,6 +1396,36 @@
               "type": "null"
             }
           ]
+        },
+        "tool_results": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "get_location",
+                  "get_distance",
+                  "get_weather"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "name",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "original_audio": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -4423,6 +4453,30 @@
       ],
       "additionalProperties": false
     },
+    "WalkerToolResultSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "get_location",
+            "get_distance",
+            "get_weather"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "required": [
+        "name",
+        "text"
+      ],
+      "additionalProperties": false
+    },
     "WalkerTurnInFlightSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -5208,12 +5262,73 @@
               "type": "string",
               "enum": [
                 "get_location",
+                "get_distance",
                 "get_weather"
               ]
             }
           },
           "required": [
             "name"
+          ],
+          "additionalProperties": false
+        },
+        "tool_results": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "get_location",
+                  "get_distance",
+                  "get_weather"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "name",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "message_offer": {
+          "type": "object",
+          "properties": {
+            "client_message_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "to_member_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "to_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 12
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 30,
+              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+            }
+          },
+          "required": [
+            "client_message_id",
+            "to_member_id",
+            "to_name",
+            "text"
           ],
           "additionalProperties": false
         }

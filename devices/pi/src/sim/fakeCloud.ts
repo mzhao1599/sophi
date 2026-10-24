@@ -22,6 +22,7 @@ import {
   type AnswerProposalResponse,
   type Cue,
   type DeviceTurnRequest,
+  type DeviceSendMessageRequest,
   type HeartbeatRequest,
   type HeartbeatResponse,
   type PairDeviceRequest,
@@ -38,7 +39,7 @@ import {
 import type { z } from "zod";
 import { readWav } from "../audio/wav";
 import type { Clock } from "../clock";
-import { DEVICE_ROUTES, errorFromResponse, toCloudError, type CloudClient } from "../cloud/client";
+import { CloudError, DEVICE_ROUTES, errorFromResponse, toCloudError, type CloudClient } from "../cloud/client";
 import type { Logger } from "../log";
 
 /**
@@ -393,6 +394,10 @@ export class FakeCloudClient implements CloudClient {
 
   turn(body: DeviceTurnRequest, signal: AbortSignal) {
     return this.call("turn", signal, WalkerTurnResponseSchema, () => this.cloud.turn(this.device(), DeviceTurnRequestSchema.parse(body)));
+  }
+
+  sendMessage(_body: DeviceSendMessageRequest, _signal: AbortSignal): Promise<{ sent: true }> {
+    return Promise.reject(new CloudError("rejected", "The fake cloud has no approved phones."));
   }
 
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal) {

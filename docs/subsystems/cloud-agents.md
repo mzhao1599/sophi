@@ -20,7 +20,7 @@ Separate prompts, tools, state, and permissions for these roles. A general assis
 
 The assistant is always **available** when a device is online, but it need not be a permanent LLM process or a microphone recording continuously. The Pi owns an event loop for button presses, sensor alerts, action status, and cloud connectivity. A user-initiated voice/text turn starts a cloud agent run. Durable session state in Postgres lets a later request resume the conversation. Background events may trigger narrowly defined notifications, but they cannot trigger unrequested physical motion or indefinitely continue a chat. Push-to-talk is the default privacy and accessibility baseline; offer a text alternative. A wake-word mode, if added later, requires explicit opt-in and local processing where feasible.
 
-The [walker assistant guide](walker-assistant.md) applies this to the build: push-to-talk turns from the Pi, a 5-second heartbeat, and one model call per turn with the walker's state in its context.
+The [walker assistant guide](walker-assistant.md) applies this to the build: push-to-talk turns from the Pi, a 5-second heartbeat, and a bounded model/tool loop with the walker's state in its context. An unfinished tool request can cross back to the Pi; only the final reply is stored as a turn.
 
 This avoids depending on a serverless instance staying warm. Each run reconstructs context from the current user/device state, recent turns, and a concise reviewed summary. Long tasks use a durable job queue/worker with explicit status and cancellation; do not leave them in an unbounded HTTP request.
 

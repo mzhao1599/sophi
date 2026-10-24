@@ -30,6 +30,12 @@ import {
   type WalkerStatusView,
   type WalkerTurnResponse,
   type WalkerTurnView,
+  type WalkerToolResult,
+  WALKER_MAX_TOOL_CALLS,
+  CIRCLE_MESSAGE_RETENTION_MS,
+  MAX_LIVE_MESSAGES,
+  DeviceSendMessageRequestSchema,
+  type DeviceSendMessageRequest,
 } from "@walker/contracts";
 import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
@@ -49,17 +55,11 @@ import {
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./store";
+import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
 
 const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
 const WEATHER_LOOKUP_LINE = "I'll check the weather near you now.";
-
-function deviceTool(reply: string, source: "walker" | "page"): "get_location" | "get_weather" | null {
-  if (source !== "walker") return null;
-  if (reply === LOCATION_LOOKUP_LINE) return "get_location";
-  if (reply === WEATHER_LOOKUP_LINE) return "get_weather";
-  return null;
-}
+const DISTANCE_LOOKUP_LINE = "I'll check the obstacle sensors now.";
 
 export class WalkerError extends Error {
   override readonly name = "WalkerError";
@@ -134,8 +134,8 @@ export interface TurnEvent {
 }
 
 /**
- * The Pi gives up on a turn after 10 s. The server's part (from reading the upload to having the reply
- * and its audio) stays within this, which leaves time for the audio's download over a slow network.
+ * One model step per request. The Pi gives it 10 s, so this 8 s budget leaves 2 s to download;
+ * further tool steps use new requests under the same client_turn_id.
  */
 const TURN_BUDGET_MS = 8_000;
 const VOICE_TIMEOUT_MS = 3_000;
@@ -336,8 +336,7 @@ export class WalkerService {
     await this.store.expireProposals(device.device_id, this.now());
     const prior = await this.store.findTurn(device.device_id, request.client_turn_id);
     if (prior) {
-      const tool = deviceTool(prior.turn.reply, source);
-      const response = WalkerTurnResponseSchema.parse({ ...prior, speech: null, status: await this.status(device), ...(tool ? { tool_call: { name: tool } } : {}) });
+      const response = WalkerTurnResponseSchema.parse({ ...prior, speech: null, status: await this.status(device) });
       this.onTurn({ ...turnEvent(device.device_id, source, input.type, prior.turn), replayed: true, ms: Date.now() - started });
       return response;
     }
@@ -371,22 +370,55 @@ export class WalkerService {
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
+    const { members } = await this.store.circleOf(device.device_id, now);
+    const recipients = members.filter((m) => m.state === "member" && m.role === "caregiver").map((m) => ({ member_id: m.member_id, name: m.name }));
     const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
-    const result = this.assistant ? await this.assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left())) : null;
+    const toolResults: WalkerToolResult[] = "tool_results" in request
+      ? (request.tool_results ?? []).map((r) => r.name === "get_distance" ? { name: r.name, text: distanceLine(status) } : r)
+      : [];
+    const result = this.assistant ? await this.assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients) : null;
 
-    const tool = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call?.name : null;
-    const locationLookup = source === "walker" && tool === "get_location";
-    const weatherLookup = source === "walker" && tool === "get_weather";
-    const distanceLookup = tool === "get_distance" || (result?.ok === true && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change);
-    const decided = locationLookup
-      ? { reply: LOCATION_LOOKUP_LINE, answered_by: "fixed" as const, reason: "tool_get_location", proposal: null }
-      : weatherLookup
-        ? { reply: WEATHER_LOOKUP_LINE, answered_by: "fixed" as const, reason: "tool_get_weather", proposal: null }
-        : distanceLookup
-          ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: tool === "get_distance" ? "tool_get_distance" : "distance_guard", proposal: null }
-          : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
+    const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
+    const tool = toolCall?.name;
+    const nextTool = source === "walker" && tool && tool !== "send_message" && toolResults.length < WALKER_MAX_TOOL_CALLS ? tool : null;
+    if (nextTool) {
+      const heard = input.type === "audio" ? result?.ok ? result.reply.transcript.trim() : "" : input.text;
+      const line = nextTool === "get_location" ? LOCATION_LOOKUP_LINE : nextTool === "get_weather" ? WEATHER_LOOKUP_LINE : DISTANCE_LOOKUP_LINE;
+      if (nextTool === "get_distance") toolResults.push({ name: "get_distance", text: distanceLine(status) });
+      const speech = await this.speak(line, left(), () => flight?.stage("voicing"));
+      return WalkerTurnResponseSchema.parse({
+        turn: { turn_id: this.randomId(), client_turn_id: request.client_turn_id, source: "walker", heard: heard || null, heard_by: heard ? (input.type === "audio" || ("original_audio" in request && request.original_audio) ? "gemini" : "typed") : null, reply: line, answered_by: "fixed", voiced_by: speech ? "cartesia" : "walker", created_at: now.toISOString() },
+        proposal: null,
+        speech: speech ? { mime: "audio/wav", data_base64: speech } : null,
+        status,
+        tool_call: { name: nextTool },
+        tool_results: toolResults,
+      });
+    }
+    const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance");
+    const messageRecipient = source === "walker" && toolCall?.name === "send_message" ? recipients.find((r) => r.member_id === toolCall.to_member_id) : undefined;
+    const validMessage = messageRecipient && toolCall?.name === "send_message" ? DeviceSendMessageRequestSchema.safeParse({ client_message_id: this.randomId(), to_member_id: messageRecipient.member_id, text: toolCall.text }) : null;
+    const canSend = members.some((m) => m.role === "walker_user" && m.state === "member");
+    const messageOffer = validMessage?.success && messageRecipient && !status.open_proposal && canSend ? { ...validMessage.data, to_name: messageRecipient.name } : null;
+    const unhandledTool = tool !== null && tool !== undefined;
+    const decided = messageOffer
+      ? { reply: `Send to ${messageOffer.to_name}: ${messageOffer.text}. Press Confirm to send.`, answered_by: "model" as const, reason: "message_offer", proposal: null }
+      : source === "page" && tool === "get_distance"
+        ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
+      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message")
+        ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
+      : tool === "send_message"
+        ? { reply: "I couldn't prepare that message. Check that both phones have joined your circle and try again.", answered_by: "fixed" as const, reason: "message_unavailable", proposal: null }
+      : unhandledTool
+      ? { reply: "I couldn't finish checking all of that right now.", answered_by: "fixed" as const, reason: "tool_limit", proposal: null }
+      : distanceLookup
+        ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
+        : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
+    if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => r.name === "get_weather" && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
+      decided.reply += " Weather data from Open-Meteo.";
+    }
     const transcript = input.type === "audio" && result?.ok ? result.reply.transcript.trim() : "";
-    const heard = input.type === "text" ? { heard: input.text, heard_by: "typed" as const } : transcript ? { heard: transcript, heard_by: "gemini" as const } : { heard: null, heard_by: null };
+    const heard = input.type === "text" ? { heard: input.text, heard_by: ("original_audio" in request && request.original_audio ? "gemini" : "typed") as "gemini" | "typed" } : transcript ? { heard: transcript, heard_by: "gemini" as const } : { heard: null, heard_by: null };
 
     const voiceStarted = Date.now();
     let voiceCalled = false;
@@ -416,14 +448,13 @@ export class WalkerService {
     // proposal after it: the response never calls a proposal open that isn't.
     const after = await this.status(device);
     const stored = await this.store.findTurn(device.device_id, request.client_turn_id);
-    const savedTool = deviceTool(saved.turn.reply, source);
     // Another upload of this turn saved first: its turn and proposal are the answer, without this one's audio.
     const response = WalkerTurnResponseSchema.parse({
       turn: saved.turn,
       proposal: stored?.proposal ?? saved.proposal,
       speech: saved.created && speech ? { mime: "audio/wav", data_base64: speech } : null,
       status: after,
-      ...(savedTool ? { tool_call: { name: savedTool } } : {}),
+      ...(saved.created && messageOffer ? { message_offer: messageOffer } : {}),
     });
     const event: TurnEvent = {
       ...turnEvent(device.device_id, source, input.type, saved.turn),
@@ -464,6 +495,25 @@ export class WalkerService {
     if (!this.voice || ms < VOICE_MIN_MS) return null;
     onCall();
     return this.voice.speak(text, AbortSignal.timeout(ms)).catch(() => null);
+  }
+
+  /** Called by the paired Pi only after it read a draft aloud and received a fresh Confirm press. */
+  async sendMessage(caller: DeviceCaller, deviceId: string, request: DeviceSendMessageRequest): Promise<{ sent: true }> {
+    const device = await this.resolve(caller, deviceId);
+    const body = DeviceSendMessageRequestSchema.parse(request);
+    const now = this.now();
+    const { members } = await this.store.circleOf(device.device_id, now);
+    const from = members.find((m) => m.role === "walker_user" && m.state === "member");
+    const to = members.find((m) => m.member_id === body.to_member_id && m.role === "caregiver" && m.state === "member");
+    if (!from || !to) throw new WalkerError("invalid_request", "The approved sender or recipient phone is unavailable.");
+    const record: CircleMessageRecord = storable({
+      message_id: this.randomId(), device_id: device.device_id, client_message_id: body.client_message_id,
+      from_member_id: from.member_id, to_member_id: to.member_id, text: body.text,
+      created_at: now.toISOString(), expires_at: new Date(now.getTime() + CIRCLE_MESSAGE_RETENTION_MS).toISOString(),
+    });
+    const saved = await this.store.saveMessage(record, MAX_LIVE_MESSAGES, now);
+    if (!saved || saved === "cleared") throw new WalkerError("invalid_request", "This message can no longer be sent.");
+    return { sent: true };
   }
 
   /** Confirm or decline by id, from the walker's Confirm button or the page. The first answer wins. */

@@ -2,9 +2,12 @@ import { randomUUID } from "node:crypto";
 import {
   MANIFEST_MAY_LIST_ARMS,
   SERIAL_PROTOCOL_VERSION,
+  WALKER_MAX_TOOL_CALLS,
   type CapabilityManifest,
   type Cue,
   type HeartbeatRequest,
+  type DeviceTurnRequest,
+  type DeviceSendMessageRequest,
   type ProposalView,
   type SensorSnapshot,
   type WalkerConfiguration,
@@ -198,6 +201,7 @@ export class WalkerService {
   link: LinkState = "unpaired";
   configuration: WalkerConfiguration | null = null;
   openProposal: ProposalView | null = null;
+  private pendingMessage: { body: DeviceSendMessageRequest; toName: string; ready: boolean; expiresAt: number } | null = null;
 
   private credential: CredentialFile | null = null;
   private cloud: CloudClient | null = null;
@@ -261,6 +265,7 @@ export class WalkerService {
     this.recording = null;
     this.turn?.abort.abort(new CancelledError("Service stopped."));
     this.voice.stopAll();
+    this.pendingMessage = null;
     for (const off of this.unsubscribe) off();
   }
 
@@ -268,7 +273,10 @@ export class WalkerService {
 
   private onButton(event: ButtonEvent): void {
     if (this.stopped) return;
-    if (this.deps.motion?.handlePress(event)) return;
+    if (this.deps.motion?.handlePress(event)) {
+      if (event.button === "confirm" && event.edge === "pressed") this.pendingMessage = null;
+      return;
+    }
     if (event.button === "talk") {
       if (event.edge === "pressed") {
         // A hand button briefly opening during a hold must not start another mic or cancel the turn.
@@ -314,6 +322,7 @@ export class WalkerService {
   }
 
   private talkPressed(event: ButtonEvent): void {
+    this.pendingMessage = null;
     if (this.talk === "recording") {
       void this.finishRecording();
       return;
@@ -441,7 +450,7 @@ export class WalkerService {
       return;
     }
     // The clip exists only in this request body: never written to disk, logged, queued or retried.
-    const body = {
+    const body: DeviceTurnRequest = {
       client_turn_id: this.newId(),
       input: { type: "audio" as const, mime: "audio/wav" as const, data_base64: clip.wav.toString("base64"), duration_ms: clip.durationMs },
       snapshot: this.snapshotIfSensors(),
@@ -451,13 +460,24 @@ export class WalkerService {
     const sentAt = this.deps.clock.monotonic();
     this.deps.log.info("turn sent", { seconds: Math.round(clip.durationMs / 100) / 10 });
     try {
-      const reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(body, signal), turn.abort.signal);
-      if (this.turn !== turn) return;
-      if (reply.tool_call?.name === "get_location" || reply.tool_call?.name === "get_weather") {
-        this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
-        await this.answerLocationTool(turn, reply.turn.heard, reply.tool_call.name);
-        return;
+      let request = body;
+      let reply;
+      for (let step = 0; step <= WALKER_MAX_TOOL_CALLS; step++) {
+        reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(request, signal), turn.abort.signal);
+        if (this.turn !== turn) return;
+        const tool = reply.tool_call?.name;
+        if (!tool) break;
+        const prior = reply.tool_results ?? [];
+        if (step === WALKER_MAX_TOOL_CALLS) throw new Error("Tool loop limit reached.");
+        if (step === 0) this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
+        const text = tool === "get_distance" ? null : await this.runLocationTool(tool, turn.abort.signal);
+        if (this.turn !== turn) return;
+        const heard = reply.turn.heard?.trim();
+        if (!heard) throw new Error("Tool continuation needs a transcript.");
+        request = { client_turn_id: body.client_turn_id, input: { type: "text", text: heard.slice(0, 500) }, snapshot: this.snapshotIfSensors(), tool_results: text === null ? prior : [...prior, { name: tool, text }], original_audio: true };
       }
+      if (!reply) throw new Error("The agent did not answer.");
+      if (this.turn !== turn) return;
       this.endTurn(turn);
       if (reply.proposal?.state === "open") {
         // A motion Confirm target shown first owns Confirm: this proposal is declined, never answered by that press.
@@ -473,7 +493,19 @@ export class WalkerService {
         answered_by: reply.turn.answered_by,
         voice: wav ? "server" : "walker",
       });
-      this.sayAnswer(reply.turn.heard, reply.turn.reply, reply.turn.answered_by, "reply", wav);
+      const message = reply.message_offer;
+      if (message && !this.openProposal && !this.deps.motion?.ownsConfirm()) {
+        const pending = { body: { client_message_id: message.client_message_id, to_member_id: message.to_member_id, text: message.text }, toName: message.to_name, ready: false, expiresAt: 0 };
+        this.pendingMessage = pending;
+        void this.sayAnswer(reply.turn.heard, reply.turn.reply, reply.turn.answered_by, "reply", wav).then(() => {
+          if (this.pendingMessage !== pending || this.stopped || this.link !== "online") return;
+          this.deps.clock.setTimeout(() => {
+            if (this.pendingMessage !== pending) return;
+            pending.ready = true;
+            pending.expiresAt = this.deps.clock.monotonic() + 30_000;
+          }, 1_500);
+        });
+      } else this.sayAnswer(reply.turn.heard, reply.turn.reply, reply.turn.answered_by, "reply", wav);
     } catch (error) {
       if (this.turn !== turn) return;
       this.endTurn(turn);
@@ -483,28 +515,23 @@ export class WalkerService {
     }
   }
 
-  private async answerLocationTool(turn: PendingTurn, heard: string | null, tool: "get_location" | "get_weather"): Promise<void> {
+  private async runLocationTool(tool: "get_location" | "get_weather", signal: AbortSignal): Promise<string> {
     let answer: string;
     try {
       const gps = this.deps.location;
       if (!gps?.connected()) answer = `I can't check ${tool === "get_weather" ? "weather near you" : "your location"} because the GPS receiver is not connected.`;
       else {
-        const reading = await gps.onDemand(turn.abort.signal);
-        if (this.turn !== turn) return;
+        const reading = await gps.onDemand(signal);
         answer = reading.status === "fix"
-          ? await (tool === "get_weather" ? describeCurrentWeather : describeGpsLocation)(reading.latitude, reading.longitude, turn.abort.signal)
+          ? await (tool === "get_weather" ? describeCurrentWeather : describeGpsLocation)(reading.latitude, reading.longitude, signal)
           : "The GPS receiver has no satellite fix yet. Try again outdoors with a view of the sky.";
       }
     } catch (error) {
-      if (this.turn !== turn) return;
+      if (signal.aborted) throw error;
       this.deps.log.warn(`${tool} lookup failed`, { error: (error as Error).message });
       answer = tool === "get_weather" ? "I couldn't check the weather right now." : "I found the GPS receiver, but couldn't look up an address right now.";
     }
-    if (this.turn !== turn) return;
-    this.endTurn(turn);
-    this.deps.bus.emit("turn", { outcome: "answered" });
-    // This is the Pi's own tool result, so include it in heartbeat lines for the web conversation.
-    this.sayAnswer(heard, answer, "walker", "notice");
+    return answer;
   }
 
   /** The server's voiced reply, if it is a readable 16-bit PCM WAV; otherwise the walker speaks the text itself. */
@@ -581,6 +608,30 @@ export class WalkerService {
       void this.say(line ?? LINES.connecting, "local_reply");
       return;
     }
+    if (this.pendingMessage) {
+      const message = this.pendingMessage;
+      if (!message.ready) {
+        void this.say("One moment. I'll finish reading the message first.", "local_reply");
+        return;
+      }
+      this.pendingMessage = null;
+      if (this.deps.clock.monotonic() >= message.expiresAt) {
+        void this.say("That message draft expired. Ask me again to send it.", "local_reply");
+        return;
+      }
+      this.confirmInFlight = true;
+      try {
+        await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => this.cloud!.sendMessage(message.body, signal));
+        confirmed();
+        void this.say(`Message sent to ${message.toName}.`, "confirm_result");
+      } catch (error) {
+        this.deps.log.warn("message send failed", { kind: classifyError(error) });
+        void this.say("I couldn't confirm whether that message was sent. Check your phone before trying again.", "local_reply");
+      } finally {
+        this.confirmInFlight = false;
+      }
+      return;
+    }
     const proposal = this.openProposal;
     if (!proposal) {
       this.nothingToConfirm();
@@ -642,6 +693,7 @@ export class WalkerService {
   private setOpenProposal(proposal: ProposalView | null): void {
     const changed = (this.openProposal?.proposal_id ?? null) !== (proposal?.proposal_id ?? null);
     this.openProposal = proposal;
+    if (proposal?.state === "open") this.pendingMessage = null;
     this.proposalEpoch += 1;
     if (changed) this.deps.bus.emit("offer", { proposal });
   }
@@ -654,10 +706,11 @@ export class WalkerService {
    * Speaks a reply to her Talk turn and captions it on the screen: `answer` goes out as the line starts playing
    * (so the captions follow the voice), `answerSpoken` when it has played or was stopped.
    */
-  private sayAnswer(heard: string | null, reply: string, source: "model" | "fixed" | "walker", kind: SpeechKind, wav?: Buffer): void {
+  private sayAnswer(heard: string | null, reply: string, source: "model" | "fixed" | "walker", kind: SpeechKind, wav?: Buffer): Promise<void> {
     const id = (this.answerCount += 1);
     const spoken = this.say(reply, kind, wav, () => this.deps.bus.emit("answer", { id, heard, reply, source }));
     void spoken.then(() => this.deps.bus.emit("answerSpoken", { id }));
+    return spoken;
   }
 
   /** The Pi's own line for a Talk press it can't send: spoken as before, and captioned as the walker's own reply. */
@@ -859,6 +912,7 @@ export class WalkerService {
     if (this.link === "offline" || this.link === "unauthorized" || this.link === "unpaired") return;
     this.setLink("offline");
     this.setOpenProposal(null);
+    this.pendingMessage = null;
     void this.say(offlineLine(this.configuration?.cues ?? null, this.deps.modules.modules()), "notice");
   }
 
@@ -866,6 +920,7 @@ export class WalkerService {
     if (this.link === "unauthorized") return;
     this.setLink("unauthorized");
     this.setOpenProposal(null);
+    this.pendingMessage = null;
     void this.say(LINES.pairAgain, "notice");
   }
 

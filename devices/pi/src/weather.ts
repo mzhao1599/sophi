@@ -2,7 +2,7 @@
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 
 function condition(code: number): string {
-  if (code === 0) return "sunny skies";
+  if (code === 0) return "cloudless skies";
   if (code <= 3) return "partly cloudy skies";
   if (code === 45 || code === 48) return "fog";
   if (code >= 51 && code <= 57) return "drizzle";

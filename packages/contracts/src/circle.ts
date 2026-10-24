@@ -648,6 +648,15 @@ export const PhoneSendMessageRequestSchema = z.union([
 ]);
 export type PhoneSendMessageRequest = z.infer<typeof PhoneSendMessageRequestSchema>;
 
+/** The Pi submits this only after a fresh physical Confirm press on a spoken draft. */
+export const DeviceSendMessageRequestSchema = z.strictObject({
+  client_message_id: id,
+  to_member_id: id,
+  text: CircleMessageSchema.shape.text,
+});
+export type DeviceSendMessageRequest = z.infer<typeof DeviceSendMessageRequestSchema>;
+export const DeviceSendMessageResponseSchema = z.strictObject({ sent: z.literal(true) });
+
 /** A message between the phones, as either phone sees it: no times and no read state. */
 export const PhoneMessageViewSchema = z.strictObject({
   message_id: id,

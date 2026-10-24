@@ -52,6 +52,8 @@ export const SPEECH_MAX_BYTES = 2_000_000;
 export const MAX_QUEUED_EVENTS = 50;
 export const MAX_EVENT_AGE_MS = 24 * 60 * 60_000;
 export const RECENT_TURNS = 10;
+/** Maximum read-only tool steps in one spoken question. */
+export const WALKER_MAX_TOOL_CALLS = 8;
 
 const id = z.uuid();
 const time = z.iso.datetime();
@@ -199,12 +201,22 @@ export const VoiceClipSchema = z.strictObject({
 
 export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: typedText });
 
+/** Tool results supplied by the paired Pi during one user-initiated turn. Coordinates never appear here. */
+export const WalkerToolResultSchema = z.strictObject({
+  name: z.enum(["get_location", "get_distance", "get_weather"]),
+  text: z.string().trim().min(1).max(1000),
+});
+export type WalkerToolResult = z.infer<typeof WalkerToolResultSchema>;
+
 /** The walker sends voice or text, with the snapshot it has at that moment (null without obstacle sensors). */
 export const DeviceTurnRequestSchema = z.strictObject({
   client_turn_id: id,
   input: z.discriminatedUnion("type", [VoiceClipSchema, TextInputSchema]),
   snapshot: SensorSnapshotSchema.nullable(),
-});
+  /** Present on a continuation. The first step's transcript is sent as text; no audio is replayed. */
+  tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
+  original_audio: z.boolean().optional(),
+}).refine((r) => !r.tool_results || (r.input.type === "text" && r.original_audio !== undefined), { message: "A continuation carries the original question as text.", path: ["tool_results"] });
 export type DeviceTurnRequest = z.infer<typeof DeviceTurnRequestSchema>;
 
 /** The page sends text only. */
@@ -448,7 +460,11 @@ export const WalkerTurnResponseSchema = z
     speech: SpeechSchema.nullable(),
     status: WalkerStatusViewSchema,
     /** A user-initiated device tool request. No coordinates cross this route. */
-    tool_call: z.strictObject({ name: z.enum(["get_location", "get_weather"]) }).optional(),
+    tool_call: z.strictObject({ name: z.enum(["get_location", "get_distance", "get_weather"]) }).optional(),
+    /** Results already gathered in this unfinished turn; the Pi returns them with the next tool result. */
+    tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
+    /** A draft only. The Pi reads this back and requires a fresh Confirm press before POSTing it. */
+    message_offer: z.strictObject({ client_message_id: id, to_member_id: id, to_name: z.string().trim().min(1).max(12), text: z.string().trim().min(1).max(30).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u) }).optional(),
   })
   // A replayed turn may come back without its audio, so only speech implies Cartesia, not the reverse.
   .refine((r) => r.speech === null || r.turn.voiced_by === "cartesia", {

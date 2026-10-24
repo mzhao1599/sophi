@@ -2,12 +2,14 @@ import {
   AnswerProposalResponseSchema,
   ConfigurationResponseSchema,
   DeviceSpeechResponseSchema,
+  DeviceSendMessageResponseSchema,
   HeartbeatResponseSchema,
   PairDeviceResponseSchema,
   WalkerErrorSchema,
   WalkerTurnResponseSchema,
   type AnswerProposalResponse,
   type DeviceTurnRequest,
+  type DeviceSendMessageRequest,
   type HeartbeatRequest,
   type HeartbeatResponse,
   type PairDeviceRequest,
@@ -27,6 +29,7 @@ export const DEVICE_ROUTES = {
   configuration: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/configuration`,
   turns: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/turns`,
   speech: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/speech`,
+  messages: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/messages`,
   proposal: (deviceId: string, proposalId: string) =>
     `/api/v1/devices/${encodeURIComponent(deviceId)}/proposals/${encodeURIComponent(proposalId)}`,
 } as const;
@@ -64,6 +67,7 @@ export interface CloudClient {
   heartbeat(body: HeartbeatRequest, signal: AbortSignal): Promise<HeartbeatResponse>;
   configuration(signal: AbortSignal): Promise<WalkerConfiguration>;
   turn(body: DeviceTurnRequest, signal: AbortSignal): Promise<WalkerTurnResponse>;
+  sendMessage(body: DeviceSendMessageRequest, signal: AbortSignal): Promise<{ sent: true }>;
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal): Promise<AnswerProposalResponse>;
 }
 
@@ -207,6 +211,10 @@ export class HttpCloudClient implements CloudClient {
       { method: "POST", body, credential: this.credential, signal },
       WalkerTurnResponseSchema,
     );
+  }
+
+  sendMessage(body: DeviceSendMessageRequest, signal: AbortSignal) {
+    return request(this.server, DEVICE_ROUTES.messages(this.deviceId), { method: "POST", body, credential: this.credential, signal }, DeviceSendMessageResponseSchema);
   }
 
   async voiceLine(text: string, signal: AbortSignal): Promise<Buffer | null> {
