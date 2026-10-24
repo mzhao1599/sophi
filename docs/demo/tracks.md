@@ -10,12 +10,28 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 Nothing below presents a planned part as working; each cut that needs a planned or untested part says so.
 
-**Which tracks, and why.** The sponsor-track analysis (2026-10-24) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and MLH's "Best Use of Gemini API". The others don't fit without work off the demo path or against the project's safety and consent rules.
+**Which tracks, and why.** The sponsor-track analysis (2026-10-24) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and MLH's "Best Use of Gemini API". On 2026-10-24 Max asked to enter as many more as fit cheaply; [More entries](#more-entries-added-2026-10-24) adds five Cal Hacks prizes, four more MLH categories and Meta's track, and says why the rest are skipped.
+
+| Entry | Cost | Section |
+| --- | --- | --- |
+| Microsoft: Built for the Real World, and its Customer Impact Award | In the plan | [Microsoft](#microsoft-built-for-the-real-world) |
+| Visa: Reimagining Shopping | In the plan | [Visa](#visa-reimagining-shopping) |
+| Cartesia | In the plan; a key and that day's check | [Cartesia](#cartesia-best-use-of-cartesia-only-with-a-key-and-heard-working-that-day) |
+| Anthropic | In the plan; a Claude key and a rehearsal | [Anthropic](#anthropic-only-with-a-claude-key) |
+| MLH: Best Use of Gemini API | Free | [MLH Gemini](#mlh-best-use-of-gemini-api-free-entry) |
+| Cal Hacks: Best Hardware Hack | Free | [Hardware](#cal-hacks-best-hardware-hack-free) |
+| Cal Hacks: Best People-First Hack | Free | [People-First](#cal-hacks-best-people-first-hack-free) |
+| Cal Hacks: Most Technically Complex Hack | Free | [Technically Complex](#cal-hacks-most-technically-complex-hack-free) |
+| Cal Hacks: Hacker's Choice, and Most Creative Hack | Free | [Hacker's Choice and Most Creative](#cal-hacks-hackers-choice-and-most-creative-hack-free) |
+| MLH: Best Use of Gen AI | Free | [Gen AI](#mlh-best-use-of-gen-ai-free) |
+| MLH: Commit Fellowship | Free, plus a supplemental form | [Commit Fellowship](#mlh-commit-fellowship-free-plus-a-form) |
+| Meta: Bringing People Closer Together with AI | Small: framing, and the phones on stage | [Meta](#meta-bringing-people-closer-together-with-ai-small) |
+| MLH: Best Domain Name from GoDaddy Registry, and Best .Tech Domain Name | Small: register a domain for each, point them at Render | [Domains](#mlh-the-two-domain-name-categories-small) |
 
 ## Before submitting (all tracks)
 
 - **Say when the work started.** Cal Hacks 13.0's FAQ says "all implementation must occur during the hackathon". Max said on 2026-10-24 that Sophi is already cleared under this rule. The submission still says plainly that work began on 2026-10-23 and lists what was built during the event (the list below), because the demo never hides anything from judges.
-- **Pick each track on Devpost** at submission, plus the MLH Gemini category. Ask at the event how many prizes one project may enter.
+- **Pick each track on Devpost** at submission, plus the MLH categories and the Cal Hacks prizes in the table above. Ask in the event Slack's #0-ask-directors (where the event FAQ sends questions; the FAQ itself didn't load on 2026-10-24) how many prizes one project may enter, and whether the Cal Hacks prizes need opting in. Nothing in the Microsoft or Anthropic track text excludes the other, so enter both unless the event caps entries. If it does, rank them on that day's state: Anthropic only once Claude has run live and rehearsed 3 of 3, otherwise Microsoft.
 - **Outward steps are Max's:** creating sponsor accounts, pasting keys, posting the submission and any public link.
 
 ## Built during the event
@@ -221,6 +237,100 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 **What to show** (30 seconds, inside any walker cut): the "Behind the scenes" panel on the walker page draws each turn's Gemini step with the time the person actually waited. It says "Gemini" for both models, which is true; the server's log names the one that answered.
 
 Pick the category on Devpost and say where Gemini is used. Keep the free-tier rule: only scripted, made-up lines go to the free key.
+
+## More entries (added 2026-10-24)
+
+Max asked to enter as many tracks as fit cheaply. Each entry below reuses a cut that is already planned, so none adds work to the demo path; the "small" ones add a short framing or one outward step. Names, criteria and quotes are from the event's official prize page, <https://hive.hackberkeley.org/prizes> ("Updated Oct 24, 10:46 AM", pasted by Max on 2026-10-24); the page says prizes may still change, so check it again before submitting. Where a track's criteria weren't posted, the entry says so.
+
+### Cal Hacks: Best Hardware Hack (free)
+
+**Why Sophi fits:** it's a real rollator with a computer and sensors on it, not a laptop demo. Of every entry, this one depends most on what the walker does on the day.
+
+**What to say, as measured** (see [current-build.md](../../hardware/current-build.md) and the status at the top):
+- A Raspberry Pi 5 on the walker runs the walker service, from the walker's goBILDA battery through a 5 V converter (power draw not measured).
+- Push-to-talk on the handle, a USB microphone and a soundbar: one real spoken turn answered in 3.96 seconds on 2026-10-24.
+- Two ESP32 hand boards that both said hello to the Pi on 2026-10-24; a haptic buzz felt in the handle on a Talk press.
+- A USB GPS that enumerates and sends valid sentences (no fix yet).
+- Two SO-101 arms and a ball-screw lift (bought; say whether they're mounted only from what's on the walker that day), with a servo driver, a motion coordinator and lift firmware that so far have run only against simulated hardware. Say exactly that unless a real arm or the lift has moved, rehearsed, that day.
+
+**What to show:** the walker cut (Cartesia's or Microsoft's step 2), on the real walker only. Hold the Talk button up so judges see the hand board; let a judge feel the buzz.
+
+**Don't say:** anything about the arms, the lift, the obstacle sensors or the screen working on the walker until it has run there, nor any power, payload or tipping figure that wasn't measured.
+
+### Cal Hacks: Best People-First Hack (free)
+
+**Why Sophi fits:** it's an assistive walker that asks what's hard for the person (no diagnosis), suggests only the help they want, keeps their "no", and puts every essential action on a large button as well as voice.
+
+**What to show:** the Microsoft cut. Open with the named community from the Anthropic section, and use the consent design in the care loop and the accessibility checks (keyboard, screen reader, large text, reduced motion) as the evidence. Say "we haven't tested it with walker users yet" unless the conversation in the Microsoft section has happened.
+
+### Cal Hacks: Most Technically Complex Hack (free)
+
+**Why Sophi fits:** it spans four kinds of computer, each with a clear job: ESP32 firmware (controls, sensors, haptic cues), the Pi service (coordinating devices, enforcing motion limits), the cloud server (the agent and the conversation) and the website (onboarding and setup).
+
+**What to say, each with how far it was tested** (from [Built during the event](#built-during-the-event)):
+- The walker assistant hears a spoken clip with Gemini and answers in Cartesia's voice, with a backup model that cut the slowest turn from 8.0 to 5.0 seconds in local tests.
+- The model is never motor authority. It can only offer an action by its id; the Pi writes the words and starts motion only on a Confirm press at the handle; the lift moves only while someone holds the screen's hold control.
+- A Feetech servo driver checked byte for byte against Feetech's own SDK on 122 operations; a motion coordinator that acts only on what it read back from a servo; lift firmware that stops 300 ms after the Pi's heartbeat stops. All tested against simulated hardware only.
+- A versioned contract package (`packages/contracts/`) that every component is tested against.
+
+**What to show:** "Behind the scenes" on the walker page during any walker turn, then 20 seconds on the architecture diagram in [architecture.md](../architecture.md).
+
+### Cal Hacks: Hacker's Choice, and Most Creative Hack (free)
+
+Hacker's Choice: per its name, other hackers choose it, so the table matters more than the pitch. Keep the walker at the table with the printed card (see [Notice wording](#notice-wording)), let visitors type on the screen, and let them feel the handle buzz. Only the presenter talks to the walker.
+
+Most Creative Hack: a long shot. Enter only if entries are free. The pitch line: "Most walkers are the same frame for everyone. Sophi asks what's hard, then builds only the help you want."
+
+### MLH: Best Use of Gen AI (free)
+
+**What it asks:** "utilize publicly available Generative AI APIs (like those from OpenAI, Anthropic, Hugging Face, Llama, IBM Watson, or Google Gemini) to develop a unique and functional application". Prize: assorted MLH prizes.
+
+**What to say:** the same facts as [MLH Gemini](#mlh-best-use-of-gemini-api-free-entry): Gemini reads her words in onboarding and hears the walker's spoken clips, with a backup model; Cartesia's generative voice speaks the replies (once that day's check passes); and the model only offers, while fixed rules and a Confirm press decide. Name Claude only after it has run live, as in the Anthropic section.
+
+### MLH: Commit Fellowship (free, plus a form)
+
+**What it asks:** a working prototype built by a team, and a real problem worth solving. The prize is an interview for MLH and Transcend Network's 3-week zero-to-founder sprint.
+
+**Max's steps:** opt in at Devpost submission, then fill in MLH's supplemental form, which the prize text says is required. The winner is picked after the event.
+
+**What to put in the form:** the real problem (the named community), what works today (the status list at the top, unchanged), and the path to production line from the Microsoft section.
+
+### Meta: Bringing People Closer Together with AI (small)
+
+**What the judges score:** "how meaningfully they strengthen human connection, how essential and well-integrated AI is, originality, and the strength of the working demo". The prize is an invitation to a second-round hackathon at Meta's Menlo Park campus (subject to Meta's eligibility rules).
+
+**The line:** "Rose wants to keep going out on her own. Her family wants to know she's okay. Sophi keeps them close without taking either away."
+
+**What Sophi shows:** the care loop on two phones (the Microsoft cut's step 3): Rose's three big tiles, Maya's message read aloud when Rose taps it, a one-tap reply, and a caretaker who gets in only after the family ticks what Rose agreed to. The AI is Sophi on the walker, which answers Rose's questions out loud and offers changes she confirms herself.
+
+**Honest limits to say if asked:**
+- The messages between Rose and Maya are person to person; the AI isn't in them. That's the weak criterion. Put the AI's part plainly: it lets Rose ask for help with her hands on the handles, so she can keep going out alone, and the phones keep her family in the loop.
+- "People nearby" is fixed sample data with a "Sample" tag, and must stay described that way.
+- The app hasn't run on real iPhones yet. Enter this track only once it has run on two real phones against Render, three times in a row (the same rule as the Microsoft cut's step 3).
+
+### MLH: the two domain-name categories (small)
+
+**What they ask:**
+- **Best Domain Name from GoDaddy Registry:** "Register your domain name with GoDaddy Registry". Prize: a digital gift card.
+- **Best .Tech Domain Name:** the prize is a .tech domain "for up to 10 years" and a desktop microphone. The page gives no further rule; MLH's prize page (<https://www.mlh.com/events/prizes>) has the details.
+
+These are two different registries, so entering both means two names, for example one `.tech` and one from GoDaddy Registry's endings.
+
+**Cost:** MLH has given hackers free domains at its events before (for GoDaddy Registry, MLH's 2020 partnership announcement). This event's codes weren't found online on 2026-10-24, so ask at the MLH table for both before paying anything.
+
+**Max's steps:** pick the names (short, with "sophi" in them), register each with MLH's codes, and add both to the `steady-walker` service on Render as custom domains, following Render's instructions for the DNS records. Then open the website at each name once before submitting. Every link in the demo keeps working at the Render address too.
+
+### Watch: Armadin, Elastic, AfterQuery and Annapurna Labs
+
+Their criteria say "Coming soon!". Check them at the event. For Armadin's Best Security Hack: if the criteria are general, the story is Sophi's guardrails (the model offers an action only by id, the server or the Pi writes every word, a person confirms on the walker, and webpages, model output and typed words are data, never instructions); if they want an attack or a security tool, skip.
+
+### Skipped, and why
+
+- **A sponsor's product would have to become core, which means new work off the demo path:** Spacetime (SpacetimeDB must be "the core real-time backend"; moving the care loop's shared state onto it is a backend rewrite), Creao's AI-First Disruptor and Team Empowerment (criteria only on Creao's community page), Convex, Moss, Bitdeer AI, Factory (Droid must "do real work in the running product"), Fetch.ai, Apify and Bright Data (live public web data must be essential), Atlassian (both its tracks require building "a Forge app for one or more Atlassian products", per its rules document, read 2026-10-24), and MLH's Tiger Data, Vultr, Snowflake, Backboard, Auth0, DigitalOcean and MongoDB Atlas.
+- **Conflicts with the plan:** MLH's ElevenLabs (Sophi's voice is Cartesia, entered above; a second voice provider just for a prize would muddy that entry) and MLH's Presage (camera-based heart rate, breathing and emotion: sensitive health data that Sophi's consent rules keep out, and not on the demo path).
+- **Finance, payments or crypto, which Sophi isn't:** Hyphenate, CRS, Capital One's Nessie, Coinbase's x402, MLH's Solana.
+- **Requires a tool used to build the project, which Sophi wasn't built with:** Mana, Notability, Figma in the Workflow, SpaceXAI (built with Cursor, using Grok's Imagine or Voice API), and MLH's SpaceXSI A-Team raffle (Cursor and Grok Bot in the workflow).
+- **The team doesn't match:** Best Beginner Hack, Best Solo Hack, Creao's One-Person Company. Best Planet-First Hack doesn't match the project.
 
 ## Rehearse on a model
 
