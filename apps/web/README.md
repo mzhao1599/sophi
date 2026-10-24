@@ -201,7 +201,7 @@ Both are on Render's free plan. The web service spins down after 15 minutes with
 
 1. Open [dashboard.render.com](https://dashboard.render.com) and sign in with GitHub.
 2. Click **New** (top right), then **Blueprint**.
-3. Under the repository list, pick **mzhao1599/calhacks26**. If it isn't listed, click **Configure account** (or **Connect GitHub**), give Render access to that repository, and come back.
+3. Under the repository list, pick **mzhao1599/sophi**. If it isn't listed, click **Configure account** (or **Connect GitHub**), give Render access to that repository, and come back.
 4. Name the Blueprint `steady`, keep the branch **main**, and leave the Blueprint path as `render.yaml`. Render then lists what it will create: a web service **steady-walker** and a database **steady-walker-db**, both Free.
 5. Render asks for two values it won't take from the file:
    - **GEMINI_API_KEY**: paste your Gemini key (from Google AI Studio).
@@ -212,6 +212,8 @@ Both are on Render's free plan. The web service spins down after 15 minutes with
 8. Send that address to the lead, who checks pairing, a heartbeat and the walker routes over HTTPS.
 
 If this Mac's network filter blocks the `onrender.com` address (it blocked the new `vercel.app` one), open it on a phone instead.
+
+**Moved repository.** The code's home is now **mzhao1599/sophi**. The Render services were first created from an earlier private repository, which is frozen and gets no new commits. So in Render, connect **steady-walker** (and the Blueprint, if Render shows it separately) to **mzhao1599/sophi**, branch **main**. Then check two things: the latest deploy names a commit that exists in sophi, and `/api/v1/health` still says `{"status":"ok","walker_store":"postgres"}`. The database is not tied to a repository, so it stays as it is.
 
 ### After that
 
