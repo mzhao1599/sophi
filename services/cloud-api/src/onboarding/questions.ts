@@ -216,6 +216,11 @@ export const QUESTIONS: readonly QuestionDefinition[] = [
   },
 ];
 
+/** The tags a question's options stand for, wanted or declined: what an answer to it is about. */
+export function topicTags(id: QuestionId): Set<NeedTag> {
+  return new Set(getQuestion(id).options.flatMap((o) => [...o.tags, ...(o.declined_tags ?? [])]));
+}
+
 export function getQuestion(id: QuestionId): QuestionDefinition {
   const q = QUESTIONS.find((x) => x.id === id);
   if (!q) throw new Error(`Unknown question ${id}`);

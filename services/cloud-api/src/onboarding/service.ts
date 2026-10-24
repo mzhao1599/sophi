@@ -10,7 +10,7 @@ import {
   type TurnRequest,
   type TurnResponse,
 } from "@walker/contracts";
-import { EngineError, applyInput, confirm, createSession, editFact, toView, type EngineSession } from "./engine";
+import { EngineError, confirm, createSession, deterministicEngine, editFact, toView, type EngineSession, type TurnEngine } from "./engine";
 import type { SessionStore, StoredSession } from "./store";
 
 export class OnboardingError extends Error {
@@ -41,6 +41,8 @@ export interface OnboardingServiceOptions {
   /** Demo sessions expire this long after the last change. */
   ttlMs?: number;
   randomId?: () => string;
+  /** How text and answer turns are read. Defaults to the deterministic engine. */
+  engine?: TurnEngine;
 }
 
 const MAX_REMEMBERED_RESPONSES = 50;
@@ -54,6 +56,7 @@ export class OnboardingService {
   private readonly now: () => Date;
   private readonly ttlMs: number;
   private readonly randomId: () => string;
+  readonly engine: TurnEngine;
 
   constructor(
     private readonly store: SessionStore,
@@ -62,6 +65,7 @@ export class OnboardingService {
     this.now = options.now ?? (() => new Date());
     this.ttlMs = options.ttlMs ?? 60 * 60 * 1000;
     this.randomId = options.randomId ?? (() => crypto.randomUUID());
+    this.engine = options.engine ?? deterministicEngine;
   }
 
   async start(_request: StartSessionRequest): Promise<{ token: string; response: TurnResponse }> {
@@ -86,7 +90,12 @@ export class OnboardingService {
     this.checkRevision(record, request.last_seen_revision);
 
     const now = this.now();
-    const result = this.run(record, () => applyInput(record.session, request.input, now));
+    const result = await this.run(record, () => this.engine.apply(record.session, request.input, now));
+    // An agent turn takes seconds. If another request changed the session meanwhile, that one stands.
+    const latest = await this.load(id, token);
+    const done = latest.responses.get(request.client_turn_id);
+    if (done) return done;
+    this.checkRevision(latest, record.session.revision);
     const session = this.bump(result.session, now);
     const view = toView(session, now);
     const response: TurnResponse = {
@@ -108,7 +117,7 @@ export class OnboardingService {
     const record = await this.load(id, token);
     this.checkRevision(record, request.last_seen_revision);
     const now = this.now();
-    const session = this.bump(this.run(record, () => editFact(record.session, request.edit)), now);
+    const session = this.bump(await this.run(record, () => editFact(record.session, request.edit)), now);
     await this.store.put({ ...record, session });
     return { session: toView(session, now) };
   }
@@ -125,7 +134,7 @@ export class OnboardingService {
     if (problems.length > 0) {
       throw new OnboardingError("invalid_selection", 422, problems.map((p) => p.message).join(" "));
     }
-    const session = this.bump(this.run(record, () => confirm(record.session, request.selected_module_ids, now)), now);
+    const session = this.bump(await this.run(record, () => confirm(record.session, request.selected_module_ids, now)), now);
     await this.store.put({ ...record, session });
     return { session: toView(session, now) };
   }
@@ -160,9 +169,9 @@ export class OnboardingService {
     }
   }
 
-  private run<T>(record: StoredSession, fn: () => T): T {
+  private async run<T>(record: StoredSession, fn: () => T | Promise<T>): Promise<T> {
     try {
-      return fn();
+      return await fn();
     } catch (error) {
       if (!(error instanceof EngineError)) throw error;
       const status = error.code === "not_found" ? 404 : error.code === "invalid_request" ? 400 : error.code === "invalid_selection" ? 422 : 409;
