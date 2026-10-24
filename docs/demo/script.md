@@ -2,11 +2,53 @@
 
 **Steady. A smart walker you set up by talking to it.**
 
-This is the script for showing the website to judges at Cal Hacks: a 3-minute main script, a 60-second cut, the persona's exact lines, what each line should do with both onboarding engines, the honesty lines, judge Q&A, the setup checklist, and the rehearsal results.
+This is the script for showing the website to judges at Cal Hacks: a click sequence for the website alone, a 3-minute main script, a 60-second cut, the persona's exact lines, what each line should do with both onboarding engines, the honesty lines, judge Q&A, the setup checklist, and the rehearsal results.
 
 **What is real today:** the website. A person types what they need, the onboarding assistant asks short questions, the walker drawing lights up suggested modules, and the person switches modules, saves the walker and orders it through Stripe's test mode. **What is planned:** the walker hardware (frame, hand controls, obstacle sensors, voice module, robot arms, arm lift) and location sharing. The parts are ordered; nothing is assembled or tested yet. Nothing in this script presents a planned part as working.
 
 **Labels marked † are UI labels.** They were checked against the code on `main` (`daea268`, the Steady redesign) on 2026-10-23, not on the live page; the lead does the live page check. A polish change may still move small things (the logo mark, the Next.js badge), so re-check any † label that looks different on the day.
+
+## Click sequence (website only)
+
+Every input and click, with nothing to say. Use it to rehearse, or alongside the 3-minute script below. Wait for each reply to appear before typing the next line (about 2 to 3 seconds; "Read by Gemini" shows under each one).
+
+1. Open <http://localhost:3004> (start it with the setup checklist below).
+2. Click the text box, type the line below and press Enter:
+   `I keep bumping into things, small buttons are hard, and I'd like help picking things up.`
+3. Type `Around my apartment, and at the corner shop.` and press Enter.
+4. Type `A buzz in the handles works best.` and press Enter.
+5. Type `A button on my left handle. I'd rather not talk to it.` and press Enter.
+6. Type `Mostly things I drop on the floor.` and press Enter.
+7. Click "Show My Walker", under the text box.
+8. On the drawing, click the "Obstacle sensors" label. Its panel opens with "You said:" and her words; press Escape to close it.
+9. Click the "Voice" label. Its panel shows "You said no" and her words; press Escape.
+10. In "All modules" on the right, switch on "Robot arms" and "Arm lift". Every part is now on screen.
+11. Click "Save".
+12. Click "Order (Demo)". Stripe's test checkout opens.
+13. On Stripe's page, fill in the fields below, then click "Pay":
+    - Email: `demo@example.com`
+    - Card: `4242 4242 4242 4242`
+    - Expiry: `12/34`
+    - CVC: `123`
+    - Name: `Wren Demo`
+    - ZIP: `94720`
+14. The success page shows her walker and "Demo order: no money moved". To reset for the next run, click "Set up another walker".
+
+If the assistant asks the questions in a different order, type the line that matches the question:
+
+| If it asks… | Type the line from |
+| --- | --- |
+| where you'll use the walker | step 3 |
+| how it should get your attention | step 4 |
+| how you'd like to ask for help | step 5 |
+| what you'd like to reach | step 6 |
+| about sharing location, or anything else | don't type: click "Show My Walker" |
+
+**Checked live on 2026-10-23** on a production build of `main` (`6a5d088`) at 1440 by 900, with the agent on:
+- All five replies said "Read by Gemini", with no fallbacks.
+- The walker came out with hand controls and obstacle sensors on, the robot arms and arm lift worth considering, and Voice "You Said No".
+- The two switches made it 5 modules, and the Stripe test payment of $1,675.00 in demo prices reached the success page.
+- "Set up another walker" returned to a fresh first frame.
 
 ## The story
 
