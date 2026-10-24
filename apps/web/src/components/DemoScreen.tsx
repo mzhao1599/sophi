@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ModuleId, Question, QuestionId } from "@walker/contracts";
+import type { ModuleId, Question } from "@walker/contracts";
+import { PRODUCT_LINE, PRODUCT_NAME } from "@/lib/brand";
+import { surge, useReducedMotion } from "@/lib/motion";
 import { useOnboarding, type Onboarding, type Phase } from "@/lib/useOnboarding";
 import {
   countLine,
-  heardSummary,
   nameOf,
   partStates,
   selectedModules,
@@ -13,11 +14,13 @@ import {
   suggestionNews,
   toggleModule,
   type Choices,
+  type PartState,
 } from "@/lib/walker";
 import { Chat, type FocusRequest } from "./Chat";
 import { CheckoutButton } from "./CheckoutButton";
+import { ContourField } from "./ContourField";
 import { ModuleList } from "./ModuleList";
-import { WalkerDiagram } from "./WalkerDiagram";
+import { Legend, WalkerDiagram } from "./WalkerDiagram";
 import { WalkerMark } from "./WalkerMark";
 import styles from "./Demo.module.css";
 
@@ -42,11 +45,31 @@ interface ScreenProps {
    * null with the deterministic engine.
    */
   agentNotice?: string | null;
+  /** The model's short name while the agent runs ("Gemini"), for the note under each reply; null otherwise. */
+  agentName?: string | null;
 }
 
-export function DemoScreen({ opening, agentNotice = null, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
+/** How long the final message has to be read before the walker rises. */
+const SHEET_DELAY_MS = 1200;
+
+export function DemoScreen({ opening, agentNotice = null, agentName = null, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
   const o = useOnboarding({ notice: account ? "account" : "demo", resumeId });
-  return <DemoView o={o} opening={opening} agentNotice={agentNotice} account={account} />;
+  return <DemoView o={o} opening={opening} agentNotice={agentNotice} agentName={agentName} account={account} />;
+}
+
+const FIRST_FRAME = "Your walker starts as just the frame. Tell us what's hard.";
+
+/** What the drawing shows while the conversation runs, in words, for screen readers. */
+function chatCaption(states: Record<ModuleId, PartState>): string {
+  const named = (state: PartState) =>
+    (Object.keys(states) as ModuleId[]).filter((id) => id !== "base.walker" && states[id] === state).map(nameOf);
+  const parts = [
+    ["Suggested", named("on")],
+    ["Worth considering", named("suggested")],
+    ["You said no to", named("declined")],
+  ] as const;
+  const said = parts.filter(([, names]) => names.length > 0).map(([lead, names]) => `${lead}: ${names.join(", ")}.`);
+  return said.length > 0 ? said.join(" ") : FIRST_FRAME;
 }
 
 /** The one line under the text box that says where answers go. Sending the first answer starts on it. */
@@ -57,16 +80,16 @@ function noticeLine(agentNotice: string | null, account: AccountSummary | null):
 }
 
 /**
- * The whole demo on one page. Screen question, first: "What do you need help with?" — a guided chat on
- * the left while the walker on the right lights up what the answers suggest. Then: "Is this my
- * walker?" — the chat folds into a short summary and the walker takes the stage, where each module can
- * be opened and switched, then saved and ordered (Stripe test mode).
+ * The whole demo on one page. First a conversation with the onboarding assistant, while the walker
+ * beside it draws in what the answers suggest. When the assistant has enough, the walker rises to the
+ * middle as a sheet: each module can be opened and switched, then saved and ordered (Stripe test mode).
  */
-export function DemoView({ o, opening, agentNotice = null, account = null }: { o: Onboarding } & ScreenProps & Pick<ScreenAccess, "account">) {
+export function DemoView({ o, opening, agentNotice = null, agentName = null, account = null }: { o: Onboarding } & ScreenProps & Pick<ScreenAccess, "account">) {
   const s = o.session;
   const recs = s?.recommendations ?? [];
   const review = s?.state === "review" || s?.state === "confirmed";
   const saved = s?.state === "confirmed" && s.configuration ? s.configuration : null;
+  const reduced = useReducedMotion();
 
   // What the person switched themselves, for this session only.
   const [choices, setChoices] = useState<Choices>({});
@@ -77,20 +100,57 @@ export function DemoView({ o, opening, agentNotice = null, account = null }: { o
   }
 
   const selected = saved ? saved.selected_module_ids : selectedModules(recs, choices);
-  const states = partStates(recs, selected);
+  const states = partStates(recs, selected, s?.facts ?? []);
   const problems = saved ? [] : selectionProblems(selected);
   const [highlight, setHighlight] = useState<ModuleId | null>(null);
   const [saveTried, setSaveTried] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [focusRequest, setFocusRequest] = useState<FocusRequest>({ n: 0, target: "auto" });
+  const [focusRequest, setFocusRequest] = useState<FocusRequest>({ n: 0 });
   // Selection changes and switch results, read politely. A trailing zero-width space alternates so the
   // same sentence twice in a row is still announced.
   const [announcement, setAnnouncement] = useState({ text: "", n: 0 });
   const announce = (text: string) => setAnnouncement((a) => ({ text, n: a.n + 1 }));
-  const walkerHeadingRef = useRef<HTMLHeadingElement>(null);
+  const sheetHeadingRef = useRef<HTMLHeadingElement>(null);
   const savedRef = useRef<HTMLParagraphElement>(null);
 
-  // While the chat runs, say what lit up after each answer. Not on load or restore.
+  // The sheet rises a moment after the conversation ends (so its last message can be read), or at
+  // once when a finished session is loaded. It goes when the session does.
+  const [sheet, setSheet] = useState<"down" | "rising" | "up">("down");
+  const prevState = useRef(s?.state);
+  const rose = useRef(false);
+  useEffect(() => {
+    const before = prevState.current;
+    prevState.current = s?.state;
+    if (!review) setSheet("down");
+    else setSheet((current) => (current !== "down" ? current : before === "collecting" ? "rising" : "up"));
+  }, [review, s?.state]);
+  useEffect(() => {
+    if (sheet !== "rising") return;
+    const t = window.setTimeout(() => {
+      rose.current = true;
+      setSheet("up");
+    }, reduced ? 0 : SHEET_DELAY_MS);
+    return () => window.clearTimeout(t);
+  }, [sheet, reduced]);
+
+  // When the sheet rises after the conversation, focus its heading and let the background move.
+  useLayoutEffect(() => {
+    if (sheet !== "up") return;
+    surge();
+    if (rose.current) {
+      rose.current = false;
+      sheetHeadingRef.current?.focus({ preventScroll: true });
+    }
+  }, [sheet]);
+
+  // After Save, focus the confirmation.
+  const prevSaved = useRef(Boolean(saved));
+  useLayoutEffect(() => {
+    if (!prevSaved.current && saved) savedRef.current?.focus({ preventScroll: true });
+    prevSaved.current = Boolean(saved);
+  }, [saved]);
+
+  // While the conversation runs, say what lit up after each answer. Not on load or restore.
   const previous = useRef<{ phase: Phase; selected: ModuleId[] }>({ phase: o.phase, selected });
   useEffect(() => {
     const before = previous.current;
@@ -99,20 +159,6 @@ export function DemoView({ o, opening, agentNotice = null, account = null }: { o
     const news = suggestionNews(before.selected, selected);
     if (news) announce(news);
   });
-
-  // When the review appears, focus its heading; when the walker is saved, the confirmation. Not on load.
-  const prevState = useRef(s?.state);
-  useLayoutEffect(() => {
-    const before = prevState.current;
-    prevState.current = s?.state;
-    const target =
-      before === "collecting" && s?.state === "review" ? walkerHeadingRef.current : before === "review" && s?.state === "confirmed" ? savedRef.current : null;
-    if (!target) return;
-    // Scroll only when the target is out of sight (a phone), so a laptop screen doesn't jump.
-    target.focus({ preventScroll: true });
-    const box = target.getBoundingClientRect();
-    if (box.top < 0 || box.bottom > window.innerHeight) target.scrollIntoView({ block: "start" });
-  }, [s?.state]);
 
   function toggle(id: ModuleId, on: boolean) {
     if (saved) return announce("Your walker is saved. Start over to change it.");
@@ -126,12 +172,7 @@ export function DemoView({ o, opening, agentNotice = null, account = null }: { o
     if (o.busy || saved) return;
     setSaveTried(true);
     if (problems.length > 0) return;
-    await o.confirm(selected);
-  }
-
-  async function change(questionId: QuestionId) {
-    if (o.busy) return;
-    if (await o.revisit(questionId)) setFocusRequest((f) => ({ n: f.n + 1, target: "auto" }));
+    if (await o.confirm(selected)) announce(`Saved. ${countLine(selected)}.`);
   }
 
   async function startOver() {
@@ -141,174 +182,142 @@ export function DemoView({ o, opening, agentNotice = null, account = null }: { o
     setResetting(false);
     if (!ok) return;
     setSaveTried(false);
-    setFocusRequest((f) => ({ n: f.n + 1, target: "composer" }));
+    surge();
+    setFocusRequest((f) => ({ n: f.n + 1 }));
   }
 
-  const onWalker = selected.filter((id) => id !== "base.walker").map(nameOf);
-  const caption = review
-    ? `On your walker: ${selected.map(nameOf).join(", ")}.`
-    : onWalker.length > 0
-      ? `Suggested so far: ${onWalker.join(", ")}, on the walker frame.`
-      : "So far, just the walker frame. Parts light up as you answer.";
-  const frozen = saved ? "Saved. Start over to change it." : o.busy ? "Saving…" : null;
+  const caption = review ? `On your walker: ${selected.map(nameOf).join(", ")}.` : chatCaption(states);
+  // The first frame explains itself before anyone speaks; once parts light up, a key says what their lines mean.
+  const note = review ? null : chatCaption(states) === FIRST_FRAME ? <p className={styles.firstLine}>{FIRST_FRAME}</p> : <Legend states={states} />;
+  const frozen = saved ? "Saved. Start over to change it." : o.busy && review ? "Saving." : null;
   // A saved account setup is deleted from Your setups, behind a confirmation, not with one press here.
   const canReset = Boolean(s) && !(s?.kind === "account" && saved);
+  const sheetUp = sheet === "up" && review && s;
+  const saveLabel = o.busy ? "Saving" : "Save";
 
   return (
     <>
+      <ContourField />
       <header className={styles.bar}>
-        <div className={styles.barInner}>
-          <span className={styles.brand}>
-            <WalkerMark />
-            <span>Assistive Walker</span>
-          </span>
-          <div className={styles.barRight}>
-            <span className={styles.scope}>{account ? "Signed in" : "Prototype · demo"}</span>
-            {canReset ? (
-              // aria-disabled while busy, so focus stays here until the text box takes it.
-              <button type="button" className="button-text" onClick={() => void startOver()} aria-disabled={o.busy || resetting || undefined}>
-                {resetting ? (
-                  "Starting over…"
-                ) : (
-                  <>
-                    Start over<span className="visually-hidden"> and delete your answers</span>
-                  </>
-                )}
-              </button>
-            ) : null}
-          </div>
+        <span className={styles.brand}>
+          <WalkerMark size={24} />
+          <span className={styles.wordmark}>{PRODUCT_NAME}</span>
+          <span className={styles.line}>{PRODUCT_LINE}</span>
+        </span>
+        <div className={styles.barRight}>
+          <span className={styles.scope}>{account ? "Signed In" : "Demo"}</span>
+          {canReset ? (
+            // aria-disabled while busy, so focus stays here until the text box takes it.
+            <button type="button" className={styles.barButton} onClick={() => void startOver()} aria-disabled={o.busy || resetting || undefined}>
+              <span key={resetting ? "a" : "b"} className="fade-text">
+                {resetting ? "Starting Over" : "Start Over"}
+              </span>
+              <span className="visually-hidden"> and delete your answers</span>
+            </button>
+          ) : null}
         </div>
       </header>
 
       <main id="main" className={styles.main}>
-        <h1 className={styles.headline}>Tell us what you need help with. We&apos;ll build your walker.</h1>
         <p className="visually-hidden" role="status" aria-live="polite">
           {announcement.text}
           {announcement.n % 2 ? "​" : ""}
         </p>
 
-        <div className={styles.stage} data-view={review ? "walker" : "chat"}>
-          {review && s ? (
-            <Heard session={s} busy={o.busy} locked={Boolean(saved)} onChange={change} />
-          ) : (
-            <div className={styles.chatArea}>
-              <Chat o={o} opening={opening} notice={noticeLine(agentNotice, account)} focusRequest={focusRequest} />
-            </div>
-          )}
+        {/* Behind the sheet once it rises: receded, and out of reach of the keyboard and screen readers. */}
+        <div className={styles.scene} data-receded={sheetUp ? "true" : undefined} inert={Boolean(sheetUp)}>
+          <section className={styles.talk} aria-labelledby="headline">
+            <h1 id="headline" className={styles.headline}>
+              Let&apos;s build your walker.
+            </h1>
+            <Chat o={o} opening={opening} focusRequest={focusRequest} notice={noticeLine(agentNotice, account)} describedBy="notice" agentName={agentName} />
+          </section>
+          <div className={styles.preview}>
+            <WalkerDiagram
+              recs={recs}
+              facts={s?.facts ?? []}
+              states={states}
+              review={false}
+              problems={[]}
+              frozen={null}
+              onToggle={toggle}
+              highlight={null}
+              onHighlight={() => undefined}
+              caption={caption}
+              note={note}
+            />
+          </div>
+        </div>
 
-          <section className={styles.walker} aria-labelledby="walker-heading">
-            <div className={styles.walkerHead}>
-              <div>
-                <h2 id="walker-heading" ref={walkerHeadingRef} tabIndex={-1} className={styles.walkerTitle}>
-                  Your walker
-                </h2>
-                <p className={styles.walkerSub}>{review ? countLine(selected) : "Parts light up as you answer."}</p>
-              </div>
-              {review ? (
-                saved && s ? (
+        {sheetUp ? (
+          <div className={styles.sheetLayer}>
+            <section className={styles.sheet} aria-labelledby="walker-heading">
+              <div className={styles.sheetHead}>
+                <div>
+                  <h2 id="walker-heading" ref={sheetHeadingRef} tabIndex={-1} className={styles.sheetTitle}>
+                    Your walker
+                  </h2>
+                  <p className={styles.sheetMeta}>
+                    {selected.length} {selected.length === 1 ? "module" : "modules"}
+                  </p>
+                </div>
+                {saved ? (
                   <div className={styles.savedArea}>
                     <p ref={savedRef} tabIndex={-1} className={styles.savedLine}>
                       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                         <path d="M5 10.4l3.2 3.1L15 6.6" />
                       </svg>
-                      {saved.source === "account" ? "Saved to your account." : "Saved."}
+                      Saved
                     </p>
                     <CheckoutButton sessionId={s.session_id} configurationVersion={saved.configuration_version} />
                   </div>
                 ) : (
                   <button
                     type="button"
-                    className="button button-primary"
+                    className={`button button-primary ${styles.save}`}
                     onClick={() => void save()}
                     aria-disabled={o.busy || undefined}
                     aria-describedby={saveTried && problems.length > 0 ? "save-problems" : undefined}
                   >
-                    {o.busy ? "Saving…" : "Save my walker"}
+                    <span key={saveLabel} className="fade-text">
+                      {saveLabel}
+                    </span>
                   </button>
-                )
-              ) : null}
-            </div>
-
-            {review && saveTried && problems.length > 0 ? (
-              <div id="save-problems" role="alert" className={styles.problems}>
-                <p>Before saving:</p>
-                <ul>
-                  {problems.map((p) => (
-                    <li key={`${p.module_id}-${p.code}`}>{p.message}</li>
-                  ))}
-                </ul>
+                )}
               </div>
-            ) : null}
-            {review && o.error ? (
-              <p role="alert" className={styles.problems}>
-                {o.error}
-              </p>
-            ) : null}
 
-            <WalkerDiagram
-              recs={recs}
-              facts={s?.facts ?? []}
-              states={states}
-              review={review}
-              problems={problems}
-              frozen={frozen}
-              onToggle={toggle}
-              highlight={highlight}
-              onHighlight={setHighlight}
-              caption={caption}
-            />
-          </section>
+              {saveTried && problems.length > 0 ? (
+                <div id="save-problems" role="alert" className={styles.problems}>
+                  {problems.map((p) => (
+                    <p key={`${p.module_id}-${p.code}`}>{p.message}</p>
+                  ))}
+                </div>
+              ) : null}
+              {o.error ? (
+                <p role="alert" className={styles.problems}>
+                  {o.error}
+                </p>
+              ) : null}
 
-          {review ? (
-            <div className={styles.listArea}>
-              <ModuleList states={states} problems={problems} frozen={frozen} onToggle={toggle} onHighlight={setHighlight} />
-            </div>
-          ) : null}
-        </div>
+              <div className={styles.sheetBody}>
+                <WalkerDiagram
+                  recs={recs}
+                  facts={s.facts}
+                  states={states}
+                  review
+                  problems={problems}
+                  frozen={frozen}
+                  onToggle={toggle}
+                  highlight={highlight}
+                  onHighlight={setHighlight}
+                  caption={caption}
+                />
+                <ModuleList states={states} problems={problems} frozen={frozen} onToggle={toggle} onHighlight={setHighlight} />
+              </div>
+            </section>
+          </div>
+        ) : null}
       </main>
     </>
-  );
-}
-
-/** The chat, folded: what was understood, grouped by question, each with a way to change that answer. */
-function Heard({
-  session,
-  busy,
-  locked,
-  onChange,
-}: {
-  session: NonNullable<Onboarding["session"]>;
-  busy: boolean;
-  locked: boolean;
-  onChange(questionId: QuestionId): void;
-}) {
-  const groups = heardSummary(session.facts, session.turns);
-  return (
-    <section className={styles.heard} aria-labelledby="heard-heading">
-      <h2 id="heard-heading" className={styles.heardTitle}>
-        Here&apos;s what I heard
-      </h2>
-      {groups.length === 0 ? (
-        <p className={styles.heardEmpty}>You skipped the questions, so only the frame is suggested. Every module can still be switched on.</p>
-      ) : (
-        <ul className={styles.heardList}>
-          {groups.map((g) => (
-            <li key={g.questionId}>
-              <ul className={styles.heardItems}>
-                {g.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              {locked ? null : (
-                // aria-disabled while busy, so focus stays here until the reopened question takes it.
-                <button type="button" className={`button-text ${styles.change}`} onClick={() => onChange(g.questionId)} aria-disabled={busy || undefined}>
-                  Change<span className="visually-hidden"> your answer to “{g.prompt}”</span>
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }

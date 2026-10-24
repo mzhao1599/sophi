@@ -28,6 +28,24 @@ function storeId(id: string | null) {
   }
 }
 
+/**
+ * Deletes this tab's demo session, if it has one, and forgets it, for "Set up another walker" on the
+ * pages after checkout. True when nothing is left (already gone counts); false if the server refused,
+ * so nothing is forgotten. A saved account setup is never here: confirming one already forgot it.
+ */
+export async function forgetStoredSession(): Promise<boolean> {
+  const id = readStoredId();
+  if (id) {
+    try {
+      await api.deleteSession(id);
+    } catch (e) {
+      if (!(e instanceof api.ApiRequestError && e.code === "not_found")) return false;
+    }
+  }
+  storeId(null);
+  return true;
+}
+
 export type Phase = "loading" | "none" | "ready";
 
 export interface Onboarding {

@@ -51,7 +51,7 @@ export function ModuleList({
               <span className={styles.rowText}>
                 <span className={styles.rowName}>{m.name}</span>
                 <span id={`${rowId}-state`} className={styles.rowState}>
-                  {own ?? stateLabel(m.id, states[m.id], true)}
+                  {stateLabel(m.id, states[m.id], true)}
                 </span>
                 {problem ? (
                   <span id={`${rowId}-problem`} className={styles.problem}>

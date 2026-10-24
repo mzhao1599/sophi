@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { PRODUCT_NAME } from "@/lib/brand";
 import type { AccountSummary } from "./DemoScreen";
 import { WalkerMark } from "./WalkerMark";
 import styles from "./TopBar.module.css";
@@ -28,7 +29,7 @@ export function TopBar({ account = null, signIn = false }: { account?: AccountSu
       <div className={styles.inner}>
         <Link href="/" className={styles.brand}>
           <WalkerMark />
-          <span>Assistive Walker</span>
+          <span>{PRODUCT_NAME}</span>
         </Link>
         <div className={styles.scope}>
           <span className={`${styles.session} ${styles.wide}`}>

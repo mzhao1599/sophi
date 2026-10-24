@@ -1,30 +1,15 @@
 /*
  * The walker drawing, its hotspots and panels, the module list and the switch.
- * The drawing takes its colours from:
- *   --d-ink     frame and wheels
- *   --d-on      a module that is on the walker (solid)
- *   --d-ground  the fill behind a dashed outline
- *   --d-suggest a suggested module's dashed outline
- *   --d-off     an absent module's dashed outline
- * State is shown by solid against dashed and by words, never by colour alone.
- * The figure is a size container: from 560px wide, each hotspot is a label in a column beside the
- * drawing with a leader line to its part; narrower, it is a 44px round marker on the part.
+ * The signature: a pen draws the walker in fine ink, stroke by stroke, and then draws each module the
+ * conversation turns on, in signal green with a soft glow. A module that's off is a faint dashed
+ * outline (green-tinted when it's worth considering, dotted when it isn't built). Labels are set in
+ * the mono face, like annotations on a drawing. The figure is a size container: from 560px wide each
+ * hotspot is a label beside the drawing with a hairline leader; narrower, a 44px marker on the part.
  */
 
 .figure {
-  --d-ink: var(--text);
-  --d-on: var(--accent);
-  --d-ground: var(--ground);
-  --d-suggest: var(--accent);
-  --d-off: var(--control);
   display: grid;
-  gap: 10px;
-  padding: 16px 12px 12px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-card);
-  background-color: var(--ground);
-  background-image: radial-gradient(var(--surface-step) 1.2px, transparent 1.2px);
-  background-size: 22px 22px;
+  margin: 0;
   container: walker / inline-size;
 }
 
@@ -49,121 +34,133 @@
   display: none;
 }
 
-.caption {
-  color: var(--muted);
-  font-size: var(--fs-small);
-  text-align: center;
+/* ---- Lines ---- */
+
+/* Widths are in drawing units (the drawing shows at about 1.2-1.6x), so lines land near 1.25-1.5px.
+ * No non-scaling-stroke: it would measure the pathLength dashes in screen pixels and break the draw-in. */
+.drawing path,
+.leaders path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-/* ---- The drawing ---- */
+/* The frame draws itself once, stroke after stroke, in time with the pen (--at, --dur per stroke). */
+.frame path {
+  stroke: var(--ink);
+  stroke-width: 1.05;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw var(--dur) linear var(--at) forwards;
+}
 
-.part {
-  transition: opacity 200ms ease;
+/* Until the page is live, the drawing waits, so the lines, the labels and the pen start together. */
+.figure:not([data-live]) .frame path,
+.figure:not([data-live]) .ink path,
+.figure:not([data-live]) .leader path,
+.figure:not([data-live]) .hotspot,
+.figure:not([data-live]) .leader circle {
+  animation-play-state: paused;
+}
+
+.frame[data-highlight] path {
+  stroke-width: 1.8;
+}
+
+.ghost path {
+  stroke: var(--text-faint);
+  stroke-width: 0.9;
+  stroke-dasharray: 2.5 3.5;
+  opacity: 0.8;
+  transition: opacity 400ms var(--ease-out), stroke 400ms var(--ease-out);
+}
+
+/* A part arrives at its own moment (--delay), one after another, so each can be read with its name. */
+.part[data-state="suggested"] .ghost path {
+  stroke: var(--live-soft);
+  opacity: 1;
+  transition-delay: var(--delay);
+}
+
+/* Said no to: a quiet outline, and its label says so. */
+.part[data-state="declined"] .ghost path {
+  stroke-dasharray: 1.2 3.2;
+  opacity: 0.9;
+}
+
+.part[data-state="unavailable"] .ghost path {
+  stroke-dasharray: 0.8 3;
+}
+
+/* On: drawn in green by the pen, stroke after stroke (--delay for the module, --at and --dur per stroke). */
+.ink path {
+  stroke: var(--live);
+  stroke-width: 1.25;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.part[data-state="on"] .ghost path {
+  opacity: 0;
+  transition-delay: var(--delay);
+}
+
+.part[data-state="on"] .ink path {
+  animation: draw var(--dur) linear calc(var(--delay) + var(--at)) forwards;
+}
+
+/* A soft green glow that blooms as the module finishes drawing, then settles. */
+.part[data-state="on"] .ink {
+  filter: drop-shadow(0 0 2.5px var(--live-glow));
+}
+
+/* The pen's nib. */
+.pen {
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 1.2;
+  pointer-events: none;
+}
+
+.pen[data-tone="live"] {
+  fill: var(--live);
+  filter: drop-shadow(0 0 4px var(--live-glow));
 }
 
 .part[data-clickable] {
   cursor: pointer;
 }
 
-.frame {
-  fill: var(--d-ink);
-}
-
-.hub {
-  fill: var(--d-ground);
-}
-
-.box {
-  stroke-width: 2.5;
-  transition: fill 300ms ease, stroke 300ms ease;
-}
-
-.arm {
-  fill: none;
-  stroke-width: 8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: stroke 300ms ease;
-}
-
-/* The button mark on each grip shows only when the hand controls are on. */
-.button {
-  fill: none;
-  stroke: none;
-}
-
-/* On the walker: solid, with a short glow as it lights up. */
-.part[data-state="on"] {
-  animation: light-up 900ms ease-out;
-}
-.part[data-state="on"] .box {
-  fill: var(--d-on);
-  stroke: var(--d-on);
-}
-.part[data-state="on"] .arm {
-  stroke: var(--d-on);
-}
-.part[data-state="on"] .button {
-  fill: var(--d-ground);
-}
-
-/* Suggested but not on: a dashed outline in the "on" colour */
-.part[data-state="suggested"] .box {
-  fill: var(--d-ground);
-  stroke: var(--d-suggest);
-  stroke-dasharray: 5 4;
-}
-.part[data-state="suggested"] .arm {
-  stroke: var(--d-suggest);
-  stroke-dasharray: 8 7;
-}
-
-/* Off, or not built yet: a quieter dashed outline */
-.part[data-state="off"] .box,
-.part[data-state="unavailable"] .box {
-  fill: var(--d-ground);
-  stroke: var(--d-off);
-  stroke-dasharray: 4 4;
-}
-.part[data-state="off"] .arm,
-.part[data-state="unavailable"] .arm {
-  stroke: var(--d-off);
-  stroke-dasharray: 6 8;
-}
-
-/* The module under the pointer, focused, or open: a heavier edge in the frame's ink */
-.part[data-highlight="true"] .box {
-  stroke: var(--d-ink);
-  stroke-width: 4;
-}
-.part[data-highlight="true"] .arm {
-  stroke-width: 11;
+.part[data-highlight] .ghost path,
+.part[data-highlight] .ink path {
+  stroke-width: 2;
 }
 
 .leader path {
-  fill: none;
-  stroke: var(--d-off);
-  stroke-width: 1.3;
-  stroke-dasharray: 3 3;
-  vector-effect: non-scaling-stroke;
-  transition: stroke 300ms ease;
+  stroke: var(--text-faint);
+  stroke-width: 0.8;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 700ms var(--ease-out) 200ms forwards;
 }
+
 .leader circle {
-  fill: var(--d-off);
+  fill: var(--text-faint);
+  animation: fade-in 300ms var(--ease-out) both;
 }
+
 .leader[data-state="on"] path,
 .leader[data-state="suggested"] path {
-  stroke: var(--d-on);
+  stroke: var(--live-soft);
 }
-.leader[data-state="on"] path {
-  stroke-dasharray: none;
-}
+
 .leader[data-state="on"] circle,
 .leader[data-state="suggested"] circle {
-  fill: var(--d-on);
+  fill: var(--live);
 }
+
 .leader[data-highlight] path {
-  stroke-width: 2.6;
+  stroke-width: 1.5;
 }
 
 /* ---- Hotspots (narrow: round markers on the parts) ---- */
@@ -185,61 +182,83 @@
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--text);
+  color: var(--text-strong);
   translate: -50% -50%;
+  animation: rise-in 320ms var(--ease-out) var(--label-delay, 0s) both;
 }
 
 button.hotspot:hover,
 .spot[data-open] .hotspot {
-  background: var(--accent-tint);
+  background: var(--glass-strong);
 }
 
-/* While the chat runs the drawing is a picture; the markers appear once there is something to choose. */
+/* While the conversation runs on a narrow screen, the drawing is a picture with no markers. */
 .figure:not([data-review]) .hotspot {
   display: none;
 }
 
-.icon {
+.dot {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   overflow: visible;
 }
-.icon circle {
-  fill: var(--d-ground);
-  stroke: var(--d-off);
-  stroke-width: 1.6;
-  transition: fill 250ms ease, stroke 250ms ease;
-}
-.icon path {
-  fill: none;
-  stroke: var(--d-off);
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.icon[data-state="on"] {
-  animation: pop 420ms cubic-bezier(0.3, 1.6, 0.5, 1);
-}
-.icon[data-state="on"] circle {
-  fill: var(--d-on);
-  stroke: var(--d-on);
-}
-.icon[data-state="on"] path {
-  stroke: #ffffff;
-}
-.icon[data-state="suggested"] circle {
-  stroke: var(--d-suggest);
-  stroke-dasharray: 3 2.4;
-}
-.icon[data-state="suggested"] path {
-  stroke: var(--d-suggest);
-}
-.icon[data-state="unavailable"] circle {
-  stroke-dasharray: 1.4 2.6;
+
+.dot circle {
+  fill: var(--paper);
+  stroke: var(--text-meta);
+  stroke-width: 1.5;
+  transition: fill 300ms var(--ease-out), stroke 300ms var(--ease-out);
 }
 
-/* Narrow: the name and state are the button's accessible name only. */
+.dot[data-state="on"] circle {
+  fill: var(--live);
+  stroke: var(--live);
+  animation: pop 420ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.dot[data-state="suggested"] circle {
+  stroke: var(--live);
+  stroke-dasharray: 2.5 2;
+}
+
+.dot[data-state="unavailable"] circle {
+  stroke-dasharray: 1 2.4;
+}
+
+.dot path {
+  stroke: var(--text-meta);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* ---- Under the drawing: the first frame's line, then the key to what solid, dashed and struck mean ---- */
+
+.note {
+  display: grid;
+  justify-items: center;
+  margin-top: 14px;
+  text-align: center;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 20px;
+  color: var(--text-meta);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  animation: rise-in 400ms var(--ease-out) both;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Narrow: the name is in the button's label only. */
 .spotText {
   position: absolute;
   width: 1px;
@@ -249,7 +268,7 @@ button.hotspot:hover,
   white-space: nowrap;
 }
 
-/* ---- Panel ---- */
+/* ---- Panel: a small glass card ---- */
 
 .panel {
   position: absolute;
@@ -258,17 +277,17 @@ button.hotspot:hover,
   left: 0;
   z-index: 3;
   display: grid;
-  gap: 10px;
-  padding: 14px 16px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--raised);
-  box-shadow:
-    0 14px 36px rgb(11 12 16 / 0.16),
-    0 2px 6px rgb(11 12 16 / 0.08);
-  color: var(--text);
+  gap: 8px;
+  padding: 14px 16px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-card);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-float);
+  color: var(--text-strong);
   text-align: left;
-  animation: panel-in 180ms ease-out;
+  animation: rise-in 240ms var(--ease-out) both;
 }
 
 .panelHead {
@@ -279,10 +298,11 @@ button.hotspot:hover,
 }
 
 .panelTitle {
-  padding-top: 6px;
-  font-size: 18px;
-  font-weight: 700;
+  padding-top: 8px;
+  font-size: 16px;
+  font-weight: 500;
   line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .close {
@@ -291,86 +311,112 @@ button.hotspot:hover,
   place-items: center;
   width: var(--target);
   height: var(--target);
-  margin: -6px -10px 0 0;
+  margin: -4px -10px 0 0;
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: 50%;
   background: none;
+  transition: background-color 160ms var(--ease-out);
 }
 
 .close:hover {
-  background: var(--surface);
+  background: var(--wash);
 }
 
 .close svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 1.6;
   stroke-linecap: round;
 }
 
 .panelText {
-  font-size: var(--fs-body);
+  color: var(--text-meta);
+  font-size: var(--fs-small);
   line-height: 1.45;
 }
 
+/* "You said no" beside the name. */
+.panelNo {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 9px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+/* Their words first, set large: the line that has to read from across a room. */
+.said {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.saidLead {
+  color: var(--text-meta);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.saidText {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--live);
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+
+.panel[data-declined] .saidText {
+  border-left-color: var(--text-meta);
+}
+
 .panelWhy {
-  padding: 8px 10px;
-  border-radius: var(--radius-inner);
-  background: var(--accent-tint);
-  color: var(--pill-accent-ink);
+  color: var(--text-body);
   font-size: var(--fs-small);
-}
-
-.whyLabel {
-  display: block;
-  font-weight: 600;
-}
-
-.because {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.panelMuted {
-  color: var(--muted);
-  font-size: var(--fs-small);
+  line-height: 1.45;
 }
 
 .problem {
   display: block;
-  color: var(--negative);
+  color: var(--danger);
   font-size: var(--fs-small);
   font-weight: 500;
 }
 
 .panelSwitch {
   display: flex;
-  align-items: center;
-  gap: 8px 12px;
   flex-wrap: wrap;
-  padding-top: 2px;
+  align-items: center;
+  gap: 4px 10px;
 }
 
 .lockNote {
-  color: var(--muted);
+  color: var(--text-meta);
   font-size: var(--fs-small);
 }
 
-/* ---- Wide: labels beside the drawing, leader lines to the parts ---- */
+/* ---- Wide: labels beside the drawing, hairline leaders to the parts ---- */
 
 @container walker (min-width: 560px) {
   .canvas {
-    width: min(100%, calc(var(--canvas-h, 560px) * 620 / 380));
-    aspect-ratio: 620 / 380;
+    width: min(100%, calc(var(--canvas-h, 560px) * 560 / 380));
+    aspect-ratio: 560 / 380;
   }
 
-  /* 150 / 620 and 320 / 620 of the box: the drawing sits between the two label columns. */
+  /* 120 / 560 and 320 / 560 of the box: the drawing sits between the two label columns. */
   .drawing {
-    left: 24.194%;
-    width: 51.613%;
+    left: 21.429%;
+    width: 57.143%;
   }
 
   .leaders {
@@ -382,12 +428,13 @@ button.hotspot:hover,
     top: var(--wy);
     z-index: 1;
     display: block;
-    width: 22.581%;
+    width: 19.4%;
     translate: 0 -50%;
   }
 
   .spot[data-side="left"] {
     right: calc(100% - var(--wx));
+    text-align: right;
   }
 
   .spot[data-side="right"] {
@@ -401,28 +448,43 @@ button.hotspot:hover,
   .hotspot,
   .figure:not([data-review]) .hotspot {
     position: static;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
+    width: auto;
     height: auto;
     min-height: var(--target);
-    padding: 6px 8px;
-    border-radius: var(--radius-control);
-    background: rgb(255 255 255 / 0.92);
+    padding: 6px 12px 6px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-pill);
+    background: transparent;
     font: inherit;
     text-align: left;
     translate: none;
+    transition: filter 160ms var(--ease-out), transform 160ms var(--ease-out), background-color 200ms var(--ease-out),
+      border-color 200ms var(--ease-out);
+  }
+
+  /* A button in review: a quiet glass pill, so it reads as something to press. */
+  button.hotspot {
+    border-color: var(--hairline-strong);
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+
+  button.hotspot:hover {
+    filter: brightness(0.97);
+  }
+
+  button.hotspot:active {
+    transform: scale(0.98);
   }
 
   .spot[data-side="left"] .hotspot {
     flex-direction: row-reverse;
+    padding: 6px 8px 6px 12px;
     text-align: right;
-  }
-
-  button.hotspot:hover,
-  .spot[data-open] .hotspot {
-    background: var(--accent-tint);
   }
 
   .spotText {
@@ -432,23 +494,22 @@ button.hotspot:hover,
     height: auto;
     overflow: visible;
     clip-path: none;
-    white-space: normal;
   }
 
   .spotName {
-    font-size: 15px;
-    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
     line-height: 1.25;
+    white-space: nowrap;
   }
 
   .spotState {
-    color: var(--muted);
-    font-size: var(--fs-small);
-    line-height: 1.3;
-  }
-
-  .hotspot[data-state="on"] .spotState {
-    color: var(--accent);
+    color: var(--text-meta);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
   }
 
   .panel {
@@ -456,7 +517,7 @@ button.hotspot:hover,
     right: auto;
     bottom: auto;
     left: auto;
-    width: min(300px, 46cqw);
+    width: min(340px, 54cqw);
   }
 
   .spot[data-side="left"] .panel {
@@ -473,7 +534,13 @@ button.hotspot:hover,
   }
 }
 
-/* ---- Switch ---- */
+@media (prefers-color-scheme: dark) {
+  button.hotspot:hover {
+    filter: brightness(1.12);
+  }
+}
+
+/* ---- Switch: ink when on, a hairline track when off; it says On or Off in words too ---- */
 
 .switch {
   display: inline-flex;
@@ -484,41 +551,45 @@ button.hotspot:hover,
   min-height: var(--target);
   padding: 0 4px;
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-pill);
   background: none;
-  font-size: var(--fs-small);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .track {
   position: relative;
-  width: 46px;
-  height: 28px;
-  border: 1.5px solid var(--control);
+  width: 40px;
+  height: 24px;
+  border: 1px solid var(--control-edge);
   border-radius: var(--radius-pill);
-  background: var(--surface-step);
-  transition: background-color 150ms ease, border-color 150ms ease;
+  background: var(--card-solid);
+  transition: background-color 240ms var(--ease-out), border-color 240ms var(--ease-out);
 }
 
 .thumb {
   position: absolute;
-  top: 2.5px;
-  left: 2.5px;
-  width: 20px;
-  height: 20px;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgb(11 12 16 / 0.35);
-  transition: transform 150ms ease;
+  background: var(--text-meta);
+  transition: transform 240ms var(--ease-out), background-color 240ms var(--ease-out);
 }
 
 .switch[aria-checked="true"] .track {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--live);
+  background: var(--live);
 }
 
 .switch[aria-checked="true"] .thumb {
-  transform: translateX(18px);
+  background: var(--paper);
+  transform: translateX(16px);
+}
+
+.switch:active:not([aria-disabled="true"]) .track {
+  transform: scale(0.96);
 }
 
 .switch[aria-disabled="true"] {
@@ -526,11 +597,12 @@ button.hotspot:hover,
 }
 
 .switch[aria-disabled="true"] .track {
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
 .switchText {
-  min-width: 2.2em;
+  min-width: 2em;
+  color: var(--text-meta);
   text-align: left;
 }
 
@@ -538,17 +610,18 @@ button.hotspot:hover,
 
 .listSection {
   display: grid;
-  gap: 10px;
+  align-content: start;
+  gap: 8px;
 }
 
 .listHeading {
-  font-size: var(--fs-heading);
-  font-weight: 600;
+  color: var(--text-meta);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .list {
   display: grid;
-  gap: 4px;
 }
 
 .row {
@@ -556,80 +629,95 @@ button.hotspot:hover,
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 6px 4px 14px;
-  border-radius: var(--radius-inner);
-  background: var(--surface);
-  transition: background-color 200ms ease;
+  padding: 2px 0 2px 2px;
+  border-top: 1px solid var(--hairline-strong);
 }
 
-.row[data-state="on"] {
-  background: var(--accent-tint);
+.row:first-child {
+  border-top: 0;
 }
 
 .rowText {
   display: grid;
   min-width: 0;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .rowName {
-  font-weight: 600;
+  font-size: var(--fs-small);
+  font-weight: 500;
   line-height: 1.3;
 }
 
 .rowState {
-  color: var(--muted);
-  font-size: var(--fs-small);
+  color: var(--text-meta);
+  font-size: 13px;
   line-height: 1.3;
 }
 
-@keyframes light-up {
-  0% {
-    filter: drop-shadow(0 0 0 rgb(20 35 184 / 0));
+.row[data-state="on"] .rowName::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 6px var(--live-glow);
+  vertical-align: middle;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
   }
-  35% {
-    filter: drop-shadow(0 0 7px rgb(20 35 184 / 0.6));
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
   }
-  100% {
-    filter: drop-shadow(0 0 0 rgb(20 35 184 / 0));
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
 @keyframes pop {
   from {
-    transform: scale(0.6);
-  }
-  to {
-    transform: scale(1);
+    transform: scale(0.5);
   }
 }
 
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
+@media (prefers-reduced-motion: reduce) {
+  .part[data-state="suggested"] .ghost path {
+    transition-delay: 0s;
   }
-  to {
-    opacity: 1;
-    transform: none;
+  .frame path,
+  .leader path,
+  .part[data-state="on"] .ink path {
+    stroke-dashoffset: 0;
+    animation: none;
   }
 }
 
 @media (forced-colors: active) {
-  .frame,
-  .part[data-state="on"] .box,
-  .icon[data-state="on"] circle {
-    fill: CanvasText;
+  .frame path,
+  .ink path,
+  .ghost path,
+  .leader path {
     stroke: CanvasText;
   }
-  .part[data-state="on"] .arm {
-    stroke: CanvasText;
-  }
+  .dot[data-state="on"] circle,
   .switch[aria-checked="true"] .track {
+    fill: Highlight;
     background: Highlight;
   }
-  .panel,
-  .row {
+  .panel {
     border: 1px solid CanvasText;
   }
 }

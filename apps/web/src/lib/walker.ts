@@ -7,7 +7,6 @@ import {
   type ProfileFact,
   type Recommendation,
   type SelectionProblem,
-  type Turn,
 } from "@walker/contracts";
 
 /**
@@ -20,8 +19,11 @@ import {
 /** What the person switched themselves. A module they haven't touched follows the current suggestions. */
 export type Choices = Partial<Record<ModuleId, boolean>>;
 
-/** How a module is drawn: on the walker, suggested but off, off, or not built yet. */
-export type PartState = "on" | "suggested" | "off" | "unavailable";
+/**
+ * How a module is drawn: on the walker, suggested but off, off because the person said no to it, off,
+ * or not built yet.
+ */
+export type PartState = "on" | "suggested" | "declined" | "off" | "unavailable";
 
 const ORDER = MODULE_CATALOG.modules.map((m) => m.id);
 const entryOf = (id: ModuleId) => getCatalogEntry(MODULE_CATALOG, id);
@@ -29,8 +31,8 @@ export const nameOf = (id: ModuleId) => entryOf(id).name;
 
 /** Why a module's switch can't move, or null when it can. */
 export function lockReason(entry: ModuleCatalogEntry): string | null {
-  if (entry.default === "required") return "Part of every walker, so it stays on.";
-  if (entry.availability === "deferred") return "Not available yet, so it can't be turned on.";
+  if (entry.default === "required") return "Always on.";
+  if (entry.availability === "deferred") return "Not available yet.";
   return null;
 }
 
@@ -50,18 +52,38 @@ export function selectedModules(recs: readonly Recommendation[], choices: Choice
   });
 }
 
-export function partStates(recs: readonly Recommendation[], selected: readonly ModuleId[]): Record<ModuleId, PartState> {
+/**
+ * The fact a module is off because of: the person's own answer that declined what it does ("I'd rather
+ * not talk to it"), or null. The engine marks it as a not-suggested reason that points at a fact with
+ * declined tags.
+ */
+export function declinedBy(rec: Recommendation | undefined, facts: readonly ProfileFact[]): ProfileFact | null {
+  if (rec?.status !== "not_suggested") return null;
+  for (const reason of rec.reasons) {
+    const fact = reason.fact_id ? facts.find((f) => f.id === reason.fact_id) : undefined;
+    if (fact && fact.declined_tags.length > 0) return fact;
+  }
+  return null;
+}
+
+export function partStates(
+  recs: readonly Recommendation[],
+  selected: readonly ModuleId[],
+  facts: readonly ProfileFact[] = [],
+): Record<ModuleId, PartState> {
   const byId = new Map(recs.map((r) => [r.module_id, r]));
   return Object.fromEntries(
     ORDER.map((id) => {
-      const status = byId.get(id)?.status;
+      const rec = byId.get(id);
       const state: PartState = selected.includes(id)
         ? "on"
         : entryOf(id).availability === "deferred"
           ? "unavailable"
-          : status === "recommended" || status === "consider"
+          : rec?.status === "recommended" || rec?.status === "consider"
             ? "suggested"
-            : "off";
+            : declinedBy(rec, facts)
+              ? "declined"
+              : "off";
       return [id, state];
     }),
   ) as Record<ModuleId, PartState>;
@@ -136,23 +158,44 @@ export function countLine(selected: readonly ModuleId[]): string {
   return `${selected.length} ${selected.length === 1 ? "module" : "modules"} on your walker`;
 }
 
-/** One plain line on why a module was suggested, from the recommendation's reasons; null when it wasn't. */
-export function whySuggested(rec: Recommendation | undefined, facts: readonly ProfileFact[]): { reason: string; because: string | null } | null {
-  if (!rec || rec.status === "not_suggested") return null;
+/** What the person said that a module's state rests on: their own words, quoted, or the answer they picked. */
+export interface Said {
+  /** "You said" for typed words, "You picked" for a tapped answer. */
+  lead: "You said" | "You picked";
+  /** Typed words in curly quotes; a picked answer as it was shown. */
+  text: string;
+}
+
+function said(fact: ProfileFact): Said {
+  return fact.source === "chosen" ? { lead: "You picked", text: fact.text } : { lead: "You said", text: `“${fact.text}”` };
+}
+
+/**
+ * Why a module is suggested, or why it's off because the person said no: the person's words first,
+ * then the rule's reason. Null when nothing they said bears on it.
+ */
+export function whySuggested(
+  rec: Recommendation | undefined,
+  facts: readonly ProfileFact[],
+): { said: Said | null; reason: string; declined: boolean } | null {
+  if (!rec) return null;
+  const no = declinedBy(rec, facts);
+  if (no) return { said: said(no), reason: rec.reasons.find((r) => r.fact_id === no.id)?.text ?? "", declined: true };
+  if (rec.status === "not_suggested") return null;
   const reason = rec.reasons.find((r) => r.fact_id) ?? rec.reasons[0];
   if (!reason) return null;
   const fact = reason.fact_id ? facts.find((f) => f.id === reason.fact_id) : undefined;
-  const because = fact ? (fact.source === "chosen" ? fact.text : `“${fact.text}”`) : null;
-  return { reason: reason.text, because };
+  return { said: fact ? said(fact) : null, reason: reason.text, declined: false };
 }
 
 /** The short status under a module's name. `review`: the person is choosing, so on/off is theirs. */
 export function stateLabel(id: ModuleId, state: PartState, review: boolean): string {
-  if (state === "unavailable") return "Not available yet";
-  if (entryOf(id).default === "required") return "Always included";
-  if (review) return state === "on" ? "On your walker" : state === "suggested" ? "Suggested, off" : "Off";
+  if (state === "unavailable") return "Not Available Yet";
+  if (state === "declined") return "You Said No";
+  if (entryOf(id).default === "required") return "Always Included";
+  if (review) return state === "on" ? "On" : state === "suggested" ? "Suggested" : "Off";
   if (state === "on") return "Suggested";
-  return state === "suggested" ? "Worth considering" : "Not yet";
+  return state === "suggested" ? "Worth Considering" : "Not Yet";
 }
 
 /**
@@ -164,26 +207,4 @@ export function suggestionNews(before: readonly ModuleId[], after: readonly Modu
   const removed = before.filter((id) => !after.includes(id)).map(nameOf);
   const parts = [added.length ? `Lit up on your walker: ${list(added)}.` : "", removed.length ? `No longer suggested: ${list(removed)}.` : ""];
   return parts.filter(Boolean).join(" ") || null;
-}
-
-export interface HeardGroup {
-  questionId: ProfileFact["question_id"];
-  /** The question as it was asked (the agent may have reworded it). */
-  prompt: string;
-  items: string[];
-}
-
-/** "Here's what I heard": the facts, grouped under the question each answered, in the order they came up. */
-export function heardSummary(facts: readonly ProfileFact[], turns: readonly Turn[]): HeardGroup[] {
-  const groups: HeardGroup[] = [];
-  for (const fact of facts) {
-    let group = groups.find((g) => g.questionId === fact.question_id);
-    if (!group) {
-      const asked = turns.filter((t) => t.role === "assistant" && t.question_id === fact.question_id).at(-1);
-      group = { questionId: fact.question_id, prompt: asked?.text ?? "Your answer", items: [] };
-      groups.push(group);
-    }
-    group.items.push(fact.source === "chosen" ? fact.text : `“${fact.text}”`);
-  }
-  return groups;
 }

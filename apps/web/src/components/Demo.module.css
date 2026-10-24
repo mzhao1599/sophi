@@ -1,109 +1,146 @@
 /*
- * The one-page demo, laid out for a laptop first (1440 x 900 and 1280 x 800): a one-line headline,
- * then the chat (about 40%) beside the walker (about 60%). In review the chat folds into a summary
- * and the module list, and the walker widens to about 70%. Below 1000px everything stacks.
+ * The one-page demo, laid out for a laptop first (1440 x 900 and 1280 x 800): the conversation in a
+ * glass panel on the left, the walker drawing itself on the right, over the contour field. When the
+ * conversation ends, the walker rises to the middle as a sheet and the conversation recedes. Below
+ * 1000px the drawing waits for the sheet and the conversation takes the width.
  */
 
 .bar {
-  border-bottom: 1px solid var(--rule);
-  background: var(--chrome);
-}
-
-.barInner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  max-width: calc(1360px + 2 * 40px);
-  min-height: 56px;
+  max-width: 1360px;
+  min-height: 60px;
   margin: 0 auto;
   padding: 0 40px;
 }
 
-/* The wordmark in the condensed capitals the earlier screens used. */
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   min-height: var(--target);
-  font-size: 18px;
-  font-weight: 800;
-  font-stretch: 75%;
-  font-variation-settings: "wdth" 75;
-  text-transform: uppercase;
   white-space: nowrap;
+  --mark-fill: var(--ink);
+  --mark-ink: var(--on-ink);
+}
+
+.wordmark {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* The one line that says what Steady is, beside the name. */
+.line {
+  overflow: hidden;
+  margin-left: 6px;
+  color: var(--text-meta);
+  font-size: 15px;
+  text-overflow: ellipsis;
 }
 
 .barRight {
   display: flex;
   align-items: center;
-  gap: 20px;
-  font-size: var(--fs-small);
+  gap: 14px;
 }
 
 .scope {
-  color: var(--muted);
+  color: var(--text-meta);
+  font-size: 13px;
+}
+
+.barButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  padding: 0 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+  font-weight: 500;
+  transition: filter 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+
+.barButton:hover:not([aria-disabled="true"]) {
+  filter: brightness(0.97);
+}
+
+.barButton:active:not([aria-disabled="true"]) {
+  transform: scale(0.98);
+}
+
+.barButton[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .main {
-  max-width: calc(1360px + 2 * 40px);
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 24px 40px 32px;
+  padding: 4px 40px 28px;
+}
+
+/* ---- The conversation and the drawing ---- */
+
+.scene {
+  display: grid;
+  grid-template-columns: minmax(0, 470px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 48px;
+  transition:
+    transform 420ms var(--ease-out),
+    opacity 420ms var(--ease-out),
+    filter 420ms var(--ease-out);
+}
+
+/* Covered by the sheet: it recedes and dims; the headline, which the sheet covers, fades out. */
+.scene[data-receded] {
+  transform: scale(0.97);
+  opacity: 0.35;
+  filter: blur(2px);
+}
+
+.scene[data-receded] .headline,
+.scene[data-receded] .notice {
+  opacity: 0;
+  transition: opacity 240ms var(--ease-out);
+}
+
+.talk {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .headline {
-  font-size: clamp(28px, 2.8vw, 40px);
-  font-weight: 800;
-  font-stretch: 80%;
-  font-variation-settings: "wdth" 80;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
+  font-size: clamp(1.9rem, 2vw + 1.1rem, 2.5rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
   text-wrap: balance;
+  animation: rise-in 600ms var(--ease-out) both;
 }
-
-.stage {
-  display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
-  grid-template-areas: "chat walker";
-  align-items: start;
-  gap: 32px;
-  margin-top: 24px;
-  transition: grid-template-columns 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-
-/* While chatting, the walker's box runs as tall as the chat beside it. */
-.stage[data-view="chat"] {
-  align-items: stretch;
-}
-
-.stage[data-view="walker"] {
-  grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
-  grid-template-areas:
-    "heard walker"
-    "list walker";
-  grid-template-rows: auto 1fr;
-  row-gap: 24px;
-}
-
-.chatArea {
-  grid-area: chat;
-  min-width: 0;
-}
-
-.listArea {
-  grid-area: list;
-  min-width: 0;
-}
-
-/* ---- Chat ---- */
 
 .chat {
   display: flex;
   flex-direction: column;
-  height: clamp(520px, calc(100dvh - 190px), 760px);
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  height: clamp(440px, calc(100dvh - 210px), 740px);
+  margin-top: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sheet);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-tile);
   overflow: hidden;
+  animation: rise-in 600ms var(--ease-out) 200ms both;
 }
 
 .log {
@@ -112,250 +149,349 @@
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  padding: 20px 20px 12px;
+  padding: 24px 22px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .log:focus-visible {
-  outline-offset: -3px;
+  outline-offset: -4px;
+  border-radius: var(--radius-sheet);
 }
 
-.bubble {
-  max-width: 88%;
-  padding: 12px 16px;
-  border-radius: 16px;
-  font-size: 17px;
-  line-height: 1.45;
-  animation: bubble-in 260ms ease-out both;
-}
-
-.bubble[data-role="assistant"] {
-  align-self: flex-start;
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
-  background: var(--raised);
-}
-
-/* What you said carries the one hue, as a pale tint: it is what you chose. */
-.bubble[data-role="user"] {
-  align-self: flex-end;
-  border: 1px solid #c9cdf3;
-  border-bottom-right-radius: 4px;
-  background: var(--accent-tint);
-  color: var(--pill-accent-ink);
-}
-
-.detail {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: var(--fs-small);
-}
-
-.note,
 .system {
+  align-self: center;
+  color: var(--text-meta);
+  font-size: 13px;
+}
+
+/* The assistant speaks as plain text beside its mark; you reply in quiet pills. */
+.said {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  max-width: 92%;
+  animation: rise-in 240ms var(--ease-out) both;
+}
+
+.saidText {
+  font-size: 18px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+
+/* Which engine answered, while the agent runs: a quiet line under the reply, never passed off. */
+.engine {
+  grid-column: 2;
+  margin-top: -4px;
+  color: var(--text-meta);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  animation: rise-in 300ms var(--ease-out) 700ms both;
+}
+
+/* The mark: green and live beside the newest message, breathing while a reply is on its way. */
+.mark {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  margin: 8px 2px 0;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background-color 300ms var(--ease-out);
+}
+
+.mark[data-state="live"],
+.mark[data-state="thinking"] {
+  background: var(--live);
+}
+
+.mark[data-state="live"]::after,
+.mark[data-state="thinking"]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1.5px solid var(--live-soft);
+  border-radius: 50%;
+}
+
+.mark[data-state="past"] {
+  width: 6px;
+  height: 6px;
+  margin: 10px 4px 0;
+}
+
+.mark[data-state="thinking"] {
+  animation: breathe-mark 1.2s ease-in-out infinite;
+}
+
+.mark[data-state="thinking"]::after {
+  animation: ring 1.2s ease-out infinite;
+}
+
+.thinking {
+  align-items: center;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.dots > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-meta);
+  animation: dot 1.2s ease-in-out infinite;
+}
+
+.dots > span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.dots > span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+.reply {
+  align-self: flex-end;
+  max-width: 82%;
+  padding: 9px 16px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 20px;
+  background: var(--wash);
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  animation: rise-in 240ms var(--ease-out) both;
+}
+
+/* Each word of a new message rises in from a soft blur, one after another. */
+.word {
+  display: inline-block;
+  animation: word-in 460ms var(--ease-out) both;
+}
+
+/* ---- "For example" replies and the composer ---- */
+
+.composer {
+  display: grid;
+  gap: 10px;
+  padding: 10px 16px 14px;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.examplesLabel {
+  margin-right: 2px;
+  color: var(--text-meta);
+  font-size: 13px;
+}
+
+.example {
   display: inline-flex;
   align-items: center;
-  align-self: flex-start;
-  gap: 6px;
-  padding: 0 4px;
-  color: var(--muted);
+  min-height: var(--target);
+  padding: 0 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
   font-size: var(--fs-small);
-  animation: bubble-in 260ms ease-out both;
+  text-align: left;
+  animation: rise-in 300ms var(--ease-out) both;
+  transition: filter 160ms var(--ease-out), transform 160ms var(--ease-out), opacity 200ms var(--ease-out),
+    background-color 200ms var(--ease-out);
 }
 
-.note svg {
+.example:nth-child(3) {
+  animation-delay: 50ms;
+}
+.example:nth-child(4) {
+  animation-delay: 100ms;
+}
+
+.example:hover:not([aria-disabled="true"]) {
+  background: var(--wash);
+}
+
+.example:active:not([aria-disabled="true"]) {
+  transform: scale(0.98);
+}
+
+.example[aria-disabled="true"],
+.quietButton[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.inputPill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 5px 5px 20px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-input);
+  background: var(--card-solid);
+  box-shadow: var(--shadow-tile);
+}
+
+.inputPill:has(.input:focus-visible) {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--target);
+  border: 0;
+  background: transparent;
+  font-size: 17px;
+}
+
+.input:focus {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--text-meta);
+}
+
+.sendButton {
+  display: grid;
   flex: none;
-  width: 16px;
-  height: 16px;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--on-ink);
+  transition: transform 160ms var(--ease-out), opacity 200ms var(--ease-out), filter 160ms var(--ease-out);
+}
+
+.sendButton svg {
+  width: 20px;
+  height: 20px;
   fill: none;
-  stroke: var(--accent);
+  stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.system {
-  align-self: center;
-  text-align: center;
+.sendButton:hover:not([aria-disabled="true"]) {
+  filter: brightness(1.25);
 }
 
-.typing {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 5px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  border-bottom-left-radius: 4px;
-  background: var(--raised);
+.sendButton:active:not([aria-disabled="true"]) {
+  transform: scale(0.94);
 }
 
-.typing span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--control);
-  animation: typing 1.2s ease-in-out infinite;
-}
-
-.typing span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.typing span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-.composer {
-  display: grid;
-  gap: 12px;
-  padding: 14px 20px 10px;
-  border-top: 1px solid var(--rule);
-}
-
-.chips {
-  display: grid;
-  gap: 8px;
-}
-
-.chipHint {
-  color: var(--muted);
-  font-size: var(--fs-small);
-}
-
-.chipRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--target);
-  padding: 8px 16px;
-  border: 1px solid var(--control);
-  border-radius: var(--radius-pill);
-  background: var(--raised);
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.25;
-  text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-.chip:hover:not([aria-disabled="true"]) {
-  border-color: var(--text);
-}
-
-.chip[aria-pressed="true"],
-.chip[data-selected] {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #ffffff;
-}
-
-.chip[aria-disabled="true"] {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.chipMark {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-left: -4px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.chipMark path {
-  opacity: 0;
-}
-
-.chip[aria-pressed="true"] .chipMark path {
-  opacity: 1;
-}
-
-.form {
-  display: grid;
-}
-
-.textLabel {
-  margin-bottom: 6px;
-  font-size: var(--fs-small);
-  font-weight: 500;
-}
-
-.inputRow {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.text.text {
-  min-height: 52px;
-  resize: none;
-}
-
-.send {
-  flex: none;
-  min-height: 52px;
+.sendButton[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.3;
 }
 
 .error {
-  color: var(--negative);
-  font-size: var(--fs-small);
+  padding: 0 8px;
+  color: var(--danger);
+  font-size: 13px;
   font-weight: 500;
 }
 
-.composerFoot {
+/* Under the box: the data notice (on screen before anything is sent), then Skip and Show My Walker. */
+.foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0 16px;
+  padding: 0 6px;
 }
 
 .notice {
-  flex: 1 1 240px;
-  color: var(--muted);
-  font-size: var(--fs-small);
+  flex: 1 1 260px;
+  color: var(--text-meta);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.skips {
+.quiet {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 12px;
+  gap: 4px;
 }
 
-.skip.skip {
-  color: var(--muted);
-  font-size: var(--fs-small);
+.quietButton {
+  min-height: var(--target);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-meta);
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--hairline-strong);
+  text-underline-offset: 4px;
+  transition: color 160ms var(--ease-out);
 }
 
-/* ---- Walker ---- */
+.quietButton:hover:not([aria-disabled="true"]) {
+  color: var(--text-strong);
+}
 
-.walker {
-  --canvas-h: clamp(340px, calc(100dvh - 300px), 640px);
-  display: flex;
-  flex-direction: column;
-  grid-area: walker;
-  gap: 14px;
+/* Under the bare frame, before anything is said: what the page is for, in one line. */
+.firstLine {
+  max-width: 34ch;
+  color: var(--text-body);
+  font-size: 17px;
+  line-height: 1.45;
+  text-wrap: balance;
+  animation: rise-in 600ms var(--ease-out) 1.6s both;
+}
+
+.preview {
+  --canvas-h: clamp(360px, calc(100dvh - 170px), 720px);
+  display: grid;
+  align-items: center;
   min-width: 0;
 }
 
-.walker > figure {
-  flex: 1;
-  align-content: center;
+/* ---- The sheet: the walker at centre stage ---- */
+
+.sheetLayer {
+  position: fixed;
+  inset: 60px 0 0;
+  z-index: 20;
+  display: grid;
+  justify-items: center;
+  align-items: start;
+  padding: 8px 32px 32px;
+  overflow-y: auto;
 }
 
-.walkerHead {
+.sheet {
+  width: min(1160px, 100%);
+  padding: 28px 36px 30px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sheet);
+  background: var(--glass-sheet);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-sheet);
+  animation: sheet-rise 420ms var(--ease-out) both;
+}
+
+.sheetHead {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -363,28 +499,34 @@
   gap: 12px 24px;
 }
 
-.walkerTitle {
-  font-size: 26px;
-  font-weight: 800;
-  font-stretch: 80%;
-  font-variation-settings: "wdth" 80;
-  line-height: 1.15;
+.sheetTitle {
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 
-.walkerTitle:focus {
+.sheetTitle:focus {
   outline: none;
 }
 
-.walkerTitle:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
+.sheetTitle:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 6px;
+  border-radius: 4px;
 }
 
-.walkerSub {
-  color: var(--muted);
+.sheetMeta {
+  margin-top: 8px;
+  color: var(--text-meta);
+  font-size: 13px;
 }
 
-/* "Saved." and Order (demo) side by side; the Stripe note spans the row under them. */
+.save {
+  min-width: 120px;
+}
+
+/* "Saved" and Order (Demo) side by side; the Stripe line spans the row under them. */
 .savedArea {
   display: grid;
   grid-template-columns: auto auto;
@@ -397,8 +539,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 48px;
-  font-weight: 600;
+  min-height: var(--target);
+  font-size: var(--fs-small);
+  font-weight: 500;
 }
 
 .savedLine:focus {
@@ -406,165 +549,185 @@
 }
 
 .savedLine:focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--ink);
   outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .savedLine svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--live);
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .problems {
+  margin-top: 14px;
   padding: 10px 14px;
-  border-left: 3px solid var(--negative);
   border-radius: var(--radius-inner);
-  background: #fdf0ef;
-  color: var(--negative);
-  font-size: var(--fs-small);
+  background: var(--danger-wash);
+  color: var(--danger);
+  font-size: 13px;
   font-weight: 500;
 }
 
-.problems ul {
-  margin-top: 4px;
-  padding-left: 18px;
-  list-style: disc;
-}
-
-/* ---- What I heard ---- */
-
-.heard {
+.sheetBody {
+  --canvas-h: clamp(320px, calc(100dvh - 330px), 600px);
   display: grid;
-  grid-area: heard;
-  align-content: start;
-  gap: 6px;
-  min-width: 0;
-  padding: 16px 20px 6px;
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  animation: bubble-in 320ms ease-out both;
-}
-
-.heardTitle {
-  font-size: var(--fs-heading);
-  font-weight: 600;
-}
-
-.heardEmpty {
-  color: var(--muted);
-  font-size: var(--fs-small);
-}
-
-.heardList > li {
-  display: flex;
+  grid-template-columns: minmax(0, 1fr) 260px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid var(--rule);
-  font-size: var(--fs-small);
-  line-height: 1.35;
+  gap: 32px;
+  margin-top: 8px;
 }
 
-.heardList > li:first-child {
-  border-top: 0;
-}
-
-.heardItems {
-  display: grid;
-  gap: 2px;
-  padding: 4px 0;
-}
-
-.change.change {
-  flex: none;
-  font-size: var(--fs-small);
-}
-
-@keyframes bubble-in {
+@keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+    transform: translateY(8px);
+    filter: blur(3px);
   }
 }
 
-@keyframes typing {
+@keyframes word-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(4px);
+  }
+}
+
+@keyframes breathe-mark {
+  0%,
+  100% {
+    transform: scale(0.85);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+@keyframes ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+@keyframes dot {
   0%,
   80%,
   100% {
-    opacity: 0.35;
-    transform: none;
+    opacity: 0.25;
   }
   40% {
     opacity: 1;
-    transform: translateY(-3px);
+  }
+}
+
+@keyframes sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .barButton:hover:not([aria-disabled="true"]),
+  .example:hover:not([aria-disabled="true"]) {
+    filter: brightness(1.12);
+  }
+  .sendButton:hover:not([aria-disabled="true"]) {
+    filter: brightness(0.92);
+  }
+}
+
+@media (max-width: 1150px) {
+  .scene {
+    grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+    gap: 40px;
   }
 }
 
 @media (max-width: 999px) {
-  .stage,
-  .stage[data-view="walker"] {
+  .scene {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "chat"
-      "walker";
+    max-width: 640px;
+    margin: 0 auto;
   }
-  .stage[data-view="walker"] {
-    grid-template-areas:
-      "heard"
-      "walker"
-      "list";
-    grid-template-rows: auto;
+  .preview {
+    display: none;
   }
+  /* The conversation grows with what's said, rather than starting as a tall panel. Only the log
+   * scrolls, and it gives way first, so the text box is never cut off, even at 200% zoom on a short
+   * screen (the page scrolls instead). */
   .chat {
     height: auto;
   }
   .log {
-    min-height: 260px;
-    max-height: 55dvh;
+    flex: 0 1 auto;
+    min-height: 120px;
+    max-height: max(120px, calc(100dvh - 400px));
   }
-  .walker {
-    --canvas-h: 560px;
+  .sheetBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .line {
+    display: none;
   }
 }
 
 @media (max-width: 640px) {
-  .barInner,
-  .main {
-    padding-right: 16px;
-    padding-left: 16px;
+  .bar {
+    padding: 0 16px;
   }
   .main {
-    padding-top: 16px;
+    padding: 4px 16px 16px;
   }
-  .scope {
-    display: none;
-  }
-  .stage {
-    gap: 24px;
+  .chat {
     margin-top: 16px;
+    border-radius: 26px;
   }
   .log {
-    padding: 16px 12px 8px;
+    padding: 18px 14px 10px;
   }
   .composer {
-    padding: 12px 12px 6px;
+    padding: 8px 10px 10px;
   }
-  .bubble {
-    max-width: 94%;
+  .said {
+    max-width: 100%;
   }
-  .heard {
-    padding: 16px 16px 8px;
+  .reply {
+    max-width: 90%;
+  }
+  .sheetLayer {
+    inset: 60px 0 0;
+    padding: 4px 8px 16px;
+  }
+  .sheet {
+    padding: 22px 16px 20px;
+    border-radius: 26px;
+  }
+  .sheetTitle {
+    font-size: 38px;
   }
   .savedArea {
     justify-content: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene[data-receded] {
+    transform: none;
+    filter: none;
   }
 }

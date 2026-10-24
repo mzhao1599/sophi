@@ -1,6 +1,7 @@
 import "server-only";
 import { MODULE_CATALOG, ModuleIdSchema, getCatalogEntry, type DeviceConfiguration, type ModuleId } from "@walker/contracts";
 import type Stripe from "stripe";
+import { PRODUCT_NAME } from "@/lib/brand";
 import { DEMO_PRICE_LABEL, STRIPE_CHECKOUT_ORIGIN } from "@/lib/checkout";
 
 /**
@@ -23,7 +24,7 @@ export const CHECKOUT_APP_TAG = "assistive-walker-mock-purchase";
 
 const STRIPE_PAGE_NOTE =
   "Test mode, no real charge. Pay with Stripe's test card 4242 4242 4242 4242, any future date and any CVC. " +
-  "Prices are demo prices, not a real quote. The Assistive Walker is an experimental prototype, not a certified mobility aid, and nothing will ship.";
+  `Prices are demo prices, not a real quote. ${PRODUCT_NAME} is an experimental prototype, not a certified mobility aid, and nothing will ship.`;
 
 /** The part of the Stripe client this feature uses, so tests can pass a stub. */
 export interface CheckoutClient {

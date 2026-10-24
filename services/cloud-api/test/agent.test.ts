@@ -91,6 +91,18 @@ async function conversation(service: OnboardingService) {
 
 const status = (view: SessionView, module: ModuleId) => view.recommendations.find((r) => r.module_id === module)?.status;
 
+/** A turn response with the "who answered" marks taken off, to compare with the deterministic engine's. */
+function withoutAnsweredBy<T extends { session: SessionView }>(r: T): T {
+  return { ...r, session: { ...r.session, turns: r.session.turns.map(({ answered_by: _, ...t }) => t) } };
+}
+
+/** Who answered each assistant turn of the newest reply (after the person's last turn). */
+function answeredByOf(r: { session: SessionView }): (string | undefined)[] {
+  const turns = r.session.turns;
+  const lastUser = turns.findLastIndex((t) => t.role === "user");
+  return turns.slice(lastUser + 1).map((t) => t.answered_by);
+}
+
 /** Invariants that hold whatever the model says. */
 function expectSafeView(view: SessionView) {
   SessionViewSchema.parse(view);
@@ -126,6 +138,8 @@ describe("onboarding agent", () => {
     const first = await c.send({ type: "text", text: words });
     expect(first.ack).toBe("Got it, knowing what's in your way at home, with a buzz in the handles.");
     expect(first.assistant_text).toBe(`${first.ack} How would you start a request?`);
+    // The ack and the question it worded are marked as the model's, so the page can say so.
+    expect(answeredByOf(first)).toEqual(["model", "model"]);
     expect(c.view.facts).toEqual([
       { id: expect.any(String), question_id: "tasks", text: words, source: "typed", tags: ["notice_obstacles", "home", "vibration_feedback"], declined_tags: [] },
     ]);
@@ -421,7 +435,9 @@ describe("onboarding agent", () => {
     const a = await conversation(agent.service);
     const b = await conversation(plain.service);
     const input: TurnInput = { type: "text", text: "I bump into stuff" };
-    expect(await a.send(input)).toEqual(await b.send(input));
+    const ra = await a.send(input);
+    expect(withoutAnsweredBy(ra)).toEqual(await b.send(input));
+    expect(answeredByOf(ra)).toEqual(["fixed", "fixed"]);
     expect(agent.events).toEqual([{ outcome: "fallback", attempts: 2, reason: "invalid_reply", ms: expect.any(Number) }]);
   });
 
@@ -440,7 +456,8 @@ describe("onboarding agent", () => {
     const ra = await a.send(input);
     const rb = await b.send(input);
 
-    expect(ra).toEqual(rb);
+    expect(withoutAnsweredBy(ra)).toEqual(rb);
+    expect(answeredByOf(ra).every((by) => by === "fixed")).toBe(true);
     expect(calls).toHaveLength(attempts);
     expect(agent.events).toEqual([{ outcome: "fallback", attempts, reason, ms: expect.any(Number) }]);
   });
@@ -459,8 +476,11 @@ describe("onboarding agent", () => {
       { type: "answer", question_id: "reach_detail", option_ids: ["high", "floor"] },
       { type: "skip_rest" },
     ];
-    for (const input of inputs) expect(await agent.send(input)).toEqual(await plain.send(input));
+    for (const input of inputs) expect(withoutAnsweredBy(await agent.send(input))).toEqual(await plain.send(input));
     expect(agent.view.state).toBe("review");
+    // Answers that went to the model and fell back say so; skips, revisits and the closing line never asked it.
+    expect(agent.view.turns.filter((t) => t.answered_by === "fixed").length).toBeGreaterThan(0);
+    expect(agent.view.turns.filter((t) => t.role === "user").every((t) => t.answered_by === undefined)).toBe(true);
   });
 
   it("doesn't call the model for skips, revisits or a bad request", async () => {

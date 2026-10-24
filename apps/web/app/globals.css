@@ -1,46 +1,58 @@
 /*
- * Design tokens for the app screens: taste-skill app style "achromatic-ledger" (seed 1253139886),
- * with the landing page's type and its ultramarine kept. The style's move: no colour in the chrome;
- * the one hue goes on the screen's main data element, which here is what you chose (a selected
- * answer, a module on your walker, the progress so far). The primary action is near-black.
- * Changes from the sheet, each for accessibility:
- *   - body 16px instead of 14px, meta 14px instead of 12px (people with low vision use this flow);
- *   - control borders #6e7380, so field and checkbox edges reach 3:1 on white and on the panels;
- *   - every interactive target is at least 44px tall.
- * Shell: no sidebar (the product has two destinations so far), a 56px bar naming the product and the
- * demo scope. Grid: a centred 1100px column, 12 columns of 77px with 16px gutters (12 x 77 + 11 x 16 = 1100).
+ * Design tokens. Steady's own ground: a cool stone paper with a breath of green, and a deep green-black
+ * ink, like a survey map printed on light card. Hairline edges, glass surfaces and soft shadows. Colour
+ * only means something: one signal green marks what is live and lit (the assistant's mark, a part on
+ * the walker, a switch that's on), and red is kept for errors. The primary action is ink on paper
+ * (inverted in dark mode). Type is Atkinson Hyperlegible Next, with Atkinson Hyperlegible Mono for the
+ * drawing's annotations. Motion uses one out-quint curve.
+ * Measured contrast on the paper (light / dark): body text 9.0 / 11.2:1, meta text 5.7 / 7.3:1, signal green
+ * 4.8 / 9.2:1, control edges 3.4 / 4.6:1. Targets are at least 44px, focus rings are 3px,
+ * and every effect has a reduced-motion branch.
+ * The older names (--ground, --muted, --accent, …) map onto the palette so the account and checkout
+ * pages follow it without their own changes.
  */
 
 :root {
-  --ground: #ffffff;
-  --chrome: #ffffff;
-  --surface: #f3f4f7;
-  --surface-step: #e6e8ee;
-  --raised: #ffffff;
-  --border: #e3e5ea;
-  --rule: #e3e5ea;
-  --control: #6e7380;
-  --text: #0b0c10;
-  --muted: #4f5361;
-  --primary: #0b0c10;
-  --primary-hover: #2a2c33;
-  --on-primary: #ffffff;
-  --accent: #1423b8;
-  --accent-tint: #e9ebfb;
-  --negative: #b42318;
-  --pill-positive-bg: #dcfae5;
-  --pill-positive-ink: #04250e;
-  --pill-warning-bg: #fffbeb;
-  --pill-warning-ink: #92400e;
-  --pill-neutral-bg: #e6e8ee;
-  --pill-neutral-ink: #343844;
-  --pill-accent-bg: #e9ebfb;
-  --pill-accent-ink: #0e1880;
+  color-scheme: light dark;
 
-  --radius-card: 8px;
-  --radius-inner: 6px;
-  --radius-field: 6px;
-  --radius-control: 6px;
+  --paper: #f1f4f2;
+  --card: #fafcfb;
+  --card-solid: #fafcfb;
+  --glass: rgb(250 252 251 / 0.6);
+  --glass-strong: rgb(250 252 251 / 0.84);
+  --glass-sheet: rgb(250 252 251 / 0.93);
+  --ink: #14201c;
+  --on-ink: #f1f4f2;
+  --text-strong: #14201c;
+  --text-body: #3a4541;
+  --text-meta: #58625e;
+  --text-faint: #8a9490;
+  --hairline: rgb(20 32 28 / 0.07);
+  --hairline-strong: rgb(20 32 28 / 0.13);
+  --wash: rgb(20 32 28 / 0.045);
+  --control-edge: #7b8581;
+  /* Signal green: "on, live, ready". 4.8:1 on the paper, so it holds as text and as a line. */
+  --live: #1f7a50;
+  --live-soft: rgb(31 122 80 / 0.55);
+  --live-glow: rgb(46 160 105 / 0.45);
+  --live-wash: rgb(31 122 80 / 0.09);
+  --danger: hsl(4 62% 40%);
+  --danger-wash: hsl(4 70% 96%);
+
+  /* Big and soft, but light: under 12% black and a short drop, so surfaces rest on the paper. */
+  --shadow-sheet: 0 4px 80px -12px rgb(10 30 22 / 0.1), 0 1px 2px rgb(10 30 22 / 0.04);
+  --shadow-tile: 0 6px 28px -12px rgb(10 30 22 / 0.1);
+  --shadow-float: 0 6px 32px -8px rgb(10 30 22 / 0.12), 0 1px 3px rgb(10 30 22 / 0.05);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-step: cubic-bezier(0.4, 0, 0.1, 1);
+
+  --radius-sheet: 32px;
+  --radius-card: 18px;
+  --radius-input: 24px;
+  --radius-inner: 12px;
+  --radius-field: 12px;
+  --radius-control: 999px;
   --radius-pill: 999px;
 
   --gap: 16px;
@@ -49,12 +61,62 @@
   --target: 44px;
 
   --fs-title: 32px;
-  --fs-heading: 20px;
-  --fs-lead: 18px;
-  --fs-body: 16px;
+  --fs-heading: 18px;
+  --fs-lead: 16px;
+  --fs-body: 15px;
   --fs-small: 14px;
 
-  --font-text: var(--font-archivo), "Archivo", system-ui, sans-serif;
+  --font-text: var(--font-hyperlegible), "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --font-mono: var(--font-hyperlegible-mono), "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+
+  /* Older names, mapped onto the palette. */
+  --ground: var(--paper);
+  --chrome: transparent;
+  --surface: var(--wash);
+  --surface-step: var(--hairline-strong);
+  --raised: var(--card-solid);
+  --border: var(--hairline-strong);
+  --rule: var(--hairline-strong);
+  --control: var(--control-edge);
+  --text: var(--text-strong);
+  --muted: var(--text-meta);
+  --primary: var(--ink);
+  --primary-hover: var(--ink);
+  --on-primary: var(--on-ink);
+  --accent: var(--ink);
+  --accent-tint: var(--wash);
+  --negative: var(--danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #101513;
+    --card: #171d1a;
+    --card-solid: #171d1a;
+    --glass: rgb(26 33 30 / 0.6);
+    --glass-strong: rgb(26 33 30 / 0.86);
+    --glass-sheet: rgb(23 29 26 / 0.94);
+    --ink: #e6ece9;
+    --on-ink: #101513;
+    --text-strong: #e6ece9;
+    --text-body: #c3ccc8;
+    --text-meta: #9aa5a0;
+    --text-faint: #6f7a75;
+    --hairline: rgb(230 240 235 / 0.07);
+    --hairline-strong: rgb(230 240 235 / 0.13);
+    --wash: rgb(230 240 235 / 0.05);
+    --control-edge: #76817c;
+    /* 9.2:1 on the dark paper. */
+    --live: #5ccb93;
+    --live-soft: rgb(92 203 147 / 0.6);
+    --live-glow: rgb(92 203 147 / 0.35);
+    --live-wash: rgb(92 203 147 / 0.12);
+    --danger: hsl(4 80% 72%);
+    --danger-wash: rgb(255 110 90 / 0.1);
+    --shadow-sheet: 0 4px 80px -12px rgb(0 0 0 / 0.45);
+    --shadow-tile: 0 6px 28px -12px rgb(0 0 0 / 0.4);
+    --shadow-float: 0 6px 32px -8px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
+  }
 }
 
 *,
@@ -70,8 +132,8 @@ html {
 
 body {
   margin: 0;
-  background: var(--ground);
-  color: var(--text);
+  background: var(--paper);
+  color: var(--text-strong);
   font-family: var(--font-text);
   font-size: var(--fs-body);
   line-height: 1.5;
@@ -125,12 +187,12 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--ink);
   outline-offset: 3px;
 }
 
 ::selection {
-  background: var(--accent-tint);
+  background: var(--live-wash);
 }
 
 .visually-hidden {
@@ -145,16 +207,16 @@ a {
   border: 0;
 }
 
-/* Clipped out of sight (not moved off-screen) until it has focus, then shown on the column's left edge. */
+/* Clipped out of sight (not moved off-screen) until it has focus. */
 .skip-link {
   position: absolute;
-  left: max(16px, calc((100vw - var(--column)) / 2));
+  left: 16px;
   top: 8px;
-  z-index: 10;
+  z-index: 50;
   padding: 10px 16px;
-  border-radius: var(--radius-control);
-  background: var(--primary);
-  color: var(--on-primary);
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--on-ink);
   text-decoration: none;
 }
 
@@ -167,46 +229,46 @@ a {
   white-space: nowrap;
 }
 
-/* ---- Buttons ---- */
+/* ---- Buttons: ink pills. Press shrinks a little; hover darkens a touch instead of changing colour. ---- */
 
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 48px;
-  padding: 0 22px;
+  min-height: var(--target);
+  padding: 0 20px;
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  font-size: var(--fs-body);
-  font-weight: 600;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-small);
+  font-weight: 500;
   line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
-  transition: background-color 120ms ease, transform 120ms ease;
+  transition: transform 160ms var(--ease-out), filter 160ms var(--ease-out), background-color 200ms var(--ease-out);
+}
+
+.button:hover:not(:disabled, [aria-disabled="true"]) {
+  filter: brightness(0.97);
 }
 
 .button:active:not(:disabled, [aria-disabled="true"]) {
-  transform: translateY(1px);
+  transform: scale(0.98);
 }
 
 .button-primary {
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--ink);
+  color: var(--on-ink);
 }
 
 .button-primary:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--primary-hover);
+  filter: brightness(1.25);
 }
 
 .button-secondary {
-  background: var(--raised);
-  border-color: var(--control);
-  color: var(--text);
-}
-
-.button-secondary:hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface);
+  border-color: var(--control-edge);
+  background: var(--card-solid);
+  color: var(--text-strong);
 }
 
 .button-text {
@@ -214,7 +276,8 @@ a {
   padding: 0 4px;
   border: 0;
   background: none;
-  color: var(--text);
+  color: var(--text-strong);
+  font-size: var(--fs-small);
   font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -226,7 +289,7 @@ a {
 }
 
 .button-danger {
-  color: var(--negative);
+  color: var(--danger);
 }
 
 /* aria-disabled: locked while something saves but still focusable, so focus isn't dropped. */
@@ -235,10 +298,19 @@ a {
 .button-text:disabled,
 .button-text[aria-disabled="true"] {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
-/* ---- Fields ---- */
+@media (prefers-color-scheme: dark) {
+  .button:hover:not(:disabled, [aria-disabled="true"]) {
+    filter: brightness(1.12);
+  }
+  .button-primary:hover:not(:disabled, [aria-disabled="true"]) {
+    filter: brightness(0.92);
+  }
+}
+
+/* ---- Fields (sign-in) ---- */
 
 .field-label {
   display: block;
@@ -249,25 +321,24 @@ a {
 
 .field-hint {
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--text-meta);
   font-size: var(--fs-small);
 }
 
-.textarea {
-  display: block;
-  width: 100%;
-  min-height: 96px;
-  padding: 12px 14px;
-  border: 1px solid var(--control);
-  border-radius: var(--radius-field);
-  background: var(--raised);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  resize: vertical;
+/* ---- Motion vocabulary ---- */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
 }
 
-.textarea[aria-invalid="true"] {
-  border-color: var(--negative);
+/* A label whose wording changes cross-fades in (render it with a key of its text). */
+.fade-text {
+  display: inline-block;
+  animation: rise-in 240ms var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -276,6 +347,7 @@ a {
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
   }
 }
 

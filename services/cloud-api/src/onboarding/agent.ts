@@ -334,7 +334,7 @@ export function createAgentEngine({ model, timeoutMs = AGENT_TIMEOUT_MS, onEvent
           const reply = await deadline(model.generate(request, signal), signal);
           const result = interpret(session, answer, parseReply(reply), now);
           onEvent({ outcome: "agent", attempts, reason: null, ms: Date.now() - started });
-          return result;
+          return answeredBy(session, result, "model");
         } catch (error) {
           if (!(error instanceof RejectedReply)) {
             reason = signal.aborted ? "timeout" : "model_error";
@@ -345,9 +345,16 @@ export function createAgentEngine({ model, timeoutMs = AGENT_TIMEOUT_MS, onEvent
         }
       }
       onEvent({ outcome: "fallback", attempts, reason, ms: Date.now() - started });
-      return applyInput(session, turn, now);
+      return answeredBy(session, applyInput(session, turn, now), "fixed");
     },
   };
+}
+
+/** Marks the assistant turns a transition added with who answered them, so the page can say so. */
+function answeredBy(before: EngineSession, t: Transition, by: "model" | "fixed"): Transition {
+  const known = new Set(before.turns.map((turn) => turn.id));
+  const turns = t.session.turns.map((turn) => (turn.role === "assistant" && !known.has(turn.id) ? { ...turn, answered_by: by } : turn));
+  return { ...t, session: { ...t.session, turns } };
 }
 
 function logEvent(e: AgentEvent) {

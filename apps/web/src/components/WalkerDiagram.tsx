@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   MODULE_CATALOG,
   getCatalogEntry,
@@ -9,26 +9,145 @@ import {
   type Recommendation,
   type SelectionProblem,
 } from "@walker/contracts";
+import { useReducedMotion } from "@/lib/motion";
 import { lockReason, nameOf, stateLabel, whySuggested, type PartState } from "@/lib/walker";
+
+/** States that put a part on the drawing with its name: on, worth considering, or a "no" the person gave. */
+const LIT: readonly PartState[] = ["on", "suggested", "declined"];
+const isLit = (state: PartState) => LIT.includes(state);
+/** Seconds between parts that arrive together, so each one can be read with its name (Request 3 in docs/demo/script.md). */
+const STAGGER = 0.36;
 import { ModuleSwitch } from "./ModuleSwitch";
 import styles from "./WalkerDiagram.module.css";
 
 /*
- * Coordinates. The walker is drawn in a 320 x 380 box. On a wide stage, a label column of 150 units
- * sits on each side (the leader-line layer's box is 620 x 380, starting at x = -150), and each module's
- * hotspot is its label there. On a narrow stage, the labels don't fit, so each hotspot is a 44px
- * round marker on the part itself. Both positions come from this one table, as percentages, so the
- * HTML buttons line up with the SVG at any size.
+ * Coordinates. The walker is drawn in a 320 x 380 box. On a wide stage, a label column of 120 units
+ * sits on each side (the leader-line layer's box is 560 x 380, starting at x = -120), and each module's
+ * hotspot is its label there. On a narrow stage, each hotspot is a 44px round marker on the part.
+ * Both positions come from this one table, as percentages, so the HTML buttons line up with the SVG.
  */
 const DRAW_W = 320;
 const H = 380;
-const SIDE = 150;
+const SIDE = 120;
 const WIDE_W = DRAW_W + 2 * SIDE;
-const LABEL_GAP = 10;
+const LABEL_GAP = 12;
+
+// ---- Geometry: every part is a path, so each one can draw itself (pathLength = 1) ----
+// Each stroke carries its length in drawing units, so the pen moves at an even speed.
+
+interface Stroke {
+  d: string;
+  len: number;
+}
+
+const line = (x1: number, y1: number, x2: number, y2: number): Stroke => ({ d: `M${x1} ${y1} L${x2} ${y2}`, len: Math.hypot(x2 - x1, y2 - y1) });
+const circle = (cx: number, cy: number, r: number): Stroke => ({
+  d: `M${cx - r} ${cy} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0`,
+  len: 2 * Math.PI * r,
+});
+function box(x: number, y: number, w: number, h: number, r: number): Stroke {
+  return {
+    d: `M${x + r} ${y} H${x + w - r} Q${x + w} ${y} ${x + w} ${y + r} V${y + h - r} Q${x + w} ${y + h} ${x + w - r} ${y + h} H${x + r} Q${x} ${y + h} ${x} ${y + h - r} V${y + r} Q${x} ${y} ${x + r} ${y} Z`,
+    len: 2 * (w + h) - (8 - 2 * Math.PI) * r,
+  };
+}
+function polyline(...points: [number, number][]): Stroke {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) len += Math.hypot(points[i]![0] - points[i - 1]![0], points[i]![1] - points[i - 1]![1]);
+  return { d: points.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(" "), len };
+}
+
+// Drawn in this order, like a person sketching it: the uprights, the bars, the grips, the wheels.
+const FRAME: Stroke[] = [
+  line(78, 74, 70, 318),
+  line(242, 74, 250, 318),
+  line(78, 132, 242, 132),
+  line(74, 238, 246, 238),
+  box(40, 54, 66, 20, 10),
+  box(214, 54, 66, 20, 10),
+  circle(70, 340, 20),
+  circle(250, 340, 20),
+  circle(70, 340, 3),
+  circle(250, 340, 3),
+  box(188, 252, 44, 26, 5), // the coordinator, under the front bar
+  line(196, 265, 206, 265),
+];
+
+const MODULES: Record<Exclude<ModuleId, "base.walker">, Stroke[]> = {
+  // A pod with a large button on each grip.
+  "controls.hand": [box(46, 48, 22, 32, 8), circle(57, 64, 5), box(252, 48, 22, 32, 8), circle(263, 64, 5)],
+  // Microphone and speaker between the handles, with a grille.
+  voice: [box(138, 104, 44, 36, 11), line(150, 116, 170, 116), line(150, 122, 170, 122), line(150, 128, 170, 128)],
+  // Four sensors on the front bar, each with a lens.
+  "perception.tof": [
+    box(86, 242, 20, 13, 4),
+    circle(96, 248.5, 2.5),
+    box(116, 242, 20, 13, 4),
+    circle(126, 248.5, 2.5),
+    box(184, 242, 20, 13, 4),
+    circle(194, 248.5, 2.5),
+    box(214, 242, 20, 13, 4),
+    circle(224, 248.5, 2.5),
+  ],
+  // An upright column at the front, with a carriage.
+  "manipulation.lift": [box(152, 146, 16, 156, 5), line(152, 196, 168, 196), line(152, 204, 168, 204)],
+  // Two arms off the carriage, each with a gripper.
+  "manipulation.arm": [
+    polyline([152, 200], [120, 182], [104, 206]),
+    circle(120, 182, 3),
+    polyline([98, 210], [104, 206], [110, 212]),
+    polyline([168, 200], [200, 182], [216, 206]),
+    circle(200, 182, 3),
+    polyline([210, 212], [216, 206], [222, 210]),
+  ],
+  // A receiver clipped to the left upright, with an antenna.
+  "location.gps": [box(58, 96, 14, 22, 4), line(65, 96, 65, 86), circle(65, 84, 2)],
+};
+
+const MODULE_ORDER = MODULE_CATALOG.modules.map((m) => m.id).filter((id): id is keyof typeof MODULES => id !== "base.walker");
+
+/** When each stroke starts and how long it takes, in seconds, at `speed` units a second. */
+function timeline(strokes: Stroke[], speed: number, least = 0.07) {
+  let at = 0;
+  return strokes.map((st) => {
+    const dur = Math.max(least, st.len / speed);
+    const step = { ...st, at, dur };
+    at += dur;
+    return step;
+  });
+}
+
+const FRAME_START = 0.2;
+/** Seconds the pen waits so it rides its line rather than leading it. */
+const PEN_LAG = 0.06;
+const FRAME_STEPS = timeline(FRAME, 1150);
+const FRAME_END = FRAME_START + FRAME_STEPS.reduce((t, st) => t + st.dur, 0);
+const MODULE_STEPS = Object.fromEntries(MODULE_ORDER.map((id) => [id, timeline(MODULES[id], 560)])) as Record<keyof typeof MODULES, ReturnType<typeof timeline>>;
+
+/**
+ * The pen: a small nib that travels each stroke as it draws, in time with the line (SVG animateMotion,
+ * started when it mounts). Hidden from assistive tech, and never shown under reduced motion.
+ */
+function Pen({ steps, delay, tone }: { steps: ReturnType<typeof timeline>; delay: number; tone: "ink" | "live" }) {
+  const ref = useRef<SVGCircleElement>(null);
+  const total = steps.reduce((t, st) => t + st.dur, 0);
+  useLayoutEffect(() => {
+    // The lines start on the next style pass and the pen right now, so the pen waits a frame or two to stay on its line.
+    ref.current?.querySelectorAll<SVGAnimationElement>("animateMotion, animate").forEach((a) => a.beginElementAt(delay + PEN_LAG + Number(a.dataset.at ?? 0)));
+  }, [delay]);
+  return (
+    <circle ref={ref} className={styles.pen} data-tone={tone} r="3.4" opacity="0">
+      {steps.map((st, i) => (
+        <animateMotion key={i} data-at={st.at} dur={`${st.dur}s`} begin="indefinite" fill="freeze" path={st.d} />
+      ))}
+      <animate attributeName="opacity" data-at={0} dur={`${total + 0.15}s`} begin="indefinite" fill="freeze" values="0;1;1;0" keyTimes="0;0.04;0.93;1" />
+    </circle>
+  );
+}
 
 interface Spot {
   id: ModuleId;
-  /** Where on the drawing the leader line ends, and where the narrow marker sits. */
+  /** Where the leader line ends, and where the narrow marker sits. */
   anchor: [number, number];
   side: "left" | "right";
   /** The label's vertical centre in the wide layout. */
@@ -37,13 +156,13 @@ interface Spot {
 
 // Spaced so that, at the smallest size the stage draws them, no two 44px targets overlap.
 const SPOTS: Spot[] = [
-  { id: "controls.hand", anchor: [30, 53], side: "left", labelY: 53 },
-  { id: "location.gps", anchor: [68, 97], side: "left", labelY: 146 },
-  { id: "perception.tof", anchor: [95, 239], side: "left", labelY: 240 },
-  { id: "base.walker", anchor: [44, 336], side: "left", labelY: 336 },
-  { id: "voice", anchor: [184, 128], side: "right", labelY: 92 },
-  { id: "manipulation.arm", anchor: [229, 210], side: "right", labelY: 194 },
-  { id: "manipulation.lift", anchor: [169, 284], side: "right", labelY: 296 },
+  { id: "controls.hand", anchor: [46, 64], side: "left", labelY: 64 },
+  { id: "location.gps", anchor: [58, 107], side: "left", labelY: 140 },
+  { id: "perception.tof", anchor: [86, 248], side: "left", labelY: 248 },
+  { id: "base.walker", anchor: [50, 340], side: "left", labelY: 340 },
+  { id: "voice", anchor: [182, 118], side: "right", labelY: 96 },
+  { id: "manipulation.arm", anchor: [222, 210], side: "right", labelY: 196 },
+  { id: "manipulation.lift", anchor: [168, 286], side: "right", labelY: 300 },
 ];
 
 const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
@@ -58,19 +177,39 @@ function spotStyle(s: Spot): React.CSSProperties {
   } as React.CSSProperties;
 }
 
-/** The leader from the label's edge: level for a short way, then straight to the part. */
 function leader(s: Spot): string {
   const x0 = labelEdge(s.side);
-  const elbow = s.side === "left" ? Math.min(s.anchor[0] - 14, x0 + 26) : Math.max(s.anchor[0] + 14, x0 - 26);
+  const elbow = s.side === "left" ? Math.min(s.anchor[0] - 12, x0 + 22) : Math.max(s.anchor[0] + 12, x0 - 22);
   return `M${x0} ${s.labelY} H${elbow} L${s.anchor[0]} ${s.anchor[1]}`;
 }
 
-function StateIcon({ state }: { state: PartState }) {
+/**
+ * The dot beside a label: filled when on, a dashed ring when worth considering, a struck ring when the
+ * person said no, a ring when off, a dotted ring when not available.
+ */
+export function StateDot({ state }: { state: PartState }) {
   return (
-    <svg className={styles.icon} viewBox="0 0 20 20" aria-hidden="true" focusable="false" data-state={state}>
-      <circle cx="10" cy="10" r="8.5" />
-      {state === "on" ? <path d="M6 10.4l2.6 2.6L14 7.6" /> : state === "unavailable" ? <path d="M6.5 10h7" /> : <path d="M10 6.5v7M6.5 10h7" />}
+    <svg className={styles.dot} viewBox="0 0 16 16" aria-hidden="true" focusable="false" data-state={state}>
+      <circle cx="8" cy="8" r="5.5" />
+      {state === "declined" ? <path d="M4.2 11.8L11.8 4.2" /> : null}
     </svg>
+  );
+}
+
+/** The key under the drawing while the conversation runs: what solid, dashed and struck mean. Only the states on show. */
+export function Legend({ states }: { states: Record<ModuleId, PartState> }) {
+  const shown = (["on", "suggested", "declined"] as const).filter((st) => Object.entries(states).some(([id, v]) => id !== "base.walker" && v === st));
+  if (shown.length === 0) return null;
+  const words = { on: "Suggested", suggested: "Worth considering", declined: "You said no" } as const;
+  return (
+    <ul className={styles.legend} aria-hidden="true">
+      {shown.map((st) => (
+        <li key={st}>
+          <StateDot state={st} />
+          {words[st]}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -86,124 +225,146 @@ export interface WalkerDiagramProps {
   onToggle(id: ModuleId, on: boolean): void;
   highlight: ModuleId | null;
   onHighlight(id: ModuleId | null): void;
+  /** Said to screen readers in place of the drawing. */
   caption: string;
+  /** Shown under the drawing: the first frame's line, or the legend. */
+  note?: ReactNode;
 }
 
 /**
- * The walker seen from the front, drawn as flat pieces with each module where it mounts. A schematic,
- * not to scale. Parts on the walker are solid; parts left off are dashed, so state never rests on colour
- * alone. The drawing itself is hidden from screen readers: the caption says the same in words, and in
- * review each module is a real button that opens a panel with its switch. The module list beside the
- * drawing is an equal path for the same choices.
+ * The walker seen from the front, as a fine line drawing: a schematic, not to scale. The frame draws
+ * itself on load; a module draws in, with a warm glow, when it is on, and stays a faint dashed outline
+ * when it isn't, so state never rests on colour alone. The drawing is hidden from screen readers: the
+ * caption says the same in words, and in review each module is a real button that opens a small panel
+ * with its switch. The module list beside it is an equal path for the same choices.
  */
-export function WalkerDiagram({ recs, facts, states, review, problems, frozen, onToggle, highlight, onHighlight, caption }: WalkerDiagramProps) {
+export function WalkerDiagram({ recs, facts, states, review, problems, frozen, onToggle, highlight, onHighlight, caption, note }: WalkerDiagramProps) {
   const [open, setOpen] = useState<ModuleId | null>(null);
   const spotRefs = useRef(new Map<ModuleId, HTMLDivElement>());
   const buttonRefs = useRef(new Map<ModuleId, HTMLButtonElement>());
   const recById = new Map(recs.map((r) => [r.module_id, r]));
   const shown = review ? open : null;
+  const reduced = useReducedMotion();
+  // The pen starts when the page is live, so the lines wait for it rather than starting on first paint.
+  const [live, setLive] = useState(false);
+  useLayoutEffect(() => setLive(true), []);
 
-  // A press anywhere outside the open panel and its hotspot closes it, without moving focus.
+  // When each lit part arrives (seconds from now) and a key that restarts its drawing. On mount, the
+  // parts already lit arrive after the frame; later, the ones that just lit up arrive one at a time,
+  // STAGGER apart, each with its name, so a room can read them. A part that's on is drawn by the pen.
+  const [plan, setPlan] = useState<Partial<Record<ModuleId, { delay: number; key: number }>>>(() =>
+    Object.fromEntries(MODULE_ORDER.filter((id) => isLit(states[id])).map((id, i) => [id, { delay: FRAME_END + 0.1 + i * STAGGER, key: 1 }])),
+  );
+  const previous = useRef(states);
+  // A layout effect: the new plan lands before the paint that first shows the part lit.
+  useLayoutEffect(() => {
+    const before = previous.current;
+    previous.current = states;
+    const arrived = MODULE_ORDER.filter((id) => isLit(states[id]) && states[id] !== before[id]);
+    if (arrived.length === 0) return;
+    setPlan((p) => {
+      const next = { ...p };
+      arrived.forEach((id, i) => {
+        next[id] = { delay: 0.15 + i * STAGGER, key: (p[id]?.key ?? 0) + 1 };
+      });
+      return next;
+    });
+  });
+
+  // A press anywhere outside the open panel and its hotspot closes it, without moving focus. Escape
+  // closes it from anywhere, also when it was opened by clicking the drawn part, and puts focus on the
+  // part's button so the next Tab carries on from there.
   useEffect(() => {
     if (!shown) return;
     const onDown = (e: PointerEvent) => {
       const spot = spotRefs.current.get(shown);
       if (spot && !spot.contains(e.target as Node)) setOpen(null);
     };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setOpen(null);
+      buttonRefs.current.get(shown)?.focus();
+    };
     document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [shown]);
 
   function onKeyDown(e: KeyboardEvent, id: ModuleId) {
     if (e.key === "Escape" && shown === id) {
-      e.stopPropagation();
+      e.preventDefault();
       setOpen(null);
       buttonRefs.current.get(id)?.focus();
     }
   }
 
-  const part = (id: ModuleId) => ({
-    "data-state": states[id],
-    "data-highlight": highlight === id || shown === id ? "true" : undefined,
-    className: styles.part,
-    // A bonus for pointer users: the drawn part opens the same panel as its hotspot button.
-    ...(review
-      ? {
-          onClick: () => setOpen((o) => (o === id ? null : id)),
-          onPointerEnter: () => onHighlight(id),
-          onPointerLeave: () => onHighlight(null),
-          "data-clickable": "true",
-        }
-      : {}),
-  });
+  const lit = (id: ModuleId) => highlight === id || shown === id;
+  // While the conversation runs, a label arrives with its part. In review the labels are buttons, there at once.
+  const labelDelay = (id: ModuleId) => (review || id === "base.walker" ? 0 : (plan[id]?.delay ?? FRAME_END));
+  // While the conversation runs, only what's lit is labelled; in review every module is.
+  const labelled = (id: ModuleId) => review || (id !== "base.walker" && isLit(states[id]));
 
   return (
-    <figure className={styles.figure} data-review={review || undefined}>
+    <figure className={styles.figure} data-review={review || undefined} data-live={live || undefined}>
       <div className={styles.canvas}>
         <svg className={styles.leaders} viewBox={`${-SIDE} 0 ${WIDE_W} ${H}`} aria-hidden="true" focusable="false">
-          {SPOTS.map((s) => (
-            <g key={s.id} className={styles.leader} data-state={states[s.id]} data-highlight={highlight === s.id || shown === s.id || undefined}>
-              <path d={leader(s)} />
-              <circle cx={s.anchor[0]} cy={s.anchor[1]} r="3.5" />
+          {SPOTS.filter((s) => labelled(s.id)).map((s) => (
+            <g key={s.id} className={styles.leader} data-state={states[s.id]} data-highlight={lit(s.id) || undefined}>
+              <path d={leader(s)} pathLength={1} style={{ animationDelay: `${labelDelay(s.id)}s` }} />
+              <circle cx={s.anchor[0]} cy={s.anchor[1]} r="2.5" style={{ animationDelay: `${labelDelay(s.id)}s` }} />
             </g>
           ))}
         </svg>
 
         <svg className={styles.drawing} viewBox={`0 0 ${DRAW_W} ${H}`} aria-hidden="true" focusable="false">
-          {/* Frame and coordinator: always present */}
-          <g {...part("base.walker")}>
-            <rect className={styles.frame} x="60" y="58" width="16" height="270" rx="8" />
-            <rect className={styles.frame} x="244" y="58" width="16" height="270" rx="8" />
-            <rect className={styles.frame} x="60" y="132" width="200" height="12" rx="6" />
-            <rect className={styles.frame} x="60" y="230" width="200" height="18" rx="9" />
-            <circle className={styles.frame} cx="68" cy="336" r="24" />
-            <circle className={styles.frame} cx="252" cy="336" r="24" />
-            <circle className={styles.hub} cx="68" cy="336" r="8" />
-            <circle className={styles.hub} cx="252" cy="336" r="8" />
-            <rect className={styles.box} x="186" y="262" width="52" height="30" rx="6" />
+          <g className={styles.frame} data-highlight={lit("base.walker") || undefined} onClick={review ? () => setOpen("base.walker") : undefined}>
+            {FRAME_STEPS.map((st, i) => (
+              <path key={i} d={st.d} pathLength={1} style={{ "--at": `${FRAME_START + st.at}s`, "--dur": `${st.dur}s` } as React.CSSProperties} />
+            ))}
           </g>
-
-          {/* Lift: an upright column at the front, carrying the arms */}
-          <g {...part("manipulation.lift")}>
-            <rect className={styles.box} x="151" y="150" width="18" height="150" rx="4" />
-          </g>
-          <g {...part("manipulation.arm")}>
-            <path className={styles.arm} d="M151 198 L114 178 L98 208" />
-            <path className={styles.arm} d="M169 198 L206 178 L222 208" />
-            <circle className={styles.box} cx="98" cy="214" r="7" />
-            <circle className={styles.box} cx="222" cy="214" r="7" />
-          </g>
-
-          {/* Obstacle sensors along the front of the seat bar, either side of the lift */}
-          <g {...part("perception.tof")}>
-            <rect className={styles.box} x="84" y="232" width="22" height="14" rx="3" />
-            <rect className={styles.box} x="116" y="232" width="22" height="14" rx="3" />
-            <rect className={styles.box} x="182" y="232" width="22" height="14" rx="3" />
-            <rect className={styles.box} x="214" y="232" width="22" height="14" rx="3" />
-          </g>
-
-          {/* Voice: microphone and speaker on the upper bar, between the handles */}
-          <g {...part("voice")}>
-            <rect className={styles.box} x="136" y="114" width="48" height="44" rx="10" />
-          </g>
-
-          {/* Hand controls on both grips; the round mark is the button you press to start */}
-          <g {...part("controls.hand")}>
-            <rect className={styles.box} x="34" y="38" width="68" height="30" rx="15" />
-            <rect className={styles.box} x="218" y="38" width="68" height="30" rx="15" />
-            <circle className={styles.button} cx="54" cy="53" r="6" />
-            <circle className={styles.button} cx="266" cy="53" r="6" />
-          </g>
-
-          {/* Location receiver inside the left upright */}
-          <g {...part("location.gps")}>
-            <rect className={styles.box} x="62" y="84" width="12" height="26" rx="3" />
-          </g>
+          {MODULE_ORDER.map((id) => (
+            <g
+              key={id}
+              className={styles.part}
+              data-state={states[id]}
+              data-highlight={lit(id) || undefined}
+              data-clickable={review || undefined}
+              style={{ "--delay": `${plan[id]?.delay ?? 0}s` } as React.CSSProperties}
+              // A bonus for pointer users: the drawn part opens the same panel as its hotspot button.
+              onClick={review ? () => setOpen((o) => (o === id ? null : id)) : undefined}
+              onPointerEnter={review ? () => onHighlight(id) : undefined}
+              onPointerLeave={review ? () => onHighlight(null) : undefined}
+            >
+              <g className={styles.ghost}>
+                {MODULES[id].map((st, i) => (
+                  <path key={i} d={st.d} />
+                ))}
+              </g>
+              {/* Keyed by when it last turned on, so the ink draws in again each time. */}
+              <g key={plan[id]?.key ?? 0} className={styles.ink}>
+                {MODULE_STEPS[id].map((st, i) => (
+                  <path key={i} d={st.d} pathLength={1} style={{ "--at": `${st.at}s`, "--dur": `${st.dur}s` } as React.CSSProperties} />
+                ))}
+              </g>
+            </g>
+          ))}
+          {reduced || !live ? null : (
+            <>
+              <Pen steps={FRAME_STEPS} delay={FRAME_START} tone="ink" />
+              {MODULE_ORDER.filter((id) => states[id] === "on" && plan[id]).map((id) => (
+                <Pen key={`${id}-${plan[id]!.key}`} steps={MODULE_STEPS[id]} delay={plan[id]!.delay} tone="live" />
+              ))}
+            </>
+          )}
         </svg>
 
         {SPOTS.map((s) => {
+          if (!labelled(s.id)) return null;
           const entry = getCatalogEntry(MODULE_CATALOG, s.id);
-          const rec = recById.get(s.id);
           const label = stateLabel(s.id, states[s.id], review);
           const panelId = `panel-${s.id.replace(".", "-")}`;
           const isOpen = shown === s.id;
@@ -218,7 +379,7 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
               data-side={s.side}
               data-low={s.labelY > H / 2 || undefined}
               data-open={isOpen || undefined}
-              style={spotStyle(s)}
+              style={{ ...spotStyle(s), "--label-delay": `${labelDelay(s.id)}s` } as React.CSSProperties}
               onKeyDown={(e) => onKeyDown(e, s.id)}
             >
               {review ? (
@@ -230,7 +391,7 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
                   type="button"
                   className={styles.hotspot}
                   data-state={states[s.id]}
-                  // Said in full here rather than left to the nested text, which is hidden on narrow screens.
+                  // Said in full here: the state is a dot on screen, and the name is hidden on narrow screens.
                   aria-label={`${entry.name}, ${label}`}
                   aria-expanded={isOpen}
                   aria-controls={isOpen ? panelId : undefined}
@@ -240,18 +401,18 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
                   onFocus={() => onHighlight(s.id)}
                   onBlur={() => onHighlight(null)}
                 >
-                  <StateIcon state={states[s.id]} />
+                  <StateDot state={states[s.id]} />
                   <span className={styles.spotText}>
                     <span className={styles.spotName}>{entry.name}</span>
-                    <span className={styles.spotState}>{label}</span>
+                    {states[s.id] === "unavailable" || states[s.id] === "declined" ? <span className={styles.spotState}>{label}</span> : null}
                   </span>
                 </button>
               ) : (
                 <span className={styles.hotspot} data-state={states[s.id]} aria-hidden="true">
-                  <StateIcon state={states[s.id]} />
+                  <StateDot state={states[s.id]} />
                   <span className={styles.spotText}>
                     <span className={styles.spotName}>{entry.name}</span>
-                    <span className={styles.spotState}>{label}</span>
+                    {states[s.id] === "declined" ? <span className={styles.spotState}>{label}</span> : null}
                   </span>
                 </span>
               )}
@@ -259,9 +420,9 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
                 <ModulePanel
                   id={s.id}
                   panelId={panelId}
-                  rec={rec}
+                  rec={recById.get(s.id)}
                   facts={facts}
-                  on={states[s.id] === "on"}
+                  state={states[s.id]}
                   problem={problems.find((p) => p.module_id === s.id) ?? null}
                   frozen={frozen}
                   onToggle={onToggle}
@@ -275,18 +436,27 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
           );
         })}
       </div>
-      <figcaption className={styles.caption}>{caption}</figcaption>
+      <figcaption className="visually-hidden">{caption}</figcaption>
+      {note ? (
+        <div className={styles.note} aria-hidden="true">
+          {note}
+        </div>
+      ) : null}
     </figure>
   );
 }
 
-/** The small panel next to a hotspot: what the module does, why it was suggested, and its switch. */
+/**
+ * The small glass panel next to a hotspot. The person's own words come first, large enough to read from
+ * across a room, then the rule's reason, then what the part does, then its switch. A part they said no
+ * to says so, with the words they said it in.
+ */
 function ModulePanel({
   id,
   panelId,
   rec,
   facts,
-  on,
+  state,
   problem,
   frozen,
   onToggle,
@@ -296,7 +466,7 @@ function ModulePanel({
   panelId: string;
   rec: Recommendation | undefined;
   facts: readonly ProfileFact[];
-  on: boolean;
+  state: PartState;
   problem: SelectionProblem | null;
   frozen: string | null;
   onToggle(id: ModuleId, on: boolean): void;
@@ -305,31 +475,35 @@ function ModulePanel({
   const entry = getCatalogEntry(MODULE_CATALOG, id);
   const why = whySuggested(rec, facts);
   const locked = lockReason(entry) ?? frozen;
-  const suggested = rec?.status === "recommended" || rec?.status === "consider";
+  const on = state === "on";
   return (
-    <div id={panelId} className={styles.panel} role="group" aria-labelledby={`${panelId}-title`}>
+    <div id={panelId} className={styles.panel} role="group" aria-labelledby={`${panelId}-title`} data-declined={why?.declined || undefined}>
       <div className={styles.panelHead}>
         <h3 id={`${panelId}-title`} className={styles.panelTitle}>
           {entry.name}
+          {why?.declined && !on ? (
+            <>
+              <span className="visually-hidden">, </span>
+              <span className={styles.panelNo}>You said no</span>
+            </>
+          ) : null}
         </h3>
         <button type="button" className={styles.close} onClick={onClose} aria-label={`Close ${nameOf(id)}`}>
           <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-            <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" />
+            <path d="M6 6l8 8M14 6l-8 8" />
           </svg>
         </button>
       </div>
+      {why?.said ? (
+        <figure className={styles.said}>
+          <figcaption className={styles.saidLead}>{why.said.lead}:</figcaption>
+          <blockquote className={styles.saidText}>
+            <p>{why.said.text}</p>
+          </blockquote>
+        </figure>
+      ) : null}
+      {why ? <p className={styles.panelWhy}>{why.declined ? why.reason : `Why it's suggested: ${why.reason}`}</p> : null}
       <p className={styles.panelText}>{entry.summary}</p>
-      {why && (suggested || rec?.status === "required") ? (
-        <p className={styles.panelWhy}>
-          <span className={styles.whyLabel}>{rec?.status === "required" ? "Why it's there" : "Why it was suggested"}</span>
-          {why.reason}
-          {why.because ? <span className={styles.because}> Based on: {why.because}</span> : null}
-        </p>
-      ) : rec?.status === "unavailable" ? (
-        <p className={styles.panelWhy}>{why?.reason ?? "This isn't built yet."}</p>
-      ) : (
-        <p className={styles.panelMuted}>Nothing you said points to this, but you can add it.</p>
-      )}
       {problem ? (
         <p id={`${panelId}-problem`} className={styles.problem}>
           {problem.message}
@@ -347,11 +521,7 @@ function ModulePanel({
           <span id={`${panelId}-locked`} className={styles.lockNote}>
             {locked}
           </span>
-        ) : (
-          <span className={styles.lockNote} aria-hidden="true">
-            {on ? "On your walker" : "Not on your walker"}
-          </span>
-        )}
+        ) : null}
       </div>
     </div>
   );

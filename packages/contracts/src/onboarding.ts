@@ -122,6 +122,13 @@ export const TurnSchema = z.object({
   text: z.string().min(1),
   question_id: QuestionIdSchema.nullable(),
   created_at: z.iso.datetime(),
+  /**
+   * Who answered, on the assistant turns that reply to an answer while the onboarding agent runs:
+   * "model" when the model read the answer and worded the reply; "fixed" when the fixed questions
+   * answered because the model's reply didn't come through (an error, the deadline, or two unusable
+   * replies). Absent with the deterministic engine, and on skips and revisits, which never ask the model.
+   */
+  answered_by: z.enum(["model", "fixed"]).optional(),
 });
 export type Turn = z.infer<typeof TurnSchema>;
 

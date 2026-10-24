@@ -20,6 +20,11 @@ export function agentNoticeClause(provider: AgentProvider): string {
   return `${model} reads them to choose each question, and ${company} may keep a copy`;
 }
 
+/** The model's short name, for the note under a reply it worded ("Read by Gemini"). */
+export function agentModelName(provider: AgentProvider): string {
+  return provider === "gemini" ? "Gemini" : "Claude";
+}
+
 const MODEL_PREFIX: Record<AgentProvider, string> = { anthropic: "claude-", gemini: "gemini-" };
 
 type AgentChoice = { provider: AgentProvider; apiKey: string } | { problem: string } | null;

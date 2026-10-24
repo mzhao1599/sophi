@@ -5,8 +5,8 @@ import { fetchCheckoutStatus, startCheckout, type CheckoutStatus } from "@/lib/c
 import styles from "./Checkout.module.css";
 
 const OFF: Record<Exclude<CheckoutStatus["reason"], "ready">, string> = {
-  missing_key: "Ordering is off: this server has no Stripe test key.",
-  not_test_key: "Ordering is off: the server's Stripe key isn't a test key, so it was refused.",
+  missing_key: "Ordering is off here: no Stripe test key.",
+  not_test_key: "Ordering is off here: the Stripe key isn't a test key.",
 };
 
 /**
@@ -36,9 +36,9 @@ export function CheckoutButton({ sessionId, configurationVersion }: { sessionId:
   const enabled = typeof status === "object" && status.enabled;
   const stateText =
     status === "loading"
-      ? "Checking whether ordering is on…"
+      ? null
       : status === "unknown"
-        ? "Couldn't check whether ordering is on. Reload the page to try again."
+        ? "Couldn't reach ordering. Reload to try again."
         : status.enabled
           ? null
           : OFF[status.reason as keyof typeof OFF];
@@ -64,10 +64,12 @@ export function CheckoutButton({ sessionId, configurationVersion }: { sessionId:
         aria-describedby={[noticeId, stateText ? stateId : "", error ? errorId : ""].filter(Boolean).join(" ")}
         onClick={() => void onClick()}
       >
-        {busy ? "Opening checkout…" : "Order (demo)"}
+        <span key={busy ? "a" : "b"} className="fade-text">
+          {busy ? "Opening Checkout" : "Order (Demo)"}
+        </span>
       </button>
       <p id={noticeId} className={styles.notice}>
-        Stripe test mode, no real charge. Test card <span className={styles.card}>4242 4242 4242 4242</span>.
+        Stripe test mode. Card <span className={styles.card}>4242 4242 4242 4242</span>
       </p>
       <p id={stateId} className={styles.state} aria-live="polite">
         {stateText}

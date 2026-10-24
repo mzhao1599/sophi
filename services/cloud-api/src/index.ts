@@ -20,6 +20,7 @@ export { createAnthropicModel, DEFAULT_AGENT_MODEL } from "./onboarding/anthropi
 export { createGeminiModel, DEFAULT_GEMINI_MODEL } from "./onboarding/gemini";
 export {
   AGENT_PROVIDER_NAMES,
+  agentModelName,
   agentNoticeClause,
   agentProviderFromEnv,
   engineFromEnv,

@@ -3,7 +3,6 @@ import { MemorySessionStore, OnboardingService } from "@walker/cloud-api";
 import { MODULE_CATALOG, type ModuleId, type SessionView, type TurnInput } from "@walker/contracts";
 import {
   countLine,
-  heardSummary,
   partStates,
   selectedModules,
   selectionProblems,
@@ -78,7 +77,7 @@ describe("toggleModule", () => {
     const frame = toggleModule(recs, {}, "base.walker", false);
     expect(frame.changed).toBe(false);
     expect(frame.selected).toContain("base.walker");
-    expect(frame.message).toBe("Walker and coordinator: Part of every walker, so it stays on.");
+    expect(frame.message).toBe("Walker and coordinator: Always on.");
     const gps = toggleModule(recs, {}, "location.gps", true);
     expect(gps.changed).toBe(false);
     expect(gps.selected).not.toContain("location.gps");
@@ -149,51 +148,66 @@ describe("module panel text", () => {
     const view = await sessionAfter(SCRIPT);
     const tof = view.recommendations.find((r) => r.module_id === "perception.tof");
     expect(whySuggested(tof, view.facts)).toEqual({
+      said: { lead: "You picked", text: "You'd like to know when something is in the way" },
       reason: "Sensors at the front give you a cue when something is close.",
-      because: "You'd like to know when something is in the way",
+      declined: false,
     });
     const voice = view.recommendations.find((r) => r.module_id === "voice");
     expect(whySuggested(voice, view.facts)).toBeNull();
+  });
+
+  it("shows a typed no as the person's own words, and the part as \"You Said No\"", async () => {
+    // The demo persona's lines (docs/demo/script.md), typed: she'd rather not talk to the walker.
+    const view = await sessionAfter([
+      { type: "answer", question_id: "tasks", option_ids: [], text: "I keep bumping into things, small buttons are hard, and I'd like help picking things up." },
+      { type: "answer", question_id: "places", option_ids: [], text: "Around my apartment, and at the corner shop." },
+      { type: "answer", question_id: "feedback", option_ids: [], text: "A buzz in the handles works best." },
+      { type: "answer", question_id: "start_request", option_ids: [], text: "A button on my left handle. I'd rather not talk to it." },
+    ]);
+    const voice = view.recommendations.find((r) => r.module_id === "voice");
+    expect(whySuggested(voice, view.facts)).toEqual({
+      said: { lead: "You said", text: "“A button on my left handle. I'd rather not talk to it.”" },
+      reason: "You'd rather not speak to the walker. The app works without voice.",
+      declined: true,
+    });
+    const states = partStates(view.recommendations, selectedModules(view.recommendations, {}), view.facts);
+    expect(states.voice).toBe("declined");
+    expect(stateLabel("voice", states.voice, false)).toBe("You Said No");
+    expect(stateLabel("voice", states.voice, true)).toBe("You Said No");
+    // Her first line, quoted, is why the obstacle sensors are there.
+    const tof = view.recommendations.find((r) => r.module_id === "perception.tof");
+    expect(whySuggested(tof, view.facts)?.said).toEqual({
+      lead: "You said",
+      text: "“I keep bumping into things, small buttons are hard, and I'd like help picking things up.”",
+    });
+    // Switched on anyway, it's simply on.
+    const on = partStates(view.recommendations, selectedModules(view.recommendations, { voice: true }), view.facts);
+    expect(on.voice).toBe("on");
   });
 
   it("labels each state for the chat and for review", async () => {
     const view = await sessionAfter(SCRIPT);
     const states = partStates(view.recommendations, selectedModules(view.recommendations, {}));
     const label = (id: ModuleId, review: boolean) => stateLabel(id, states[id], review);
-    expect(label("base.walker", false)).toBe("Always included");
+    expect(label("base.walker", false)).toBe("Always Included");
     expect(label("perception.tof", false)).toBe("Suggested");
-    expect(label("perception.tof", true)).toBe("On your walker");
-    expect(label("manipulation.arm", false)).toBe("Worth considering");
-    expect(label("manipulation.arm", true)).toBe("Suggested, off");
-    expect(label("voice", false)).toBe("Not yet");
-    expect(label("location.gps", true)).toBe("Not available yet");
+    expect(label("perception.tof", true)).toBe("On");
+    expect(label("manipulation.arm", false)).toBe("Worth Considering");
+    expect(label("manipulation.arm", true)).toBe("Suggested");
+    expect(label("voice", false)).toBe("Not Yet");
+    expect(label("voice", true)).toBe("Off");
+    expect(label("location.gps", true)).toBe("Not Available Yet");
     // Before a session there are no recommendations, and the frame is still always there.
-    expect(stateLabel("base.walker", partStates([], ["base.walker"])["base.walker"], false)).toBe("Always included");
+    expect(stateLabel("base.walker", partStates([], ["base.walker"])["base.walker"], false)).toBe("Always Included");
   });
 });
 
-describe("announcements and summary", () => {
+describe("announcements", () => {
   it("says what lit up and what went out, and nothing when nothing changed", () => {
     expect(suggestionNews(["base.walker"], ["base.walker", "controls.hand", "perception.tof"])).toBe(
       "Lit up on your walker: Hand controls and Obstacle sensors.",
     );
     expect(suggestionNews(["base.walker", "voice"], ["base.walker"])).toBe("No longer suggested: Voice.");
     expect(suggestionNews(["base.walker"], ["base.walker"])).toBeNull();
-  });
-
-  it("groups what was heard under each question, quoting typed words", async () => {
-    const view = await sessionAfter(SCRIPT.slice(0, 2));
-    expect(heardSummary(view.facts, view.turns)).toEqual([
-      {
-        questionId: "tasks",
-        prompt: "Hi! What would you like a hand with?",
-        items: [
-          "You'd like to know when something is in the way",
-          "You'd like help picking things up or reaching for them",
-          "“I keep bumping into the door frame in the hallway”",
-        ],
-      },
-      { questionId: "places", prompt: "Where will you be using your walker?", items: ["You'll use the walker at home"] },
-    ]);
   });
 });

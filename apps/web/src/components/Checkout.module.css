@@ -97,3 +97,125 @@
     text-align: left;
   }
 }
+
+/* ---- The paid demo order: the end of the demo, on the walker ---- */
+
+.end {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 8px 40px 40px;
+}
+
+.endSheet {
+  padding: 30px 36px 32px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sheet);
+  background: var(--glass-sheet);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-sheet);
+  animation: rise-in 600ms var(--ease-out) both;
+}
+
+.endHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.endTitle {
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+/* The line the room reads while the presenter is quiet. */
+.noMoney {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  padding: 0 18px 0 14px;
+  border: 1px solid var(--live-soft);
+  border-radius: var(--radius-pill);
+  background: var(--live-wash);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.noMoney svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--live);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.endBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: center;
+  gap: 40px;
+  margin-top: 12px;
+}
+
+.endWalker {
+  --canvas-h: clamp(300px, calc(100dvh - 300px), 560px);
+  min-width: 0;
+}
+
+.endFacts {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.endLead {
+  margin-top: 16px;
+  color: var(--text-meta);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.endActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 20px;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(3px);
+  }
+}
+
+@media (max-width: 999px) {
+  .endBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .end {
+    padding: 4px 8px 16px;
+  }
+  .endSheet {
+    padding: 22px 16px 20px;
+    border-radius: 26px;
+  }
+  .endTitle {
+    font-size: 32px;
+  }
+  .endActions .button {
+    width: 100%;
+  }
+}

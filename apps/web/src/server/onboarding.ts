@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import {
   OnboardingService,
   SupabaseSessionStore,
+  agentModelName,
   agentNoticeClause,
   agentProviderFromEnv,
   engineFromEnv,
@@ -42,6 +43,8 @@ const engine = engineFromEnv(process.env);
 const agentProvider = agentProviderFromEnv(process.env);
 /** The notice's clause for the agent (who reads the answers, who may keep them); null without the agent. */
 export const agentNotice: string | null = agentProvider ? agentNoticeClause(agentProvider) : null;
+/** The model's short name for the note under each reply it worded ("Read by Gemini"); null without the agent. */
+export const agentName: string | null = agentProvider ? agentModelName(agentProvider) : null;
 
 /** True when sessions are kept in Supabase, so account features (resume, saved setups) can work. */
 export function accountsAvailable(): boolean {

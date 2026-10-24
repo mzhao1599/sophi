@@ -1,6 +1,11 @@
 import Link from "next/link";
+import type { ModuleId } from "@walker/contracts";
+import { PRODUCT_NAME } from "@/lib/brand";
 import { DEMO_PRICE_LABEL } from "@/lib/checkout";
 import type { DemoOrder } from "@/server/checkout/order";
+import { ContourField } from "./ContourField";
+import { SavedWalker } from "./SavedWalker";
+import { SetUpAnother } from "./SetUpAnother";
 import { TopBar } from "./TopBar";
 import screen from "./Screen.module.css";
 import styles from "./Checkout.module.css";
@@ -11,9 +16,68 @@ function money(cents: number, currency: string) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 }
 
-/** The page someone returns to from Stripe's test checkout. Says plainly that it was a demo and nothing was charged. */
+/**
+ * The page someone returns to from Stripe's test checkout. Says plainly that it was a demo and nothing
+ * was charged. A paid demo order ends where the demo began: the walker, drawn again with the parts that
+ * were ordered, and one button to start over with a fresh frame.
+ */
 export function CheckoutResult({ order }: { order: DemoOrder | { kind: "off" } | { kind: "cancelled" } }) {
   const [title, lead] = copy(order);
+  if (order.kind === "paid") {
+    const selected = [...new Set<ModuleId>(["base.walker", ...order.lines.flatMap((l) => (l.module_id ? [l.module_id] : []))])];
+    return (
+      <>
+        <ContourField />
+        <TopBar />
+        <main id="main" className={styles.end}>
+          <section className={styles.endSheet} aria-labelledby="done-title">
+            <div className={styles.endHead}>
+              <h1 id="done-title" className={styles.endTitle}>
+                {title}
+              </h1>
+              <p className={styles.noMoney}>
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                  <path d="M5 10.4l3.2 3.1L15 6.6" />
+                </svg>
+                Demo order: no money moved
+              </p>
+            </div>
+            <div className={styles.endBody}>
+              <div className={styles.endWalker}>
+                <SavedWalker selected={selected} />
+              </div>
+              <div className={styles.endFacts}>
+                <h2 id="order-lines" className={styles.heading}>
+                  In this demo order
+                </h2>
+                <ul className={styles.lines} aria-labelledby="order-lines">
+                  {order.lines.map((line, i) => (
+                    <li key={line.module_id ?? i}>
+                      <span className={styles.name}>{line.name}</span>
+                      <span className={styles.price}>
+                        {money(line.amount, line.currency)} · {DEMO_PRICE_LABEL}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className={styles.total}>
+                  Demo total {money(order.total, order.currency)}{" "}
+                  <span className={styles.price}>(demo prices, not a real quote; nothing was charged)</span>
+                </p>
+                <p className={styles.endLead}>{lead}</p>
+                <div className={styles.endActions}>
+                  <SetUpAnother />
+                  <Link href="/" className="button-text">
+                    Back to your walker
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </>
+    );
+  }
   return (
     <>
       <TopBar />
@@ -23,29 +87,6 @@ export function CheckoutResult({ order }: { order: DemoOrder | { kind: "off" } |
             <h1 className={screen.doneTitle}>{title}</h1>
             <p className={screen.lead}>{lead}</p>
           </header>
-
-          {order.kind === "paid" ? (
-            <section className={`${screen.span8} ${styles.panel}`} aria-labelledby="order-lines">
-              <h2 id="order-lines" className={styles.heading}>
-                In this demo order
-              </h2>
-              {order.configuration_version ? <p className={styles.price}>Configuration {order.configuration_version}</p> : null}
-              <ul className={styles.lines}>
-                {order.lines.map((line, i) => (
-                  <li key={line.module_id ?? i}>
-                    <span className={styles.name}>{line.name}</span>
-                    <span className={styles.price}>
-                      {money(line.amount, line.currency)} · {DEMO_PRICE_LABEL}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className={styles.total}>
-                Demo total {money(order.total, order.currency)}{" "}
-                <span className={styles.price}>(demo prices, not a real quote; nothing was charged)</span>
-              </p>
-            </section>
-          ) : null}
 
           <div className={`${screen.span12} ${screen.actions}`}>
             <Link href="/" className="button button-primary">
@@ -63,7 +104,7 @@ function copy(order: DemoOrder | { kind: "off" } | { kind: "cancelled" }): [stri
     case "paid":
       return [
         "Demo order complete",
-        "This was a demo order in Stripe test mode. No money moved, no card was charged and nothing will ship. The Assistive Walker is an experimental prototype, not a certified mobility aid.",
+        `This was a demo order in Stripe test mode. No money moved, no card was charged and nothing will ship. ${PRODUCT_NAME} is an experimental prototype, not a certified mobility aid.`,
       ];
     case "cancelled":
       return [
