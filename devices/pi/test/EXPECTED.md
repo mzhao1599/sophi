@@ -51,6 +51,12 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 | B19 | The button source that started a recording goes away while Talk is held: its hand module goes unavailable or says hello again (a reboot), or `gpiomon` exits *(review)* | The recording is discarded, nothing is sent, and "I stopped listening because the button stopped responding." is spoken. After `gpiomon` restarts, the next real press works. |
 | B20 | The listening cue's player hangs *(review)* | The mic opens anyway after 1 s. |
 | B21 | A turn that ends without its reply being heard: it timed out, failed, or came back unreadable *(review 2)* | Treated like a cancelled turn: a proposal it opened is declined on the next heartbeat, never offered to Confirm. *Decision for review.* |
+| B23 | Talk pressed on an ESP32 hand that declared `haptic` and is `ok` *(press buzz, 2026-10-24: "I click it and it buzzes")* | One `haptic.play` `recording` 150 ms (*placeholder*) to that same hand, as well as the "listening" sound. Recording starts exactly as without it (the mic opens, one turn is sent on release). Every Talk press from a hand buzzes, including one that cancels a wait or gets a local line. A release never buzzes. |
+| B24 | Confirm pressed on that hand, and it confirms the open proposal *(press buzz)* | One `haptic.play` `confirmation` 250 ms (*placeholder*) to that hand, as soon as the server says confirmed, as well as the "done" sound. |
+| B25 | Confirm pressed on that hand, and it confirms nothing: nothing open, the proposal closed, ignored while recording, a second press while the first is answered, offline or a failed request *(press buzz)* | One `haptic.play` `error` 250 ms (*placeholder*) to that hand. The sounds and lines are unchanged. Each Confirm press buzzes once. |
+| B26 | A GPIO press or a simulator keyboard press *(press buzz)* | No haptic: the Pi's header buttons and the keyboard have no motor. |
+| B27 | A press from a hand that can't buzz (no `haptic` in its hello, a haptic fault, not `ok`) or whose port is busy *(press buzz)* | No haptic and no error; the sounds, the recording and the turn are unchanged. |
+| B28 | Press buzz and obstacle alerts *(press buzz)* | The press buzz plays whatever the obstacle cue setting is (also with `cues: ["sound"]`): it is button feedback, not an obstacle alert. It doesn't count as one: a near zone right after a press still gets its own `near_obstacle` buzz, and with `cues: ["sound"]` still only the obstacle sound. |
 
 ## Serial (shared fixtures in `packages/contracts/test/fixtures/`)
 

@@ -8,7 +8,7 @@ The always-on service is in [`devices/pi`](../../devices/pi/README.md): TypeScri
 
 - **Push-to-talk:** hold Talk to talk, release to send; a press while waiting cancels; a press while a reply plays stops it and starts listening. The cloud timeout ends the turn with a spoken offline line built from the configuration and health, and the clip is dropped, never kept for later.
 - **Offline:** after 2 failed heartbeats or a turn past 10 s. Heartbeats retry at 5, 10, 15 s.
-- **Not built in this service:** the camera manager, the action manager and the motion guard. There is no motion command at all; the only module command is `haptic.play`, from the local cue policy.
+- **Not built in this service:** the camera manager, the action manager and the motion guard. There is no motion command at all; the only module command is `haptic.play`, from the local cue policy or as a short buzz on the hand whose button was pressed.
 - **Placeholders, not measured:** every timing and threshold is in `devices/pi/src/constants.ts`, labelled.
 
 ## The Pi's job in plain language

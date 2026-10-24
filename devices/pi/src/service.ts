@@ -16,12 +16,14 @@ import { CloudError, type CloudClient, type CloudErrorKind } from "./cloud/clien
 import {
   CLIP_MAX_MS,
   CLIP_MIN_MS,
+  CONFIRM_PRESS_HAPTIC_MS,
   HEARTBEAT_BACKOFF_MS,
   HEARTBEAT_DEADLINE_MS,
   HEARTBEAT_INTERVAL_MS,
   LOCAL_LINE_REPEAT_MS,
   OFFLINE_AFTER_FAILED_HEARTBEATS,
   SPEECH_LINE_MAX_MS,
+  TALK_PRESS_HAPTIC_MS,
   TURN_DEADLINE_MS,
   ZONE_VALIDITY_MS,
 } from "./constants";
@@ -243,10 +245,29 @@ export class WalkerService {
   private onButton(event: ButtonEvent): void {
     if (this.stopped) return;
     if (event.button === "talk") {
-      if (event.edge === "pressed") this.talkPressed(event);
-      else if (this.talk === "recording") void this.finishRecording();
+      if (event.edge === "pressed") {
+        this.talkPressed(event);
+        // After the press is handled, so the buzz never delays the listening sound or the mic.
+        this.pressBuzz(event, "recording");
+      } else if (this.talk === "recording") void this.finishRecording();
     } else if (event.edge === "pressed") {
-      void this.confirmPressed();
+      void this.confirmPressed(event);
+    }
+  }
+
+  /**
+   * Button feedback: a short buzz on the hand module that reported the press, so a click is felt, as well as
+   * the sounds. It plays whatever the configuration's `cues` say, because that list chooses obstacle alerts,
+   * not button feedback, and it is not an obstacle alert: the cue policy never sees it. Only an ESP32 hand
+   * press buzzes (the Pi's GPIO buttons and the simulator keyboard have no motor). A hand that can't buzz
+   * (see `canBuzz`) is skipped silently by `sendHaptic`, a busy port drops it, and it never throws.
+   */
+  private pressBuzz(event: ButtonEvent, pattern: "recording" | "confirmation" | "error"): void {
+    if (this.stopped || event.source !== "esp32" || !event.detail) return;
+    try {
+      this.deps.modules.sendHaptic(event.detail, pattern, pattern === "recording" ? TALK_PRESS_HAPTIC_MS : CONFIRM_PRESS_HAPTIC_MS);
+    } catch (error) {
+      this.deps.log.warn("press buzz failed", { module: event.detail, pattern, error: (error as Error).message });
     }
   }
 
@@ -453,7 +474,22 @@ export class WalkerService {
     if (this.unheardTurns.length > UNHEARD_TURNS_KEPT) this.unheardTurns.shift();
   }
 
-  private async confirmPressed(): Promise<void> {
+  /** Each Confirm press buzzes its hand once: `confirmation` the moment it confirms, otherwise `error` when it ends. */
+  private async confirmPressed(event: ButtonEvent): Promise<void> {
+    let felt = false;
+    const feel = (pattern: "confirmation" | "error") => {
+      if (felt) return;
+      felt = true;
+      this.pressBuzz(event, pattern);
+    };
+    try {
+      await this.answerConfirm(() => feel("confirmation"));
+    } finally {
+      feel("error");
+    }
+  }
+
+  private async answerConfirm(confirmed: () => void): Promise<void> {
     if (this.talk === "recording") {
       this.deps.log.info("Confirm ignored while recording");
       return;
@@ -476,12 +512,12 @@ export class WalkerService {
       const answer = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) =>
         cloud.answerProposal(proposal.proposal_id, "confirm", signal),
       );
-      await this.afterConfirm(answer.proposal);
+      await this.afterConfirm(answer.proposal, confirmed);
     } catch (error) {
       const kind = classifyError(error);
       if (kind === "proposal_closed" && error instanceof CloudError) {
         // A 409 carrying "confirmed" means an earlier Confirm (here or on the page) already won.
-        if (error.proposal?.state === "confirmed") await this.afterConfirm(error.proposal);
+        if (error.proposal?.state === "confirmed") await this.afterConfirm(error.proposal, confirmed);
         else {
           this.forgetProposal(proposal.proposal_id);
           this.nothingToConfirm();
@@ -497,12 +533,13 @@ export class WalkerService {
     }
   }
 
-  private async afterConfirm(proposal: ProposalView): Promise<void> {
+  private async afterConfirm(proposal: ProposalView, confirmed: () => void): Promise<void> {
     this.forgetProposal(proposal.proposal_id);
     if (proposal.state !== "confirmed" || proposal.configuration_version === null) {
       this.nothingToConfirm();
       return;
     }
+    confirmed(); // felt at once, not after the configuration fetch
     const target = proposal.configuration_version;
     const applied = (this.configuration?.version ?? 0) >= target || ((await this.fetchConfiguration()) && (this.configuration?.version ?? 0) >= target);
     void this.playCue("done");

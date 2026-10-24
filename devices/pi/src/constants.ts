@@ -34,6 +34,13 @@ export const CUE_REPEAT_MS = 3000;
 export const CUE_MIN_GAP_MS = 1000;
 /** Placeholder, not bench-tested: length of the near_obstacle haptic pattern (the interface doc's example). */
 export const OBSTACLE_HAPTIC_MS = 400;
+/**
+ * Placeholder, not bench-tested: the buzz a Talk press gives on the hand that pressed it (`recording`).
+ * Button feedback, not an obstacle alert; see `pressBuzz` in service.ts.
+ */
+export const TALK_PRESS_HAPTIC_MS = 150;
+/** Placeholder, not bench-tested: the buzz a Confirm press gives on its hand (`confirmation` or `error`). */
+export const CONFIRM_PRESS_HAPTIC_MS = 250;
 
 // ---- Buttons ----
 
