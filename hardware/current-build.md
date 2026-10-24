@@ -47,6 +47,8 @@ Write the numbers here with the date, the Chromium and cage versions (`chromium 
 
 The owner's button check showed the left handle gives the Confirm cue. A right-handle hold sometimes produced many press/release pairs in the Pi log, including release-to-press gaps under 200 ms. Both boards were reflashed with firmware `0.1.1`, which waits for a continuous 250 ms release before sending `released`; the Pi saw both boards healthy after the flash. Whether this removes the extra microphone starts during a physical hold is still being checked. If it does not, inspect the button connections and add a stronger external pull-up near the ESP32 rather than relying on software to cover a long disconnection.
 
+**Cold-boot USB observation (2026-10-24):** after a full power cycle, the Pi service was online and the boot line played, but both CP2102 handle ports timed out during `stty` setup (`spawnSync stty ETIMEDOUT`). The scanner retried and finally opened both ports about six minutes later; both reported healthy. Right Talk then opened the mic and produced two answered cloud turns. The Pi reported `throttled=0x0`. This delay has not been isolated to the hubs, cabling, or USB devices. If Talk seems dead after a power cycle, check `journalctl -u steady-walker -b` for `serial port opened` and `module said hello` before treating it as a voice-service failure.
+
 The latest pasted cart was about **$665.67 before battery, charger, tax, or shipping changes**. This is a snapshot of the user's cart, not a current quote. Do not publish the user's shipping address or order details in this repository.
 
 ## Proposed electrical layout
