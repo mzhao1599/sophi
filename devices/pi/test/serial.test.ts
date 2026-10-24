@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { SerialHapticPlaySchema, type SerialParseResult } from "@walker/contracts";
+import { SERIAL_ANY_MODULE, SerialHapticPlaySchema, SerialHelloRequestSchema, type SerialParseResult } from "@walker/contracts";
 import { describe, expect, it } from "vitest";
 import { Bus } from "../src/bus";
 import { LineReader } from "../src/serial/lineReader";
@@ -189,9 +189,11 @@ describe("module manager", () => {
     expect(modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(true);
     expect(modules.sendHaptic("hand-left-01", "error", 1000)).toBe(true);
     expect(modules.sendHaptic("hand-left-01", "error", 1001)).toBe(false);
-    expect(port.received).toHaveLength(2);
-    const sent = port.received.map((line) => SerialHapticPlaySchema.parse(JSON.parse(line)));
-    expect(sent.map((m) => m.seq)).toEqual([0, 1]);
+    // The port's first line is the hello.request sent on opening (seq 0), so the haptics are 1 and 2.
+    const haptics = port.received.filter((line) => JSON.parse(line).type === "haptic.play");
+    expect(haptics).toHaveLength(2);
+    const sent = haptics.map((line) => SerialHapticPlaySchema.parse(JSON.parse(line)));
+    expect(sent.map((m) => m.seq)).toEqual([1, 2]);
     expect(port.received.every((line) => Buffer.byteLength(line) <= 1024 && line.endsWith("\n"))).toBe(true);
     expect(modules.sendHaptic("nobody", "error", 100)).toBe(false);
   });
@@ -215,5 +217,114 @@ describe("module manager", () => {
     expect(modules.currentZones()).toHaveLength(1);
     await clock.advance(1);
     expect(modules.currentZones()).toHaveLength(0);
+  });
+});
+
+describe("hello.request (serial v1, PR #28)", () => {
+  const requests = (port: SimulatedPort) =>
+    port.received.map((line) => JSON.parse(line)).filter((m: { type: string }) => m.type === "hello.request");
+
+  it("S13: opening a port asks for a hello; a module that kept running answers and is registered", async () => {
+    const { clock, modules, buttons } = manager();
+    const port = new SimulatedPort("p1");
+    const hand = new SimulatedHand(port, "hand-left-01", clock);
+    hand.start(); // its boot hello goes nowhere: the Pi service wasn't listening yet
+    await clock.advance(5000);
+    modules.attach(port);
+    expect(port.received).toHaveLength(1);
+    expect(SerialHelloRequestSchema.parse(JSON.parse(port.received[0]!))).toEqual({
+      v: 1,
+      type: "hello.request",
+      module_id: SERIAL_ANY_MODULE,
+      seq: 0,
+    });
+    await flush();
+    expect(modules.modules()).toEqual([expect.objectContaining({ instanceId: "hand-left-01", health: "ok" })]);
+    hand.press("talk", "pressed");
+    await flush();
+    expect(buttons).toEqual(["esp32 talk pressed"]);
+  });
+
+  it("S14: an unknown module that keeps talking is asked again, at most every 2 s", async () => {
+    const { clock, modules } = manager();
+    const port = new SimulatedPort("p1");
+    modules.attach(port); // nothing answers: no module is running yet
+    for (let i = 0; i < 50; i += 1) {
+      port.sendLine({ v: 1, type: "heartbeat", module_id: "tof-front-01", seq: 100 + i, uptime_ms: i, health: "ok" });
+      await clock.advance(100);
+    }
+    // At 0 s on opening, then at 2 s and 4 s while the unknown module talks: three, not one per line.
+    expect(requests(port).map((m: { seq: number }) => m.seq)).toEqual([0, 1, 2]);
+    expect(requests(port).every((m: { module_id: string }) => m.module_id === "any")).toBe(true);
+  });
+
+  it("S15: a module back from unavailable is asked for a fresh hello by its own id, with no second notice", async () => {
+    const { clock, modules, down } = manager();
+    const port = new SimulatedPort("p1");
+    modules.attach(port);
+    const tof = new SimulatedTof(port, "tof-front-01", clock);
+    tof.start();
+    await clock.advance(1500);
+    tof.hang();
+    await clock.advance(5000);
+    expect(modules.modules()[0]?.health).toBe("unavailable");
+    // Heartbeats resume without a reboot (seq keeps running), as a module whose cable glitched would.
+    port.sendLine({ v: 1, type: "heartbeat", module_id: "tof-front-01", seq: 500, uptime_ms: 9000, health: "ok" });
+    await flush();
+    expect(requests(port).at(-1)).toMatchObject({ module_id: "tof-front-01" });
+    expect(modules.modules()[0]?.health).toBe("ok");
+    expect(down).toHaveLength(1);
+  });
+});
+
+describe("hello.request after the review", () => {
+  const requests = (port: SimulatedPort) =>
+    port.received.map((line) => JSON.parse(line)).filter((m: { type: string }) => m.type === "hello.request");
+
+  it("S14: a line from an id the port doesn't know is answered with a request to `any`, never a guessed id", async () => {
+    const { clock, modules } = manager();
+    const port = new SimulatedPort("p1");
+    modules.attach(port);
+    port.sendLine({ v: 1, type: "hello", module_id: "hand-left-01", seq: 0, module_type: "hand", capabilities: [] });
+    await clock.advance(2500);
+    port.sendLine({ v: 1, type: "heartbeat", module_id: "hand-left-02", seq: 7, uptime_ms: 1, health: "ok" });
+    await flush();
+    expect(requests(port).map((m: { module_id: string }) => m.module_id)).toEqual(["any", "any"]);
+  });
+
+  it("S15: a resume request that couldn't be written (busy port) goes out on the module's next line", async () => {
+    const { clock, modules } = manager();
+    const port = new SimulatedPort("p1");
+    modules.attach(port);
+    const tof = new SimulatedTof(port, "tof-front-01", clock);
+    tof.start();
+    await clock.advance(1500);
+    tof.hang();
+    await clock.advance(5000);
+    port.busy = true;
+    port.sendLine({ v: 1, type: "heartbeat", module_id: "tof-front-01", seq: 500, uptime_ms: 9000, health: "ok" });
+    await flush();
+    expect(requests(port).filter((m: { module_id: string }) => m.module_id === "tof-front-01")).toEqual([]);
+    port.busy = false;
+    port.sendLine({ v: 1, type: "heartbeat", module_id: "tof-front-01", seq: 501, uptime_ms: 10000, health: "ok" });
+    await flush();
+    expect(requests(port).filter((m: { module_id: string }) => m.module_id === "tof-front-01")).toHaveLength(1);
+  });
+
+  it("S18: two boards with one id never trade it through the Pi's requests; the duplicate is logged once", async () => {
+    const { clock, modules, log } = manager();
+    const first = new SimulatedPort("p1");
+    const second = new SimulatedPort("p2");
+    modules.attach(first);
+    new SimulatedHand(first, "hand-left-01", clock).start();
+    await clock.advance(100);
+    modules.attach(second); // a raw port: its board sends heartbeats under the same id and answers nothing
+    for (let i = 0; i < 100; i += 1) {
+      second.sendLine({ v: 1, type: "heartbeat", module_id: "hand-left-01", seq: 50 + i, uptime_ms: i, health: "ok" });
+      await clock.advance(100);
+    }
+    expect(requests(second)).toHaveLength(1); // only the one sent when the port opened
+    expect(log.lines.filter((line) => line.includes("two modules use the same id"))).toHaveLength(1);
+    expect(modules.modules()).toEqual([expect.objectContaining({ instanceId: "hand-left-01", health: "ok" })]);
   });
 });

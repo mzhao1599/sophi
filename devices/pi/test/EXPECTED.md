@@ -61,6 +61,12 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 | S9 | Heartbeat, zones or hand input before any hello | Ignored and counted. |
 | S10 | Pi sends `haptic.play` | The line passes `SerialHapticPlaySchema`, fits in 1,024 bytes, and the Pi's `seq` counts up per port. |
 | S12 | Serial writes *(review)* | At most one write in flight per port; a cue while one is pending is dropped, not queued. `stty` also sets `clocal`, so opening a port never waits for a carrier signal. |
+| S13 | The Pi opens a port *(hello.request, PR #28)* | It sends `{"v":1,"type":"hello.request","module_id":"any","seq":0}` (checked against `SerialHelloRequestSchema`). A module that was already running when the Pi service started (its boot hello went unheard) answers with a hello and is registered, and its buttons work. |
+| S14 | Lines keep arriving on a port with no known module *(hello.request)* | The Pi asks again with `hello.request` addressed to `any` (never to an id it guessed), at most once every 2 s (*placeholder*), never per line. |
+| S15 | A module went `unavailable` (no heartbeat for 3 s) and its heartbeats resume *(hello.request)* | The Pi sends a `hello.request` addressed to that module's own id, so its capabilities are fresh; it comes back `ok` with no second "stopped responding" line. If the port was busy and the request couldn't be written, it is tried again on the module's next line until it goes out or a hello arrives. |
+| S16 | A re-hello from a module the Pi already knows *(hello.request)* | Accepted. If its `seq` kept running (an answer to a request), it is not a reboot: a recording started from that hand carries on. If its `seq` went back (a reboot), it is a reboot: a recording started from that hand is discarded (B19). |
+| S17 | A known module's `seq` goes back on a line that isn't a hello (it rebooted and its hello was lost, or another line came first) *(hello.request review)* | Treated as a reboot all the same: a recording that hand started is discarded, and the Pi asks for a hello. |
+| S18 | Two boards with the same id on two ports *(hello.request review)* | Whichever said hello last holds the id. The Pi never asks the other one for a hello while the holder is available, so the two never trade the id back and forth through the Pi's requests; the duplicate is logged once per port. |
 | S11 | Manifest | One entry per module: catalog id (`hand` → `controls.hand`, `perception` → `perception.tof`), `instance_id`, firmware, protocol 1, health, faults, `observed_at`, `simulated`. |
 
 ## Local cue policy

@@ -153,7 +153,11 @@ describe("S12: serial writes", () => {
     expect(h.modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(false);
     h.hand!.port.busy = false;
     expect(h.modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(true);
-    expect(h.hand!.port.received.map((line) => JSON.parse(line).seq)).toEqual([0]);
+    // seq 0 was the hello.request sent on opening; the dropped haptic took no number.
+    expect(h.hand!.port.received.map((line) => [JSON.parse(line).type, JSON.parse(line).seq])).toEqual([
+      ["hello.request", 0],
+      ["haptic.play", 1],
+    ]);
   });
 
   it("stty sets clocal on Linux and macOS", () => {
@@ -349,4 +353,51 @@ describe("second review", () => {
     expect(h.speaker.stopped).toEqual(["Steady is on."]);
     expect(h.speaker.spoken).toEqual(["Steady is on.", "I'm offline right now."]);
   });
+});
+
+describe("S16: a re-hello from a known module (hello.request, PR #28)", () => {
+  it("an answer to a hello.request (seq kept running) is not a reboot: the recording carries on", async () => {
+    const h = makeHarness({ withHand: true });
+    await boot(h);
+    h.hand!.press("talk", "pressed");
+    await h.clock.advance(1000);
+    const hellos = () => h.log.lines.filter((line) => line.includes("module said hello")).length;
+    const before = hellos();
+    // The Pi asks again (as after the module came back); the module answers with seq still running.
+    h.hand!.port.onPiLine(JSON.stringify({ v: 1, type: "hello.request", module_id: "hand-left-01", seq: 9 }));
+    await flush();
+    expect(hellos()).toBe(before + 1);
+    expect(h.service.talk).toBe("recording");
+    h.hand!.press("talk", "released");
+    await flush();
+    expect(h.client.calls).toContain("turn");
+  });
+
+  it("a reboot (seq back to 0) still discards it (B19)", async () => {
+    const h = makeHarness({ withHand: true });
+    await boot(h);
+    h.hand!.press("talk", "pressed");
+    await h.clock.advance(1000);
+    h.hand!.start();
+    await flush();
+    expect(h.service.talk).toBe("idle");
+    expect(h.client.calls).not.toContain("turn");
+  });
+});
+
+it("S17: a known hand whose seq goes back on a heartbeat (its boot hello lost) counts as rebooted", async () => {
+  const h = makeHarness({ withHand: true });
+  await boot(h);
+  await h.clock.advance(3000); // a few heartbeats: the hand's seq is past 0
+  h.hand!.press("talk", "pressed");
+  await h.clock.advance(1000);
+  expect(h.service.talk).toBe("recording");
+  const sentBefore = h.hand!.port.received.length;
+  h.hand!.port.sendLine({ v: 1, type: "heartbeat", module_id: "hand-left-01", seq: 0, uptime_ms: 40, health: "ok" });
+  await flush();
+  expect(h.service.talk).toBe("idle");
+  expect(h.client.calls).not.toContain("turn");
+  expect(h.spoken("local_reply")).toEqual([LINES.stoppedListening]);
+  const asked = h.hand!.port.received.slice(sentBefore).map((line) => JSON.parse(line));
+  expect(asked).toEqual([expect.objectContaining({ type: "hello.request", module_id: "hand-left-01" })]);
 });

@@ -13,6 +13,8 @@ import { HEARTBEAT_INTERVAL_MS as CONTRACT_HEARTBEAT_INTERVAL_MS, VOICE_CLIP_MAX
 
 /** Placeholder, not measured: no heartbeat (or hello) for this long marks a module `unavailable`. */
 export const MODULE_HEARTBEAT_TIMEOUT_MS = 3000;
+/** Placeholder, not measured: on one port, the Pi sends at most one `hello.request` this often (only as lines arrive). */
+export const HELLO_REQUEST_MIN_GAP_MS = 2000;
 /** Placeholder, not measured: how often the Pi looks for newly plugged-in serial modules. */
 export const SERIAL_RESCAN_MS = 5000;
 /** Assumption: the ESP32 boards' USB serial bridges run at 115200 baud (to confirm with the firmware). */

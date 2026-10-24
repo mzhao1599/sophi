@@ -1,14 +1,16 @@
 import {
+  SERIAL_ANY_MODULE,
   SERIAL_MAX_LINE_BYTES,
   SERIAL_PROTOCOL_VERSION,
   SerialHapticPlaySchema,
+  SerialHelloRequestSchema,
   type ModuleId,
   type SerialMessage,
   type SerialModuleType,
 } from "@walker/contracts";
 import type { Bus, ButtonName } from "../bus";
 import type { Clock, Cancel } from "../clock";
-import { MODULE_HEARTBEAT_TIMEOUT_MS, ZONE_VALIDITY_MS } from "../constants";
+import { HELLO_REQUEST_MIN_GAP_MS, MODULE_HEARTBEAT_TIMEOUT_MS, ZONE_VALIDITY_MS } from "../constants";
 import type { Logger } from "../log";
 import { LineReader } from "./lineReader";
 
@@ -63,6 +65,12 @@ interface Port {
   seq: number;
   ignoredBeforeHello: number;
   badLines: number;
+  /** When the Pi last sent this port a `hello.request` (monotonic), or null before the first. */
+  lastHelloRequestMono: number | null;
+  /** The known module should be asked for a hello, but the request hasn't been written yet (port busy). */
+  wantHello: boolean;
+  /** A line came from an id another available port holds; logged once. */
+  duplicateLogged: boolean;
 }
 
 interface ModuleRecord extends ModuleView {
@@ -83,6 +91,10 @@ export interface ModuleManagerDeps {
  * its hello (its capabilities come from there); lines before that are counted and ignored. If heartbeats
  * stop for MODULE_HEARTBEAT_TIMEOUT_MS, or its port closes, the module becomes `unavailable` and its zones
  * count as unknown.
+ *
+ * The Pi asks for a hello (`hello.request`) when it opens a port, so a module that kept running while the Pi
+ * service restarted still announces itself. It asks again (at most every HELLO_REQUEST_MIN_GAP_MS) while an
+ * unknown module keeps talking, and when a module that went unavailable starts sending heartbeats again.
  */
 export class ModuleManager {
   private readonly ports = new Set<Port>();
@@ -93,7 +105,16 @@ export class ModuleManager {
   constructor(private readonly deps: ModuleManagerDeps) {}
 
   attach(conn: SerialConnection): void {
-    const port: Port = { conn, instanceId: null, seq: 0, ignoredBeforeHello: 0, badLines: 0 };
+    const port: Port = {
+      conn,
+      instanceId: null,
+      seq: 0,
+      ignoredBeforeHello: 0,
+      badLines: 0,
+      lastHelloRequestMono: null,
+      wantHello: false,
+      duplicateLogged: false,
+    };
     this.ports.add(port);
     const reader = new LineReader((result) => {
       if (result.ok) this.handle(port, result.message);
@@ -105,6 +126,35 @@ export class ModuleManager {
     conn.onData((data) => reader.push(data));
     conn.onClose((reason) => this.detach(port, reason));
     this.deps.log.info("serial port opened", { port: conn.id, simulated: conn.simulated });
+    this.requestHello(port, SERIAL_ANY_MODULE);
+  }
+
+  /**
+   * Sends `hello.request` to `target` (`any`, or a known module's own id), unless one went out on this port
+   * recently. Returns false when nothing was written (throttled, busy or closed).
+   */
+  private requestHello(port: Port, target: string): boolean {
+    const now = this.deps.clock.monotonic();
+    if (port.lastHelloRequestMono !== null && now - port.lastHelloRequestMono < HELLO_REQUEST_MIN_GAP_MS) return false;
+    const parsed = SerialHelloRequestSchema.safeParse({
+      v: SERIAL_PROTOCOL_VERSION,
+      type: "hello.request",
+      module_id: target,
+      seq: port.seq,
+    });
+    if (!parsed.success) {
+      this.deps.log.error("hello.request failed validation; not sent", { port: port.conn.id });
+      return false;
+    }
+    if (!port.conn.write(`${JSON.stringify(parsed.data)}\n`)) return false;
+    port.seq += 1;
+    port.lastHelloRequestMono = now;
+    return true;
+  }
+
+  /** Asks a known module for a fresh hello, and keeps asking on its later lines until the request goes out. */
+  private refreshHello(record: ModuleRecord): void {
+    record.port.wantHello = !this.requestHello(record.port, record.instanceId);
   }
 
   modules(): ModuleView[] {
@@ -164,6 +214,16 @@ export class ModuleManager {
     if (message.type === "hello") return this.hello(port, message);
     const record = port.instanceId === message.module_id ? this.records.get(message.module_id) : undefined;
     if (!record) {
+      // Another port's available module holds this id (two boards flashed alike): don't ask this one for a
+      // hello, or the two would take the id back and forth through the Pi's requests.
+      const owner = this.records.get(message.module_id);
+      if (owner && owner.port !== port && owner.health !== "unavailable") {
+        if (!port.duplicateLogged) {
+          port.duplicateLogged = true;
+          this.deps.log.error("two modules use the same id; this port is ignored", { module: message.module_id, port: port.conn.id });
+        }
+        return;
+      }
       port.ignoredBeforeHello += 1;
       if (port.ignoredBeforeHello === 1 || port.ignoredBeforeHello % 100 === 0) {
         this.deps.log.warn("serial line from a module that hasn't said hello on this port; ignored", {
@@ -172,15 +232,32 @@ export class ModuleManager {
           count: port.ignoredBeforeHello,
         });
       }
+      this.requestHello(port, SERIAL_ANY_MODULE);
       return;
+    }
+    // seq only counts up while a module runs, and starts again when it reboots. A line whose seq went back
+    // means it rebooted even if its boot hello was lost: a button it reported as held is no longer held.
+    let asked = false;
+    if (record.lastSeq !== null && message.seq <= record.lastSeq) {
+      this.deps.log.warn("module's seq went back: it rebooted", { module: record.instanceId });
+      if (record.type === "hand") this.deps.bus.emit("buttonsLost", { source: "esp32", detail: record.instanceId });
+      this.refreshHello(record);
+      asked = true;
+    } else if (port.wantHello) {
+      this.refreshHello(record);
+      asked = true;
     }
     this.countSeq(record, message.seq);
     record.observedAt = this.deps.clock.now();
     switch (message.type) {
-      case "heartbeat":
+      case "heartbeat": {
+        const wasUnavailable = record.health === "unavailable";
         this.armWatchdog(record);
         this.setHealth(record, message.health, message.faults ?? []);
+        // Back after going silent: ask for a fresh hello so its capabilities are current (once per line).
+        if (wasUnavailable && !asked) this.refreshHello(record);
         return;
+      }
       case "hand.input":
         if (message.button === undefined || message.edge === undefined) return;
         if (record.type !== "hand" || !record.capabilities.includes(`button.${message.button}`)) {
@@ -218,7 +295,8 @@ export class ModuleManager {
         this.deps.log.warn("module reported an error", { module: record.instanceId, code: message.code });
         return;
       case "haptic.play":
-        this.deps.log.warn("module sent a Pi-only command; ignored", { module: record.instanceId });
+      case "hello.request":
+        this.deps.log.warn("module sent a Pi-only command; ignored", { module: record.instanceId, type: message.type });
         return;
     }
   }
@@ -232,8 +310,11 @@ export class ModuleManager {
     }
     if (port.instanceId && port.instanceId !== id) this.forget(port.instanceId);
     port.instanceId = id;
-    // A hello from a module already known means it rebooted: a button it reported as held is no longer held.
-    if (existing?.type === "hand") this.deps.bus.emit("buttonsLost", { source: "esp32", detail: id });
+    port.wantHello = false;
+    // A module answering a hello.request keeps its seq running; a reboot starts it again (or it moved ports).
+    // Only a reboot means a button it reported as held is no longer held.
+    const rebooted = existing !== undefined && (existing.port !== port || message.seq <= (existing.lastSeq ?? -1));
+    if (existing?.type === "hand" && rebooted) this.deps.bus.emit("buttonsLost", { source: "esp32", detail: id });
     const record: ModuleRecord = {
       instanceId: id,
       type: message.module_type,

@@ -1,4 +1,4 @@
-import { parseSerialLine } from "@walker/contracts";
+import { SERIAL_ANY_MODULE, parseSerialLine, type SerialMessage } from "@walker/contracts";
 import type { Cancel, Clock } from "../clock";
 import type { SerialConnection } from "../serial/modules";
 
@@ -67,7 +67,28 @@ abstract class SimulatedModule {
     readonly port: SimulatedPort,
     readonly moduleId: string,
     protected readonly clock: Clock,
-  ) {}
+  ) {
+    port.onPiLine = (line) => {
+      const parsed = parseSerialLine(line);
+      if (!parsed.ok) {
+        this.send({ type: "error", code: parsed.problem });
+        return;
+      }
+      // A running module answers a hello.request addressed to it (or to "any"), keeping its seq running.
+      if (parsed.message.type === "hello.request") {
+        const target = parsed.message.module_id;
+        if (this.running && (target === SERIAL_ANY_MODULE || target === this.moduleId)) this.sendHello();
+        return;
+      }
+      this.onPiMessage(parsed.message);
+    };
+  }
+
+  protected onPiMessage(_message: SerialMessage): void {}
+
+  private sendHello(): void {
+    this.send({ type: "hello", ...this.hello(), firmware_version: "sim-0.1.0", uptime_ms: this.uptime() });
+  }
 
   protected abstract hello(): Record<string, unknown>;
   protected tick(): void {}
@@ -87,7 +108,7 @@ abstract class SimulatedModule {
     this.running = true;
     this.seq = 0;
     this.bootMono = this.clock.monotonic();
-    this.send({ type: "hello", ...this.hello(), firmware_version: "sim-0.1.0", uptime_ms: 0 });
+    this.sendHello();
     const heartbeat = () => {
       if (!this.running) return;
       this.send({ type: "heartbeat", uptime_ms: this.uptime(), health: "ok" });
@@ -125,19 +146,11 @@ abstract class SimulatedModule {
 export class SimulatedHand extends SimulatedModule {
   onHaptic: (pattern: string, durationMs: number) => void = () => {};
 
-  constructor(port: SimulatedPort, moduleId: string, clock: Clock) {
-    super(port, moduleId, clock);
-    port.onPiLine = (line) => {
-      const parsed = parseSerialLine(line);
-      if (!parsed.ok) {
-        this.send({ type: "error", code: parsed.problem });
-        return;
-      }
-      if (parsed.message.type === "haptic.play") {
-        this.send({ type: "ack", request_id: parsed.message.request_id, result: "accepted" });
-        this.onHaptic(parsed.message.pattern, parsed.message.duration_ms);
-      }
-    };
+  protected override onPiMessage(message: SerialMessage): void {
+    if (message.type === "haptic.play") {
+      this.send({ type: "ack", request_id: message.request_id, result: "accepted" });
+      this.onHaptic(message.pattern, message.duration_ms);
+    }
   }
 
   protected hello() {
