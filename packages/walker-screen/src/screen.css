@@ -168,6 +168,17 @@
   line-height: 1.2;
 }
 
+/* A long motion title (the Pi's words, never cut): bold at the body size, or at the smallest size. */
+.ws-main[data-size="title"] {
+  font-size: var(--ws-body);
+  line-height: 1.1;
+}
+
+.ws-main[data-size="small"] {
+  font-size: var(--ws-smallest);
+  line-height: 1.15;
+}
+
 .ws-main[data-size="message"] {
   font-size: var(--ws-message);
   line-height: 1.1;
@@ -308,6 +319,29 @@
   outline-offset: 4px;
 }
 
+/* The lift's hold control: wider than the others so its label and "and press Confirm" fit on one line each.
+ * Panning, the long-press menu and selection are off, so a long hold is never turned into something else. */
+.ws-hold {
+  flex: 0 1 auto;
+  width: 400px;
+  max-width: 100%;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Held: filled, as a switch that is on; the words stay, and the screen above says "Keep holding". */
+.ws-hold[data-held="true"] {
+  border-color: var(--ws-ink);
+  background: var(--ws-ink);
+  color: var(--ws-on-ink);
+}
+
+.ws-tag-strip + .ws-tag-strip {
+  margin-left: 16px;
+}
+
 .ws-button-label {
   display: inline-flex;
   flex-wrap: wrap;
@@ -369,5 +403,11 @@
   .ws-dot[data-shape="filled"],
   .ws-switch[data-on="true"] {
     background: CanvasText;
+  }
+
+  /* Held, where the fill can't show: a second edge inside the first. */
+  .ws-hold[data-held="true"] {
+    outline: 4px solid CanvasText;
+    outline-offset: -12px;
   }
 }

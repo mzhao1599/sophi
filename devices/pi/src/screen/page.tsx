@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ScreenStateSchema, type ScreenAction, type ScreenState } from "@walker/contracts";
-import { WalkerScreenView, screenView, type ScreenView } from "@walker/walker-screen";
+import { ScreenStateSchema, type ScreenAction, type ScreenHold, type ScreenState } from "@walker/contracts";
+import { screenView, type ScreenView } from "@walker/walker-screen";
 import "@walker/walker-screen/screen.css";
+import { HoldControl } from "./hold";
+import { ScreenPage } from "./pageView";
 import "./page.css";
 
 /**
@@ -14,6 +16,10 @@ import "./page.css";
  * The only thing it knows by itself is whether the walker service is answering: if the stream drops and
  * doesn't come back within LOST_MS, it stops showing the last state (which may no longer be true) and says
  * it is waiting for the walker service.
+ *
+ * The lift's hold control (shown only when the Pi's state has one) is run by HoldControl (hold.ts): "still
+ * held" to POST /screen/hold while her finger is on it, and a release on any of SCREEN_HOLD_RELEASE_EVENTS,
+ * when the control leaves the screen, and the moment the stream drops (not LOST_MS later).
  */
 const LOST_MS = 5000;
 const token = document.querySelector<HTMLMetaElement>('meta[name="screen-token"]')?.content ?? "";
@@ -27,19 +33,29 @@ function post(path: string, body: unknown): void {
   }).catch(() => {});
 }
 
-function Waiting() {
-  return (
-    <main className="pi-waiting" aria-live="polite">
-      <p className="pi-waiting-main">Sophi</p>
-      <p>Waiting for the walker service.</p>
-    </main>
-  );
+function holdControl(onChange: (held: boolean) => void): HoldControl {
+  return new HoldControl({
+    window,
+    document,
+    send: (hold: ScreenHold) => post("/screen/hold", hold),
+    now: () => performance.timeOrigin + performance.now(),
+    setInterval: (fn, ms) => window.setInterval(fn, ms),
+    clearInterval: (id) => window.clearInterval(id as number),
+    onChange,
+  });
 }
 
 function App() {
   const [state, setState] = useState<ScreenState | null>(null);
   const [lost, setLost] = useState(false);
+  const [held, setHeld] = useState(false);
+  /** The stream is up: a state has come since the last error. The hold control needs it. */
+  const [streaming, setStreaming] = useState(false);
   const lastGood = useRef<ScreenView | null>(null);
+  const hold = useRef<HoldControl | null>(null);
+  hold.current ??= holdControl(setHeld);
+
+  useEffect(() => hold.current!.attach(), []);
 
   useEffect(() => {
     let events: EventSource | null = null;
@@ -54,9 +70,13 @@ function App() {
         window.clearTimeout(lostTimer);
         lostTimer = undefined;
         setLost(false);
+        setStreaming(true);
         setState(parsed.data);
       });
       source.addEventListener("error", () => {
+        // Holding the lift needs the stream: let go now, not when the waiting screen shows.
+        hold.current?.streamLost();
+        setStreaming(false);
         if (lostTimer === undefined) lostTimer = window.setTimeout(() => setLost(true), LOST_MS);
         // Refused for good (CLOSED): ask the service whether this page's token is still good. 403: it
         // restarted with a new token, so load the page afresh. 204: it was full or dropped this stream, so
@@ -108,17 +128,25 @@ function App() {
     };
   }, [state]);
 
-  if (lost || !state) return <Waiting />;
-  let view: ScreenView;
-  try {
-    view = screenView(state);
-    lastGood.current = view;
-  } catch {
-    if (!lastGood.current) return <Waiting />;
-    view = lastGood.current;
+  let view: ScreenView | null = null;
+  if (!lost && state) {
+    try {
+      view = screenView(state);
+      lastGood.current = view;
+    } catch {
+      view = lastGood.current;
+    }
   }
-  const press = (action: ScreenAction) => post("/screen/press", { revision: state.revision, action });
-  return <WalkerScreenView view={view} onPress={press} />;
+  // The control exists only while the drawn view shows it and the stream is up; anything else lets go. Until
+  // the stream is back, it isn't drawn either: a control that can't hold is never shown.
+  if (view?.hold && !streaming) view = { ...view, hold: null };
+  const shown = view?.hold != null;
+  useEffect(() => hold.current!.setShown(shown), [shown]);
+  const press = (action: ScreenAction) => {
+    if (state) post("/screen/press", { revision: state.revision, action });
+  };
+  const onHold = (pressed: boolean) => (pressed ? hold.current!.press() : hold.current!.release());
+  return <ScreenPage view={view} held={held} onPress={press} onHold={onHold} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

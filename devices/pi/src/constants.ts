@@ -83,6 +83,12 @@ export const CAPTION_PAGE_MIN_MS = 2500;
 export const SCREEN_OBSTACLE_TAIL_MS = 1000;
 /** Placeholder: zones arrive at the sensor's rate; the screen redraws a changed distance at most this often. */
 export const SCREEN_ZONES_MIN_MS = 250;
+/**
+ * Placeholder: the motion coordinator publishes its state at least every 200 ms (MOTION_STATE_PUBLISH_MS) while it
+ * runs. A state older than this is stale: the screen drops every motion screen and the hold control rather than
+ * show a motion it can no longer see (the lift stops by itself when the coordinator's heartbeats stop).
+ */
+export const SCREEN_MOTION_STALE_MS = 1000;
 
 // ---- Cloud (the interval is the walker contract's; the timeouts are placeholders) ----
 

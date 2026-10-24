@@ -1,4 +1,4 @@
-import type { AppliedScreenSettings, Cue, ScreenContent, ScreenLink, ScreenState } from "@walker/contracts";
+import type { AppliedScreenSettings, Cue, MotionState, ScreenContent, ScreenHoldDirection, ScreenLink, ScreenState } from "@walker/contracts";
 import { captionPages } from "@walker/walker-screen/view";
 import type { TalkState } from "../bus";
 import type { Cancel, Clock } from "../clock";
@@ -9,10 +9,12 @@ import {
   NEAR_EXIT_MM,
   SCREEN_ANSWER_HOLD_MS,
   SCREEN_DONE_MS,
+  SCREEN_MOTION_STALE_MS,
   SCREEN_OBSTACLE_TAIL_MS,
   SCREEN_ZONES_MIN_MS,
   ZONE_VALIDITY_MS,
 } from "../constants";
+import { endedBetween, liftDirection, motionContent, type MotionHolding, type ScreenMotion } from "./motion";
 
 /**
  * Which state the walker's screen shows, decided on the Pi (the page decides nothing). Only the walker's own
@@ -20,11 +22,25 @@ import {
  *
  * Priority, highest first (the screen design, section 2, and the contract's ScreenContent comment):
  *   1. obstacle: a zone is near (the cue policy's thresholds and hysteresis), and for a short tail after
- *   2. what she is doing: listening (Talk held), thinking (her turn is with Sophi), then answering (captions)
- *   3. Sophi's offer: today's model offer, until it is settled or closes
- *   4. Done / Nothing changed, for a few seconds after Confirm settles an offer
- *   5. offline, or not set up (unpaired, or the server no longer knows this walker)
- *   6. ambient: the clock, and the alerts in force
+ *   2. motion she must know about now: something moving (and that any handle button stops it, or that letting
+ *      go of the lift stops it), or a latched motion fault (with its clearing target, if one is pending)
+ *   3. what she is doing: listening (Talk held), thinking (her turn is with Sophi), then answering (captions)
+ *   4. the pending motion Confirm target ("Bring the cup? Park the walker…"), with the lift's hold control
+ *   5. Sophi's offer: today's model offer, until it is settled or closes
+ *   6. Done / Nothing changed, for a few seconds after Confirm settles an offer; and after a motion, Done,
+ *      Stopped or Not started (the motion's own "holding" screen)
+ *   7. offline, or not set up (unpaired, or the server no longer knows this walker)
+ *   8. ambient: the clock, and the alerts in force
+ * Why motion sits where it does: an obstacle is the walker's first job, about her body in the next second.
+ * A running motion or a fault is next because it is about motors moving near her now: the screen must keep
+ * saying what moves and how to stop it, above anything of hers still on screen (any handle press stops it,
+ * and her own screens come back underneath once it has). Her own Talk turn comes before a pending target: a
+ * target only waits (30 s) and nothing moves until a handle Confirm press, while her question is happening
+ * now; and a Talk press withdraws a pending target (the coordinator's rule), so her turn doesn't hide one a
+ * Confirm press could answer. (A target the terminal prepares during her turn is said aloud at once but shown
+ * only once her turn is over; a Confirm press in between still answers it.) The target comes before Sophi's
+ * offer and Done, which the coordinator never shows together
+ * with it (one owner of Confirm at a time).
  * The state is recomputed from these layers whenever one changes, so an interruption (an obstacle, Talk)
  * returns to whatever is still underneath it, with a new revision.
  *
@@ -74,6 +90,10 @@ export interface ScreenModel {
   answer: ScreenAnswer | null;
   done: { result: SettleResult; untilMono: number } | null;
   obstacle: ScreenObstacle | null;
+  /** The motion coordinator's latest state, or null when there is none (no arms or lift on this walker). */
+  motion: ScreenMotion | null;
+  /** Done, Stopped or Not started after a motion, until `untilMono`. */
+  motionEnded: { content: MotionHolding; untilMono: number } | null;
 }
 
 /** How long one caption page shows: its characters at the speaking rate, and never less than the minimum. */
@@ -119,6 +139,16 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   }
 
   // Layers under the obstacle still keep their own clocks, so the soonest change is collected for each.
+  // Motion: a state older than SCREEN_MOTION_STALE_MS shows nothing (the coordinator stopped publishing).
+  let motion: ReturnType<typeof motionContent> = { safety: null, pending: null };
+  if (model.motion) {
+    const staleAt = model.motion.atMono + SCREEN_MOTION_STALE_MS;
+    if (now < staleAt) {
+      motion = motionContent(model.motion);
+      soonest.push(staleAt);
+    }
+  }
+
   let doing: ScreenContent | null = null;
   if (model.talk === "recording") doing = { state: "listening" };
   else if (model.talk === "waiting") doing = { state: "thinking" };
@@ -134,11 +164,16 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   }
 
   let under: ScreenContent;
-  if (doing) under = doing;
+  if (motion.safety) under = motion.safety;
+  else if (doing) under = doing;
+  else if (motion.pending) under = motion.pending;
   else if (model.offer) under = { state: "model_offer", proposal_id: model.offer.proposal_id, from_cues: model.offer.from_cues, cues: model.offer.cues };
   else if (model.done && now < model.done.untilMono) {
     soonest.push(model.done.untilMono);
     under = { state: "done", result: model.done.result, change_back: false };
+  } else if (model.motionEnded && now < model.motionEnded.untilMono) {
+    soonest.push(model.motionEnded.untilMono);
+    under = model.motionEnded.content;
   } else if (model.link === "offline") under = { state: "offline" };
   else if (model.link === "unpaired" || model.link === "unauthorized") under = { state: "not_set_up" };
   else under = { state: "ambient", alerts: model.alerts };
@@ -172,7 +207,7 @@ export interface ScreenMachineDeps {
  * state, so the page never flashes an in-between screen. The clock is redrawn on the minute.
  */
 export class ScreenMachine {
-  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null };
+  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null };
   private revision = -1;
   private last: ScreenState | null = null;
   private lastKey = "";
@@ -265,6 +300,27 @@ export class ScreenMachine {
   }
 
   /**
+   * The motion coordinator's state (5 times a second, and at once on a change). Remembers which way each lift
+   * target goes from when it was first seen, and shows Done, Stopped or Not started when a motion ends.
+   */
+  motion(state: MotionState): void {
+    const now = this.deps.clock.monotonic();
+    const before = this.model.motion;
+    const directions = new Map(before?.directions ?? []);
+    const isHeld = (kind: string) => kind === "lift.home" || kind === "lift.move";
+    const lift = state.active && isHeld(state.active.kind) ? (state.active as { kind: string; target_id: string; target_mm?: number }) : null;
+    const action = lift ?? (state.confirm_target && isHeld(state.confirm_target.action.kind) ? state.confirm_target.action : null);
+    const id = lift?.target_id ?? state.confirm_target?.target_id;
+    if (action && id && !directions.has(id)) directions.set(id, liftDirection(action, state.lift));
+    // Only the latest few targets matter: an old one never comes back.
+    while (directions.size > 8) directions.delete(directions.keys().next().value!);
+    const ended = endedBetween(before && now - before.atMono < SCREEN_MOTION_STALE_MS ? before.state : null, state);
+    if (ended) this.model.motionEnded = { content: ended, untilMono: now + SCREEN_DONE_MS };
+    this.model.motion = { state, atMono: now, directions: directions as ReadonlyMap<string, ScreenHoldDirection> };
+    this.changed();
+  }
+
+  /**
    * Fresh zones, at the sensor's rate. Near uses the cue policy's thresholds and hysteresis. Entering or
    * leaving "Something close" is sent at once; a distance change at most every SCREEN_ZONES_MIN_MS.
    */
@@ -339,7 +395,8 @@ export class ScreenMachine {
       const settings = this.deps.settings;
       const { content, nextAt } = pickScreen(this.model, now, settings);
       const local = this.deps.localTime();
-      const strip = { link: this.model.link, simulator: this.deps.simulator, clock: local ? { local_time: local } : null };
+      // Bench mode is fixed when the coordinator starts, so the last state says it even once it is stale.
+      const strip = { link: this.model.link, simulator: this.deps.simulator, bench_mode: this.model.motion?.state.bench_mode ?? false, clock: local ? { local_time: local } : null };
       // The strip's clock shows minutes only, so seconds never cause a redraw.
       const key = JSON.stringify([content, settings, { ...strip, clock: local?.slice(0, 16) ?? null }]);
       if (key !== this.lastKey) {

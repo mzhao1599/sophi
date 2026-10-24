@@ -29,6 +29,9 @@ import {
   MemberHomeResponseSchema,
   OwnSettingsRequestSchema,
   OwnerCircleResponseSchema,
+  CONFIRM_ONLY_PROMPT,
+  PARK_PROMPT,
+  ScreenHoldSchema,
   ScreenPressSchema,
   ScreenReportRequestSchema,
   ScreenSettingsSchema,
@@ -42,6 +45,7 @@ import {
   WalkerConfigurationSchema,
   applySuggestionChange,
   changesNothing,
+  holdControlShown,
   suggestionOutcome,
   type CircleMessage,
   type ScreenState,
@@ -343,8 +347,10 @@ describe("the screen's local contract", () => {
     revision: 7,
     screen: { state: "ambient", alerts: ["vibration", "spoken"] },
     settings: { ...settings, pending_local: false },
-    strip: { link: "online", simulator: false, clock: { local_time: "2026-10-24T19:42:00" } },
+    strip: { link: "online", simulator: false, bench_mode: false, clock: { local_time: "2026-10-24T19:42:00" } },
   };
+  const cup = { target_id: uuid(60), title: "Bring the cup?", prompt: `Bring the cup? ${PARK_PROMPT}` };
+  const clear = { target_id: uuid(61), title: "Clear it", prompt: `Clear it. ${CONFIRM_ONLY_PROMPT}` };
   const states: ScreenState["screen"][] = [
     { state: "obstacle", zone: "front_left", distance: { status: "measured", mm: 300 }, simulated: true },
     { state: "obstacle", zone: "front_left", distance: { status: "unknown" }, simulated: false },
@@ -362,6 +368,15 @@ describe("the screen's local contract", () => {
     { state: "my_screen", view: { page: "menu" } },
     { state: "my_screen", view: { page: "circle", index: 1, owner_name: "Max", member, count: 2, confirm_remove: true } },
     { state: "thinking" },
+    { state: "motion_confirm", target: cup, hold: null },
+    { state: "motion_confirm", target: { target_id: uuid(62), title: "Raise the lift", prompt: `Raise the lift. ${PARK_PROMPT}` }, hold: "raise" },
+    { state: "motion_running", what: "Bring the cup", lift: null },
+    { state: "motion_running", what: "Raising the lift", lift: { phase: "running", direction: "raise" } },
+    { state: "motion_running", what: "Raising the lift", lift: { phase: "stopping", direction: "raise" } },
+    { state: "motion_holding", outcome: "stopped", refusal: null },
+    { state: "motion_holding", outcome: "not_started", refusal: "not_held" },
+    { state: "motion_fault", faults: ["stop_circuit_opened", "lift_unhomed"], confirm: null },
+    { state: "motion_fault", faults: ["overload"], confirm: clear },
   ];
 
   it("parses every state", () => {
@@ -382,6 +397,33 @@ describe("the screen's local contract", () => {
     bad(ScreenStateSchema, { ...base, screen: { state: "battery", percent: 80 } });
     bad(ScreenStateSchema, { ...base, strip: { ...base.strip, clock: { local_time: "2026-10-24T19:42:00Z" } } });
     bad(ScreenStateSchema, { ...base, emergency: true });
+    const { bench_mode: _, ...noBench } = base.strip;
+    bad(ScreenStateSchema, { ...base, strip: noBench });
+  });
+
+  it("motion states carry the Pi's own words exactly, and nothing the screen can't stand behind", () => {
+    const motion = (screen: unknown) => ({ ...base, screen });
+    // The prompt is the target's prompt word for word: the title, then the park or confirm-only line.
+    bad(ScreenStateSchema, motion({ state: "motion_confirm", target: { ...cup, prompt: "Bring the cup? Press Confirm." }, hold: null }));
+    bad(ScreenStateSchema, motion({ state: "motion_confirm", target: { ...cup, title: "x".repeat(61) }, hold: null }));
+    bad(ScreenStateSchema, motion({ state: "motion_confirm", target: cup, hold: "up" }));
+    // No touch Confirm or start anywhere in a motion state.
+    bad(ScreenStateSchema, motion({ state: "motion_confirm", target: cup, hold: null, start: true }));
+    bad(ScreenStateSchema, motion({ state: "motion_holding", outcome: "not_started", refusal: null }));
+    bad(ScreenStateSchema, motion({ state: "motion_holding", outcome: "stopped", refusal: "not_held" }));
+    bad(ScreenStateSchema, motion({ state: "motion_fault", faults: [], confirm: null }));
+    bad(ScreenStateSchema, motion({ state: "motion_fault", faults: ["overload", "overload"], confirm: null }));
+    bad(ScreenStateSchema, motion({ state: "motion_fault", faults: ["on_fire"], confirm: null }));
+    ok(ScreenStateSchema, { ...base, strip: { ...base.strip, bench_mode: true } });
+  });
+
+  it("shows the hold control exactly while a hold-to-run lift target is pending or its motion runs held", () => {
+    const shown = states.filter((screen) => holdControlShown(screen) !== null);
+    expect(shown).toEqual([
+      { state: "motion_confirm", target: expect.anything(), hold: "raise" },
+      { state: "motion_running", what: "Raising the lift", lift: { phase: "running", direction: "raise" } },
+    ]);
+    expect(holdControlShown({ state: "motion_running", what: "Raising the lift", lift: { phase: "stopping", direction: "raise" } })).toBeNull();
   });
 
   it("names the revision and item in what the page posts back", () => {
@@ -392,6 +434,12 @@ describe("the screen's local contract", () => {
     ok(ScreenPressSchema, { revision: 7, action: "not_now" });
     bad(ScreenPressSchema, { revision: 7, action: "accept_for_her" });
     bad(ScreenPressSchema, { action: "confirm" });
+    ok(ScreenHoldSchema, { pressed: true, at: 1_761_350_000_123.25 });
+    ok(ScreenHoldSchema, { pressed: false, at: 0 });
+    bad(ScreenHoldSchema, { pressed: true });
+    bad(ScreenHoldSchema, { pressed: "yes", at: 1 });
+    bad(ScreenHoldSchema, { pressed: true, at: -1 });
+    bad(ScreenHoldSchema, { pressed: true, at: 1, mono_ms: 5 });
   });
 });
 

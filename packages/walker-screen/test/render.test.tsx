@@ -15,8 +15,28 @@ describe("WalkerScreenView", () => {
       expect((html.match(/<button/g) ?? []).length, f.name).toBeLessThanOrEqual(3);
       expect(html.includes(">Simulator<"), f.name).toBe(f.state.strip.simulator);
       expect(html, f.name).toContain('aria-live="polite"');
-      expect(html, f.name).toContain(">Talk<");
+      expect(html, f.name).toContain(`>${view.right}<`);
+      // The hold control is drawn exactly when the view has one.
+      expect(html.includes("ws-hold"), f.name).toBe(view.hold !== null);
+      expect(html.includes(">Bench mode<"), f.name).toBe(f.state.strip.bench_mode && !f.state.strip.simulator);
     }
+  });
+
+  it("draws the hold control held or not, named for a screen reader, and inert without onHold", () => {
+    const lift = screenFixtures().find((f) => f.name === "motion-confirm-lift-raise--large")!;
+    const view = screenView(lift.state);
+    const idle = renderToStaticMarkup(<WalkerScreenView view={view} />);
+    expect(idle).toContain('aria-pressed="false"');
+    expect(idle).toContain('data-held="false"');
+    expect(idle).toContain('aria-label="Hold to raise. Keep it held while you press Confirm on the handle."');
+    expect(idle).toContain(">and press Confirm<");
+    const held = renderToStaticMarkup(<WalkerScreenView view={view} onHold={() => {}} held />);
+    expect(held).toContain('aria-pressed="true"');
+    expect(held).toContain('data-held="true"');
+    // Running: Stop over both handles, no Talk or Confirm word.
+    const running = renderToStaticMarkup(<WalkerScreenView view={screenView(screenFixtures().find((f) => f.name === "motion-running-lift--large")!.state)} />);
+    expect(running.match(/>Stop</g)).toHaveLength(2);
+    expect(running).not.toMatch(/>Talk<|>Confirm</);
   });
 
   it("marks switches with aria-pressed and inert buttons with aria-disabled", () => {

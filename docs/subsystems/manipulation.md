@@ -6,9 +6,10 @@
 
 - the lift ESP32 firmware, written and tested on a computer ([firmware/README.md](../../firmware/README.md#lift-board));
 - the Pi's Feetech servo driver;
-- the Pi's motion coordinator for the arms ([`devices/pi/src/motion/`](../../devices/pi/README.md#the-arms-motion-coordinator-part-a)): Confirm targets, guards, calibration, poses, teleop and a simulator.
+- the Pi's motion coordinator for the arms ([`devices/pi/src/motion/`](../../devices/pi/README.md#the-arms-motion-coordinator-part-a)): Confirm targets, guards, calibration, poses, teleop and a simulator;
+- the walker screen's motion screens and the lift's hold control ([`devices/pi/src/screen/`](../../devices/pi/README.md#the-walker-screens-page)): the pending Confirm target, what moves and how to stop it, faults, bench mode, and the hold reports on the bus as `screenHold`.
 
-None of these has run on real arms or a real lift. Not built: the lift's side of the coordinator, taught skills, and the screen's motion controls. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
+None of these has run on real arms or a real lift. Not built: the lift's side of the coordinator (including the one line that takes `screenHold` to the lift client), taught skills, and a touch Stop on the screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
 
 ## The rule
 
@@ -147,7 +148,7 @@ More rules behind the table:
 
 ## Faults
 
-All faults latch. The screen shows the fault's sentence, then "Someone needs to check the walker and clear it there."
+All faults latch. The screen shows the fault's sentence, then "Ask a helper to clear it at the walker." (`FAULT_CLEAR_SENTENCE`).
 
 | Code | Sentence | Hardware left |
 | --- | --- | --- |
@@ -181,7 +182,7 @@ What each reaction does (`FAULT_REACTION`). In every case all other motion stops
 
 ## The lift (proposed)
 
-- **Hold-to-run.** Hold the screen's lift control, then press Confirm on a handle. The lift moves only while the screen control stays held; the screen reports it at least every 200 ms, and lifting the finger, a cancelled touch, losing focus or being hidden all release it at once.
+- **Hold-to-run.** Hold the screen's lift control, then press Confirm on a handle. The lift moves only while the screen control stays held; the screen reports it at least every 200 ms, and lifting the finger, a cancelled touch, losing focus or being hidden all release it at once. *Screen side built 2026-10-24* (`devices/pi/src/screen/`, the Pi README's "Motion on the screen"): the page reports every 50 ms, the server stamps each report on receipt and emits `screenHold` on the bus; the coordinator's one-line wiring to the lift client is not done yet.
   - The coordinator puts the held request's id in every `lift.heartbeat` as a lease. The lift ramps down and holds when a heartbeat names anything else, or after 300 ms without one.
   - Letting go always means stop. The state shows the ramp-down after a release as `phase: stopping`. A stopping or finished request never resumes, and the lift refuses a request id it already accepted (`request_used`).
 - **Force.** Set the TB6600 current DIP to the **lowest setting that still lifts the measured load**, and record it. Pinch guards are a precondition outside bench mode (`guards_fitted`).

@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SCREEN_CHOICES, ScreenContentSchema, ScreenStateSchema, type ScreenContent, type ScreenState } from "@walker/contracts";
+import {
+  BENCH_MODE_LABEL,
+  CONFIRM_ONLY_PROMPT,
+  DEFAULT_SCREEN_CHOICES,
+  FAULT_CLEAR_SENTENCE,
+  FAULT_SENTENCES,
+  PARK_PROMPT,
+  REFUSAL_SENTENCES,
+  ScreenContentSchema,
+  ScreenStateSchema,
+  confirmPrompt,
+  holdControlShown,
+  type ScreenContent,
+  type ScreenState,
+} from "@walker/contracts";
 import {
   CAPTION_PAGE_CHARS,
   FIXTURE_STATE_NAMES,
@@ -8,6 +22,8 @@ import {
   SAMPLE_REPLY,
   captionPages,
   clockWords,
+  fitMotionMain,
+  promptAfterTitle,
   screenFixtures,
   screenSizes,
   screenView,
@@ -23,11 +39,12 @@ const state = (screen: ScreenContent, extra: Partial<ScreenState> = {}): ScreenS
     revision: 4,
     screen,
     settings,
-    strip: { link: "online", simulator: false, clock: { local_time: "2026-10-24T19:42:00" } },
+    strip: { link: "online", simulator: false, bench_mode: false, clock: { local_time: "2026-10-24T19:42:00" } },
     ...extra,
   });
 const texts = (v: ScreenView) => [v.main.text, ...v.lines.map((l) => l.text), ...v.center.lines.map((l) => l.text)];
 const buttons = (v: ScreenView) => [...(v.left?.kind === "button" ? [v.left.button] : []), ...v.center.buttons];
+const benchStrip = { link: "online", simulator: false, bench_mode: true, clock: { local_time: "2026-10-24T19:42:00" } } as const;
 
 describe("sizes from one px_per_mm", () => {
   it("gives the design's pixels at 7.35 px/mm", () => {
@@ -54,20 +71,21 @@ describe("fixtures", () => {
     for (const size of ["large", "larger", "largest"]) expect(fixtures.filter((f) => f.textSize === size)).toHaveLength(fixtures.length / 3);
   });
 
-  it("are valid states, and every view has a main line, at most 3 buttons and no motion status yet", () => {
+  it("are valid states, and every view has a main line and at most 3 touch targets", () => {
     for (const f of fixtures) {
       expect(ScreenStateSchema.safeParse(f.state).success, f.name).toBe(true);
       const v = screenView(f.state);
       expect(v.main.text.length, f.name).toBeGreaterThan(0);
-      expect(buttons(v).length, f.name).toBeLessThanOrEqual(3);
+      expect(buttons(v).length + (v.hold ? 1 : 0), f.name).toBeLessThanOrEqual(3);
       expect(v.announce.length, f.name).toBeGreaterThan(0);
-      expect(v.motionStatus).toBeNull();
       expect(v.textSize).toBe(f.textSize);
     }
   });
 
   it("never word anything as an emergency", () => {
-    for (const f of fixtures) for (const t of texts(screenView(f.state))) expect(t, f.name).not.toMatch(/emergency|fall|danger|alarm|warning|clear|safe/i);
+    // "clear it" is the instruction to clear a latched motion fault at the walker (FAULT_CLEAR_SENTENCE), not a
+    // claim that the way is clear.
+    for (const f of fixtures) for (const t of texts(screenView(f.state))) expect(t, f.name).not.toMatch(/emergency|fall|danger|alarm|warning|clear(?! it)|safe/i);
   });
 });
 
@@ -90,7 +108,7 @@ describe("the walker's own states", () => {
   });
 
   it("ambient: no time when the clock never synced", () => {
-    const v = screenView(state({ state: "ambient", alerts: null }, { strip: { link: "online", simulator: false, clock: null } }));
+    const v = screenView(state({ state: "ambient", alerts: null }, { strip: { link: "online", simulator: false, bench_mode: false, clock: null } }));
     expect(v.main.text).toBe("Sophi");
     expect(texts(v).join(" ")).not.toMatch(/\d:\d\d/);
   });
@@ -127,7 +145,7 @@ describe("the walker's own states", () => {
     const v = screenView(state({ state: "model_offer", proposal_id: uuid(50), from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"] }));
     expect(v.main.text).toBe("Short sounds?");
     expect(v.lines[0]).toEqual({ text: "Alerts: short sounds and speech", size: "body" });
-    expect(v.left).toEqual({ kind: "hint" });
+    expect(v.left).toEqual({ kind: "hint", word: "Confirm" });
     expect(buttons(v)).toEqual([]);
   });
 
@@ -142,7 +160,7 @@ describe("the walker's own states", () => {
   });
 
   it("offline: the honest line, a hollow dot, and her own text size still reachable", () => {
-    const v = screenView(state({ state: "offline" }, { strip: { link: "offline", simulator: false, clock: { local_time: "2026-10-24T19:42:00" } } }));
+    const v = screenView(state({ state: "offline" }, { strip: { link: "offline", simulator: false, bench_mode: false, clock: { local_time: "2026-10-24T19:42:00" } } }));
     expect(texts(v)).toEqual(["No internet", "Alerts still work on the walker."]);
     expect(v.strip).toMatchObject({ word: "Offline", shape: "hollow", time: "7:42" });
     // "My screen" isn't built yet, so it isn't shown (it comes back with the circle piece).
@@ -150,7 +168,7 @@ describe("the walker's own states", () => {
   });
 
   it("not set up", () => {
-    const v = screenView(state({ state: "not_set_up" }, { strip: { link: "unpaired", simulator: false, clock: null } }));
+    const v = screenView(state({ state: "not_set_up" }, { strip: { link: "unpaired", simulator: false, bench_mode: false, clock: null } }));
     expect(texts(v)).toEqual(["Not set up yet", "Ask your family to set it up."]);
     expect(v.strip).toMatchObject({ word: "Not set up", time: null });
   });
@@ -166,16 +184,138 @@ describe("the walker's own states", () => {
   });
 
   it("strip: Online filled, Connecting dashed, and Simulator on the simulator", () => {
-    const v = screenView(state({ state: "listening" }, { strip: { link: "connecting", simulator: true, clock: null } }));
-    expect(v.strip).toEqual({ word: "Connecting", shape: "dashed", time: null, simulator: true });
-    expect(screenView(state({ state: "listening" })).strip).toEqual({ word: "Online", shape: "filled", time: "7:42", simulator: false });
+    const v = screenView(state({ state: "listening" }, { strip: { link: "connecting", simulator: true, bench_mode: false, clock: null } }));
+    expect(v.strip).toEqual({ word: "Connecting", shape: "dashed", time: null, simulator: true, bench: false });
+    expect(screenView(state({ state: "listening" })).strip).toEqual({ word: "Online", shape: "filled", time: "7:42", simulator: false, bench: false });
   });
 
   it("cross-fades on a change of scene, never on a clock tick", () => {
     const a = screenView(state({ state: "ambient", alerts: null }));
-    const b = screenView(state({ state: "ambient", alerts: null }, { revision: 5, strip: { link: "online", simulator: false, clock: { local_time: "2026-10-24T19:43:00" } } }));
+    const b = screenView(state({ state: "ambient", alerts: null }, { revision: 5, strip: { link: "online", simulator: false, bench_mode: false, clock: { local_time: "2026-10-24T19:43:00" } } }));
     expect(a.sceneKey).toBe(b.sceneKey);
     expect(screenView(state({ state: "listening" })).sceneKey).not.toBe(a.sceneKey);
+  });
+});
+
+describe("motion: the arms and the lift", () => {
+  const cup = { target_id: uuid(60), title: "Bring the cup?", prompt: confirmPrompt("Bring the cup?", true) };
+  const raise = { target_id: uuid(62), title: "Raise the lift?", prompt: confirmPrompt("Raise the lift?", true) };
+
+  it("a pending target: the Pi's title, the park line, Confirm named over the handle and nothing to tap", () => {
+    const v = screenView(state({ state: "motion_confirm", target: cup, hold: null }));
+    expect(texts(v)).toEqual(["Bring the cup?", PARK_PROMPT]);
+    expect(v.main.size).toBe("main");
+    expect(v.left).toEqual({ kind: "hint", word: "Confirm" });
+    // Only a handle Confirm press starts motion: no touch Confirm, no other button, no hold control.
+    expect(buttons(v)).toEqual([]);
+    expect(v.hold).toBeNull();
+    expect(v.right).toBe("Talk");
+    expect(v.announce).toBe(`Bring the cup? ${PARK_PROMPT}`);
+    // A target that moves nothing says the confirm-only line instead.
+    const clear = { target_id: uuid(61), title: "Clear it", prompt: confirmPrompt("Clear it", false) };
+    expect(promptAfterTitle(clear.title, clear.prompt)).toBe(CONFIRM_ONLY_PROMPT);
+  });
+
+  it("a hold-to-run lift target shows the hold control, which names the way and asks for Confirm too", () => {
+    const v = screenView(state({ state: "motion_confirm", target: raise, hold: "raise" }));
+    expect(v.hold).toEqual({ direction: "raise", label: "Hold to raise", sublabel: "and press Confirm" });
+    expect(buttons(v)).toEqual([]);
+    expect(v.announce).toBe(`Raise the lift? ${PARK_PROMPT} Keep holding Hold to raise on the screen while you press Confirm.`);
+    expect(screenView(state({ state: "motion_confirm", target: raise, hold: "lower" })).hold?.label).toBe("Hold to lower");
+    expect(screenView(state({ state: "motion_confirm", target: raise, hold: "home" })).hold?.label).toBe("Hold to home");
+  });
+
+  it("running: what moves, how to stop it, and Stop over both handles", () => {
+    const arms = screenView(state({ state: "motion_running", what: "Bring the cup", lift: null }));
+    expect(texts(arms)).toEqual(["Bring the cup", "Press any handle button to stop."]);
+    expect(arms.announce).toBe("Moving: Bring the cup. Press any handle button to stop.");
+    expect(arms.left).toEqual({ kind: "hint", word: "Stop" });
+    expect(arms.right).toBe("Stop");
+    expect(arms.hold).toBeNull();
+    expect(buttons(arms)).toEqual([]);
+    // The lift: keeping hold is the one thing to do, and the button under her finger names the way.
+    const held = screenView(state({ state: "motion_running", what: "Raising the lift", lift: { phase: "running", direction: "raise" } }));
+    expect(texts(held)).toEqual(["Keep holding", "Let go, or press a handle button, to stop."]);
+    expect(held.main.size).toBe("main");
+    expect(held.announce).toBe("Raising the lift. Keep holding. Let go, or press a handle button, to stop.");
+    expect(held.hold).toEqual({ direction: "raise", label: "Hold to raise", sublabel: null });
+    expect([held.left, held.right]).toEqual([{ kind: "hint", word: "Stop" }, "Stop"]);
+    // Once it is stopping it never resumes, so the hold control goes.
+    const stopping = screenView(state({ state: "motion_running", what: "Raising the lift", lift: { phase: "stopping", direction: "raise" } }));
+    expect(texts(stopping)).toEqual(["Stopping"]);
+    expect(stopping.hold).toBeNull();
+    expect(stopping.sceneKey).not.toBe(held.sceneKey);
+  });
+
+  it("the hold control shows exactly where the contract says, and on no other screen", () => {
+    for (const f of screenFixtures()) {
+      const v = screenView(f.state);
+      expect(v.hold?.direction ?? null, f.name).toBe(holdControlShown(f.state.screen));
+    }
+    const withHold = screenFixtures().filter((f) => screenView(f.state).hold);
+    expect(new Set(withHold.map((f) => f.state.screen.state))).toEqual(new Set(["motion_confirm", "motion_running"]));
+  });
+
+  it("holding: done or stopped, holding still; or why it didn't start, in the contract's sentence", () => {
+    expect(texts(screenView(state({ state: "motion_holding", outcome: "completed", refusal: null })))).toEqual(["Done", "Holding still."]);
+    expect(texts(screenView(state({ state: "motion_holding", outcome: "stopped", refusal: null })))).toEqual(["Stopped", "Holding still."]);
+    const refused = screenView(state({ state: "motion_holding", outcome: "not_started", refusal: "not_held" }));
+    expect(texts(refused)).toEqual(["Not started", REFUSAL_SENTENCES.not_held]);
+    expect(refused.left).toBeNull();
+    expect(refused.right).toBe("Talk");
+  });
+
+  it("a fault: Stopped, its plain sentence, ask a helper, and how many more", () => {
+    const v = screenView(state({ state: "motion_fault", faults: ["stop_circuit_opened", "lift_unhomed"], confirm: null }));
+    expect(texts(v)).toEqual(["Stopped", FAULT_SENTENCES.stop_circuit_opened, FAULT_CLEAR_SENTENCE, "1 more to check"]);
+    expect(FAULT_CLEAR_SENTENCE).toBe("Ask a helper to clear it at the walker.");
+    expect(v.left).toBeNull();
+    expect(v.hold).toBeNull();
+    expect(buttons(v)).toEqual([]);
+    // A target to clear it, shown with the fault, and Confirm named over the handle.
+    const clear = { target_id: uuid(61), title: "Clear it?", prompt: confirmPrompt("Clear it?", false) };
+    const asking = screenView(state({ state: "motion_fault", faults: ["overload"], confirm: clear }));
+    expect(texts(asking)).toEqual(["Clear it?", FAULT_SENTENCES.overload, CONFIRM_ONLY_PROMPT]);
+    expect(asking.left).toEqual({ kind: "hint", word: "Confirm" });
+  });
+
+  it("bench mode: a tag in the strip on every screen, and the full label on every motion screen", () => {
+    const motion: ScreenContent[] = [
+      { state: "motion_confirm", target: cup, hold: null },
+      { state: "motion_confirm", target: raise, hold: "raise" },
+      { state: "motion_running", what: "Bring the cup", lift: null },
+      { state: "motion_running", what: "Raising the lift", lift: { phase: "stopping", direction: "raise" } },
+      { state: "motion_holding", outcome: "stopped", refusal: null },
+      { state: "motion_fault", faults: ["overload"], confirm: null },
+    ];
+    for (const screen of motion) {
+      const v = screenView(state(screen, { strip: benchStrip }));
+      expect(v.strip.bench, screen.state).toBe(true);
+      expect(texts(v), screen.state).toContain(BENCH_MODE_LABEL);
+      expect(texts(screenView(state(screen))), screen.state).not.toContain(BENCH_MODE_LABEL);
+    }
+    const ambient = screenView(state({ state: "ambient", alerts: null }, { strip: benchStrip }));
+    expect(ambient.strip.bench).toBe(true);
+    expect(texts(ambient)).not.toContain(BENCH_MODE_LABEL);
+    expect(screenView(state({ state: "listening" }, { strip: benchStrip })).strip).toMatchObject({ time: "7:42", bench: true });
+    // The simulator in bench mode: its "Simulator" tag takes the room; motion screens still say the label.
+    const sim = { ...benchStrip, simulator: true };
+    expect(screenView(state({ state: "listening" }, { strip: sim })).strip).toMatchObject({ time: "7:42", simulator: true, bench: false });
+    expect(texts(screenView(state({ state: "motion_running", what: "Bring the cup", lift: null }, { strip: sim })))).toContain(BENCH_MODE_LABEL);
+  });
+
+  it("a long title drops to a smaller bold size so the screen still fits; the words are never cut", () => {
+    const title = "Bring the cup from the kitchen tray over to the left handle?";
+    for (const size of ["large", "larger", "largest"] as const) {
+      const v = screenView(state({ state: "motion_confirm", target: { target_id: uuid(64), title, prompt: confirmPrompt(title, true) }, hold: null }, { settings: { ...settings, text_size: size } }));
+      expect(v.main.text, size).toBe(title);
+      expect(["title", "small"], size).toContain(v.main.size);
+    }
+    // The demo's titles stay at the main size at Large, the hold control's row too.
+    expect(fitMotionMain("Bring the cup?", "large", [], false).size).toBe("main");
+    expect(fitMotionMain("Raise the lift?", "large", [{ text: PARK_PROMPT, size: "detail" }, { text: BENCH_MODE_LABEL, size: "detail" }], true).size).toBe("main");
+    // With the hold control at Largest there is room for the title only in bold at the body size.
+    expect(fitMotionMain("Raise the lift?", "largest", [{ text: PARK_PROMPT, size: "detail" }, { text: BENCH_MODE_LABEL, size: "detail" }], true).size).toBe("title");
   });
 });
 

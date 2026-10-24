@@ -3,7 +3,15 @@ import { readFileSync, readdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import { extname, join } from "node:path";
-import { ScreenPressSchema, ScreenShownSchema, type ScreenPress, type ScreenShown, type ScreenState } from "@walker/contracts";
+import {
+  ScreenHoldSchema,
+  ScreenPressSchema,
+  ScreenShownSchema,
+  holdControlShown,
+  type ScreenPress,
+  type ScreenShown,
+  type ScreenState,
+} from "@walker/contracts";
 import type { Logger } from "../log";
 
 /**
@@ -18,12 +26,30 @@ import type { Logger } from "../log";
  *
  * What the token does not stop: a local user or process on the same machine. Anything that can open a socket
  * to 127.0.0.1 can GET the page, read the token, and watch the stream (the captions: her words and Sophi's
- * replies). On the Pi that means someone already logged in to it; presses aren't acted on yet. The kiosk's
- * placeholder, in turn, trusts whatever answers on 127.0.0.1:8740.
+ * replies). On the Pi that means someone already logged in to it; presses aren't acted on yet. Such a process
+ * could also send "still held" for the lift: it can never start the lift (only a handle Confirm press does), and
+ * any handle press or the hardware stop still stops it, but it could keep a running lift held after her finger
+ * left the screen. The motion contract's token readable only by the `sophi-screen` user (SCREEN_OS_USER) isn't
+ * built: until it is, this is the gap. The kiosk's placeholder, in turn, trusts whatever answers on
+ * 127.0.0.1:8740.
  *
  * Never logged: state bodies, the token, request URLs (the stream's carries the token), message text, heard
  * words or replies. A failure to start is one log line, and the walker carries on without its screen.
+ *
+ * The lift's hold control (POST /screen/hold, `ScreenHoldSchema`): every message is stamped with the Pi's
+ * monotonic clock when it arrives, and the page's own `at` is never trusted for freshness, only to drop a
+ * "still held" that a release from the same page overtook on the way. A "still held" counts only while a
+ * screen stream is open and the state last sent shows the control (`holdControlShown`); otherwise it is
+ * answered 409 and reported as a release. A stream closing (the page reloading, crashing or losing its
+ * connection) and the server closing are releases too. The motion coordinator turns these into the lift's
+ * hold lease (LiftClient.holdRefresh / holdRelease); a hold that isn't refreshed lapses there by itself.
  */
+
+/** Why the hold control counts as let go. */
+export type ScreenHoldReason = "page" | "stream_closed" | "not_shown" | "no_stream" | "server_closed";
+
+/** One hold-control message as the server passes it on: `atMono` is when it arrived, on the Pi's clock. */
+export type ScreenHoldEvent = { pressed: true; atMono: number } | { pressed: false; atMono: number; reason: ScreenHoldReason };
 
 export interface ScreenServerOptions {
   port: number;
@@ -37,6 +63,10 @@ export interface ScreenServerOptions {
   /** The page drew a revision. */
   onShown?: (shown: ScreenShown) => void;
   onPress?: (press: ScreenPress) => void;
+  /** The Pi's monotonic clock (ms), which stamps every hold-control message on receipt. */
+  monotonic: () => number;
+  /** The hold control: "still held", or let go (with why). */
+  onHold?: (hold: ScreenHoldEvent) => void;
 }
 
 export interface ScreenServer {
@@ -157,6 +187,20 @@ export async function startScreenServer(options: ScreenServerOptions): Promise<S
 
   const frame = (state: ScreenState) => `event: state\ndata: ${JSON.stringify(state)}\n\n`;
 
+  // The hold control. `lastReleaseAt` is on the page's clock and only orders that page's own messages.
+  let lastReleaseAt = Number.NEGATIVE_INFINITY;
+  let held = false;
+  const hold = (event: ScreenHoldEvent) => {
+    if (event.pressed !== held) log.info(event.pressed ? "screen hold control pressed" : "screen hold control let go", event.pressed ? {} : { reason: event.reason });
+    held = event.pressed;
+    try {
+      options.onHold?.(event);
+    } catch (error) {
+      log.warn("screen hold listener failed", { error: (error as Error)?.name ?? "unknown" });
+    }
+  };
+  const release = (reason: ScreenHoldReason) => hold({ pressed: false, atMono: options.monotonic(), reason });
+
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     const refused = refusal(req, actualPort);
     if (refused) return send(res, refused === "not loopback" ? 403 : 421, "Refused.");
@@ -185,6 +229,8 @@ export async function startScreenServer(options: ScreenServerOptions): Promise<S
       const current = options.current();
       if (current) res.write(frame(current));
       streams.add(res);
+      // A new page (or the same one after a reload) starts its own clock: forget the last page's order.
+      lastReleaseAt = Number.NEGATIVE_INFINITY;
       log.info("walker screen connected", { streams: streams.size });
       req.socket.setNoDelay(true);
       const keepalive = setInterval(() => res.write(": keepalive\n\n"), KEEPALIVE_MS);
@@ -192,10 +238,12 @@ export async function startScreenServer(options: ScreenServerOptions): Promise<S
         clearInterval(keepalive);
         streams.delete(res);
         log.info("walker screen disconnected", { streams: streams.size });
+        // A page that lost its stream can't see what it is holding: let go at once.
+        release("stream_closed");
       });
       return;
     }
-    if (req.method === "POST" && (path === "/screen/shown" || path === "/screen/press")) {
+    if (req.method === "POST" && (path === "/screen/shown" || path === "/screen/press" || path === "/screen/hold")) {
       if (!tokenMatches(expected, req.headers["x-screen-token"])) return send(res, 403, "Refused.");
       if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, "JSON only.");
       const raw = await readBody(req);
@@ -205,6 +253,31 @@ export async function startScreenServer(options: ScreenServerOptions): Promise<S
         json = JSON.parse(raw);
       } catch {
         return send(res, 400, "Not JSON.");
+      }
+      if (path === "/screen/hold") {
+        const parsed = ScreenHoldSchema.safeParse(json);
+        if (!parsed.success) return send(res, 400, "Not a ScreenHold.");
+        // Stamped here, on receipt: the page's `at` is never a freshness time.
+        const atMono = options.monotonic();
+        if (!parsed.data.pressed) {
+          lastReleaseAt = Math.max(lastReleaseAt, parsed.data.at);
+          hold({ pressed: false, atMono, reason: "page" });
+        } else if (parsed.data.at <= lastReleaseAt) {
+          // A "still held" sent before a release that arrived first: the finger is already off.
+          return send(res, 409, "Already let go.");
+        } else if (streams.size === 0) {
+          release("no_stream");
+          return send(res, 409, "No screen stream.");
+        } else {
+          const current = options.current();
+          if (!current || holdControlShown(current.screen) === null) {
+            release("not_shown");
+            return send(res, 409, "No hold control on screen.");
+          }
+          hold({ pressed: true, atMono });
+        }
+        res.writeHead(204, SECURITY_HEADERS);
+        return res.end();
       }
       if (path === "/screen/shown") {
         const shown = ScreenShownSchema.safeParse(json);
@@ -268,6 +341,7 @@ export async function startScreenServer(options: ScreenServerOptions): Promise<S
     clients: () => streams.size,
     close: () =>
       new Promise<void>((resolve) => {
+        release("server_closed");
         for (const res of streams) res.destroy();
         server.close(() => resolve());
         server.closeAllConnections();

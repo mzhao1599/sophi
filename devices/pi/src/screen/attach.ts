@@ -88,6 +88,7 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
   on("offer", ({ proposal }) => machine.offer(proposal));
   on("settled", ({ result }) => machine.settled(result));
   on("confirming", ({ phase }) => machine.confirm(phase));
+  on("motionState", ({ state }) => machine.motion(state));
   on("zones", ({ zones }) => {
     const simulated = new Map(deps.modules.modules().map((m) => [m.instanceId, m.simulated]));
     machine.zones(zones.map((z) => ({ zone: z.zone, mm: z.mm, quality: z.quality, simulated: simulated.get(z.instanceId) ?? false })));

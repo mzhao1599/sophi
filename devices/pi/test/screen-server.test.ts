@@ -3,13 +3,13 @@ import { request } from "node:http";
 import { connect, createServer } from "node:net";
 import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ScreenState } from "@walker/contracts";
+import { confirmPrompt, type ScreenState } from "@walker/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { startingSettings } from "../src/screen/attach";
-import { isLoopback, refusal, startScreenServer, type ScreenServer } from "../src/screen/server";
+import { isLoopback, refusal, startScreenServer, type ScreenHoldEvent, type ScreenServer } from "../src/screen/server";
 import { captureLogger } from "./support/fakes";
 
-/** Rows D10 to D13 of test/EXPECTED.md: the screen server's checks, on a real socket on 127.0.0.1. */
+/** Rows D10 to D13, D18 and D22 of test/EXPECTED.md: the screen server's checks, on a real socket on 127.0.0.1. */
 
 const TOKEN = "t".repeat(43);
 const state: ScreenState = {
@@ -17,7 +17,7 @@ const state: ScreenState = {
   revision: 0,
   screen: { state: "answering", heard: "a private question", reply: "A private reply.", source: "model", page: 0 },
   settings: startingSettings(undefined, Date.parse("2026-10-24T02:00:00Z")),
-  strip: { link: "online", simulator: true, clock: null },
+  strip: { link: "online", simulator: true, bench_mode: false, clock: null },
 };
 
 function assets(): string {
@@ -74,7 +74,7 @@ afterEach(async () => {
 });
 
 async function start(log = captureLogger(), extra: { onShown?: (s: unknown) => void; onPress?: (p: unknown) => void } = {}) {
-  server = await startScreenServer({ port: 0, assetsDir: assets(), log, current: () => state, token: TOKEN, ...extra });
+  server = await startScreenServer({ port: 0, assetsDir: assets(), log, current: () => state, token: TOKEN, monotonic: () => 0, ...extra });
   if (!server) throw new Error("server didn't start");
   return { server, port: server.port, log };
 }
@@ -202,7 +202,7 @@ describe("D13: a screen that can't start never takes the walker down", () => {
     await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve));
     const port = (blocker.address() as { port: number }).port;
     const log = captureLogger();
-    const result = await startScreenServer({ port, assetsDir: assets(), log, current: () => null });
+    const result = await startScreenServer({ port, assetsDir: assets(), log, current: () => null, monotonic: () => 0 });
     blocker.close();
     expect(result).toBeNull();
     expect(log.lines).toEqual([expect.stringContaining("walker screen not started: its port is taken")]);
@@ -210,7 +210,7 @@ describe("D13: a screen that can't start never takes the walker down", () => {
 
   it("missing page files are one log line and null", async () => {
     const log = captureLogger();
-    expect(await startScreenServer({ port: 0, assetsDir: join(tmpdir(), "no-such-screen-page"), log, current: () => null })).toBeNull();
+    expect(await startScreenServer({ port: 0, assetsDir: join(tmpdir(), "no-such-screen-page"), log, current: () => null, monotonic: () => 0 })).toBeNull();
     expect(log.lines).toHaveLength(1);
     expect(log.lines[0]).toContain("its page files are missing");
   });
@@ -223,5 +223,146 @@ describe("D13: a screen that can't start never takes the walker down", () => {
     const text = log.lines.join("\n");
     expect(text).not.toContain(TOKEN);
     expect(text).not.toMatch(/private|token=/);
+  });
+});
+
+describe("D22: the lift's hold control, POST /screen/hold", () => {
+  const raise = { target_id: "00000000-0000-4000-8000-000000000062", title: "Raise the lift?", prompt: confirmPrompt("Raise the lift?", true) };
+  const withHold: ScreenState = { ...state, screen: { state: "motion_confirm", target: raise, hold: "raise" } };
+  const running: ScreenState = { ...state, screen: { state: "motion_running", what: "Raising the lift", lift: { phase: "running", direction: "raise" } } };
+  const stopping: ScreenState = { ...state, screen: { state: "motion_running", what: "Raising the lift", lift: { phase: "stopping", direction: "raise" } } };
+
+  /** A server whose clock and current state the test moves, and every hold event it passes on. */
+  async function holdServer(initial: ScreenState = withHold) {
+    let mono = 1000;
+    let current = initial;
+    const events: ScreenHoldEvent[] = [];
+    server = await startScreenServer({
+      port: 0,
+      assetsDir: assets(),
+      log: captureLogger(),
+      current: () => current,
+      token: TOKEN,
+      monotonic: () => mono,
+      onHold: (e) => events.push(e),
+    });
+    if (!server) throw new Error("server didn't start");
+    const s = server;
+    return {
+      port: s.port,
+      events,
+      tick: (ms: number) => (mono += ms),
+      show: (next: ScreenState) => (current = next),
+      hold: (pressed: boolean, at: number, extra: Record<string, string> = {}) => call(s.port, "/screen/hold", json({ pressed, at }, extra)),
+      /** Opens a screen stream and keeps it open until `close()`. */
+      async stream() {
+        const socket = connect(s.port, "127.0.0.1");
+        await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
+        const before = s.clients();
+        socket.write(`GET /screen/events?token=${TOKEN} HTTP/1.1\r\nHost: 127.0.0.1:${s.port}\r\n\r\n`);
+        for (let i = 0; i < 100 && s.clients() === before; i += 1) await new Promise((r) => setTimeout(r, 5));
+        expect(s.clients()).toBe(before + 1);
+        return {
+          async close() {
+            socket.destroy();
+            for (let i = 0; i < 100 && s.clients() > before; i += 1) await new Promise((r) => setTimeout(r, 5));
+            await new Promise((r) => setTimeout(r, 10));
+          },
+        };
+      },
+    };
+  }
+
+  it("refuses a missing or wrong token, a wrong Host or Origin, and a body that isn't a ScreenHold; nothing reaches the bus", async () => {
+    const h = await holdServer();
+    await h.stream();
+    expect((await h.hold(true, 1, { "X-Screen-Token": "wrong" })).status).toBe(403);
+    const { "X-Screen-Token": _, ...noToken } = json({}).headers;
+    expect((await call(h.port, "/screen/hold", { ...json({ pressed: true, at: 1 }), headers: noToken })).status).toBe(403);
+    for (const host of [`localhost:${h.port}`, "evil.example", `127.0.0.1:${h.port + 1}`]) {
+      expect((await h.hold(true, 1, { Host: host })).status).toBe(421);
+    }
+    expect((await h.hold(true, 1, { Origin: "http://evil.example" })).status).toBe(421);
+    expect((await h.hold(true, 1, { Origin: "null" })).status).toBe(421);
+    expect((await call(h.port, "/screen/hold", json({ pressed: true }))).status).toBe(400);
+    expect((await call(h.port, "/screen/hold", json({ pressed: true, at: 1, mono: 5 }))).status).toBe(400);
+    expect((await call(h.port, "/screen/hold", { ...json({}), body: "x".repeat(5000) })).status).toBe(413);
+    expect(h.events).toEqual([]);
+    // The same request from the page's own origin goes through.
+    expect((await h.hold(true, 1, { Origin: `http://127.0.0.1:${h.port}` })).status).toBe(204);
+    expect(h.events).toEqual([{ pressed: true, atMono: 1000 }]);
+  });
+
+  it("stamps every message with the Pi's clock on receipt, whatever the page's clock says, one event per refresh in order", async () => {
+    const h = await holdServer();
+    await h.stream();
+    // The page's clock is far ahead, then far behind: the stamps are the Pi's own.
+    expect((await h.hold(true, 9_000_000_000_000)).status).toBe(204);
+    h.tick(50);
+    expect((await h.hold(true, 9_000_000_000_050)).status).toBe(204);
+    h.tick(50);
+    expect((await h.hold(true, 9_000_000_000_100)).status).toBe(204);
+    h.tick(50);
+    expect((await h.hold(false, 9_000_000_000_150)).status).toBe(204);
+    expect(h.events).toEqual([
+      { pressed: true, atMono: 1000 },
+      { pressed: true, atMono: 1050 },
+      { pressed: true, atMono: 1100 },
+      { pressed: false, atMono: 1150, reason: "page" },
+    ]);
+  });
+
+  it("drops a still-held that a release overtook, and takes the next press", async () => {
+    const h = await holdServer();
+    await h.stream();
+    await h.hold(false, 500);
+    expect((await h.hold(true, 400)).status).toBe(409);
+    expect((await h.hold(true, 500)).status).toBe(409);
+    expect((await h.hold(true, 501)).status).toBe(204);
+    expect(h.events.map((e) => e.pressed)).toEqual([false, true]);
+  });
+
+  it("counts a still-held only while the state on screen shows the control; otherwise 409 and a release", async () => {
+    const h = await holdServer(state);
+    await h.stream();
+    expect((await h.hold(true, 1)).status).toBe(409);
+    expect(h.events).toEqual([{ pressed: false, atMono: 1000, reason: "not_shown" }]);
+    h.show(withHold);
+    expect((await h.hold(true, 2)).status).toBe(204);
+    h.show(running);
+    expect((await h.hold(true, 3)).status).toBe(204);
+    // Stopping: the lift never resumes, so the control is gone.
+    h.show(stopping);
+    expect((await h.hold(true, 4)).status).toBe(409);
+    expect(h.events.map((e) => (e.pressed ? "held" : e.reason))).toEqual(["not_shown", "held", "held", "not_shown"]);
+  });
+
+  it("with no screen stream open, a still-held is a release", async () => {
+    const h = await holdServer();
+    expect((await h.hold(true, 1)).status).toBe(409);
+    expect(h.events).toEqual([{ pressed: false, atMono: 1000, reason: "no_stream" }]);
+  });
+
+  it("a stream closing lets go at once; a reloaded page's clock starts afresh", async () => {
+    const h = await holdServer();
+    const first = await h.stream();
+    await h.hold(true, 5000);
+    await h.hold(false, 6000);
+    h.tick(10);
+    await first.close();
+    expect(h.events.at(-1)).toEqual({ pressed: false, atMono: 1010, reason: "stream_closed" });
+    // A new page (performance.now() starts again near 0) can hold as soon as its stream is open.
+    await h.stream();
+    expect((await h.hold(true, 12)).status).toBe(204);
+    expect(h.events.at(-1)).toEqual({ pressed: true, atMono: 1010 });
+  });
+
+  it("the server closing lets go", async () => {
+    const h = await holdServer();
+    await h.stream();
+    await h.hold(true, 1);
+    await server!.close();
+    server = null;
+    expect(h.events.at(-1)).toMatchObject({ pressed: false, reason: "server_closed" });
   });
 });

@@ -1,4 +1,17 @@
-import { DEFAULT_SCREEN_CHOICES, TEXT_SIZES, type ScreenChoices, type ScreenContent, type ScreenState, type StatusStrip, type TextSize } from "@walker/contracts";
+import {
+  DEFAULT_SCREEN_CHOICES,
+  FAULT_SENTENCES,
+  REFUSAL_SENTENCES,
+  TEXT_SIZES,
+  confirmPrompt,
+  type MotionFaultCode,
+  type MotionRefusal,
+  type ScreenChoices,
+  type ScreenContent,
+  type ScreenState,
+  type StatusStrip,
+  type TextSize,
+} from "@walker/contracts";
 
 /**
  * Example states for every screen in the design, at every text size: for tests, screenshots and the web
@@ -30,6 +43,16 @@ interface Base {
 }
 
 const HEARD = "Is there anything in front of me right now?";
+
+/** The longest title a Confirm target or a running motion may have (60 characters), in real words. */
+export const LONGEST_MOTION_TITLE = "Bring the cup from the kitchen tray over to the left handle?";
+const target = (n: number, title: string, park = true) => ({ target_id: uuid(n), title, prompt: confirmPrompt(title, park) });
+const longest = <K extends string>(sentences: Readonly<Record<K, string>>): K =>
+  (Object.keys(sentences) as K[]).reduce((a, b) => ([...sentences[b]].length > [...sentences[a]].length ? b : a));
+/** The fault and the refusal with the longest sentences, so the screenshots prove the worst case fits. */
+export const LONGEST_FAULT: MotionFaultCode = longest(FAULT_SENTENCES);
+export const LONGEST_REFUSAL: MotionRefusal = longest(REFUSAL_SENTENCES);
+const BENCH = { bench_mode: true } as const;
 
 const BASES: Base[] = [
   // The walker's own states first.
@@ -67,6 +90,50 @@ const BASES: Base[] = [
   { name: "my-screen-reading", screen: { state: "my_screen", view: { page: "reading" } } },
   { name: "my-screen-circle-member", screen: { state: "my_screen", view: { page: "circle", index: 2, owner_name: "Max", member: LONG_MEMBER, count: 3, confirm_remove: false } } },
   { name: "my-screen-circle-remove", screen: { state: "my_screen", view: { page: "circle", index: 2, owner_name: "Max", member: LONG_MEMBER, count: 3, confirm_remove: true } } },
+  // Motion (the arms and the lift), added 2026-10-24. The demo walker runs in bench mode until a stop is wired.
+  { name: "ambient-bench", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan" }, strip: BENCH },
+  { name: "ambient-connecting-simulator-bench", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, strip: { link: "connecting", simulator: true, ...BENCH } },
+  { name: "listening-bench", screen: { state: "listening" }, strip: BENCH },
+  { name: "motion-confirm-cup", screen: { state: "motion_confirm", target: target(60, "Bring the cup?"), hold: null } },
+  { name: "motion-confirm-cup-bench", screen: { state: "motion_confirm", target: target(60, "Bring the cup?"), hold: null }, strip: BENCH },
+  { name: "motion-confirm-let-go", screen: { state: "motion_confirm", target: target(61, "Let go?"), hold: null }, strip: BENCH },
+  { name: "motion-confirm-lift-raise", screen: { state: "motion_confirm", target: target(62, "Raise the lift?"), hold: "raise" }, strip: BENCH },
+  { name: "motion-confirm-lift-home-no-bench", screen: { state: "motion_confirm", target: target(63, "Home the lift?"), hold: "home" } },
+  {
+    name: "motion-confirm-longest-hold",
+    screen: { state: "motion_confirm", target: target(64, LONGEST_MOTION_TITLE), hold: "lower" },
+    strip: { link: "connecting", simulator: true, ...BENCH },
+  },
+  { name: "motion-confirm-longest", screen: { state: "motion_confirm", target: target(65, LONGEST_MOTION_TITLE), hold: null }, strip: BENCH },
+  { name: "motion-running-cup", screen: { state: "motion_running", what: "Bring the cup", lift: null }, strip: BENCH },
+  { name: "motion-running-lift", screen: { state: "motion_running", what: "Raising the lift", lift: { phase: "running", direction: "raise" } }, strip: BENCH },
+  { name: "motion-running-lift-stopping", screen: { state: "motion_running", what: "Raising the lift", lift: { phase: "stopping", direction: "raise" } }, strip: BENCH },
+  {
+    name: "motion-running-longest-lift",
+    screen: { state: "motion_running", what: LONGEST_MOTION_TITLE.replace("?", ""), lift: { phase: "running", direction: "move" } },
+    strip: { link: "connecting", simulator: true, ...BENCH },
+  },
+  { name: "motion-running-longest", screen: { state: "motion_running", what: LONGEST_MOTION_TITLE.replace("?", ""), lift: null }, strip: BENCH },
+  { name: "motion-holding-stopped", screen: { state: "motion_holding", outcome: "stopped", refusal: null }, strip: BENCH },
+  { name: "motion-holding-done", screen: { state: "motion_holding", outcome: "completed", refusal: null } },
+  { name: "motion-holding-not-held", screen: { state: "motion_holding", outcome: "not_started", refusal: "not_held" }, strip: BENCH },
+  { name: "motion-holding-longest-refusal", screen: { state: "motion_holding", outcome: "not_started", refusal: LONGEST_REFUSAL }, strip: BENCH },
+  { name: "motion-fault-stop-switch", screen: { state: "motion_fault", faults: ["stop_circuit_opened", "lift_unhomed"], confirm: null } },
+  {
+    name: "motion-fault-longest",
+    screen: { state: "motion_fault", faults: [LONGEST_FAULT, "limit_wiring", "lift_unhomed"], confirm: null },
+    strip: { link: "connecting", simulator: true, ...BENCH },
+  },
+  {
+    name: "motion-fault-clear",
+    screen: { state: "motion_fault", faults: ["overload"], confirm: { ...target(66, "Clear it?", false) } },
+    strip: BENCH,
+  },
+  {
+    name: "motion-fault-clear-longest",
+    screen: { state: "motion_fault", faults: [LONGEST_FAULT, "overload"], confirm: target(67, LONGEST_MOTION_TITLE, false) },
+    strip: BENCH,
+  },
 ];
 
 export function screenFixtures(): ScreenFixture[] {
@@ -86,7 +153,7 @@ export function screenFixtures(): ScreenFixture[] {
           changed_at: "2026-10-24T18:30:00.000Z",
           pending_local: false,
         },
-        strip: { link: "online", simulator: false, clock: { local_time: "2026-10-24T19:42:00" }, ...base.strip },
+        strip: { link: "online", simulator: false, bench_mode: false, clock: { local_time: "2026-10-24T19:42:00" }, ...base.strip },
       },
     })),
   );

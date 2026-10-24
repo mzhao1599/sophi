@@ -50,7 +50,7 @@ This branch doesn't edit the coordinator's files (`claude/motion-arms`). To wire
 
 1. In `createPiMotion` (or wherever `MotionSetup` is loaded): when `setup.lift` isn't null, build the `LiftClient` with `setup.lift`, the bench flag and the coordinator's clock, and call `modules.setLiftHandler(lift)` before `scanner.start()`. In `run.ts`, that means passing `modules` into `createPiMotion`.
 2. In the coordinator's control loop, call `lift.tick(now)` on every tick, and from nowhere else.
-3. Route the screen's hold-control refresh and release to `holdRefresh` and `holdRelease`, stamped with the Pi's monotonic receive time.
+3. Route the screen's hold-control refresh and release to `holdRefresh` and `holdRelease`. The walker screen's server already stamps each with the Pi's monotonic receive time and puts it on the bus as `screenHold` (`src/screen/server.ts`), so this is one line: `bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono)))`.
 4. When preparing a lift Confirm target, call `lift.verdict(action, inputs, "prepare", now)`. When the press is accepted, call `lift.start` (home or move) or `lift.disable`. For `fault.clear`, call `lift.clearFaults()` along with the coordinator's own clear, and clear lift faults only on the `clear` event's `cleared`.
 5. On `motion.stop` and on every latched fault, call `lift.stop()`. On a fault in FAULTS_THAT_UNHOME_LIFT, also call `lift.markUnhomed()`.
 6. Map events to the motion state: `fault` → latch with part `lift`; `ended` → `last_command`; `state()` and `active()` → `MotionState.lift` and `active`.

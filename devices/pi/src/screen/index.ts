@@ -87,6 +87,9 @@ export async function startWalkerScreen(options: WalkerScreenOptions): Promise<W
       },
       // The walker's own screens have no buttons that act yet ("My screen" comes with the circle piece).
       onPress: (press) => log.info("walker screen press not acted on (not built yet)", { action: press.action, revision: press.revision }),
+      // The lift's hold control, stamped on receipt: the motion coordinator maps it to the lift's hold lease.
+      monotonic: () => clock.monotonic(),
+      onHold: (hold) => options.bus.emit("screenHold", hold),
     });
     if (server) log.info("walker screen page", { url: server.url });
   } catch (error) {

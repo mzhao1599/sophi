@@ -1,8 +1,14 @@
 import {
+  BENCH_MODE_LABEL,
+  FAULT_CLEAR_SENTENCE,
+  FAULT_SENTENCES,
+  REFUSAL_SENTENCES,
   VOICE_CHOICES,
+  holdControlShown,
   type Cue,
   type ScreenAction,
   type ScreenContent,
+  type ScreenHoldDirection,
   type ScreenSettings,
   type ScreenState,
   type SuggestionChange,
@@ -38,6 +44,19 @@ export interface ViewLine {
 
 export type PresenceShape = "filled" | "hollow" | "dashed";
 
+/**
+ * The lift's hold control: a large button she keeps her finger on while the lift moves. Shown only while a
+ * hold-to-run lift target is pending or its motion runs held (`holdControlShown` in the contract). It isn't a
+ * ScreenAction: the page reports it on its own route (POST /screen/hold), refreshed while held.
+ */
+export interface ViewHold {
+  direction: ScreenHoldDirection;
+  /** "Hold to raise". */
+  label: string;
+  /** Under the label, with the handle's mark: "and press Confirm" while the target waits for its press. */
+  sublabel: string | null;
+}
+
 export interface ScreenView {
   theme: "light" | "dark";
   textSize: TextSize;
@@ -48,23 +67,30 @@ export interface ScreenView {
   itemId: string | null;
   revision: number;
   settingsVersion: number;
-  strip: { word: string; shape: PresenceShape; time: string | null; simulator: boolean };
-  /** The main fact: at the main size, or at body size for captions. */
-  main: { text: string; size: "main" | "body" | "message" };
+  /**
+   * `bench`: a dashed "Bench mode" tag (the arms and lift may move with no hardware stop; motion screens say it
+   * in full). Not on the simulator, whose "Simulator" tag takes the room.
+   */
+  strip: { word: string; shape: PresenceShape; time: string | null; simulator: boolean; bench: boolean };
+  /**
+   * The main fact: at the main size, at body size for captions, or for a long motion title in bold at the body
+   * size (`title`) or the smallest size (`small`).
+   */
+  main: { text: string; size: "main" | "body" | "message" | "title" | "small" };
   lines: ViewLine[];
-  /** Over the left handle: the Confirm twin button, the word "Confirm", or nothing. */
-  left: { kind: "button"; button: ViewButton } | { kind: "hint" } | null;
+  /**
+   * Over the left handle: the Confirm twin button, a word ("Confirm" when a press answers something, "Stop"
+   * while motion runs, since any handle press stops it), or nothing.
+   */
+  left: { kind: "button"; button: ViewButton } | { kind: "hint"; word: "Confirm" | "Stop" } | null;
   /** Between the handles: other buttons, or short lines (a page count, the time left). */
   center: { lines: ViewLine[]; buttons: ViewButton[] };
-  /** Over the right handle. Talk always works, so this is always shown. */
-  talk: true;
+  /** The lift's hold control, between the handles, or null (never shown otherwise). */
+  hold: ViewHold | null;
+  /** Over the right handle, always shown: "Talk", or "Stop" while motion runs (a Talk press stops it too). */
+  right: "Talk" | "Stop";
   /** What a screen reader hears when the scene changes. */
   announce: string;
-  /**
-   * Motion status (arms, lift): contract pending. A separate motion contract is being written on another
-   * branch; until it lands this slot is always null and nothing is drawn for it. Never fill it from a guess.
-   */
-  motionStatus: null;
 }
 
 const TEXT_SIZE_WORD: Record<TextSize, string> = { large: "Large", larger: "Larger", largest: "Largest" };
@@ -257,6 +283,8 @@ interface Scene {
   lines?: ViewLine[];
   left?: ScreenView["left"];
   center?: Partial<ScreenView["center"]>;
+  hold?: ViewHold | null;
+  right?: ScreenView["right"];
   announce?: string;
 }
 
@@ -311,7 +339,7 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         main: { text: words.main, size: "main" },
         // At Largest the question takes two lines, so what it changes drops to the smallest size.
         lines: [textSize === "largest" ? detail(words.body) : body(words.body)],
-        left: { kind: "hint" },
+        left: { kind: "hint", word: "Confirm" },
         center: { lines: [detail("Offered by Sophi"), detail("About a minute")] },
       };
     }
@@ -416,6 +444,146 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
     }
     case "my_screen":
       return myScreen(content.view, settings);
+    case "motion_confirm":
+    case "motion_running":
+    case "motion_holding":
+    case "motion_fault":
+      return motionScene(content, textSize, state.strip.bench_mode);
+  }
+}
+
+// ---- Motion (the arms and the lift) ----
+
+const HOLD_WORD: Record<ScreenHoldDirection, string> = { raise: "Hold to raise", lower: "Hold to lower", home: "Hold to home", move: "Hold to move" };
+
+/**
+ * Height left for the one thing (px), from the fixed regions at 800x480: 12 px of padding, the 50 px strip,
+ * two 8 px gaps, and the band over the handles (a 147 px button row, or the 48 px handle words).
+ */
+const ONE_THING_PX = { buttons: 480 - 12 - 50 - 16 - 147, words: 480 - 12 - 50 - 16 - 48 } as const;
+/** Usable width (px) of a line, less what word wrapping wastes at the end of each line. */
+const WRAP_PX = 690;
+/** Average character width as a share of the font size, measured on Atkinson Hyperlegible Next (bold 0.49, regular 0.44). */
+const CHAR_EM = { bold: 0.5, regular: 0.45 } as const;
+
+/** About how tall a text is at this size: its lines (estimated from its length) times the line height. */
+function heightPx(text: string, fontPx: number, weight: keyof typeof CHAR_EM, lineHeight: number): number {
+  const lines = Math.max(1, Math.ceil((chars(text) * CHAR_EM[weight] * fontPx) / WRAP_PX));
+  return Math.ceil(lines * fontPx * lineHeight);
+}
+
+function linesPx(lines: readonly ViewLine[], sizes: ScreenSizes): number {
+  return lines.reduce((sum, l) => sum + 2 + heightPx(l.text, l.size === "detail" ? sizes.smallest : sizes.body, "regular", 1.15), 0);
+}
+
+/**
+ * A motion screen's main line at the largest size that leaves room for its other lines: the main size on
+ * one line, else the body size in bold (`title`), else the smallest size in bold (`small`). The Pi's words
+ * are never cut. The estimate is checked by rendering every fixture, with the longest titles and sentences
+ * the contract allows, at 800x480 in headless Chromium (test/shots.test.tsx).
+ */
+export function fitMotionMain(text: string, textSize: TextSize, lines: readonly ViewLine[], buttons: boolean): ScreenView["main"] {
+  const sizes = screenSizes(textSize);
+  // Less a few px for the gap after the main line and rounding (a 60-character title at Largest came 1 px over without it).
+  const room = (buttons ? ONE_THING_PX.buttons : ONE_THING_PX.words) - linesPx(lines, sizes) - 4;
+  const mainLines = Math.ceil((chars(text) * CHAR_EM.bold * sizes.main) / WRAP_PX);
+  if (mainLines <= 1 && Math.ceil(sizes.main * 1.02) <= room) return { text, size: "main" };
+  if (heightPx(text, sizes.body, "bold", 1.1) <= room) return { text, size: "title" };
+  return { text, size: "small" };
+}
+
+/** What follows the title in a Confirm target's prompt: PARK_PROMPT or CONFIRM_ONLY_PROMPT (`confirmPrompt`). */
+export function promptAfterTitle(title: string, prompt: string): string {
+  const t = title.trim();
+  const sentence = /[.?!]$/.test(t) ? t : `${t}.`;
+  return prompt.startsWith(sentence) ? prompt.slice(sentence.length).trim() : prompt;
+}
+
+/** The bench label, in full, on every motion screen: there is no hardware stop. */
+const benchLine = (bench: boolean): ViewLine[] => (bench ? [detail(BENCH_MODE_LABEL)] : []);
+
+type MotionContent = Extract<ScreenContent, { state: "motion_confirm" | "motion_running" | "motion_holding" | "motion_fault" }>;
+
+function motionScene(content: MotionContent, textSize: TextSize, bench: boolean): Scene {
+  switch (content.state) {
+    case "motion_confirm": {
+      // No touch Confirm: only a handle Confirm press starts motion (motion.ts, THE RULE), so the left handle
+      // is named and nothing over it can be tapped.
+      const { target } = content;
+      const direction = holdControlShown(content);
+      const hold = direction ? { direction, label: HOLD_WORD[direction], sublabel: "and press Confirm" } : null;
+      const lines = [detail(promptAfterTitle(target.title, target.prompt)), ...benchLine(bench)];
+      return {
+        key: `motion_confirm:${target.target_id}`,
+        main: fitMotionMain(target.title, textSize, lines, hold !== null),
+        lines,
+        left: { kind: "hint", word: "Confirm" },
+        hold,
+        announce: hold ? `${target.prompt} Keep holding ${hold.label} on the screen while you press Confirm.` : target.prompt,
+      };
+    }
+    case "motion_running": {
+      const lift = content.lift;
+      const direction = holdControlShown(content);
+      const common = { left: { kind: "hint", word: "Stop" } as const, right: "Stop" as const };
+      if (lift?.phase === "running") {
+        // While the lift runs, the one thing she must do is keep holding: that is the main line. The button
+        // under her finger names the way it goes, so the Pi's words for it are spoken, not shown.
+        const lines = [detail("Let go, or press a handle button, to stop."), ...benchLine(bench)];
+        return {
+          ...common,
+          key: "motion_running:lift",
+          main: { text: "Keep holding", size: "main" },
+          lines,
+          hold: direction ? { direction, label: HOLD_WORD[direction], sublabel: null } : null,
+          announce: `${content.what}. Keep holding. Let go, or press a handle button, to stop.`,
+        };
+      }
+      if (lift?.phase === "stopping") {
+        // A released or stopped lift never resumes, so the hold control is gone.
+        return { ...common, key: "motion_running:lift:stopping", main: { text: "Stopping", size: "main" }, lines: benchLine(bench), announce: "Stopping." };
+      }
+      const lines = [detail("Press any handle button to stop."), ...benchLine(bench)];
+      return {
+        ...common,
+        key: `motion_running:${content.what}`,
+        main: fitMotionMain(content.what, textSize, lines, false),
+        lines,
+        announce: `Moving: ${content.what}. Press any handle button to stop.`,
+      };
+    }
+    case "motion_holding": {
+      const main = content.outcome === "completed" ? "Done" : content.outcome === "stopped" ? "Stopped" : "Not started";
+      return {
+        key: `motion_holding:${content.outcome}:${content.refusal ?? ""}`,
+        main: { text: main, size: "main" },
+        lines: [content.refusal ? detail(REFUSAL_SENTENCES[content.refusal]) : body("Holding still."), ...benchLine(bench)],
+      };
+    }
+    case "motion_fault": {
+      const first = FAULT_SENTENCES[content.faults[0]!];
+      const more = content.faults.length - 1;
+      const center = { lines: more > 0 ? [detail(`${more} more to check`)] : [] };
+      if (content.confirm) {
+        const lines = [detail(first), detail(promptAfterTitle(content.confirm.title, content.confirm.prompt)), ...benchLine(bench)];
+        return {
+          key: `motion_fault:${content.faults.join(",")}:${content.confirm.target_id}`,
+          main: fitMotionMain(content.confirm.title, textSize, lines, false),
+          lines,
+          left: { kind: "hint", word: "Confirm" },
+          center,
+          announce: `${first} ${content.confirm.prompt}`,
+        };
+      }
+      const lines = [detail(first), detail(FAULT_CLEAR_SENTENCE), ...benchLine(bench)];
+      return {
+        key: `motion_fault:${content.faults.join(",")}`,
+        main: fitMotionMain("Stopped", textSize, lines, false),
+        lines,
+        center,
+        announce: `Stopped. ${first} ${FAULT_CLEAR_SENTENCE}`,
+      };
+    }
   }
 }
 
@@ -495,9 +663,11 @@ export function screenView(state: ScreenState, settings: ScreenSettings = state.
   const clock = state.strip.clock ? clockWords(state.strip.clock.local_time) : null;
   const left = s.left ?? null;
   const center = { lines: s.center?.lines ?? [], buttons: s.center?.buttons ?? [] };
-  const buttons = (left?.kind === "button" ? 1 : 0) + center.buttons.length;
+  const hold = s.hold ?? null;
+  const buttons = (left?.kind === "button" ? 1 : 0) + center.buttons.length + (hold ? 1 : 0);
   if (buttons > MAX_BUTTONS) throw new Error(`A screen has at most ${MAX_BUTTONS} buttons.`);
   const lines = s.lines ?? [];
+  const strip = state.strip;
   return {
     theme: settings.theme,
     textSize: settings.text_size,
@@ -506,14 +676,21 @@ export function screenView(state: ScreenState, settings: ScreenSettings = state.
     itemId: s.itemId ?? null,
     revision: state.revision,
     settingsVersion: settings.version,
-    // The clock screen's main line is the time, so the strip doesn't repeat it there.
-    strip: { ...presence(state.strip.link), time: state.screen.state === "ambient" ? null : (clock?.time ?? null), simulator: state.strip.simulator },
+    strip: {
+      ...presence(strip.link),
+      // The clock screen's main line is the time, so the strip doesn't repeat it there.
+      time: state.screen.state === "ambient" ? null : (clock?.time ?? null),
+      simulator: strip.simulator,
+      // The strip has room for one tag beside "Connecting" and the time. On the simulator, "Simulator" already
+      // says nothing real moves; the motion screens still say BENCH_MODE_LABEL in full.
+      bench: strip.bench_mode && !strip.simulator,
+    },
     main: s.main,
     lines,
     left,
     center,
-    talk: true,
-    motionStatus: null,
+    hold,
+    right: s.right ?? "Talk",
     announce: s.announce ?? [s.main.text, ...lines.map((l) => l.text), ...center.lines.map((l) => l.text)].join(". "),
   };
 }

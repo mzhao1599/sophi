@@ -602,7 +602,7 @@ export const FAULT_SENTENCES: Readonly<Record<MotionFaultCode, string>> = {
   teleop_gap: "The walker's arm fell too far behind the teaching arm, so it stopped.",
 };
 /** Added to every fault on screen: faults clear only on the walker. */
-export const FAULT_CLEAR_SENTENCE = "Someone needs to check the walker and clear it there.";
+export const FAULT_CLEAR_SENTENCE = "Ask a helper to clear it at the walker.";
 
 /**
  * How the Pi leaves the hardware when a fault latches. Whatever the reaction, every other motion stops and

@@ -1,4 +1,5 @@
 import type { Cue, MotionState, ProposalView, ScreenStateName } from "@walker/contracts";
+import type { ScreenHoldEvent } from "./screen/server";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
 /**
@@ -68,8 +69,16 @@ export interface BusEvents {
   handLink: { instanceId: string; why: "hello" | "seq_gap" | "seq_back" | "error" | "lost" };
   /** What the motion coordinator did, in a few words (checks, commands, faults, offers), for logs and scripts. */
   motion: { kind: string; text: string };
-  /** The motion state, as the contract's MotionStateSchema (the walker screen's motion slot, later). */
+  /** The motion state, as the contract's MotionStateSchema (the walker screen draws it: src/screen/motion.ts). */
   motionState: { state: MotionState };
+  /**
+   * The walker screen's lift hold control (POST /screen/hold): "still held", at least every
+   * HOLD_CONTROL_REFRESH_MS while her finger is on it, or let go (her finger lifted, the touch cancelled, the
+   * page lost focus, was hidden or lost its stream, or the control wasn't on screen). `atMono` is the Pi's
+   * monotonic time when it arrived, never the page's. The coordinator wires it to the lift's hold lease:
+   * `bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono)))`.
+   */
+  screenHold: ScreenHoldEvent;
   /** Simulator only: what the simulated servos saw (never emitted on the Pi). */
   sim: { text: string };
 }

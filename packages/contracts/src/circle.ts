@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CueListSchema, PartViewSchema, SpeechSchema } from "./walker";
 import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
+import { MotionFaultCodeSchema, MotionRefusalSchema, confirmPrompt } from "./motion";
 
 /**
  * Sophi Circle, version 1: the people around the person who walks with the walker ("Nan" in the docs), and
@@ -800,6 +801,12 @@ export const StatusStripSchema = z.strictObject({
   link: ScreenLinkSchema,
   /** The whole walker is the simulator: the strip shows a dashed "Simulator". */
   simulator: z.boolean(),
+  /**
+   * The Pi's motion coordinator runs in bench mode (motion.ts, MOTION_BENCH_ENV): the arms and lift may move
+   * with no hardware stop. The strip shows a dashed "Bench mode" on every screen, and every motion screen
+   * says BENCH_MODE_LABEL in full. False when there is no motion coordinator. Added 2026-10-24.
+   */
+  bench_mode: z.boolean(),
   /** The walker's local wall time, no offset; null when its clock has never synced (no time is shown). */
   clock: z
     .strictObject({ local_time: z.iso.datetime({ local: true }).regex(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/, "Local time, no offset.") })
@@ -836,11 +843,90 @@ export const MyScreenViewSchema = z.discriminatedUnion("page", [
     }),
 ]);
 
+// ---- Motion on the walker screen (added 2026-10-24) ----
+//
+// The motion coordinator (devices/pi/src/motion/, motion.ts's MotionState) decides everything; these states
+// only carry what the screen draws. The screen never starts motion: a Confirm target is answered only by a
+// handle Confirm press, so a motion screen has no touch Confirm. Its one touch control is the lift's hold
+// control, shown only while a hold-to-run lift target is pending or running (`holdControlShown`).
+
+/** A Pi-worded title (a skill's, pose's or action's, from the Pi's own files or fixed words; never cloud text). */
+const MotionTitleSchema = z.string().trim().min(1).max(60);
+
+/** Which way the held lift goes, as the hold control says it: "Hold to raise", "Hold to lower", "Hold to home", "Hold to move". */
+export const ScreenHoldDirectionSchema = z.enum(["raise", "lower", "home", "move"]);
+export type ScreenHoldDirection = z.infer<typeof ScreenHoldDirectionSchema>;
+
+/** A pending Confirm target as the screen shows it: the Pi's own title and the prompt it says (ConfirmTarget). */
+const ScreenConfirmTargetSchema = z
+  .strictObject({
+    target_id: id,
+    title: MotionTitleSchema,
+    /** ConfirmTarget.prompt, word for word: the title, then PARK_PROMPT or CONFIRM_ONLY_PROMPT. */
+    prompt: z.string().min(1).max(160),
+  })
+  .refine((t) => t.prompt === confirmPrompt(t.title, true) || t.prompt === confirmPrompt(t.title, false), {
+    message: "prompt is confirmPrompt(title).",
+    path: ["prompt"],
+  });
+
+const motionStates = [
+  /**
+   * The one pending Confirm target, while nothing moves and no fault is latched: "Bring the cup? Park the
+   * walker and lock the brakes, then press Confirm." `hold` is set exactly for a hold-to-run lift target
+   * (lift.home, lift.move): the screen shows the hold control, which must be held while Confirm is pressed.
+   */
+  z.strictObject({
+    state: z.literal("motion_confirm"),
+    target: ScreenConfirmTargetSchema,
+    hold: ScreenHoldDirectionSchema.nullable(),
+  }),
+  /**
+   * Something is moving (or teleop is on). `what` is the Pi's words for it ("Bring the cup", "Raising the
+   * lift"). Any handle button stops it. `lift` is set for a lift motion: `running` while the hold control
+   * holds it (the screen says "Keep holding"), `stopping` while it ramps down after a release or a stop (it
+   * never resumes, so the hold control goes).
+   */
+  z.strictObject({
+    state: z.literal("motion_running"),
+    what: MotionTitleSchema,
+    lift: z.strictObject({ phase: z.enum(["running", "stopping"]), direction: ScreenHoldDirectionSchema }).nullable(),
+  }),
+  /**
+   * A few seconds after a motion ended with no fault: it finished (`completed`), was stopped (`stopped`), or
+   * the press didn't start it (`not_started`, with the refusal; the screen shows REFUSAL_SENTENCES[refusal]).
+   * The arms and lift hold where they are in every case.
+   */
+  z
+    .strictObject({
+      state: z.literal("motion_holding"),
+      outcome: z.enum(["completed", "stopped", "not_started"]),
+      refusal: MotionRefusalSchema.nullable(),
+    })
+    .refine((h) => (h.outcome === "not_started") === (h.refusal !== null), {
+      message: "A refusal is named exactly when it didn't start.",
+      path: ["refusal"],
+    }),
+  /**
+   * Motion faults are latched (MotionState mode `fault`): every code, oldest first. The screen shows the first
+   * one's FAULT_SENTENCES sentence and FAULT_CLEAR_SENTENCE, and how many more. `confirm` is a pending target
+   * allowed while faulted (clearing the faults, or making the hardware safer), shown with the fault.
+   */
+  z
+    .strictObject({
+      state: z.literal("motion_fault"),
+      faults: z.array(MotionFaultCodeSchema).min(1).max(MotionFaultCodeSchema.options.length),
+      confirm: ScreenConfirmTargetSchema.nullable(),
+    })
+    .refine((f) => new Set(f.faults).size === f.faults.length, { message: "Each fault appears once.", path: ["faults"] }),
+] as const;
+
 /**
- * The one thing on screen, in the Pi's priority order: an obstacle or her own Talk first (listening, thinking,
- * answering); then today's model
- * offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message notice; then
- * the clock. An offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen
+ * The one thing on screen, in the Pi's priority order: an obstacle first; then a running motion or a latched
+ * motion fault; then her own Talk (listening, thinking, answering); then a pending motion Confirm target; then
+ * today's model offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message
+ * notice; then the clock. (The motion states and their place, added 2026-10-24, are explained in the Pi's
+ * `pickScreen`.) An offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen
  * waits behind it; only an offer from her own Talk turn takes over. Confirm during an obstacle settles
  * nothing. An interruption returns to the screen she was on, with a new revision (the item's gate starts again).
  */
@@ -928,8 +1014,20 @@ export const ScreenContentSchema = z.discriminatedUnion("state", [
     alerts: CueListSchema.nullable(),
   }),
   z.strictObject({ state: z.literal("my_screen"), view: MyScreenViewSchema }),
+  ...motionStates,
 ]);
 export type ScreenContent = z.infer<typeof ScreenContentSchema>;
+
+/**
+ * Which way the lift's hold control on this screen goes, or null when the screen doesn't show one. It shows
+ * exactly while a hold-to-run lift target is pending, or its lift motion runs held. The page draws the
+ * control from this, and the Pi's screen server takes a "still held" only while the state it last sent shows it.
+ */
+export function holdControlShown(content: ScreenContent): ScreenHoldDirection | null {
+  if (content.state === "motion_confirm") return content.hold;
+  if (content.state === "motion_running" && content.lift?.phase === "running") return content.lift.direction;
+  return null;
+}
 export type ScreenStateName = ScreenContent["state"];
 
 /**
@@ -995,3 +1093,14 @@ export type ScreenAction = z.infer<typeof ScreenActionSchema>;
 /** POST /screen/press: a tap on a button of this revision. The Pi ignores a press on an older revision. */
 export const ScreenPressSchema = z.strictObject({ revision: z.int().min(0), action: ScreenActionSchema });
 export type ScreenPress = z.infer<typeof ScreenPressSchema>;
+
+/**
+ * POST /screen/hold: the lift's hold control (motion.ts, HoldSourceSchema `screen_hold_control`). While her
+ * finger is on it, the page sends `pressed: true` more often than HOLD_CONTROL_REFRESH_MS; any of
+ * SCREEN_HOLD_RELEASE_EVENTS, the control going, or the page losing its stream sends `pressed: false`.
+ * `at` is the page's own clock (`performance.timeOrigin + performance.now()`, ms). The Pi never uses it for
+ * freshness: it stamps every message with its monotonic clock on receipt. `at` only orders one page's
+ * messages, so a "still held" that a release overtook on the way is dropped. Added 2026-10-24.
+ */
+export const ScreenHoldSchema = z.strictObject({ pressed: z.boolean(), at: z.number().nonnegative().max(Number.MAX_SAFE_INTEGER) });
+export type ScreenHold = z.infer<typeof ScreenHoldSchema>;
