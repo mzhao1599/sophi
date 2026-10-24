@@ -7,7 +7,7 @@ import { useOnboarding, type Onboarding } from "@/lib/useOnboarding";
 import { FactsPanel } from "./FactsPanel";
 import { QuestionStep } from "./QuestionStep";
 import { StartPanel } from "./StartPanel";
-import { TopBar } from "./TopBar";
+import { TopBar, type AccountSummary } from "./TopBar";
 import { Transcript } from "./Transcript";
 import { WalkerDiagram, type PartState } from "./WalkerDiagram";
 import styles from "./Screen.module.css";
@@ -66,12 +66,27 @@ function SuggestedWalker({ session }: { session: SessionView }) {
  * current question is the biggest thing on the screen, the running summary sits beside it, and the
  * full transcript below keeps every message available as text.
  */
-export function OnboardingScreen({ agent = false }: { agent?: boolean }) {
-  return <OnboardingView o={useOnboarding()} agent={agent} />;
+export interface ScreenAccess {
+  /** The signed-in user, or null. Signed in, Start creates an account session; signed out, a demo. */
+  account?: AccountSummary | null;
+  /** The server has Supabase, so signing in is possible. */
+  signIn?: boolean;
+  /** The signed-in user's unfinished setup, to carry on with on this device. */
+  resumeId?: string | null;
+}
+
+export function OnboardingScreen({ agent = false, account = null, signIn = false, resumeId = null }: { agent?: boolean } & ScreenAccess) {
+  const o = useOnboarding({ notice: account ? "account" : "demo", resumeId });
+  return <OnboardingView o={o} agent={agent} account={account} signIn={signIn} />;
 }
 
 /** `agent`: the server runs the onboarding agent, so the first screen says answers go to the model provider. */
-export function OnboardingView({ o, agent = false }: { o: Onboarding; agent?: boolean }) {
+export function OnboardingView({
+  o,
+  agent = false,
+  account = null,
+  signIn = false,
+}: { o: Onboarding; agent?: boolean } & Omit<ScreenAccess, "resumeId">) {
   const s = o.session;
   const doneRef = useRef<HTMLHeadingElement>(null);
   const reviewReady = s && (s.state === "review" || s.state === "confirmed");
@@ -83,7 +98,7 @@ export function OnboardingView({ o, agent = false }: { o: Onboarding; agent?: bo
 
   return (
     <>
-      <TopBar session={s} onReset={s ? o.reset : undefined} busy={o.busy} />
+      <TopBar session={s} onReset={s ? o.reset : undefined} busy={o.busy} account={account} signIn={signIn} />
       <main id="main" className={styles.main}>
         <p className="visually-hidden" role="status" aria-live="polite">
           {o.status}
@@ -91,7 +106,9 @@ export function OnboardingView({ o, agent = false }: { o: Onboarding; agent?: bo
 
         {o.phase === "loading" ? <p className={styles.loading}>Loading your setup…</p> : null}
 
-        {o.phase === "none" ? <StartPanel busy={o.busy} error={o.error} onStart={o.start} agent={agent} /> : null}
+        {o.phase === "none" ? (
+          <StartPanel busy={o.busy} error={o.error} onStart={o.start} agent={agent} account={account} signIn={signIn} />
+        ) : null}
 
         {s && s.current_question ? (
           <div className={styles.grid}>

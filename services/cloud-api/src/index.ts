@@ -10,6 +10,7 @@ export {
   type StoredSession,
 } from "./onboarding/store";
 export { SupabaseSessionStore, SupabaseStoreError, type SupabaseStoreClients, type SupabaseStoreOptions } from "./onboarding/supabase-store";
+export { latestOpenSessionId, listSetups, type SavedSetup } from "./onboarding/setups";
 export { matchNeeds } from "./onboarding/matcher";
 export { recommend, defaultSelection, activeTags } from "./onboarding/recommend";
 export { QUESTIONS } from "./onboarding/questions";

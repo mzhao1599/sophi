@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MODULE_CATALOG, type DeviceConfiguration, type SessionView } from "@walker/contracts";
@@ -52,8 +53,17 @@ export function SavedConfiguration({
           Your setup is saved
         </h1>
         <p className={screen.lead}>
-          Configuration {configuration.configuration_version}, saved at {saved}. The next step is pairing it with a walker, which
-          isn&apos;t built yet. This demo configuration can&apos;t be sent to a real device.
+          {configuration.source === "account" ? (
+            <>
+              Setup {configuration.configuration_version}, saved to your account at {saved}. The next step is pairing it with a walker,
+              which isn&apos;t built yet.
+            </>
+          ) : (
+            <>
+              Configuration {configuration.configuration_version}, saved at {saved}. The next step is pairing it with a walker, which
+              isn&apos;t built yet. This demo configuration can&apos;t be sent to a real device.
+            </>
+          )}
         </p>
       </header>
 
@@ -103,26 +113,38 @@ export function SavedConfiguration({
         </pre>
       </section>
 
-      <div className={`${screen.span12} ${screen.actions}`}>
-        <button
-          type="button"
-          className="button button-secondary"
-          disabled={busy}
-          onClick={async () => {
-            const deleted = await onStartOver();
-            setDeleteFailed(!deleted);
-            if (deleted) router.push("/onboarding");
-          }}
-        >
-          Delete and start over
-        </button>
-        {deleteFailed ? (
-          <p role="alert" className={styles.meta}>
-            Your answers couldn&apos;t be deleted just now. Please try again.
-          </p>
-        ) : null}
-        <p className={styles.meta}>Session {session.session_id.slice(0, 8)} · deleted automatically within an hour.</p>
-      </div>
+      {configuration.source === "account" ? (
+        <div className={`${screen.span12} ${screen.actions}`}>
+          <Link href="/setups" className="button button-secondary">
+            See all your setups
+          </Link>
+          <Link href="/onboarding" className="button-text">
+            Set up another walker
+          </Link>
+          <p className={styles.meta}>Kept in your account until you delete it in Your setups.</p>
+        </div>
+      ) : (
+        <div className={`${screen.span12} ${screen.actions}`}>
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={busy}
+            onClick={async () => {
+              const deleted = await onStartOver();
+              setDeleteFailed(!deleted);
+              if (deleted) router.push("/onboarding");
+            }}
+          >
+            Delete and start over
+          </button>
+          {deleteFailed ? (
+            <p role="alert" className={styles.meta}>
+              Your answers couldn&apos;t be deleted just now. Please try again.
+            </p>
+          ) : null}
+          <p className={styles.meta}>Session {session.session_id.slice(0, 8)} · deleted automatically within an hour.</p>
+        </div>
+      )}
     </div>
   );
 }

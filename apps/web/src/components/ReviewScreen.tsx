@@ -14,6 +14,7 @@ import {
 import { useOnboarding, type Onboarding } from "@/lib/useOnboarding";
 import { FactsPanel } from "./FactsPanel";
 import { SavedConfiguration } from "./SavedConfiguration";
+import type { ScreenAccess } from "./OnboardingScreen";
 import { TopBar } from "./TopBar";
 import { WalkerDiagram, type PartState } from "./WalkerDiagram";
 import screen from "./Screen.module.css";
@@ -50,22 +51,22 @@ const isDefault = (r: Recommendation) => r.status === "required" || r.status ===
  * Review: "Which modules will my walker have?" The module list answers it with reasons quoted from
  * the user's own answers; the walker drawing beside it shows the answer as a picture.
  */
-export function ReviewScreen() {
-  return <ReviewView o={useOnboarding()} />;
+export function ReviewScreen({ account = null, signIn = false, resumeId = null }: ScreenAccess) {
+  return <ReviewView o={useOnboarding({ notice: account ? "account" : "demo", resumeId })} account={account} signIn={signIn} />;
 }
 
-export function ReviewView({ o }: { o: Onboarding }) {
+export function ReviewView({ o, account = null, signIn = false }: { o: Onboarding } & Omit<ScreenAccess, "resumeId">) {
   const s = o.session;
 
   return (
     <>
-      <TopBar session={s} onReset={s ? o.reset : undefined} busy={o.busy} />
+      <TopBar session={s} onReset={s ? o.reset : undefined} busy={o.busy} account={account} signIn={signIn} />
       <main id="main" className={screen.main}>
         <p className="visually-hidden" role="status" aria-live="polite">
           {o.status}
         </p>
         {o.phase === "loading" ? <p className={screen.loading}>Loading your setup…</p> : null}
-        {o.phase === "none" ? <NoSession /> : null}
+        {o.phase === "none" ? <NoSession signedIn={Boolean(account)} /> : null}
         {s && s.state === "collecting" ? <StillCollecting session={s} onSkipRest={o.skipRest} busy={o.busy} /> : null}
         {s && s.state === "review" ? <Review key={s.session_id} session={s} o={o} /> : null}
         {s && s.state === "confirmed" && s.configuration ? (
@@ -76,17 +77,26 @@ export function ReviewView({ o }: { o: Onboarding }) {
   );
 }
 
-function NoSession() {
+function NoSession({ signedIn }: { signedIn: boolean }) {
   return (
     <section aria-labelledby="none-heading">
       <h1 id="none-heading" className={screen.doneTitle}>
         No setup in progress
       </h1>
-      <p className={screen.lead}>Your demo answers were deleted, or this tab hasn&apos;t started a setup yet.</p>
+      <p className={screen.lead}>
+        {signedIn
+          ? "This tab has no setup in progress. Setups you saved are in Your setups."
+          : "Your demo answers were deleted, or this tab hasn't started a setup yet."}
+      </p>
       <div className={screen.actions}>
         <Link href="/onboarding" className="button button-primary">
           Start a setup
         </Link>
+        {signedIn ? (
+          <Link href="/setups" className="button-text">
+            Your setups
+          </Link>
+        ) : null}
       </div>
     </section>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import type { AccountSummary } from "./TopBar";
 import styles from "./StartPanel.module.css";
 
 const TOPICS = [
@@ -11,8 +13,25 @@ const TOPICS = [
   "Whether someone should see where the walker is",
 ];
 
-/** The first screen of onboarding: what this is, how the demo treats your answers, and one way in. */
-export function StartPanel({ busy, error, onStart, agent = false }: { busy: boolean; error: string | null; onStart(): void; agent?: boolean }) {
+/**
+ * The first screen of onboarding: what this is, how your answers are kept, and one way in. Signed
+ * in, the notice is the account one and Start creates an account session; signed out, it is the demo.
+ */
+export function StartPanel({
+  busy,
+  error,
+  onStart,
+  agent = false,
+  account = null,
+  signIn = false,
+}: {
+  busy: boolean;
+  error: string | null;
+  onStart(): void;
+  agent?: boolean;
+  account?: AccountSummary | null;
+  signIn?: boolean;
+}) {
   return (
     <div className={styles.grid}>
       <section className={styles.main} aria-labelledby="start-heading">
@@ -27,10 +46,25 @@ export function StartPanel({ busy, error, onStart, agent = false }: { busy: bool
         <div className={styles.panel}>
           <h2 className={styles.heading}>Before you start</h2>
           <ul className={styles.notes}>
-            <li>
-              This is a demo. Your answers are kept for an hour after your last change, then deleted. You can delete them sooner
-              at any time.
-            </li>
+            {account ? (
+              <li>
+                You&apos;re signed in{account.email ? ` as ${account.email}` : ""}, so your answers are saved to your account and you can
+                carry on from another device. An unfinished setup is deleted 30 days after your last change; a saved setup stays until
+                you delete it in <Link href="/setups">Your setups</Link>.
+              </li>
+            ) : (
+              <li>
+                This is a demo. Your answers are kept for an hour after your last change, then deleted. You can delete them sooner
+                at any time.
+                {signIn ? (
+                  <>
+                    {" "}
+                    To keep your setup and come back to it on another device, <Link href="/login?next=/onboarding">sign in</Link>{" "}
+                    first. There&apos;s no password.
+                  </>
+                ) : null}
+              </li>
+            )}
             {agent ? (
               <li>
                 An AI model, Anthropic&apos;s Claude, reads your answers to choose the next question, so what you choose and type is
@@ -57,9 +91,11 @@ export function StartPanel({ busy, error, onStart, agent = false }: { busy: bool
               }}
               aria-disabled={busy || undefined}
             >
-              {busy ? "Starting…" : "Start the demo"}
+              {busy ? "Starting…" : account ? "Start my setup" : "Start the demo"}
             </button>
-            <p className={styles.consent}>Starting means you&apos;ve read how the demo keeps your answers.</p>
+            <p className={styles.consent}>
+              {account ? "Starting means you've read how your account keeps your answers." : "Starting means you've read how the demo keeps your answers."}
+            </p>
           </div>
         </div>
       </section>

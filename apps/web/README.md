@@ -2,7 +2,7 @@
 
 Owns the landing page, onboarding, module review, and (later) device pairing and settings. Next.js 16 (App Router) and TypeScript. The onboarding API route handlers live here too, as thin adapters over [`services/cloud-api`](../../services/cloud-api/README.md); shapes come from [`packages/contracts`](../../packages/contracts/README.md).
 
-**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres (checked against a local stack). The LLM onboarding agent is built but off by default (see below). Sign-in, speech input and device pairing are not built yet.
+**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres. With Supabase, **passwordless sign-in** (an emailed code or link) saves setups to an account, resumes an unfinished one on another device, and lists saved setups with delete. Checked against a local Supabase stack, not yet a hosted project. The LLM onboarding agent is built but off by default (see below). Speech input and device pairing are not built yet.
 
 ## Run it
 
@@ -52,6 +52,9 @@ Copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into `apps/web/.env.local` as
 | `/` | Landing page: what this is, how setup works, the modules (tick one to see it drawn on the walker), who's in control, questions, and a closing question that starts the setup with your words |
 | `/onboarding` | Start screen (what the demo does with answers), then one question at a time, the editable "What I understood" summary and the full transcript |
 | `/onboarding/review` | Module list with reasons quoted from your answers, dependency checks, the walker drawing, and save; after saving, the configuration the walker would receive |
+| `/login` | Sign in or create an account with an email address: the email carries a code to type here and a link. Needs Supabase |
+| `/auth/confirm` | Where the email's link lands: a **Sign in** button that redeems it (opening the link alone signs nobody in), then Your setups |
+| `/setups` | **Your setups**: a signed-in user's saved setups, newest first, with delete; carry on with an unfinished setup; sign out; delete the account |
 | `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface) |
 | `/dev/preview/{start,question,done,review,saved}` | **Development only** (404 in production): each screen rendered from a session the real engine produced, for design review and the taste-skill inspector |
 
@@ -63,11 +66,28 @@ Copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into `apps/web/.env.local` as
 - With the onboarding agent on, each answer is also sent to Anthropic's API, and the first screen says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
 - The landing page's closing question ("What would you like help with?") hands its words to the first question through `sessionStorage`, never the URL.
 
+## Sign-in
+
+Passwordless, with Supabase Auth and [`@supabase/ssr`](https://supabase.com/docs/guides/auth/server-side). Everything runs on the server (server actions in `src/server/auth-actions.ts`, the `/auth/confirm` route, server components), so the browser never holds the session in script: the Supabase cookies are `httpOnly`, `SameSite=Lax`, and `Secure` in production. `proxy.ts` (Next.js 16's name for middleware) refreshes an expiring access token before each page; it decides nothing about access. Pages, route handlers and actions each verify the user with `getClaims()`, and Postgres row-level security checks again.
+
+- **First sign-in creates the account.** There is no password to set or forget.
+- **One email, two ways in:** a 6-digit code to type on `/login` (works when the email is read on another device), and a link to `/auth/confirm` for the device where you want to be signed in. Both work once and expire in an hour. The link opens a page with a **Sign in** button, and only the button redeems it: email security scanners that open links can't use it up, and a link someone else sent can't quietly sign you into their account. The template is [`supabase/templates/sign-in.html`](../../supabase/templates/sign-in.html); the hosted project needs it pasted in (see "Deploy on Vercel").
+- **Accessible:** a labelled email field with a hint, errors in `role="alert"` linked to their field, a polite status for "We sent a new email", and focus moved to the new heading when the step changes. Every step is a plain form, so it works with the keyboard and without JavaScript. The demo stays one click away and is labelled as a demo.
+- **What changes when signed in:** the start screen shows the account notice and starts an account session; the bar says "Saved to your account"; an unfinished setup resumes on any device; a saved setup appears in Your setups, numbered 1, 2, 3. "Delete my answers" is hidden for a saved account setup, which is deleted from Your setups behind a confirmation instead.
+- **What is kept and for how long** (consent, retention, access and deletion for each kind of session): [`services/cloud-api`](../../services/cloud-api/README.md#supabase-store).
+
+### Trying sign-in locally
+
+Use the throwaway address `walker-tester@example.test` (also noted in `.env.example`). The local stack sends no real email: open Mailpit at <http://127.0.0.1:55424> to read the code and the link. Any localhost port is allowed as a link target locally (`supabase/config.toml`), so it works when `pnpm dev` moves off 3000. Never sign in to the local stack with a real address; there is no reason to.
+
 ## Code map
 
 ```text
 app/                     routes (pages and API route handlers)
-src/server/onboarding.ts store and engine choice, cookie handling, request parsing with the contract schemas, error envelope
+src/server/onboarding.ts store and engine choice, who is calling, cookie handling, request parsing, error envelope
+src/server/supabase.ts   Supabase client per request (cookies), the verified signed-in user
+src/server/auth-actions.ts server actions: sign in, sign out, delete a setup, delete the account
+proxy.ts                 refreshes the Supabase session before each page
 src/lib/api.ts           browser client; validates every response against the contracts
 src/lib/useOnboarding.ts one hook owns the flow: restore, every API call, the status line, focus key
 src/components/          screens and parts (QuestionStep, FactsPanel, ReviewScreen, WalkerDiagram, …)

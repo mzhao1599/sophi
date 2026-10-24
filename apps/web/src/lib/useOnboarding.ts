@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ModuleId, QuestionId, SessionView, TurnInput } from "@walker/contracts";
+import type { ModuleId, QuestionId, SessionKind, SessionView, TurnInput } from "@walker/contracts";
 import * as api from "./api";
 
 /**
@@ -53,7 +53,14 @@ export interface Onboarding {
   clearError(): void;
 }
 
-export function useOnboarding(): Onboarding {
+export interface OnboardingOptions {
+  /** The kind of session Start creates: "account" when the user is signed in and saw the account notice. */
+  notice?: SessionKind;
+  /** A signed-in user's unfinished account session, resumed when this tab has none of its own (another device). */
+  resumeId?: string | null;
+}
+
+export function useOnboarding({ notice = "demo", resumeId = null }: OnboardingOptions = {}): Onboarding {
   const [phase, setPhase] = useState<Phase>("loading");
   const [session, setSession] = useState<SessionView | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,7 +82,7 @@ export function useOnboarding(): Onboarding {
   }, []);
 
   useEffect(() => {
-    const id = readStoredId();
+    const id = readStoredId() ?? resumeId;
     if (!id) {
       setPhase("none");
       return;
@@ -83,6 +90,7 @@ export function useOnboarding(): Onboarding {
     api
       .getSession(id)
       .then((s) => {
+        storeId(s.session_id);
         lastQuestion.current = s.current_question ? `${s.current_question.id}:${s.turns.length}` : `none:${s.state}`;
         sessionRef.current = s;
         setSession(s);
@@ -92,7 +100,7 @@ export function useOnboarding(): Onboarding {
         storeId(null);
         setPhase("none");
       });
-  }, []);
+  }, [resumeId]);
 
   const run = useCallback(
     async <T,>(fn: (s: SessionView) => Promise<T>): Promise<T | undefined> => {
@@ -148,7 +156,7 @@ export function useOnboarding(): Onboarding {
       setBusy(true);
       setError(null);
       try {
-        const r = await api.startSession();
+        const r = await api.startSession(notice);
         storeId(r.session.session_id);
         apply(r.session);
         setStatus("Setup started.");
@@ -186,6 +194,8 @@ export function useOnboarding(): Onboarding {
       const next = await run((s) => api.confirmSelection(s, selected));
       if (!next) return false;
       apply(next);
+      // An account setup now lives in Your setups; this tab is free to start another one.
+      if (next.kind === "account") storeId(null);
       setStatus("Your setup is saved.");
       return true;
     },

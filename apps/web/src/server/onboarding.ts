@@ -5,17 +5,21 @@ import {
   SupabaseSessionStore,
   engineFromEnv,
   isOnboardingError,
+  latestOpenSessionId,
   storeBackendFromEnv,
   type Caller,
   type StoreBackend,
 } from "@walker/cloud-api";
 import type { ApiError } from "@walker/contracts";
 import type { z } from "zod";
+import type { ScreenAccess } from "@/components/OnboardingScreen";
+import { requestAuth } from "./supabase";
 
 /**
- * Server-side glue between the route handlers and the onboarding service. The demo session's
- * secret lives in an httpOnly cookie scoped to the onboarding API; the session id alone grants
- * nothing, so it can appear in URLs without exposing anyone's answers.
+ * Server-side glue between the route handlers and the onboarding service. A demo session's secret
+ * lives in an httpOnly cookie scoped to the onboarding API; an account session belongs to the
+ * signed-in user (Supabase Auth). Either way the session id alone grants nothing, so it can appear
+ * in URLs without exposing anyone's answers.
  */
 
 const COOKIE = "walker_demo";
@@ -35,18 +39,49 @@ function storeBackend(): StoreBackend {
 const engine = engineFromEnv(process.env);
 export const engineKind = engine.kind;
 
+/** True when sessions are kept in Supabase, so account features (resume, saved setups) can work. */
+export function accountsAvailable(): boolean {
+  return storeBackend().kind === "supabase";
+}
+
+/**
+ * Deletes a user from Supabase Auth with the secret key. Their sessions and setups go with them
+ * (`on delete cascade`). The caller must have checked that this is the signed-in user's own id.
+ */
+export async function deleteAccountData(userId: string): Promise<void> {
+  const backend = storeBackend();
+  if (backend.kind !== "supabase") throw new Error("Accounts need the Supabase store.");
+  const { error } = await backend.admin.auth.admin.deleteUser(userId);
+  if (error) throw new Error(`Couldn't delete the account (status ${error.status ?? "unknown"}).`);
+}
+
+/**
+ * What the onboarding and review pages need to know about the visitor: who is signed in, whether
+ * signing in is possible here (Supabase fully configured), and their unfinished setup, if any, so
+ * another device can carry on with it.
+ */
+export async function screenAccess(): Promise<ScreenAccess> {
+  const signIn = accountsAvailable();
+  const { client, user } = await requestAuth();
+  if (!signIn || !client || !user) return { account: null, signIn, resumeId: null };
+  const resumeId = await latestOpenSessionId(client).catch(() => null);
+  return { account: { email: user.email }, signIn, resumeId };
+}
+
 /**
  * The onboarding service for one request, and who is asking about `sessionId`: the demo secret
- * from the cookie, only if it is for that session. The service is rebuilt each time (it is only a
- * few references) so its store can carry the requester's own database client, and so its error
- * classes always match the code that checks them after a hot reload.
+ * from the cookie (only if it is for that session) and the signed-in user, verified by Supabase.
+ * The service is rebuilt each time (it is only a few references) so its store can carry this
+ * user's own database client, and so its error classes always match the code that checks them
+ * after a hot reload.
  */
 export async function onboardingRequest(sessionId?: string): Promise<{ service: OnboardingService; caller: Caller }> {
   const backend = storeBackend();
-  const store = backend.kind === "supabase" ? new SupabaseSessionStore({ admin: backend.admin, user: null }) : backend.store;
+  const { client, user } = await requestAuth();
+  const store = backend.kind === "supabase" ? new SupabaseSessionStore({ admin: backend.admin, user: user ? client : null }) : backend.store;
   const service = new OnboardingService(store, { engine, startBlocked: backend.kind === "memory" ? backend.startBlocked : undefined });
   const token = sessionId ? await readToken(sessionId) : undefined;
-  return { service, caller: { token } };
+  return { service, caller: { token, user_id: user?.id } };
 }
 
 export async function readToken(sessionId: string): Promise<string | undefined> {

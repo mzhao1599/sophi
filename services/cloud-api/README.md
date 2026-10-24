@@ -17,6 +17,7 @@ Owns onboarding sessions, the onboarding conversation and its recommendations, a
 | `src/onboarding/service.ts` | Ownership (demo token or signed-in user), expiry, revision checks, idempotent turns by `client_turn_id`, and errors with stable codes. |
 | `src/onboarding/store.ts` | `SessionStore` interface, session owners, and the in-memory store. |
 | `src/onboarding/supabase-store.ts` | `SupabaseSessionStore`: the same interface over Postgres ([`supabase/migrations/`](../../supabase/migrations)). |
+| `src/onboarding/setups.ts` | Account reads through the user's own client: their saved setups (checked against the contract) and their latest unfinished session. |
 | `src/onboarding/config.ts` | `engineFromEnv` and `storeBackendFromEnv`: pick the engine and the store from environment variables. |
 
 ```bash
@@ -71,7 +72,7 @@ The tests cover the matcher, a full conversation, skipped and revisited question
 | Consent | The start screen's demo notice (`consent.demo_data_notice`) | The account notice (`consent.account_data_notice`), only when signed in |
 | Stored | Transcript, answers, facts and, once saved, the configuration, in `engine_state`; the 5 newest turn responses, for retries | The same, plus the confirmed setup in `device_configurations` |
 | Kept | An hour after the last change, saved or not | Unfinished: 30 days after the last change. Confirmed: until the user deletes it or their account |
-| Deleted by | **Delete my answers** (now); the `delete-expired-onboarding-sessions` `pg_cron` job every 5 minutes; the server also refuses an expired session | Deleting the session, which deletes its setup too; the same job for unfinished ones; deleting the auth user cascades to every row |
+| Deleted by | **Delete my answers** (now); the `delete-expired-onboarding-sessions` `pg_cron` job every 5 minutes; the server also refuses an expired session | **Delete my answers** while unfinished; **Delete setup** in Your setups (the setup and its session); **Delete my account** there, which deletes the auth user and so every row; the same job for unfinished ones |
 | Access | Server only, by token hash | The owner, through row-level security |
 
 With the onboarding agent on, answers are also sent to Anthropic, whatever the store; see below.

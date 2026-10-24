@@ -5,6 +5,7 @@ import {
   type ApiErrorCode,
   type ConfirmRequest,
   type ProfileEditRequest,
+  type SessionKind,
   type SessionView,
   type TurnInput,
   type TurnResponse,
@@ -50,10 +51,12 @@ async function call(path: string, init: RequestInit): Promise<unknown> {
   return body;
 }
 
-export async function startSession(): Promise<TurnResponse> {
+/** `notice`: which data notice the start screen showed, which also decides the kind of session. */
+export async function startSession(notice: SessionKind): Promise<TurnResponse> {
+  const consent = notice === "account" ? { account_data_notice: true } : { demo_data_notice: true };
   const body = await call(BASE, {
     method: "POST",
-    body: JSON.stringify({ input_mode: "text", consent: { demo_data_notice: true } }),
+    body: JSON.stringify({ input_mode: "text", consent }),
   });
   return TurnResponseSchema.parse(body);
 }

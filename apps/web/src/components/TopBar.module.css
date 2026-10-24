@@ -42,6 +42,13 @@
   color: var(--muted);
 }
 
+/* "Sign in" / "Your setups": a link styled like the bar's text button, with the same 44px target. */
+.link {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 @media (max-width: 640px) {
   .inner {
     padding: 0 16px;
