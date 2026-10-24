@@ -17,6 +17,17 @@
         "pnpm", "--filter", "@walker/web", "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "web-memory-3002",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_SUPABASE_URL=",
+        "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=",
+        "SUPABASE_SECRET_KEY=",
+        "pnpm", "--filter", "@walker/web", "exec", "next", "dev", "--port", "3002"
+      ],
+      "port": 3002
     }
   ]
 }

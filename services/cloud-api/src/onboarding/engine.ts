@@ -28,7 +28,7 @@ export interface Answer {
   option_ids: string[];
   text: string | null;
   skipped: boolean;
-  /** Set when the agent found this topic answered by words typed for another question: that fact's id. */
+  /** Set when words typed for another question answered this topic too (coverTopics): that fact's id. */
   covered_by?: string;
 }
 
@@ -78,9 +78,15 @@ export interface Transition {
   assistant_text: string;
 }
 
-const OPENING =
-  "Hi. I'll ask a few short questions about what you'd like help with, then suggest walker modules that fit. You can skip any question, and change anything before you save.";
-const REVIEW_READY = "That's everything I need. Check what I understood, then choose your modules.";
+/** Recorded before the first question. The web page leaves it out, since the first question greets. */
+const OPENING = "I'll ask a few quick questions, and you can skip any.";
+/** Said after the last answer, or after "skip the rest". */
+export const REVIEW_READY = "Here's your walker.";
+/** The person's own message when they skip a question, and when they skip the rest. A page can show the same words while the turn is in flight. */
+export const SKIP_REPLY = "Skip";
+export const SKIP_REST_REPLY = "Show me my walker";
+const SKIP_ACK = "No problem.";
+const SKIP_REST_ACK = "Sure.";
 
 export function createSession(id: string, now: Date, ttlMs: number, kind: EngineSession["kind"] = "demo"): EngineSession {
   const base: EngineSession = {
@@ -126,9 +132,14 @@ function pendingQuestion(p: PendingQuestion): QuestionDefinition {
   return { ...q, prompt: p.prompt, detail: p.detail, options: p.option_ids.flatMap((id) => q.options.filter((o) => o.id === id)) };
 }
 
+/** A question asked again to change its answer, in its asked-again words. */
+function asRevisit(q: QuestionDefinition): QuestionDefinition {
+  return q.revisit_prompt ? { ...q, prompt: q.revisit_prompt } : q;
+}
+
 export function currentQuestion(session: EngineSession): QuestionDefinition | null {
   if (session.configuration) return null;
-  if (session.revisit) return getQuestion(session.revisit);
+  if (session.revisit) return asRevisit(getQuestion(session.revisit));
   if (session.pending) return pendingQuestion(session.pending);
   return applicableQuestions(session).find((q) => !session.answers[q.id]) ?? null;
 }
@@ -182,15 +193,20 @@ function say(session: EngineSession, now: Date, role: Turn["role"], text: string
   return { ...s, turns: [...s.turns, { id, role, text, question_id, created_at: now.toISOString() }] };
 }
 
-/** True while a fact still has a tag from that question's topic. */
+/**
+ * True while a fact answers topic `q` as well as its own: it has one of q's tags that isn't also a tag
+ * of the fact's own topic. "Pick up cups", typed for tasks, is a task (pick_up), so it doesn't say
+ * what to reach; "things on a high shelf" (reach_high) does.
+ */
 export function backs(fact: ProfileFact, q: QuestionId): boolean {
+  const own = topicTags(fact.question_id);
   const tags = topicTags(q);
-  return [...fact.tags, ...fact.declined_tags].some((t) => tags.has(t));
+  return [...fact.tags, ...fact.declined_tags].some((t) => tags.has(t) && !own.has(t));
 }
 
 /**
  * Drops answers and facts for questions that no longer apply (for example after "picking things up"
- * is removed), and reopens a topic the agent counted as covered once the words behind it are gone.
+ * is removed), and reopens a covered topic (see coverTopics) once the words behind it are gone.
  */
 function prune(session: EngineSession): EngineSession {
   let s = session;
@@ -226,18 +242,16 @@ function sentenceList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }
 
-/** "A vibration in the handles" → "a vibration in the handles", but "I'm not sure yet" stays as it is. */
-function lowerFirst(s: string): string {
-  return /^(?:I\b|I'|[A-Z]{2})/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1);
-}
-
-/** Records the next prompt (or the review message) after an answer, skip or edit. */
-export function advance(session: EngineSession, now: Date, ack: string): Transition {
+/**
+ * Records the acknowledgement, then the next prompt (or the review message), after an answer, skip or
+ * edit. With no acknowledgement (the agent's question can follow straight on), only the prompt is said.
+ */
+export function advance(session: EngineSession, now: Date, ack: string | null): Transition {
   const next = currentQuestion(session);
   const followUp = next ? next.prompt : REVIEW_READY;
-  const withAck = say(session, now, "assistant", ack, null);
+  const withAck = ack ? say(session, now, "assistant", ack, null) : session;
   const s = say(withAck, now, "assistant", followUp, next?.id ?? null);
-  return { session: s, ack, assistant_text: `${ack} ${followUp}` };
+  return { session: s, ack: ack || null, assistant_text: ack ? `${ack} ${followUp}` : followUp };
 }
 
 export type AnswerTurn = Extract<TurnInput, { type: "text" | "answer" }>;
@@ -320,20 +334,57 @@ export function recordAnswer(input: EngineSession, answer: PreparedAnswer, readi
   return prune(s);
 }
 
-/** The deterministic engine's acknowledgement for an answer. */
-export function answerAck({ options, text }: PreparedAnswer): string {
-  const labels = options.map((o) => o.label);
-  return labels.length > 0
-    ? `Noted: ${sentenceList(labels.map(lowerFirst))}.${text ? " I've added your note too." : ""}`
-    : "Thanks, I've added that to what I understood.";
+/**
+ * Counts other topics as answered by the words just typed (this answer's typed fact) when the fact
+ * backs them: "at home", typed for tasks, answers places. Only topics in `topics` that apply and are
+ * still unanswered count. prune() opens such a topic again once the fact is removed, or reworded so it
+ * no longer backs it. Both engines use this: the deterministic one for every later topic, the agent
+ * for the topics the model listed.
+ */
+export function coverTopics(session: EngineSession, answer: PreparedAnswer, topics: Iterable<QuestionId>): EngineSession {
+  const current = answer.question.id;
+  const typed = answer.text ? session.facts.findLast((f) => f.source === "typed" && f.question_id === current) : undefined;
+  if (!typed) return session;
+  const applicable = new Set(applicableQuestions(session).map((q) => q.id));
+  let s = session;
+  for (const topic of new Set(topics)) {
+    if (topic !== current && applicable.has(topic) && !s.answers[topic] && backs(typed, topic)) {
+      s = { ...s, answers: { ...s.answers, [topic]: { option_ids: [], text: null, skipped: false, covered_by: typed.id } } };
+    }
+  }
+  return s;
+}
+
+/** The topics after `q` in the bank's order. */
+function topicsAfter(q: QuestionId): QuestionId[] {
+  return QUESTIONS.slice(QUESTIONS.findIndex((x) => x.id === q) + 1).map((x) => x.id);
+}
+
+/** How the acknowledgement says a tag back: the ack of the option that stands for just that tag, else of one that includes it. */
+function tagAck(tag: NeedTag): string | null {
+  const options = QUESTIONS.flatMap((q) => q.options);
+  return (options.find((o) => o.tags.length === 1 && o.tags[0] === tag) ?? options.find((o) => o.tags.includes(tag)))?.ack ?? null;
+}
+
+/**
+ * The deterministic engine's acknowledgement: the question's opener and what was understood, in the
+ * person's terms ("Got it, knowing what's in your way."). Chosen options say themselves back; typed
+ * words say back the tags read from them ("Got it, knowing what's in your way, at home and a buzz in
+ * the handles."), or the question's thanks when nothing was read. With both, the options are enough.
+ */
+export function answerAck({ question, options }: PreparedAnswer, reading: MatchResult | null = null): string {
+  if (options.length > 0) return `${question.ack_opener} ${sentenceList(options.map((o) => o.ack))}.`;
+  const heard = [...new Set((reading?.tags ?? []).map(tagAck).filter((a): a is string => a !== null))];
+  return heard.length > 0 ? `${question.ack_opener} ${sentenceList(heard)}.` : question.typed_ack;
 }
 
 export function applyInput(input: EngineSession, turn: TurnInput, now: Date): Transition {
   if (input.configuration) throw new EngineError("session_confirmed", "This setup has already been saved.");
 
   if (turn.type === "revisit") {
-    const target = applicableQuestions(input).find((q) => q.id === turn.question_id);
-    if (!target) throw new EngineError("question_mismatch", "That question doesn't apply right now.");
+    const found = applicableQuestions(input).find((q) => q.id === turn.question_id);
+    if (!found) throw new EngineError("question_mismatch", "That question doesn't apply right now.");
+    const target = asRevisit(found);
     const s = say({ ...input, revisit: target.id, pending: null }, now, "assistant", target.prompt, target.id);
     return { session: s, ack: null, assistant_text: target.prompt };
   }
@@ -344,8 +395,8 @@ export function applyInput(input: EngineSession, turn: TurnInput, now: Date): Tr
     for (let q = currentQuestion(s); q; q = currentQuestion(s)) {
       s = { ...s, answers: { ...s.answers, [q.id]: { option_ids: [], text: null, skipped: true } } };
     }
-    s = say(s, now, "user", "Skip the rest of the questions", null);
-    return advance(s, now, "No problem, I've skipped the rest.");
+    s = say(s, now, "user", SKIP_REST_REPLY, null);
+    return advance(s, now, SKIP_REST_ACK);
   }
 
   if (turn.type === "skip") {
@@ -360,12 +411,14 @@ export function applyInput(input: EngineSession, turn: TurnInput, now: Date): Tr
           answers: { ...input.answers, [current.id]: { option_ids: [], text: null, skipped: true } },
           facts: input.facts.filter((f) => f.question_id !== current.id),
         };
-    s = say(s, now, "user", "Skipped", current.id);
-    return advance(prune(s), now, "No problem, skipped.");
+    s = say(s, now, "user", SKIP_REPLY, current.id);
+    return advance(prune(s), now, SKIP_ACK);
   }
 
   const answer = prepareAnswer(input, turn);
-  return advance(recordAnswer(input, answer, answer.text ? matchNeeds(answer.text) : null, now), now, answerAck(answer));
+  const reading = answer.text ? matchNeeds(answer.text) : null;
+  const recorded = recordAnswer(input, answer, reading, now);
+  return advance(coverTopics(recorded, answer, topicsAfter(answer.question.id)), now, answerAck(answer, reading));
 }
 
 export function editFact(

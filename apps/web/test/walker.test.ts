@@ -186,14 +186,14 @@ describe("announcements and summary", () => {
     expect(heardSummary(view.facts, view.turns)).toEqual([
       {
         questionId: "tasks",
-        prompt: "What would you like help with?",
+        prompt: "Hi! What would you like a hand with?",
         items: [
           "You'd like to know when something is in the way",
           "You'd like help picking things up or reaching for them",
           "“I keep bumping into the door frame in the hallway”",
         ],
       },
-      { questionId: "places", prompt: "Where will you use the walker?", items: ["You'll use the walker at home"] },
+      { questionId: "places", prompt: "Where will you be using your walker?", items: ["You'll use the walker at home"] },
     ]);
   });
 });

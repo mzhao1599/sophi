@@ -14,7 +14,7 @@ export { latestOpenSessionId, listSetups, type SavedSetup } from "./onboarding/s
 export { matchNeeds } from "./onboarding/matcher";
 export { recommend, defaultSelection, activeTags } from "./onboarding/recommend";
 export { QUESTIONS } from "./onboarding/questions";
-export { deterministicEngine, openingQuestion, type TurnEngine } from "./onboarding/engine";
+export { SKIP_REPLY, SKIP_REST_REPLY, deterministicEngine, openingQuestion, type TurnEngine } from "./onboarding/engine";
 export { createAgentEngine, type AgentEvent, type AgentModel, type AgentReply, type AgentRequest } from "./onboarding/agent";
 export { createAnthropicModel, DEFAULT_AGENT_MODEL } from "./onboarding/anthropic";
 export { createGeminiModel, DEFAULT_GEMINI_MODEL } from "./onboarding/gemini";

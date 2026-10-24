@@ -229,7 +229,7 @@ export const TurnResponseSchema = z.object({
   session: SessionViewSchema,
   /** Everything the assistant said this turn: the acknowledgement plus the next question. */
   assistant_text: z.string().min(1),
-  /** Just the acknowledgement ("Noted: at home."), for a screen-reader announcement while focus moves to the next question. */
+  /** Just the acknowledgement ("Good to know: at home."), the part of assistant_text before the next question. */
   ack: z.string().nullable(),
   needs_user_confirmation: z.boolean(),
 });

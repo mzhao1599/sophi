@@ -83,10 +83,10 @@ describe("onboarding service", () => {
     let { id, token, view } = await begin(service);
     const r = await send(service, id, token, view, { type: "answer", question_id: "tasks", option_ids: ["controls"] });
     view = r.session;
-    expect(r.ack).toBe("Noted: controls without small, fiddly buttons.");
+    expect(r.ack).toBe("Got it, buttons that are easy to press.");
     const next = await send(service, id, token, r.session, { type: "answer", question_id: "places", option_ids: ["home"] });
     const cue = await send(service, id, token, next.session, { type: "answer", question_id: "feedback", option_ids: ["vibration"] });
-    expect(cue.ack).toBe("Noted: a vibration in the handles.");
+    expect(cue.ack).toBe("Sounds good, a buzz in the handles.");
     expect(view.progress.total).toBe(QUESTIONS.length - 1);
   });
 

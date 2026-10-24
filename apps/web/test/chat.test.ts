@@ -13,7 +13,7 @@ const opening = openingQuestion();
 describe("chatMessages", () => {
   it("shows the opening question before a session exists, then what was just sent", () => {
     expect(chatMessages(null, opening, null)).toEqual([
-      { key: "m0", role: "assistant", kind: "question", text: "What would you like help with?", questionId: "tasks" },
+      { key: "m0", role: "assistant", kind: "question", text: opening.prompt, questionId: "tasks" },
     ]);
     expect(chatMessages(null, opening, "Just the walker for now").at(-1)).toEqual({
       key: "m1",
@@ -43,14 +43,14 @@ describe("chatMessages", () => {
     const shape = ({ key, role, kind, text }: (typeof messages)[number]) => ({ key, role, kind, text });
     expect(messages.slice(0, 2).map(shape)).toEqual(before.map(shape));
     expect(messages.map((m) => m.kind)).toEqual(["question", "answer", "note", "question"]);
-    expect(messages[2]?.text).toBe("Noted: knowing when something is in my way and picking up or reaching for things. I've added your note too.");
-    expect(messages[3]).toMatchObject({ role: "assistant", text: "Where will you use the walker?", questionId: "places" });
+    expect(messages[2]?.text).toBe("Got it, knowing what's in your way and help picking things up.");
+    expect(messages[3]).toMatchObject({ role: "assistant", text: "Where will you be using your walker?", questionId: "places" });
   });
 
   it("writes the reply the way the engine records it, options in the question's order", () => {
     const ids = inQuestionOrder(opening, ["speak", "obstacles"]);
     expect(ids).toEqual(["obstacles", "speak"]);
-    expect(replyText(opening, ids, "")).toBe("Knowing when something is in my way. Asking for help without typing");
+    expect(replyText(opening, ids, "")).toBe("Knowing what's in my way. Asking for help out loud");
     expect(replyText(opening, [], " at home ")).toBe("at home");
   });
 });
