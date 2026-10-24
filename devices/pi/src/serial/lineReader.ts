@@ -13,7 +13,8 @@ export class LineReader {
   private discarding = false;
   private readonly decoder = new TextDecoder("utf-8", { fatal: true });
 
-  constructor(private readonly onResult: (result: SerialParseResult) => void) {}
+  /** `text` is the line as read (UTF-8 decoded), when there is one: a lift port parses it again with its own parser. */
+  constructor(private readonly onResult: (result: SerialParseResult, text?: string) => void) {}
 
   push(data: Buffer): void {
     let start = 0;
@@ -66,7 +67,7 @@ export class LineReader {
       return;
     }
     if (text.trim() === "") return;
-    this.onResult(parseSerialLine(text));
+    this.onResult(parseSerialLine(text), text);
   }
 
   private reset(): void {

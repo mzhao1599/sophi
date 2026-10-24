@@ -187,6 +187,7 @@ What each reaction does (`FAULT_REACTION`). In every case all other motion stops
 - **Switches and stop-sense** are wired normally closed. Both limit switches reading pressed latches `limit_wiring`.
 - **Limits live in the firmware,** reported in `lift.hello`. A mismatch refuses lift motion (`lift_config_mismatch`).
 - **Boot:** not stepping, unhomed, driver enabled and holding. ENA is wired so that a resetting ESP32 leaves the driver enabled.
+- **The Pi side:** the lift client in [`devices/pi/src/motion/lift/`](../../devices/pi/src/motion/lift/README.md) sends these lines (tested against a simulated lift only, not yet used by the motion coordinator).
 - **Serial:** a heartbeat or command whose `seq` isn't above the last is ignored or rejected. A `hello.request` stops the lift. Request ids carry the Pi service's boot prefix. `lift.stop` is always accepted. `lift.enable(false)` is never refused for its sequence number, state or heartbeat, but the firmware frees the motor only on the bottom switch or on a build made disable-safe after a passed drop test (or with a brake); otherwise it answers `disable_unsafe` and keeps holding. The exact firmware rules are numbered 1 to 10 at the top of `lift-serial.ts`; see also [interfaces, Pi ↔ lift ESP32](../interfaces.md#pi--lift-esp32-usb-serial-proposed).
 
 ## Feetech behaviour the design relies on (check on the received servos)

@@ -11,8 +11,8 @@ import {
 
 /**
  * Pi ↔ lift ESP32 serial lines, version 1. PROPOSED. The lift firmware (firmware/, env `lift`) implements it and
- * is tested on a computer only (firmware/test/EXPECTED.md, "Lift board"); it hasn't run on hardware, and no Pi
- * code exists yet.
+ * is tested on a computer only (firmware/test/EXPECTED.md, "Lift board"); it hasn't run on hardware. The Pi's lift
+ * client (devices/pi/src/motion/lift/) is tested only against a simulated lift and isn't wired into the service.
  * See docs/interfaces.md ("Pi ↔ lift ESP32"). Same transport and envelope as serial.ts (UTF-8 JSON Lines,
  * at most SERIAL_MAX_LINE_BYTES a line, `v`, `type`, `module_id`, `seq`, strict objects), and the same
  * `hello.request` and `error` lines, unchanged. The lift's own lines all start with `lift.`, so a hand or

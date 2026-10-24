@@ -4,10 +4,15 @@ import {
   SERIAL_PROTOCOL_VERSION,
   SerialHapticPlaySchema,
   SerialHelloRequestSchema,
+  LIFT_SERIAL_PROTOCOL_VERSION,
+  LiftSerialMessageSchema,
+  parseLiftSerialLine,
   type ModuleId,
   type SerialMessage,
   type SerialModuleType,
+  type SerialParseResult,
 } from "@walker/contracts";
+import type { LiftLineHandler, LiftPiLine, LiftPortLink } from "./liftPort";
 import type { Bus, ButtonName } from "../bus";
 import type { Clock, Cancel } from "../clock";
 import { HELLO_REQUEST_MIN_GAP_MS, MODULE_HEARTBEAT_TIMEOUT_MS, ZONE_VALIDITY_MS } from "../constants";
@@ -87,6 +92,10 @@ interface Port {
   wantHello: boolean;
   /** A line came from an id another available port holds; logged once. */
   duplicateLogged: boolean;
+  /** Which parser reads this port, decided by its first `hello` (serial) or `lift.hello` (lift); null before. */
+  kind: "serial" | "lift" | null;
+  /** Set once a `lift.hello` made this a lift port. */
+  liftLink: LiftPortLink | null;
 }
 
 interface ModuleRecord extends ModuleView {
@@ -117,6 +126,7 @@ export class ModuleManager {
   private readonly records = new Map<string, ModuleRecord>();
   private readonly zones = new Map<string, ZoneView>();
   private requestCounter = 0;
+  private liftHandler: LiftLineHandler | null = null;
 
   constructor(private readonly deps: ModuleManagerDeps) {}
 
@@ -130,9 +140,12 @@ export class ModuleManager {
       lastHelloRequestMono: null,
       wantHello: false,
       duplicateLogged: false,
+      kind: null,
+      liftLink: null,
     };
     this.ports.add(port);
-    const reader = new LineReader((result) => {
+    const reader = new LineReader((result, text) => {
+      if (this.liftLine(port, result, text)) return;
       if (result.ok) this.handle(port, result.message);
       else {
         port.badLines += 1;
@@ -140,7 +153,10 @@ export class ModuleManager {
       }
     });
     conn.onData((data) => reader.push(data));
-    conn.onClose((reason) => this.detach(port, reason));
+    conn.onClose((reason) => {
+      if (port.liftLink) this.liftHandler?.liftPortClosed(port.liftLink, reason);
+      this.detach(port, reason);
+    });
     this.deps.log.info("serial port opened", { port: conn.id, simulated: conn.simulated });
     this.requestHello(port, SERIAL_ANY_MODULE);
   }
@@ -171,6 +187,67 @@ export class ModuleManager {
   /** Asks a known module for a fresh hello, and keeps asking on its later lines until the request goes out. */
   private refreshHello(record: ModuleRecord): void {
     record.port.wantHello = !this.requestHello(record.port, record.instanceId);
+  }
+
+  /** Where lift ports' lines go (the lift client). Without one, a lift board's lines are read and dropped. */
+  setLiftHandler(handler: LiftLineHandler | null): void {
+    this.liftHandler = handler;
+  }
+
+  /**
+   * Lift lines (packages/contracts/src/lift-serial.ts). On a lift port every line goes to the lift handler,
+   * parsed by `parseLiftSerialLine`. On a port not decided yet, a line that `parseSerialLine` calls
+   * `unknown_type` is tried as a lift line: `lift.hello` makes it a lift port; any other lift line is ignored
+   * like a line before hello, and answered with a `hello.request`. True when the line was the lift's.
+   */
+  private liftLine(port: Port, result: SerialParseResult, text: string | undefined): boolean {
+    if (port.kind === "lift" && port.liftLink) {
+      const lift = text === undefined ? null : parseLiftSerialLine(text);
+      if (lift?.ok) this.liftHandler?.liftLine(port.liftLink, lift.message);
+      else this.liftHandler?.liftLineRefused(port.liftLink, lift ? lift.problem : result.ok ? "malformed" : result.problem);
+      return true;
+    }
+    if (port.kind === "serial" || text === undefined || result.ok || result.problem !== "unknown_type") return false;
+    const lift = parseLiftSerialLine(text);
+    if (!lift.ok) return false;
+    if (lift.message.type !== "lift.hello") {
+      port.ignoredBeforeHello += 1;
+      if (port.ignoredBeforeHello === 1 || port.ignoredBeforeHello % 100 === 0) {
+        this.deps.log.warn("lift line before its lift.hello on this port; ignored", { port: port.conn.id, count: port.ignoredBeforeHello });
+      }
+      this.requestHello(port, SERIAL_ANY_MODULE);
+      return true;
+    }
+    port.kind = "lift";
+    port.liftLink = this.liftLink(port);
+    this.deps.log.info("lift board said hello", { port: port.conn.id, module: lift.message.module_id, simulated: port.conn.simulated });
+    if (!this.liftHandler) this.deps.log.warn("no lift client is running, so the lift board's lines are ignored", { port: port.conn.id });
+    this.liftHandler?.liftLine(port.liftLink, lift.message);
+    return true;
+  }
+
+  private liftLink(port: Port): LiftPortLink {
+    return {
+      portId: port.conn.id,
+      simulated: port.conn.simulated,
+      send: (lines: readonly LiftPiLine[]) => {
+        let text = "";
+        for (const [i, line] of lines.entries()) {
+          const parsed = LiftSerialMessageSchema.safeParse({ v: LIFT_SERIAL_PROTOCOL_VERSION, ...line, seq: port.seq + i });
+          if (!parsed.success) {
+            this.deps.log.error("lift line failed validation; nothing sent", { port: port.conn.id, type: line.type });
+            return false;
+          }
+          const one = `${JSON.stringify(parsed.data)}\n`;
+          if (Buffer.byteLength(one) > SERIAL_MAX_LINE_BYTES) return false;
+          text += one;
+        }
+        if (text === "" || !port.conn.write(text)) return text === "";
+        port.seq += lines.length;
+        return true;
+      },
+      requestHello: (target: string) => this.requestHello(port, target),
+    };
   }
 
   modules(): ModuleView[] {
@@ -325,6 +402,7 @@ export class ModuleManager {
     if (port.instanceId && port.instanceId !== id) this.forget(port.instanceId);
     port.instanceId = id;
     port.wantHello = false;
+    port.kind = "serial";
     // A module answering a hello.request keeps its seq running; a reboot starts it again (or it moved ports).
     // Only a reboot means a button it reported as held is no longer held.
     const rebooted = existing !== undefined && (existing.port !== port || message.seq <= (existing.lastSeq ?? -1));

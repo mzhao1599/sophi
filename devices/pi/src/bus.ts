@@ -59,6 +59,8 @@ export interface BusEvents {
   confirming: { phase: "started" | "ended" };
   /** The walker screen sent a new state: its name and revision only (for scripts and tests; never the body). */
   screen: { state: ScreenStateName; revision: number };
+  /** `walker simulate --lift` only: what the lift client, the simulated lift and the stand-in loop did. */
+  lift: { kind: string; text: string };
 }
 
 type Listener<T> = (payload: T) => void;

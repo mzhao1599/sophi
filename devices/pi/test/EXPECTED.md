@@ -272,3 +272,60 @@ The walker's own screen states only: the circle's (suggestions, joins, messages,
 | D16 | Confirm on Sophi's offer *(review, 2026-10-24)* | While Confirm is answered and the new configuration fetched, the offer stays on screen. "Done" only once the new configuration is in force, naming its own cues. If the fetch fails ("Confirmed. The change will apply in a moment."), the screen never says Done: the offer closes and the clock shows what is in force now. |
 | D17 | A reply queued behind another line *(review)* | Its captions appear when it starts playing, not when it was queued. |
 | D18 | A stream refused or stuck *(review)* | `GET /screen/check` says whether the page's token is still good (204) or the service restarted (403); the page reloads only on 403, so a full server (503) never starts a reload loop. A screen that stops reading is dropped once 256 KB waits for it; at most 32 connections. While no time is shown, the clock is looked at again every 30 s (D5). |
+
+## The lift adapter (`src/motion/lift/`, added 2026-10-24)
+
+Written before the tests. **Simulated only:** no lift board has run against this code; the board side is the simulated lift in `src/sim/fakeLift.ts` (a TypeScript port of the lift firmware's rules, labelled SIMULATED). The lift client is not wired into `walker run` or the motion coordinator yet; `walker simulate --lift` drives it from a labelled stand-in loop. Contract constants come from `motion.ts` and `lift-serial.ts` (all placeholders there); the Pi's own lift timings are in `src/constants.ts` (*placeholders*).
+
+### The lift client (L)
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| L1 | A port whose first lift line is `lift.hello` | The port becomes a lift port: every later line goes to the lift client through `parseLiftSerialLine`, never into the module list, the manifest or the "serial line refused" log. A port whose first line is `hello` stays a serial port as today. A `lift.status` before any hello on a port is ignored and answered with a `hello.request` (at most every 2 s). With no lift client running, a lift port beside two hands and a ToF board (boot garbage, a status, then its hello and statuses, a hand rebooting partway) leaves all three boards `ok`, the lift out of the module list, one `buttonsLost` for the rebooted hand, only throttled `hello.request`s on the lift port, and no lift line in the log. |
+| L2 | `lift.hello` whose `config` differs from the Pi's lift configuration in any field (compared at the firmware's resolution, a thousandth of a millimetre) | `lift_config_mismatch` reported once for that hello; heartbeats go on naming nobody; every lift verdict and `start` refuse (`fault_latched`). A later matching hello lets verdicts pass again (the latched fault is the coordinator's to clear). |
+| L3 | `lift.hello` from a lift id other than the configured one (`lift-01`) | Ignored and logged once; that port is never driven. |
+| L4 | Heartbeat cadence | Heartbeats are written only from `tick(now)`: one when at least LIFT_HEARTBEAT_INTERVAL_MS (100) has passed since the last one written, never from a timer of its own. Ticks every 20 ms for 1 s write 10 heartbeats; when ticks stop, heartbeats stop. None before a `lift.hello`. |
+| L5 | The hold lease | `hold_request_id` names the running request only while the latest hold refresh is at most HOLD_CONTROL_REFRESH_MS (200) old at that tick, and only after the request was started; otherwise null. A refresh stamped later than the tick's time counts as stale. A hold with no request names nobody. |
+| L6 | The hold goes stale or is released while request R runs | The very next tick writes a heartbeat naming nobody (without waiting for the cadence); R is `stopping` and is never named again, even if the hold comes back. |
+| L7 | `start` of a home or move | Refused unless the start verdict passes (LP4). Otherwise the next tick writes, in one write: `lift.enable` true (only if the last status shows the driver off, and only in the write that carries the command: a tick that refuses it, or a stop before it, never turns the driver on), a heartbeat naming R, then the command. Every command has its own new request id `<prefix>-<n>`, n rising from 1; the prefix is six lowercase letters or digits, new for each client. |
+| L8 | Pi seq | Every Pi line on the port, `hello.request` included, carries a seq one above the previous line written there. A write refused because the port is busy uses no seq, and what it held is written on the next tick. |
+| L9 | Acks and done | Ack accepted: running. `lift.done` completed for a homing: the Pi counts the lift homed. Done `stopped` or `failed`: the request ends with that outcome (and its fault). A status that doesn't name the request means it ended unseen (`lost`) only after its ack; before the ack the status is just older than the command, so a stop sent right after the command still ends `stopped` (and an unacked request still ends `no_ack`). |
+| L10 | Rejections | `stale_seq`: the request ends refused and the Pi sends a `hello.request` (which resets the lift's seq memory). `request_used`: ends refused, and the client takes a new boot prefix so its next id can't have been used. Any other reason: ends refused with that reason. |
+| L11 | No ack | No ack within LIFT_ACK_TIMEOUT_MS (500, *placeholder*): a `lift.stop` is sent and the request ends `no_ack`. |
+| L12 | `stop()` | Writes `lift.stop` at once in every state (no hello, a config mismatch, a latched fault, status lost, idle). If the port is busy it goes on the next tick. Resent with a new id if no ack comes within LIFT_ACK_TIMEOUT_MS, at most LIFT_STOP_RETRIES (3, *placeholder*) times. A running request is stopping and never named again. |
+| L13 | `disable()` | Writes `lift.enable` false only when `liftMayDisable` (drop test passed, a brake, or the last status shows the bottom switch pressed); otherwise refuses `lift_may_drop`. Sent with a fault latched or a config mismatch. Accepted: the Pi's homed goes false. Rejected `disable_unsafe` (rule 6 as amended in the firmware review): reported as refused, the lift stays enabled and homed. Never sent as a stop. |
+| L19 | A gap in the lift's seq (the firmware counts dropped TX lines) | Not a loss and not a reboot: only seq going back is a reboot, and only missing status for LIFT_STATUS_STALE_MS is a loss. |
+| L14 | Status lost | No `lift.status` for LIFT_STATUS_STALE_MS (300): `lift_module_lost` reported once, a running request ends `lost` after a best-effort `lift.stop`, heartbeats stop, the Pi's homed goes false. The port closing does the same. When statuses return the Pi sends a `hello.request`, and heartbeats resume (naming nobody) only after a fresh `lift.hello`. |
+| L15 | Lift faults and stray motion | A fault newly latched in `lift.status` is reported once per latch and the Pi's homed goes false. A status showing the lift moving or homing for a request the Pi isn't running gets a `lift.stop`. |
+| L16 | Deadline | A homing past LIFT_HOMING_TIMEOUT_MS, or a move past `motionTimeoutMs(distance / speed)`: `lift.stop`, the request ends `timeout`, `motion_timeout` reported. |
+| L17 | The lift's seq goes back without a hello (it rebooted) | The Pi's homed goes false (`lift_unhomed` reported if it was homed) and a `hello.request` is sent. |
+| L18 | `state()` | Always passes `LiftStateSchema`: disconnected means unknown switches and no position; a position only while connected and homed in the Pi's view. |
+
+### Preconditions (LP)
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| LP1 | Verdict for `lift.home` / `lift.move`, first failing check wins | `stop_pressed` (the Pi's stop or the lift's stop-sense reads pressed), `no_hardware_stop` (outside bench mode: the Pi's stop isn't wired, or the lift was built without stop-sense), `fault_latched` (the coordinator's faults, a fault the lift reports, or a config mismatch), `busy`, `part_missing` (no lift port or hello), `feedback_stale` (status stale), `not_held` (at start only), `lift_guards_missing`, `lift_drop_test_missing` (outside bench mode, from the installation record), `arms_not_stowed`; for a move also `lift_not_homed` and `out_of_range` (outside the soft limits). |
+| LP2 | Bench mode | `no_hardware_stop` and the installation checks don't apply; `stop_pressed` and everything else still do. |
+| LP3 | Verdict for `lift.disable` | Only `busy`, `part_missing` and `lift_may_drop`; allowed with a fault latched. |
+| LP4 | `start` itself | Runs the start verdict again, so a refused action never reaches the lift. |
+| LP5 | Move speed | The lower of the configuration's `max_speed_mm_s` and the mode's `MOTION_LIMITS` lift speed. |
+
+### The simulated lift (LF)
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| LF1 | Rules 1 to 10 of `lift-serial.ts` against the simulated lift | Boot: `lift.hello` seq 0, then status `unhomed`, driver enabled. A `hello.request` stops a running move. A stale heartbeat is ignored, a stale command rejected `stale_seq` (stop and disable excepted). Home and move refusals in rule 4's order. A heartbeat naming anything else ramps down to `stopped`; no heartbeat for 300 ms ramps down and latches `watchdog_expired` (driver still enabled). Homing's four phases end homed at 5 mm. A switch pressing while homed latches `limit_hit`, both at once `limit_wiring`, the stop `stop_circuit_opened`; each clears homed. `lift.clear` refuses `cause_present` while the stop is pressed. `lift.enable` false off the bottom switch on a build that isn't disable-safe is rejected `disable_unsafe`, the driver stays enabled and a running move ramps down as for a stop; on the bottom switch (or disable-safe) it frees the motor and unhomes. Homing trips on two pressed samples in a row. After 16 boot prefixes, a new one is refused `request_used`. Status at 20 Hz and on change. Every line it writes passes `parseLiftSerialLine`. |
+| LF2 | Injected faults | A stuck bottom switch while homed: `limit_hit`. A cut harness (both switches read pressed): `limit_wiring`. Lost line from the lift: the Pi reports `lift_module_lost`, sends a best-effort `lift.stop` and stops heartbeating, so the lift stops (on that stop; if the line to the lift is lost too, on its own watchdog, latching `watchdog_expired`). Frozen board: no lines in or out, the motor finishes its current move (the pulse hardware runs on), the board restarts after 5 s (*placeholder*: the firmware's task watchdog) unhomed. Stop pressed: steps stop at once, `stop_circuit_opened`, unhomed. |
+
+### Scripted runs (LW)
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| LW1 | Home while the hold is refreshed | Completes at 5 mm; the Pi counts the lift homed. |
+| LW2 | Move to 300 mm while held, released halfway | A heartbeat naming nobody within one tick; the lift ramps down; done `stopped`; still homed, stopped between the two heights; never resumes when held again. |
+| LW3 | The coordinator's ticks stop mid-move | No heartbeats; within 300 ms plus the ramp the lift latches `watchdog_expired` and ends `failed`; once ticks resume the Pi reports `watchdog_expired` and counts the lift unhomed. |
+| LW4 | The stop switch mid-move | `stop_circuit_opened`, ended `failed`, unhomed. `lift.clear` refused `cause_present` while pressed, accepted after release; a move is then refused `lift_not_homed`. |
+| LW5 | `walker simulate --lift --script test/sim/lift.walk` | The script passes. |
+
+Mutation checks (run by hand, results in the PR): naming the request in heartbeats regardless of the hold, and dropping `lift.stop` when the port is busy, must each fail a test.

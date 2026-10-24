@@ -1,0 +1,39 @@
+# walker simulate --lift --script test/sim/lift.walk
+# SIMULATED lift board (src/sim/fakeLift.ts) and the real lift client, driven by a STAND-IN loop that plays the
+# motion coordinator (not wired here): its keys stand for the screen's hold control and for Confirm presses.
+# Real time: about 25 s.
+
+expect lift link connected
+expect lift state unhomed
+
+# Home while holding the screen's lift control.
+key lift-hold-on
+expect lift hold on
+key lift-home
+expect lift accepted lift.home
+expect 30000 lift ended lift.home completed
+
+# Move up, and let go partway: it ramps down and stops, still homed.
+key lift-up
+expect lift accepted lift.move
+wait 3000
+key lift-hold-off
+expect 2000 lift ended lift.move stopped
+
+# Move again; the stop switch mid-move latches stop_circuit_opened.
+key lift-hold-on
+key lift-up
+expect lift accepted lift.move
+wait 1000
+key lift-stop-switch
+expect 2000 lift ended lift.move failed stop_circuit_opened
+key lift-clear
+expect 2000 lift clear refused cause_present
+key lift-stop-switch
+wait 500
+key lift-clear
+expect 2000 lift clear cleared
+
+# The stop unhomed it: a move is refused until it homes again.
+key lift-up
+expect lift refused lift.move lift_not_homed

@@ -4,7 +4,7 @@
 
 On 2026-10-24, the Pi's `/dev/serial/by-id` showed only one CP2102 symlink because both bridges reported serial `0001`. The deployed service now scans `/dev/serial/by-path`, removes duplicate aliases for the same tty, and saw `hand-right-01` and `hand-left-01` simultaneously, both healthy. The right board was reflashed and its app image verified before deployment. After the service restarted it logged the new fixed boot notice, "Sophi is on." Its systemd unit was active and its cloud link online. The owner's physical press check for right Talk and left Confirm is still pending.
 
-Nothing in this service can move the arms or the lift. It has no motion command of any kind. The only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second.
+Nothing in this service can move the arms or the lift. It has no motion command of any kind. (A lift client exists in `src/motion/lift/`, but only `walker simulate --lift` uses it, against a simulated lift.) The only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second.
 
 ## What runs where
 
@@ -39,7 +39,8 @@ heartbeat every 5 s ◄─► cloud: manifest + snapshot + status events out; co
 - `src/audio/`: clip capture (`arecord`, a WAV file, or the Mac mic behind a flag), speech out (Piper, espeak-ng, `say`), generated cue sounds.
 - `src/cues.ts`: the local obstacle cue policy. `src/notices.ts`: every fixed line the Pi says on its own.
 - `src/cloud/client.ts`: the cloud client interface and its HTTP version, on the walker contract's device routes.
-- `src/sim/`: the fake cloud, simulated modules, and the simulator itself.
+- `src/sim/`: the fake cloud, simulated modules, and the simulator itself. `fakeLift.ts` is a SIMULATED lift board (a TypeScript port of the lift firmware's rules) and `liftSim.ts` the `--lift` mode.
+- `src/motion/lift/`: the lift client (simulated only, not wired into the service); see [its README](src/motion/lift/README.md). Lift lines reach it through `src/serial/modules.ts`: the first `hello` or `lift.hello` on a port decides its parser (`liftPort.ts`).
 - `src/screen/`: the walker screen. `machine.ts` picks the state (a pure `pickScreen` and a small machine with timers), `attach.ts` feeds it from the bus with every listener wrapped, `server.ts` is the local server, `page.tsx` the page it serves. See [The walker screen's page](#the-walker-screens-page).
 - `src/check/`: `walker check`. Each check is a small function over an injected command runner and file reader (`core.ts`); `system.ts` (OS, clock, power, memory, disk, the service, network, pairing), `devices.ts` (mic, speaker, voice, screen, GPIO, the stop's input), `modules.ts` (the serial boards, through the service's own `openSerialPort` and `ModuleManager`), `lift.ts` (the lift board's lines, read on those ports), `arms.ts` (the servo adapters, through the Feetech driver, PING and READ only), `cameras.ts` (`v4l2-ctl`).
 - `src/constants.ts`: every timing and threshold, each labelled measured or placeholder.
@@ -91,6 +92,8 @@ node devices/pi/dist/walker.mjs simulate
 ```
 
 Keys: `t` Talk, `c` Confirm, `n` hand in front of the ToF, `f` nothing in front, `i` invalid readings, `x` the ToF stops responding (and `x` again brings it back), `o` network down and up, `g` network hangs (no answers) and back, `r` the fake cloud forgets the walker (401), `p` pair again, `?` help, `q` quit. The `o` and `g` keys act on the walker's own requests, so they work against a real server too (`--server`): that is how the offline beat can be shown on a Mac.
+
+**`--lift`** adds a SIMULATED lift board driven by the real lift client over the real module manager. The motion coordinator isn't wired in, so a labelled stand-in loop ticks the client at 50 Hz, refreshes the hold while `l` is on (as the screen's hold control would), and treats `e` (home), `u` (to 300 mm) and `d` (to 50 mm) as the Confirm press on a lift target. Also `k` stop, `y` the stop switch, `w` a stuck bottom switch, `j` a cut switch harness, `v` the line from the lift lost, `a` a frozen lift board, `z` the control loop paused, `K` clear (as Confirm on `fault.clear`), `D` disable; `?` lists them. `node devices/pi/dist/walker.mjs simulate --lift --script devices/pi/test/sim/lift.walk` runs home, a release partway, the stop switch and clearing in about 15 s (passed 3 of 3, 2026-10-24).
 
 - **Silent by default.** Speech is written by `say -o` into numbered `.aiff` files and cues into `.wav` files in the run's folder (printed at start). `--loud` plays them through the Mac's speakers instead.
 - **The microphone is a file.** By default each recording is a generated 2-second tone. To send a spoken question, make a clip and pass it:

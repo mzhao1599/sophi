@@ -96,3 +96,13 @@ export const HEARTBEAT_DEADLINE_MS = 5000;
 /** Placeholder, not measured: retry delays after failed heartbeats; the last one repeats. */
 export const HEARTBEAT_BACKOFF_MS = [5000, 10000, 15000] as const;
 
+// ---- The lift client (src/motion/lift/; the lift's own timings are motion.ts's) ----
+
+/**
+ * Placeholder, not measured: a lift command with no `lift.ack` this long after it was written is given up
+ * (a `lift.stop` follows). The lift answers in the same loop that reads the line, so this only covers a lost line.
+ */
+export const LIFT_ACK_TIMEOUT_MS = 500;
+/** Placeholder: a `lift.stop` with no ack is written again (with a new request id) at most this many times. */
+export const LIFT_STOP_RETRIES = 3;
+

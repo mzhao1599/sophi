@@ -20,6 +20,7 @@ import { NetworkSwitch, SwitchableCloudClient, type NetworkMode } from "./networ
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
 import { ScriptRunner, parseScript } from "./script";
+import { LIFT_HELP, LIFT_KEYS, LiftSim, liftSimBench } from "./liftSim";
 
 export interface SimulateOptions {
   /** A real cloud URL; without it the simulator starts the fake cloud on 127.0.0.1. */
@@ -33,6 +34,8 @@ export interface SimulateOptions {
   script?: string;
   /** Also serve the walker screen's page on 127.0.0.1 (WALKER_SCREEN_PORT, default 8740) and print its address. */
   screen?: boolean;
+  /** A SIMULATED lift board driven by the real lift client, from a stand-in loop (no motion coordinator). */
+  lift?: boolean;
 }
 
 /** What the fake cloud says on the simulator's demo path, in order. Every line says it is the fake cloud. */
@@ -131,6 +134,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   modules.attach(tofPort);
   hand.start();
   tof.start();
+  // ---- SIMULATED lift (--lift): the real lift client against a simulated lift board ----
+  const lift = options.lift ? new LiftSim({ clock, log, bus, modules, bench: liftSimBench(process.env) }) : null;
 
   // ---- Service ----
   const steps = options.script ? parseScript(readFileSync(options.script, "utf8")) : null;
@@ -152,6 +157,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
   });
   service.start();
+  // After the script runner exists, so a script sees the lift's first events.
+  lift?.start();
 
   let screen: WalkerScreen | null = null;
   if (options.screen) {
@@ -213,11 +220,15 @@ export async function simulate(options: SimulateOptions): Promise<number> {
         void pairFake();
         return;
       case "?":
-        return process.stdout.write(`${HELP}\n`);
+        return process.stdout.write(`${HELP}\n${lift ? `${LIFT_HELP}\n` : ""}`);
       case "q":
         return finish(0);
-      default:
+      default: {
+        // Lift: a script names the action ("key lift-home"); the keyboard uses LIFT_KEYS.
+        const action = lift ? (lift.actions()[key] ?? lift.actions()[LIFT_KEYS[key] ?? ""]) : undefined;
+        if (action) return action();
         return log.warn("unknown key", { key });
+      }
     }
   };
 
@@ -229,7 +240,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       finish(failure ? 1 : 0);
     });
   } else if (process.stdin.isTTY) {
-    process.stdout.write(`${HELP}\n`);
+    process.stdout.write(`${HELP}\n${lift ? `${LIFT_HELP}\n` : ""}`);
     emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     const onKey = (text: string, key: { ctrl?: boolean; name?: string }) => {
@@ -251,6 +262,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   restoreTty();
   // Against a real cloud the audio folder holds real replies; it goes unless the person asked for it (--out).
   if (options.server && !options.out) rmSync(outDir, { recursive: true, force: true });
+  lift?.stop();
   service.stop();
   await screen?.stop();
   hand.hang();
