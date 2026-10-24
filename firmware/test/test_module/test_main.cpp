@@ -355,6 +355,8 @@ void test_H7_millisecond_clock_wraps() {
 }
 
 void test_H8_each_pattern_is_a_finite_sequence() {
+  const HapticSequence& strongBuzz = sequenceFor(Pattern::NearObstacle);
+  CHECK(strongBuzz.steps[0] == 14 && strongBuzz.steps[1] == 0);
   for (size_t p = 0; p < kPatternCount; ++p) {
     const HapticSequence& sequence = sequenceFor(static_cast<Pattern>(p));
     bool ended = false;

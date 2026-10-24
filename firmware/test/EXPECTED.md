@@ -7,7 +7,7 @@ What runs where:
 - **Native tests** (`test/test_protocol`, `test/test_module`): plain C++17, built with the computer's own compiler by `test/run-native.sh` (with the address and undefined-behaviour sanitizers) and by `pio test -e native` in CI. They cover the protocol code in `lib/protocol/` and the board-independent behaviour in `lib/module/`.
 - **Cross-check** (`packages/contracts/test/firmware-session.test.ts`): a native program (`test/session/session_main.cpp`) runs a scripted session through the same code and writes `test/session/transcript.txt`. The vitest test reads that file with the real `parseSerialLine` from `@walker/contracts`. `run-native.sh` fails if the committed transcript differs from what the program prints now, so the file can't go stale.
 - **Board builds** (`pio run -e hand`, `pio run -e tof`): CI only. They prove the board code compiles against the pinned libraries, nothing more.
-- Nothing here has run on an ESP32, a DRV2605L or a VL53L1X. Rows marked *(board)* are checked only by reading the code until Max flashes the boards.
+- The first hand ESP32 was flashed on 2026-10-24; a temporary P32-to-GND contact reported Talk presses and triggered a buzz felt by the owner. See the bench record in [firmware/README.md](../README.md). The final buttons and all VL53L1X behavior remain unverified. Rows marked *(board)* still need the remaining hands-on checks listed there.
 
 All numbers marked *placeholder* are not measured. They live in `lib/protocol/serial_protocol.h` and `lib/module/*.h` and are labelled there too.
 

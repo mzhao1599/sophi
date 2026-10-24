@@ -11,7 +11,7 @@ constexpr uint8_t pause(uint32_t ms) { return static_cast<uint8_t>(0x80 | (ms / 
 const HapticSequence kSequences[kPatternCount] = {
     {{10, pause(200), 0}},  // confirmation: "Double Click - 100%", then 200 ms of quiet
     {{7, pause(300), 0}},   // recording: "Soft Bump - 100%", then 300 ms
-    {{14, pause(100), 0}},  // near_obstacle: "Strong Buzz - 100%", then 100 ms
+    {{14, 0}},              // near_obstacle: repeat Strong Buzz with no added quiet interval
     {{12, pause(200), 0}},  // error: "Triple Click - 100%", then 200 ms
 };
 

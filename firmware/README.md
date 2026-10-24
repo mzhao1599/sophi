@@ -1,6 +1,6 @@
 # Steady ESP32 firmware
 
-**Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. **None of it has run on an ESP32, a haptic driver or a distance sensor yet.** Every hardware step below is marked *not yet run on hardware*, and every pin, address and timing is an assumption until Max wires a board and checks it. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
+**Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. One hand board was flashed and answered USB serial commands on a Mac; a temporary P32-to-GND contact reported Talk presses and triggered haptic cues felt by the owner. See the bench record below. The final button is not installed, and the obstacle firmware has not run on a board. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
 
 Nothing in this firmware can move the arms or the lift. The hand board's only output is the haptic buzz, and the obstacle board has no output at all.
 
@@ -53,7 +53,7 @@ Example lines, printed by the firmware's own code in the scripted session on a c
 - A DRV2605L haptic driver board. It drives a small vibration motor and has a built-in library of vibration effects; the ESP32 talks to it over **I2C**, a two-wire bus (data SDA and clock SCL) that several chips can share.
 - One coin vibration motor. Assumed to be an **ERM** (eccentric rotating mass: a motor spinning an off-centre weight), the usual kind of coin motor. Check the motor's label or listing.
 
-### Wiring (not yet run on hardware)
+### Wiring (partly checked on one hand board; see bench record)
 
 | ESP32 pin | Goes to | Why |
 | --- | --- | --- |
@@ -84,13 +84,13 @@ The hand board's only output. What may make it buzz, and what stops it:
 
 If the DRV2605L doesn't answer when the board starts, the hello leaves out `haptic`, the heartbeat says `degraded` with `haptic_missing`, and every `haptic.play` is rejected as `unsupported`, so the Pi falls back to its sound cue.
 
-How each pattern maps to the DRV2605L's built-in effects (effect numbers from the "Waveform Library Effects List" in TI's DRV2605L datasheet). *Placeholders chosen from the effect names; nobody has felt them on the real motor yet.* The board repeats the sequence until the cue's duration ends; each sequence ends with a pause so repeats feel like separate pulses.
+How each pattern maps to the DRV2605L's built-in effects (effect numbers from the "Waveform Library Effects List" in TI's DRV2605L datasheet). The board repeats the sequence until the cue's duration ends. Most patterns include a pause so repeats feel like separate pulses; `near_obstacle` repeats without an added pause to feel more continuous. The peak drive voltage is unchanged.
 
 | Pattern | Sequence |
 | --- | --- |
 | `confirmation` | Effect 10, "Double Click 100%", then 200 ms of quiet |
 | `recording` | Effect 7, "Soft Bump 100%", then 300 ms |
-| `near_obstacle` | Effect 14, "Strong Buzz 100%", then 100 ms |
+| `near_obstacle` | Effect 14, "Strong Buzz 100%", repeated without an added pause |
 | `error` | Effect 12, "Triple Click 100%", then 200 ms |
 
 Driver setup, from the datasheet's register map (written in `src/hand/main.cpp`, no third-party library): I2C address 0x5A; device id 7 (DRV2605L) or 3 (DRV2605) checked at boot; internal-trigger mode; effect library 1 ("Library A", for ERM motors) in open loop, as Adafruit's examples use. *Assumptions:* choose the library from the datasheet's table once the motor's rated voltage is known. The drive voltage in ERM open loop comes from the OD_CLAMP register (0x17), which the firmware leaves at its power-on default; check it against the motor's rated voltage with the datasheet's formula before running the motor for long.
@@ -139,7 +139,7 @@ build_src_flags = ${board.build_src_flags} '-D WALKER_ZONE_2="left_low"'
 
 The build stops if a name isn't snake_case, is over 24 characters, or repeats another.
 
-## Building and flashing (not yet run on hardware)
+## Building and flashing
 
 1. Install PlatformIO Core (`pip install platformio==6.1.19`) or the PlatformIO extension for VS Code. The first build downloads the ESP32 toolchain, about 1.5 GB.
 2. Plug in one board with a USB-C cable that carries data, and find its port:
@@ -175,6 +175,44 @@ The build stops if a name isn't snake_case, is over 24 characters, or repeats an
 
 When an ESP32 resets, its built-in boot code prints a few lines of text on the same port before the firmware starts. The Pi logs them as unreadable lines; that is expected.
 
+### Command the flashed hand board from a computer
+
+Open a serial monitor at **115200 baud** on the board's USB serial port. On the Mac used for the first flash, the working port was `/dev/cu.SLAB_USBtoUART` (the other port, `/dev/cu.usbserial-0001`, did not flash reliably). With `arduino-cli` installed, run:
+
+```bash
+arduino-cli monitor --port /dev/cu.SLAB_USBtoUART --config baudrate=115200
+```
+
+Set the monitor's line ending to **Newline** if using a graphical monitor. Send this complete line, then press Enter:
+
+```json
+{"v":1,"type":"haptic.play","module_id":"hand-left-01","seq":0,"request_id":"bench-1","pattern":"confirmation","duration_ms":150}
+```
+
+An `ack` with `"result":"accepted"` means the firmware accepted the command. It does not prove the motor moved; feel or observe the motor to confirm that separately. The other allowed patterns are `recording`, `near_obstacle`, and `error`; duration must be 1–1000 ms. Use a new `request_id` for each command. Press Ctrl-C to close the terminal monitor before another program opens the port. Later, the Pi sends these same contract messages over USB.
+
+The planned P32 Talk input expects a momentary contact to GND, with the internal pull-up enabled. It is not yet a general capacitive-touch interface. If the eventual touch sensor has an active-high digital output, update and verify the input handling before connecting it.
+
+For a **press → buzz bench test**, close any serial monitor and run this from the repository root after reconnecting the board:
+
+```bash
+python3 firmware/tools/press_to_haptic.py --port /dev/cu.SLAB_USBtoUART
+```
+
+The script uses only Python's standard library on macOS or Linux. It asks the board for `hello`, checks that `hand-left-01` advertises `haptic`, then sends one 1000 ms `near_obstacle` cue for each `talk` or `confirm` **pressed** event. This is the strong pattern already felt in the first bench check; a 150 ms `confirmation` cue was accepted after a P32 press but was not felt. Release events and heartbeats do not buzz. The script prints each press and the board's acknowledgement. Press Ctrl-C to stop; unplugging the board also ends the script. To use a right-hand board, pass `--module-id hand-right-01` with its serial port. This is a computer bench loopback, not the Pi's local cue policy.
+
+The script's framing and press-to-cue behavior can be checked without a board using `python3 -m unittest discover -s firmware/tools`.
+
+### First hand-board bench record (2026-10-24)
+
+- Board: Teyleten ESP32-WROOM-32 38-pin USB-C board; CP2102 USB-to-UART bridge identified by macOS; ESP32-D0WD-V3 revision 3.1 reported during upload.
+- Build: existing hand source, module ID `hand-left-01`, compiled with the locally installed Arduino-ESP32 core 3.3.5 and Arduino CLI 1.2.0 because PlatformIO was unavailable on this Mac. This is a separate build environment from the pinned PlatformIO core 2.0.17 used in CI.
+- Flash: `/dev/cu.SLAB_USBtoUART`; uploader reported hashes verified for bootloader, partitions, boot app, and firmware, then reset the board.
+- Serial: a `hello.request` received a `hello` advertising `button.talk`, `button.confirm`, and `haptic`; subsequent heartbeats reported `health: ok`. A 150 ms `confirmation` request received `ack` `accepted`.
+- Haptic feel: the owner felt the 1000 ms `near_obstacle` cue when P32 was touched to GND. After the no-pause `near_obstacle` firmware was flashed, the owner reported that it felt stronger. The computer loopback received press events and `accepted` acknowledgements; the serial session was then stopped.
+- Motor: the owner identified the [VAKTOK 10 mm coin motor listing](https://www.amazon.com/dp/B0CC4LXNMZ), which advertises a 3 V rating. The DRV2605L's peak drive setting was not raised. Measure actual motor voltage, current, and temperature before sustained use; the listing does not establish those operating values in this wiring.
+- Still unverified: motor voltage/current/temperature, all other cue patterns and durations, the final P32 button and P33 Confirm input, reconnect behavior, and operation with the Pi. The DRV2605L responded to firmware initialization, but its breakout revision was not recorded.
+
 ## Tests
 
 Run every native check with your computer's own C++ compiler (no PlatformIO or ESP32 toolchain needed):
@@ -187,7 +225,7 @@ It runs the unit tests (with the address and undefined-behaviour sanitizers, so 
 
 The expected results were written before the code, in [test/EXPECTED.md](test/EXPECTED.md). CI's `firmware` job runs `run-native.sh`, `pio test -e native`, both board builds, and a build with the id `any`, which must fail.
 
-## Bench checklist (not yet run on hardware)
+## Remaining bench checklist
 
 Do these once the boards are wired, and record what you measured in [hardware/current-build.md](../hardware/current-build.md):
 

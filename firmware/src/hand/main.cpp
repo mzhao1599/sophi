@@ -1,5 +1,5 @@
 // Hand control firmware (one board per handle): the Talk and Confirm buttons and the haptic cue, speaking
-// serial protocol v1 to the Pi. Not yet run on hardware; pins and parts are in firmware/README.md.
+// serial protocol v1 to the Pi. First USB serial bench run is recorded in firmware/README.md.
 //
 // The only output is the DRV2605L haptic driver. Nothing here can move an arm or the lift. The driver is
 // written only by Drv2605Output, and Drv2605Output is called only by the HapticController, which acts only
