@@ -1,0 +1,36 @@
+# Steady's always-on walker service. NOT YET RUN ON A PI: written from the systemd and Raspberry Pi OS
+# documentation, to be checked step by step with devices/pi/README.md ("Set up the Pi").
+[Unit]
+Description=Steady walker service (buttons, mic, speaker, serial modules, cloud link)
+Wants=network-online.target
+After=network-online.target sound.target
+# Always restart, however often it crashes (systemd otherwise gives up after 5 fast failures).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=steady
+Group=steady
+# audio: ALSA mic and speaker. dialout: the ESP32 serial ports. gpio: /dev/gpiochip* for gpiomon.
+SupplementaryGroups=audio dialout gpio
+# ALSA device names and GPIO pins (see steady-walker.env.example).
+EnvironmentFile=/etc/steady-walker.env
+Environment=WALKER_STATE_DIR=/var/lib/steady-walker
+# Each open serial port holds one libuv thread-pool thread for its blocking reads.
+Environment=UV_THREADPOOL_SIZE=8
+ExecStart=/usr/bin/node /opt/steady-walker/walker.mjs run
+Restart=always
+RestartSec=2
+StateDirectory=steady-walker
+StateDirectoryMode=0700
+# /run/steady-walker is in memory and removed when the service stops: synthesized replies go there, never the SD card.
+RuntimeDirectory=steady-walker
+RuntimeDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/steady-walker
+
+[Install]
+WantedBy=multi-user.target

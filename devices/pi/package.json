@@ -1,0 +1,25 @@
+{
+  "name": "@walker/pi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "walker": "./dist/walker.mjs"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "bundle": "node scripts/bundle.mjs",
+    "walker": "node scripts/bundle.mjs && node dist/walker.mjs"
+  },
+  "dependencies": {
+    "@walker/contracts": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}

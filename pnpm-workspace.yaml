@@ -1,4 +1,9 @@
 packages:
   - apps/*
+  - devices/*
   - packages/*
   - services/*
+
+# esbuild's install script only checks that its platform binary is present (devices/pi bundles with it).
+allowBuilds:
+  esbuild: true

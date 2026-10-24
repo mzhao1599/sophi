@@ -1,6 +1,15 @@
 # Raspberry Pi runtime guide
 
-**For:** the developer integrating Linux, USB, cameras, cloud calls, and physical actions. Proposed home: `devices/pi/`.
+**For:** the developer integrating Linux, USB, cameras, cloud calls, and physical actions. Home: [`devices/pi/`](../../devices/pi/README.md).
+
+## What is built (2026-10-24)
+
+The always-on service is in [`devices/pi`](../../devices/pi/README.md): TypeScript, bundled by esbuild into one file that Node 22 runs under systemd (`Restart=always`). It has run only on a Mac, in simulator mode against a fake cloud; **it has not yet run on a Pi.** It covers the module manager (serial v1 over the tty file after `stty`, ports found under `/dev/serial/by-id`, `unavailable` after 3 s without a heartbeat), the input manager (two GPIO buttons through `gpiomon`, ESP32 `hand.input`, the simulator keyboard), the audio manager (push-to-talk clips with `arecord`; replies played in the server's voice when it sends one, otherwise Piper or espeak-ng), the local obstacle cue policy, the cloud client (pairing, 5 s heartbeat, configuration, turns, proposals) and the state store. Where it differs from the plan below:
+
+- **Push-to-talk:** hold Talk to talk, release to send; a press while waiting cancels; a press while a reply plays stops it and starts listening. The cloud timeout ends the turn with a spoken offline line built from the configuration and health, and the clip is dropped, never kept for later.
+- **Offline:** after 2 failed heartbeats or a turn past 10 s. Heartbeats retry at 5, 10, 15 s.
+- **Not built in this service:** the camera manager, the action manager and the motion guard. There is no motion command at all; the only module command is `haptic.play`, from the local cue policy.
+- **Placeholders, not measured:** every timing and threshold is in `devices/pi/src/constants.ts`, labelled.
 
 ## The Pi's job in plain language
 

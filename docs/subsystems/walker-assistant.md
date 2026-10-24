@@ -2,7 +2,7 @@
 
 **For:** whoever builds or demos the assistant that lives on the walker after setup: the Pi service (`devices/pi`), the cloud routes (`services/cloud-api/src/walker/`, served by `apps/web`), and the "Your walker" page (`apps/web/app/walker`).
 
-**Status (2026-10-24):** only the shared contract is written ([`packages/contracts/src/walker.ts`](../../packages/contracts/src/walker.ts), with tests). The Pi service, the cloud routes, the Render deployment and the page are being built and don't work yet. Nothing has run on a Pi.
+**Status (2026-10-24):** the shared contract is written ([`packages/contracts/src/walker.ts`](../../packages/contracts/src/walker.ts), with tests). The Pi service ([`devices/pi`](../../devices/pi/README.md)) is built and tested on a Mac only: unit tests and its simulator against a fake cloud. It has not run on a Pi or on real hardware, and it hasn't talked to the real cloud. The cloud routes, the Render deployment and the page are being built and don't work yet.
 
 ## What it is
 

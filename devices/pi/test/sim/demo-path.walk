@@ -1,0 +1,81 @@
+# The demo path in simulator form, against the FAKE cloud (test/EXPECTED.md, "Simulator end to end").
+# Run: node dist/walker.mjs simulate --script test/sim/demo-path.walk --mic-file <16 kHz mono WAV>
+
+# 1. Boot: the walker says it's on and reaches the fake cloud. Pairing already saved configuration 1
+# (vibration and speech), so there is nothing to fetch; step 3's buzz shows it is in force.
+expect spoke Steady is on.
+expect link online
+expect heartbeat ok
+
+# 2. Ask: Talk starts listening, a second Talk sends (a terminal can't see key release).
+key t
+expect talk recording
+expect cue listening
+wait 1200
+key t
+expect talk waiting
+expect cue done
+expect turn answered
+expect spoke Fake cloud: this is where
+
+# 3. Obstacle: a hand in front of the simulated ToF buzzes the simulated handle (local, no cloud).
+key n
+expect haptic near_obstacle
+key f
+wait 300
+
+# 4. Change a setting: the fake cloud proposes short sounds; Confirm applies configuration 2.
+key t
+expect talk recording
+wait 1200
+key t
+expect spoke Press Confirm to do it.
+key c
+expect config 2
+expect spoke Done. Obstacle alerts now use short sounds.
+
+# 5. The same obstacle now gives the short sound, and no buzz.
+key n
+expect cue obstacle
+absent 1500 haptic
+key f
+wait 300
+
+# 5b. Arms: the fake cloud's fixed line.
+key t
+expect talk recording
+wait 1200
+key t
+expect spoke robot arms aren't on this walker
+
+# 6. Offline: the fake network goes down; within two heartbeats the walker says so.
+key o
+expect link offline
+expect spoke I'm offline right now. Your short-sound alerts still work. The obstacle sensor is simulated.
+# A Talk press now gets the local line at once, and nothing records.
+key t
+expect spoke I'm offline right now.
+absent 1000 talk recording
+# Obstacle cues still work offline.
+key n
+expect cue obstacle
+key f
+
+# 7. Back online, and a turn works again.
+key o
+expect link online
+expect spoke I'm back online.
+key t
+expect talk recording
+wait 1200
+key t
+expect turn answered
+
+# 8. The fake cloud forgets the walker: the next heartbeat gets 401.
+key r
+expect link unauthorized
+expect spoke I need to be paired again.
+key t
+expect spoke I need to be paired again.
+absent 1000 talk recording
+key q

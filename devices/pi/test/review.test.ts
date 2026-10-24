@@ -1,0 +1,352 @@
+import { EventEmitter } from "node:events";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PassThrough } from "node:stream";
+import { describe, expect, it } from "vitest";
+import { PiSpeaker } from "../src/audio/speech";
+import { Bus } from "../src/bus";
+import { GpioButtons } from "../src/buttons";
+import { CuePolicy } from "../src/cues";
+import { LINES } from "../src/notices";
+import { sttyArgs } from "../src/serial/port";
+import { StateStore } from "../src/store";
+import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from "./support/fakes";
+
+/** Rows added from the break-it review (test/EXPECTED.md, marked "review"). */
+
+async function talk(h: Harness, ms = 2000): Promise<void> {
+  h.press("talk", "pressed");
+  await h.clock.advance(ms);
+  h.press("talk", "released");
+  await flush();
+}
+
+describe("B18: a late heartbeat answer never overrides newer knowledge of the proposal", () => {
+  it("a heartbeat that left before the turn opened a proposal doesn't erase it", async () => {
+    const h = makeHarness();
+    await boot(h);
+    h.fake.script = [{ reply: "Fake cloud: switch?", proposeCues: ["sound"] }];
+    h.press("talk", "pressed");
+    await h.clock.advance(4000);
+    h.client.late.add("heartbeat");
+    await h.clock.advance(1000); // the 5 s heartbeat is answered now (no proposal yet) but arrives later
+    h.client.late.delete("heartbeat");
+    h.press("talk", "released");
+    await flush();
+    expect(h.service.openProposal).not.toBeNull();
+    h.client.releaseHeld();
+    await flush();
+    expect(h.service.openProposal).not.toBeNull();
+    h.press("confirm");
+    await flush();
+    expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);
+  });
+
+  it("a heartbeat that left before Confirm closed the proposal doesn't reopen it", async () => {
+    const h = makeHarness();
+    await boot(h);
+    h.fake.script = [{ reply: "Fake cloud: switch?", proposeCues: ["sound"] }];
+    await talk(h);
+    h.client.late.add("heartbeat");
+    await h.clock.advance(5000); // answered with the proposal still open, delivered later
+    h.client.late.delete("heartbeat");
+    h.press("confirm");
+    await flush();
+    expect(h.service.openProposal).toBeNull();
+    h.client.releaseHeld();
+    await flush();
+    expect(h.service.openProposal).toBeNull();
+    h.press("confirm");
+    await flush();
+    expect(h.client.calls.filter((c) => c === "answer:confirm")).toHaveLength(1);
+    expect(h.speaker.cues.at(-1)).toBe("nothing_to_confirm");
+  });
+});
+
+describe("B19: a recording whose button can't report its release is discarded", () => {
+  it("the hand module that started it unplugs", async () => {
+    const h = makeHarness({ withHand: true });
+    await boot(h);
+    h.hand!.press("talk", "pressed");
+    await h.clock.advance(1000);
+    expect(h.service.talk).toBe("recording");
+    h.hand!.port.unplug();
+    await flush();
+    expect(h.service.talk).toBe("idle");
+    expect(h.capture.aborts).toBe(1);
+    expect(h.client.calls).not.toContain("turn");
+    expect(h.spoken("local_reply")).toEqual([LINES.stoppedListening]);
+  });
+
+  it("the hand module that started it reboots (a new hello)", async () => {
+    const h = makeHarness({ withHand: true });
+    await boot(h);
+    h.hand!.press("talk", "pressed");
+    await h.clock.advance(1000);
+    h.hand!.start();
+    await flush();
+    expect(h.service.talk).toBe("idle");
+    expect(h.client.calls).not.toContain("turn");
+  });
+
+  it("another source's loss leaves the recording alone", async () => {
+    const h = makeHarness({ withHand: true });
+    await boot(h);
+    h.press("talk", "pressed", "gpio");
+    await h.clock.advance(1000);
+    h.hand!.port.unplug();
+    await flush();
+    expect(h.service.talk).toBe("recording");
+  });
+
+  it("gpiomon exits: GPIO recordings are dropped, and the next real press works", async () => {
+    const h = makeHarness();
+    await boot(h);
+    const children: EventEmitter[] = [];
+    const spawnChild = (() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        pid: 77,
+        exitCode: null,
+        signalCode: null,
+        kill: () => true,
+      });
+      children.push(child);
+      return child;
+    }) as never;
+    const buttons = new GpioButtons({ flavor: "v1", chip: "gpiochip0", pins: { talk: 17, confirm: 27 } }, { clock: h.clock, log: h.log, bus: h.bus, spawnChild });
+    buttons.start();
+    buttons.handleLine("17 0");
+    await h.clock.advance(1000);
+    expect(h.service.talk).toBe("recording");
+    children[0]!.emit("close", 1);
+    await flush();
+    expect(h.service.talk).toBe("idle");
+    expect(h.client.calls).not.toContain("turn");
+    await h.clock.advance(5000); // gpiomon restarts
+    expect(children).toHaveLength(2);
+    buttons.handleLine("17 0");
+    await h.clock.advance(1000);
+    expect(h.service.talk).toBe("recording");
+    buttons.stop();
+  });
+});
+
+it("B20: a hung listening cue delays the mic by at most 1 s", async () => {
+  const h = makeHarness();
+  await boot(h);
+  h.speaker.hangCues.add("listening");
+  h.press("talk", "pressed");
+  await h.clock.advance(999);
+  expect(h.capture.starts).toBe(0);
+  await h.clock.advance(1);
+  expect(h.capture.starts).toBe(1);
+});
+
+describe("S12: serial writes", () => {
+  it("a busy port drops the haptic instead of queueing it, and the seq doesn't skip", async () => {
+    const h = makeHarness({ withHand: true });
+    await boot(h);
+    h.hand!.port.busy = true;
+    expect(h.modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(false);
+    h.hand!.port.busy = false;
+    expect(h.modules.sendHaptic("hand-left-01", "near_obstacle", 400)).toBe(true);
+    expect(h.hand!.port.received.map((line) => JSON.parse(line).seq)).toEqual([0]);
+  });
+
+  it("stty sets clocal on Linux and macOS", () => {
+    expect(sttyArgs("/dev/serial/by-id/x", "linux")).toEqual(["-F", "/dev/serial/by-id/x", "115200", "raw", "-echo", "clocal"]);
+    expect(sttyArgs("/dev/ttys001", "darwin")[0]).toBe("-f");
+  });
+});
+
+it("C12: a zone flickering between near and invalid cues every 3 s, not every second", async () => {
+  const clock = new FakeClock();
+  let sounds = 0;
+  const at: number[] = [];
+  const policy = new CuePolicy({
+    clock,
+    log: captureLogger(),
+    modules: { hapticTargets: () => [], sendHaptic: () => true },
+    playObstacleSound: () => {
+      sounds += 1;
+      at.push(clock.monotonic());
+    },
+    cues: () => ["sound"],
+  });
+  for (let t = 0; t < 10_000; t += 100) {
+    const near = (t / 100) % 2 === 0;
+    policy.evaluate([
+      {
+        zone: "front_left",
+        instanceId: "tof-front-01",
+        mm: near ? 300 : null,
+        quality: near ? "valid" : "invalid",
+        receivedMono: clock.monotonic(),
+        receivedWall: clock.now(),
+      },
+    ]);
+    await clock.advance(100);
+  }
+  expect(at).toEqual([0, 3000, 6000, 9000]);
+  expect(sounds).toBe(4);
+});
+
+it("W5: the Pi speaker empties its private temp folder at startup", () => {
+  const dir = join(mkdtempSync(join(tmpdir(), "walker-speech-")), "steady-speech");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "speech-3.wav"), "left over from a crash");
+  new PiSpeaker({ playbackDevice: "default", piperModel: null, tmpDir: dir, cues: {} as never }, captureLogger());
+  expect(existsSync(join(dir, "speech-3.wav"))).toBe(false);
+  expect(existsSync(dir)).toBe(true);
+});
+
+describe("P7: a credential the walker can't use", () => {
+  it("a non-https server reads as unpaired and the service keeps running", async () => {
+    const h = makeHarness({ paired: false });
+    writeFileSync(
+      join(h.dir, "credential.json"),
+      JSON.stringify({ server_url: "http://walker.example.test", device_id: "55555555-5555-4555-8555-555555555555", credential: "c".repeat(43) }),
+      { mode: 0o600 },
+    );
+    await boot(h);
+    expect(h.service.link).toBe("unpaired");
+    h.press("talk");
+    await flush();
+    expect(h.spoken("local_reply")).toEqual([LINES.notPaired]);
+    expect(h.log.lines.some((line) => line.includes("credential file is unreadable"))).toBe(true);
+  });
+
+  it("an unreadable file (permissions) is logged with its reason", () => {
+    const dir = mkdtempSync(join(tmpdir(), "walker-state-"));
+    const log = captureLogger();
+    const store = new StateStore(dir, log);
+    store.writeCredential({ server_url: "https://walker.example.test", device_id: "55555555-5555-4555-8555-555555555555", credential: "c".repeat(43) });
+    chmodSync(join(dir, "credential.json"), 0o000);
+    expect(store.readCredential()).toBeNull();
+    expect(log.lines.join("\n")).toMatch(/can't be read.*EACCES/);
+    chmodSync(join(dir, "credential.json"), 0o600);
+  });
+});
+
+it("P8: a configuration that can't be saved still applies", async () => {
+  const h = makeHarness();
+  await boot(h);
+  h.fake.script = [{ reply: "Fake cloud: switch?", proposeCues: ["sound"] }];
+  await talk(h);
+  h.store.writeConfiguration = () => {
+    throw new Error("read-only file system");
+  };
+  h.press("confirm");
+  await flush();
+  expect(h.service.configuration).toMatchObject({ version: 2, cues: ["sound"] });
+  expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);
+  expect(h.log.lines.some((line) => line.includes("couldn't save the configuration"))).toBe(true);
+});
+
+/** Rows added from the second break-it pass (test/EXPECTED.md, marked "review 2"). */
+describe("second review", () => {
+  const zone = (clock: FakeClock, mm: number | null) => ({
+    zone: "front_left",
+    instanceId: "tof-front-01",
+    mm,
+    quality: (mm === null ? "invalid" : "valid") as "valid" | "invalid",
+    receivedMono: clock.monotonic(),
+    receivedWall: clock.now(),
+  });
+
+  function soundPolicy(clock: FakeClock, sent: boolean, cues: ("vibration" | "sound")[] = ["sound"]) {
+    const at: number[] = [];
+    const hand = {
+      instanceId: "hand-left-01",
+      type: "hand" as const,
+      catalogId: "controls.hand" as const,
+      capabilities: ["haptic"],
+      firmwareVersion: null,
+      health: "ok" as const,
+      faults: [],
+      observedAt: 0,
+      simulated: true,
+    };
+    const policy = new CuePolicy({
+      clock,
+      log: captureLogger(),
+      modules: { hapticTargets: () => [hand], sendHaptic: () => sent },
+      playObstacleSound: () => at.push(clock.monotonic()),
+      cues: () => cues,
+    });
+    return { policy, at };
+  }
+
+  it("C12: near, clear, invalid, near is a new entry (cues after the 1 s gap, not 3 s)", async () => {
+    const clock = new FakeClock();
+    const { policy, at } = soundPolicy(clock, true);
+    policy.evaluate([zone(clock, 300)]);
+    await clock.advance(100);
+    policy.evaluate([zone(clock, 900)]);
+    await clock.advance(100);
+    policy.evaluate([zone(clock, null)]);
+    await clock.advance(1000);
+    policy.evaluate([zone(clock, 300)]);
+    expect(at).toEqual([0, 1200]);
+  });
+
+  it("C13: vibration chosen but no haptic went out (busy port): the sound plays instead", () => {
+    const clock = new FakeClock();
+    const busy = soundPolicy(clock, false, ["vibration"]);
+    busy.policy.evaluate([zone(clock, 300)]);
+    expect(busy.at).toEqual([0]);
+    const fine = soundPolicy(clock, true, ["vibration"]);
+    fine.policy.evaluate([zone(clock, 300)]);
+    expect(fine.at).toEqual([]);
+  });
+
+  it("B21: a proposal from a turn that timed out (its reply never heard) is declined, not offered", async () => {
+    const h = makeHarness();
+    await boot(h);
+    h.fake.script = [{ reply: "Fake cloud: switch?", proposeCues: ["sound"] }];
+    h.client.hold.add("turn");
+    await talk(h);
+    await h.clock.advance(10_000);
+    expect(h.named("turn").map((t) => t.outcome)).toEqual(["timeout"]);
+    h.client.releaseHeld(); // the server finishes the turn late and opens a proposal
+    await flush();
+    expect(h.device()!.proposals.at(-1)?.state).toBe("open");
+    await h.clock.advance(15_000);
+    expect(h.service.link).toBe("online");
+    expect(h.client.calls.filter((c) => c === "answer:decline")).toHaveLength(1);
+    expect(h.device()!.proposals.at(-1)?.state).toBe("declined");
+    expect(h.service.openProposal).toBeNull();
+  });
+
+  it("P9: a credential that appears with an older device's configuration on disk fetches the server's", async () => {
+    const h = makeHarness({ paired: false });
+    h.store.writeConfiguration({
+      version: 3,
+      catalog_version: 1,
+      selected_module_ids: ["base.walker", "controls.hand", "perception.tof", "voice"],
+      cues: ["sound"],
+      created_at: "2026-10-23T12:00:00.000Z",
+    });
+    await boot(h);
+    const paired = h.fake.pair({ code: h.fake.issueCode(), service_version: "test" });
+    h.store.writeCredential({ server_url: "https://walker.example.test", device_id: paired.device_id, credential: paired.credential });
+    await h.clock.advance(5000);
+    expect(h.service.configuration).toMatchObject({ version: 1, cues: ["vibration", "spoken"] });
+  });
+
+  it("W7: a spoken line that never finishes is stopped after 90 s and the next one plays", async () => {
+    const h = makeHarness();
+    h.speaker.hold = true;
+    h.speaker.ignoreStop = true;
+    await boot(h);
+    h.client.network = "down";
+    await h.clock.advance(10_000); // goes offline: the offline notice waits behind the hung boot line
+    expect(h.speaker.spoken).toEqual(["Steady is on."]);
+    await h.clock.advance(80_000);
+    expect(h.speaker.stopped).toEqual(["Steady is on."]);
+    expect(h.speaker.spoken).toEqual(["Steady is on.", "I'm offline right now."]);
+  });
+});
