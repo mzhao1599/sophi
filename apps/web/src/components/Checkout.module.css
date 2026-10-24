@@ -1,0 +1,85 @@
+/* The mock purchase: the button panel on the saved setup and the /checkout return pages. Tokens only. */
+
+.panel {
+  align-self: start;
+  padding: var(--pad);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.heading {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.notice {
+  max-width: 70ch;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.notice :global(.pill) {
+  margin-right: 4px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 16px;
+}
+
+.state {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.state:empty {
+  display: none;
+}
+
+.error {
+  margin-top: 12px;
+  color: var(--negative);
+  font-weight: 500;
+}
+
+.lines {
+  margin-top: 8px;
+}
+
+.lines li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.name {
+  font-weight: 600;
+}
+
+.price {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.total {
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: 16px;
+    border-radius: var(--radius-card);
+  }
+  .row :global(.button) {
+    width: 100%;
+  }
+}

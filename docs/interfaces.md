@@ -23,6 +23,8 @@ Base path proposal: `/api/v1`. All user routes require an authenticated user ses
 | `PATCH /onboarding/sessions/{id}/profile` | User web app | Edit or remove one item of the draft profile ("What I understood"); recommendations are recomputed | Built (demo) |
 | `POST /onboarding/sessions/{id}/confirm` | User web app | Confirm the reviewed selection as configuration version 1 | Built (demo) |
 | `DELETE /onboarding/sessions/{id}` | User web app | Delete the session and its answers now | Built (demo) |
+| `POST /onboarding/sessions/{id}/checkout` | User web app | Mock purchase of the confirmed configuration: returns a Stripe **test-mode** hosted Checkout URL. Web-only; shapes in `apps/web/src/lib/checkout.ts` | Built (demo), test mode only |
+| `GET /checkout/status` | User web app | Whether the mock purchase is on (an `sk_test_` key is set) and why not | Built (demo) |
 | `POST /devices/pairing-challenges` | User web app | Create short-lived pairing challenge |
 | `POST /devices/pair` | Pi | Claim challenge and receive device-scoped credential |
 | `GET /devices/{id}/configuration` | Pi | Fetch signed/versioned configuration and preferences |

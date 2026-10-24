@@ -2,7 +2,7 @@
 
 Owns the landing page, onboarding, module review, and (later) device pairing and settings. Next.js 16 (App Router) and TypeScript. The onboarding API route handlers live here too, as thin adapters over [`services/cloud-api`](../../services/cloud-api/README.md); shapes come from [`packages/contracts`](../../packages/contracts/README.md).
 
-**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres. With Supabase, **passwordless sign-in** (an emailed code or link) saves setups to an account, resumes an unfinished one on another device, and lists saved setups with delete. Checked against a local Supabase stack, not yet a hosted project. The LLM onboarding agent is built but off by default (see below). Speech input and device pairing are not built yet.
+**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**, with sessions in server memory or, when configured, Supabase Postgres. With Supabase, **passwordless sign-in** (an emailed code or link) saves setups to an account, resumes an unfinished one on another device, and lists saved setups with delete. Checked against a local Supabase stack, not yet a hosted project. The LLM onboarding agent is built but off by default (see below). A **mock purchase** of the saved setup through Stripe runs in **test mode only** and is off until a test key is set. Speech input and device pairing are not built yet.
 
 ## Run it
 
@@ -20,7 +20,7 @@ Then open <http://localhost:3000>. Other commands, from the repository root:
 
 | Command | What it does |
 | --- | --- |
-| `pnpm test` | Unit tests for the contracts and the onboarding engine (Vitest) |
+| `pnpm test` | Unit tests for the contracts, the onboarding engine and the mock purchase (Vitest) |
 | `pnpm typecheck` | TypeScript across all packages |
 | `pnpm build` | Production build of the web app |
 
@@ -28,6 +28,7 @@ No environment variables are needed for the default, deterministic onboarding wi
 
 - **Onboarding agent:** `ONBOARDING_ENGINE=agent` and `ANTHROPIC_API_KEY`; `ONBOARDING_AGENT_MODEL` is optional. Server only. What the agent does and how it falls back is in [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent).
 - **Sessions in Postgres:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`. All three or none. The secret key is server only and must never get a `NEXT_PUBLIC_` name.
+- **Mock purchase:** `STRIPE_SECRET_KEY`, a Stripe **test** secret key (`sk_test_…`) only. Server only. See [Mock purchase](#mock-purchase-stripe-test-mode-only).
 
 ### Local Supabase
 
@@ -55,7 +56,10 @@ Copy `API_URL`, `PUBLISHABLE_KEY` and `SECRET_KEY` into `apps/web/.env.local` as
 | `/login` | Sign in or create an account with an email address: the email carries a code to type here and a link. Needs Supabase |
 | `/auth/confirm` | Where the email's link lands: a **Sign in** button that redeems it (opening the link alone signs nobody in), then Your setups |
 | `/setups` | **Your setups**: a signed-in user's saved setups, newest first, with delete; carry on with an unfinished setup; sign out; delete the account |
-| `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface) |
+| `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface). `POST …/{id}/checkout` starts the mock purchase |
+| `/api/v1/checkout/status` | Whether the mock purchase button is on, and why not |
+| `/checkout/success` | Where Stripe returns after a test payment: says it was a demo and no money moved, and lists the modules read from the Checkout Session on the server |
+| `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
 | `/dev/preview/{start,question,done,review,saved}` | **Development only** (404 in production): each screen rendered from a session the real engine produced, for design review and the taste-skill inspector |
 
 ## How demo mode works
@@ -143,6 +147,7 @@ Set them in **Settings → Environment Variables**, or one at a time with `npx v
 | `ENABLE_EXPERIMENTAL_COREPACK` | `1` | `1` | Makes Vercel use pnpm 11.20.0 from `packageManager` directly. Without it Vercel starts pnpm 9 or 10 from the lockfile version; pnpm 10 then switches itself to 11.20.0 (checked locally with 10.18.3), pnpm 9 may not |
 | `ONBOARDING_ENGINE`, `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_MODEL` | Optional | Optional | The onboarding agent (see above). Mark the API key **Sensitive** |
 | `ONBOARDING_ALLOW_MEMORY_STORE` | Leave unset | Leave unset | Without Supabase, onboarding refuses to start on Vercel, on purpose |
+| `STRIPE_SECRET_KEY` | Optional, `sk_test_…` only | Optional, `sk_test_…` only | The mock purchase (below). Live and restricted keys are refused and leave the button off. Mark it **Sensitive** |
 
 Leave the **Development** environment empty: local development uses the local stack in `apps/web/.env.local`. For the same reason, don't run `vercel env pull` into `apps/web/.env.local`; it would replace those local settings.
 
@@ -163,6 +168,23 @@ That makes a preview deployment; `npx vercel@62.2.0 --prod` makes a production o
 
 Before sharing a public link, add a rate limit for `POST /api/v1/onboarding/sessions` and `/login` (for example a Vercel Firewall rule); the app caps demo sessions and turns but doesn't limit by address.
 
+## Mock purchase (Stripe test mode only)
+
+The saved-setup view has a **Mock purchase this setup** button so the demo can show buying the walker. **Nothing can really be bought:** the walker is an experimental prototype, not a certified mobility aid, so checkout runs in Stripe test mode only and no real money can move.
+
+- **Test mode is enforced on the server.** `STRIPE_SECRET_KEY` must be a test secret key (`sk_test_…`). A live key (`sk_live_`, `rk_live_`), a restricted key or anything else is refused: the server logs `[checkout] Refusing to start mock purchase: …` (never the key), and the button stays off with a short reason. Without a key the button is off too, and everything else works as before. A Checkout Session that comes back live is also refused.
+- **Flow.** The button posts the configuration version to `POST /api/v1/onboarding/sessions/{id}/checkout`. The server reads the confirmed configuration from the session, with ownership checked as on every onboarding route (the demo session's cookie, or the signed-in account that saved it), builds one line item per selected module, creates a hosted Checkout Session and returns its `checkout.stripe.com` URL; the browser goes there. There is no card form on our site and no publishable key.
+- **Prices are placeholders.** They live in one constant, `DEMO_PLACEHOLDER_PRICES_USD_CENTS` in `src/server/checkout/order.ts`, and are labelled "demo price, not a real quote" everywhere they appear, because the catalog's real cost is `not_measured`.
+- **Return pages.** `/checkout/success?session_id=…` looks the session up in Stripe on the server and shows the modules from its line items only if it is a test-mode session this app made and Stripe marks it paid; an unknown, unpaid or foreign session shows no order. `/checkout/cancelled` reads nothing from the URL. Both say it was a demo and no money moved.
+- **Data.** Checkout metadata holds only the app tag, the onboarding session id and the configuration version; no answers go to Stripe. Card only, with Stripe's Link wallet hidden (`wallet_options.link.display: "never"`), because Link offers to save details and asks for a phone number. Apple Pay or Google Pay can still appear as card wallets in browsers that support them. No customer record, no shipping address, no phone number. Stripe's page asks for an email, a cardholder name and a ZIP; made-up ones work in test mode.
+- **No webhook.** Nothing is fulfilled, so the return page's server-side lookup is enough.
+
+### Try it locally
+
+1. In the [Stripe dashboard](https://dashboard.stripe.com/test/apikeys), in test mode (a sandbox), copy the **secret key** (`sk_test_…`).
+2. Put it in `apps/web/.env.local` as `STRIPE_SECRET_KEY=sk_test_…` and restart `pnpm dev`. Never commit it or paste it into chat.
+3. Finish onboarding and save, press **Mock purchase this setup**, and pay with Stripe's test card `4242 4242 4242 4242`, any future expiry and any CVC.
+
 ## Code map
 
 ```text
@@ -171,11 +193,14 @@ src/server/onboarding.ts store and engine choice, who is calling, cookie handlin
 src/server/supabase.ts   Supabase client per request (cookies), the verified signed-in user
 src/server/auth-actions.ts server actions: sign in, sign out, delete a setup, delete the account
 proxy.ts                 refreshes the Supabase session before each page
+src/server/checkout/     mock purchase: test-key guard, Stripe client, placeholder prices, line items, success lookup
+src/lib/checkout.ts      mock purchase request/response shapes and the browser calls
 src/lib/api.ts           browser client; validates every response against the contracts
 src/lib/useOnboarding.ts one hook owns the flow: restore, every API call, the status line, focus key
-src/components/          screens and parts (QuestionStep, FactsPanel, ReviewScreen, WalkerDiagram, …)
+src/components/          screens and parts (QuestionStep, FactsPanel, ReviewScreen, WalkerDiagram, CheckoutButton, …)
 src/components/landing/  landing page parts and styles
 public/images/found/     credited archival pictures and credits.json
+test/                    unit tests for the mock purchase (stubbed Stripe client and onboarding service)
 ```
 
 ## Accessibility

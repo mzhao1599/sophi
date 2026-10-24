@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MODULE_CATALOG, type DeviceConfiguration, type SessionView } from "@walker/contracts";
+import { CheckoutButton } from "./CheckoutButton";
 import screen from "./Screen.module.css";
 import styles from "./SavedConfiguration.module.css";
 
@@ -112,6 +113,8 @@ export function SavedConfiguration({
           <code>{JSON.stringify(configuration, null, 2)}</code>
         </pre>
       </section>
+
+      <CheckoutButton className={screen.span12} sessionId={session.session_id} configurationVersion={configuration.configuration_version} />
 
       {configuration.source === "account" ? (
         <div className={`${screen.span12} ${screen.actions}`}>
