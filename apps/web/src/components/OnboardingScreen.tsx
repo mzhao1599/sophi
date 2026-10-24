@@ -15,11 +15,12 @@ import styles from "./Screen.module.css";
  * current question is the biggest thing on the screen, the running summary sits beside it, and the
  * full transcript below keeps every message available as text.
  */
-export function OnboardingScreen() {
-  return <OnboardingView o={useOnboarding()} />;
+export function OnboardingScreen({ agent = false }: { agent?: boolean }) {
+  return <OnboardingView o={useOnboarding()} agent={agent} />;
 }
 
-export function OnboardingView({ o }: { o: Onboarding }) {
+/** `agent`: the server runs the onboarding agent, so the first screen says answers go to the model provider. */
+export function OnboardingView({ o, agent = false }: { o: Onboarding; agent?: boolean }) {
   const s = o.session;
   const doneRef = useRef<HTMLHeadingElement>(null);
   const reviewReady = s && (s.state === "review" || s.state === "confirmed");
@@ -38,7 +39,7 @@ export function OnboardingView({ o }: { o: Onboarding }) {
 
         {o.phase === "loading" ? <p className={styles.loading}>Loading your setup…</p> : null}
 
-        {o.phase === "none" ? <StartPanel busy={o.busy} error={o.error} onStart={o.start} /> : null}
+        {o.phase === "none" ? <StartPanel busy={o.busy} error={o.error} onStart={o.start} agent={agent} /> : null}
 
         {s && s.current_question ? (
           <div className={styles.grid}>

@@ -12,7 +12,7 @@ const TOPICS = [
 ];
 
 /** The first screen of onboarding: what this is, how the demo treats your answers, and one way in. */
-export function StartPanel({ busy, error, onStart }: { busy: boolean; error: string | null; onStart(): void }) {
+export function StartPanel({ busy, error, onStart, agent = false }: { busy: boolean; error: string | null; onStart(): void; agent?: boolean }) {
   return (
     <div className={styles.grid}>
       <section className={styles.main} aria-labelledby="start-heading">
@@ -31,6 +31,13 @@ export function StartPanel({ busy, error, onStart }: { busy: boolean; error: str
               This is a demo. Your answers are kept in this server&apos;s memory for an hour after your last change, then deleted.
               You can delete them sooner at any time.
             </li>
+            {agent ? (
+              <li>
+                An AI model, Anthropic&apos;s Claude, reads your answers to choose the next question, so what you choose and type is
+                also sent to Anthropic. Deleting your answers here doesn&apos;t recall what was already sent. Fixed rules, not the
+                model, suggest your modules, and you decide.
+              </li>
+            ) : null}
             <li>We ask about tasks and preferences, not health conditions. Please leave out names, addresses and medical details.</li>
             <li>This version works by typing and choosing. Speaking to the walker comes later, so no microphone is needed.</li>
             <li>Nothing here is installed yet. Choosing a module records what you want; bench tests decide what can be turned on.</li>
@@ -58,7 +65,10 @@ export function StartPanel({ busy, error, onStart }: { busy: boolean; error: str
             <li key={t}>{t}</li>
           ))}
         </ul>
-        <p className={styles.time}>Six or seven short questions. You can skip any of them.</p>
+        <p className={styles.time}>
+          {agent ? "About six short questions, fewer if you cover several at once." : "Six or seven short questions."} You can skip any
+          of them.
+        </p>
       </aside>
     </div>
   );

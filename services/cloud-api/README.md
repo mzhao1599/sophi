@@ -2,7 +2,7 @@
 
 Owns onboarding sessions, the onboarding conversation and its recommendations, and (later) assistant runs, typed tools and the device API. For now it is a TypeScript package that the Next.js route handlers in `apps/web` call; it has no HTTP server of its own. Read [cloud agents](../../docs/subsystems/cloud-agents.md) and the [runtime blueprint](../../docs/agent-runtime.md).
 
-**Status:** the onboarding service works with a **deterministic engine** and an **in-memory store**. An **LLM onboarding agent** (Claude, through the Anthropic TypeScript SDK) is built as a second `TurnEngine`, but nothing selects it yet: the web app still runs the deterministic engine. It has been checked with stub models, **not yet against the real model**. There is no Supabase store or device API yet.
+**Status:** the onboarding service works with a **deterministic engine** and an **in-memory store**. An **LLM onboarding agent** (Claude, through the Anthropic TypeScript SDK) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, **not yet against the real model**. There is no Supabase store or device API yet.
 
 ## What's here
 
@@ -14,6 +14,7 @@ Owns onboarding sessions, the onboarding conversation and its recommendations, a
 | `src/onboarding/engine.ts` | Pure session transitions. The current question is derived from the answers, so a restored session resumes where it left off; the one stored exception is the agent's next question (`pending`). `TurnEngine` is the interface both engines implement. |
 | `src/onboarding/agent.ts` | The onboarding agent: the prompt, the reply schema, the checks on a reply, one retry, and the fallback to the deterministic engine. |
 | `src/onboarding/anthropic.ts` | The model client: one Messages API call with structured output. The default model is `DEFAULT_AGENT_MODEL` here. |
+| `src/onboarding/config.ts` | `engineFromEnv`: picks the engine from environment variables. |
 | `src/onboarding/service.ts` | Ownership (secret token), expiry, revision checks, idempotent turns by `client_turn_id`, and errors with stable codes. |
 | `src/onboarding/store.ts` | `SessionStore` interface and the in-memory demo store. |
 
@@ -26,6 +27,16 @@ The tests cover the matcher, a full conversation, skipped and revisited question
 `test/agent.test.ts` runs the agent against a stub model with the scenarios from the [cloud agents guide](../../docs/subsystems/cloud-agents.md#evaluation-and-observability): a request for every module, a refused module, an unclear answer, instructions hidden in the user's words, refusals, bad JSON, API errors and a timeout. It also checks that with every model call failing the agent matches the deterministic engine step for step, that two overlapping turns can't both land, and the exact request the SDK sends. A stub proves what the code does with a reply; it says nothing about how well a real model reads people.
 
 ## Onboarding agent
+
+**Turning it on.** Set these on the server (for the web app, in `apps/web/.env.local`, which git ignores; see `apps/web/.env.example`):
+
+| Variable | Meaning |
+| --- | --- |
+| `ONBOARDING_ENGINE` | `deterministic` (default) or `agent` |
+| `ANTHROPIC_API_KEY` | Needed for `agent`. Without it the deterministic engine runs, exactly as before, and the server logs a warning. |
+| `ONBOARDING_AGENT_MODEL` | Optional. Overrides `DEFAULT_AGENT_MODEL`; the model must support structured outputs and the effort setting. |
+
+The key is read only on the server. The browser never sees it, and the first screen says when answers are sent to Anthropic. **Open before a public demo:** once sent, answers are outside this server, and **Delete my answers** can't recall them. How long Anthropic keeps API inputs depends on the API account's data-retention terms; confirm them and say so on the first screen.
 
 **What the model does, and what it doesn't.** For a `text` or `answer` turn, one model call gets the rules (the system prompt, cached) and a JSON document describing the turn: the current question, the chosen options, the user's typed words, the facts so far and each topic's status. It returns, as schema-checked JSON:
 
@@ -45,7 +56,6 @@ Chosen options, recommendations (`recommend.ts`), the robot arms' "consider only
 
 ## Next steps
 
-1. **Turn the agent on**: an environment switch for the web app, a notice on the first screen that answers go to Anthropic, and the API docs.
-2. **Live check of the agent** with a real key: run the conversation by hand with new wording each time (not the fixture sentences, which a model can echo), and read the facts and next questions as well as the fluency. Record latency and the fallback rate from the log lines.
-3. **Supabase store**: implement `SessionStore` over Postgres with row-level security on user-owned tables (see the data model in the runtime blueprint). Keep the demo store for local runs.
-4. **Device API**: pairing, configuration fetch and events, behind a device credential separate from user sessions.
+1. **Live check of the agent** with a real key: run the conversation by hand with new wording each time (not the fixture sentences, which a model can echo), and read the facts and next questions as well as the fluency. Record latency and the fallback rate from the log lines.
+2. **Supabase store**: implement `SessionStore` over Postgres with row-level security on user-owned tables (see the data model in the runtime blueprint). Keep the demo store for local runs.
+3. **Device API**: pairing, configuration fetch and events, behind a device credential separate from user sessions.

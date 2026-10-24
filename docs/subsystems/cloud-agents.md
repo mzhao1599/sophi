@@ -4,6 +4,8 @@
 
 The [runtime blueprint](../agent-runtime.md) specifies persistence, concurrency, tool gates, and the callable onboarding surface in more detail.
 
+**Status:** the onboarding agent exists as a single structured-output call per turn with a deterministic fallback, off by default; see [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent). It has not been run against a live model yet. The walker assistant and manipulation planner are not built.
+
 ## One product, three roles
 
 | Role | Input | Output | Allowed side effects |

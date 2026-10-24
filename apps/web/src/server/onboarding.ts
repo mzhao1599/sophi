@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { MemorySessionStore, OnboardingService, isOnboardingError } from "@walker/cloud-api";
+import { MemorySessionStore, OnboardingService, engineFromEnv, isOnboardingError } from "@walker/cloud-api";
 import type { ApiError } from "@walker/contracts";
 import type { z } from "zod";
 
@@ -18,7 +18,9 @@ const COOKIE_PATH = "/api/v1/onboarding";
 // error classes always match the code that checks them.
 const globalForStore = globalThis as unknown as { __walkerDemoStore?: MemorySessionStore };
 const store = (globalForStore.__walkerDemoStore ??= new MemorySessionStore());
-export const onboarding = new OnboardingService(store);
+// ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY turns on the onboarding agent; otherwise the
+// deterministic engine runs. Both variables are read here, on the server, and never sent to the browser.
+export const onboarding = new OnboardingService(store, { engine: engineFromEnv(process.env) });
 
 export async function readToken(sessionId: string): Promise<string | undefined> {
   const value = (await cookies()).get(COOKIE)?.value;

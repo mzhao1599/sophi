@@ -2,7 +2,7 @@
 
 Owns the landing page, onboarding, module review, and (later) device pairing and settings. Next.js 16 (App Router) and TypeScript. The onboarding API route handlers live here too, as thin adapters over [`services/cloud-api`](../../services/cloud-api/README.md); shapes come from [`packages/contracts`](../../packages/contracts/README.md).
 
-**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**. Sign-in, Supabase persistence, the LLM onboarding agent, speech input and device pairing are not built yet.
+**Status:** the landing page, the text onboarding conversation, module review and the saved-configuration view work end to end in **demo mode**. The LLM onboarding agent is built but off by default (see below). Sign-in, Supabase persistence, speech input and device pairing are not built yet.
 
 ## Run it
 
@@ -24,7 +24,7 @@ Then open <http://localhost:3000>. Other commands, from the repository root:
 | `pnpm typecheck` | TypeScript across all packages |
 | `pnpm build` | Production build of the web app |
 
-No environment variables are needed yet. When Supabase and a model provider are added, list the variable **names** here and keep values in `.env.local` (git-ignored).
+No environment variables are needed for the default, deterministic onboarding. To turn on the onboarding agent, copy `.env.example` to `.env.local` (git-ignored) and set `ONBOARDING_ENGINE=agent` and `ANTHROPIC_API_KEY`; `ONBOARDING_AGENT_MODEL` is optional. They are read on the server only. What the agent does and how it falls back is in [`services/cloud-api`](../../services/cloud-api/README.md#onboarding-agent).
 
 ## Routes
 
@@ -41,6 +41,7 @@ No environment variables are needed yet. When Supabase and a model provider are 
 - Pressing **Start the demo** creates a session in **server memory**. Its id goes in this tab's `sessionStorage`; the secret that proves you started it is an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/onboarding`. The id alone can't read anything, so it may appear in URLs.
 - Answers are deleted an hour after the last change, when the server restarts, or immediately with **Delete my answers**.
 - The in-memory store is for local demos. On a host with several instances (Vercel), two requests can land on different instances and lose the session; the Supabase store replaces it (see [`services/cloud-api`](../../services/cloud-api/README.md)).
+- With the onboarding agent on, each answer is also sent to Anthropic's API, and the first screen says so before the session starts. A turn the model can't handle in time falls back to the fixed questions.
 - The landing page's closing sentence ("I'd like help with ___") hands its words to the first question through `sessionStorage`, never the URL.
 
 ## Code map

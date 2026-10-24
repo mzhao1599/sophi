@@ -14,6 +14,7 @@ import {
   createAgentEngine,
   createAnthropicModel,
   defaultSelection,
+  engineFromEnv,
   type AgentEvent,
   type AgentModel,
   type AgentReply,
@@ -488,5 +489,19 @@ describe("Anthropic model client", () => {
       ],
     });
     expect(req.body).not.toHaveProperty("thinking");
+  });
+});
+
+describe("engine selection", () => {
+  it("uses the agent only when asked for and a key is present", () => {
+    const warnings: string[] = [];
+    const warn = (m: string) => warnings.push(m);
+    expect(engineFromEnv({}, warn).kind).toBe("deterministic");
+    expect(engineFromEnv({ ONBOARDING_ENGINE: "deterministic", ANTHROPIC_API_KEY: "sk-test" }, warn).kind).toBe("deterministic");
+    expect(engineFromEnv({ ONBOARDING_ENGINE: "agent" }, warn).kind).toBe("deterministic");
+    expect(engineFromEnv({ ONBOARDING_ENGINE: "llm", ANTHROPIC_API_KEY: "sk-test" }, warn).kind).toBe("deterministic");
+    expect(engineFromEnv({ ONBOARDING_ENGINE: "agent", ANTHROPIC_API_KEY: "sk-test" }, warn).kind).toBe("agent");
+    expect(warnings).toHaveLength(2);
+    expect(warnings.join(" ")).not.toContain("sk-test");
   });
 });

@@ -167,7 +167,10 @@ export type SessionView = z.infer<typeof SessionViewSchema>;
 export const StartSessionRequestSchema = z.object({
   input_mode: z.literal("text"),
   consent: z.object({
-    /** The user read that demo answers are kept in server memory for an hour and then deleted. */
+    /**
+     * The user read that demo answers are kept in server memory for an hour and then deleted, and, when
+     * the onboarding agent is on, that their answers are also sent to the model provider.
+     */
     demo_data_notice: z.literal(true),
   }),
 });
