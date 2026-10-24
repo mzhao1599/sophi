@@ -22,7 +22,7 @@ import {
   type TurnEvent,
   type WalkerVoice,
 } from "../../src";
-import { PRESS_CONFIRM, SIMULATED_PARTS, SIMULATED_READINGS } from "../../src/walker/lines";
+import { PRESS_CONFIRM, SIMULATED_ALL_PARTS, SIMULATED_PARTS, SIMULATED_READINGS } from "../../src/walker/lines";
 import { isWav16kMono } from "../../src/walker/speech";
 import { Clock, SKIP_POSTGRES, manifest, memoryHarness, postgresHarness, snapshot, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
 
@@ -260,6 +260,11 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       for (const m of real.modules) m.simulated = false;
       const r = await walker(service, real);
       expect((await service.turn(device(r.credential), r.id, typed("Which parts work?"))).turn.reply).toBe("Your hand controls and obstacle sensors are on.");
+      // Every reported part simulated (as on the simulator): "All", not "Some", even with configured parts unreported.
+      const sim = manifest(clock);
+      for (const m of sim.modules) m.simulated = true;
+      const s = await walker(service, sim);
+      expect((await service.turn(device(s.credential), s.id, typed("Which parts are simulated?"))).turn.reply).toBe(`Your hand controls and obstacle sensors are on. ${SIMULATED_ALL_PARTS}`);
     });
 
     it("never returns a proposal as open once it has expired, on a replay or when the walker drops during the turn", async () => {

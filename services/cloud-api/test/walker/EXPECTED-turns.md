@@ -26,7 +26,7 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 | A proposal opens | Its summary comes from the payload, it records the turn's `client_turn_id`, and the reply ends " Press Confirm to do it." |
 | A turn arrives with a proposal already open | The reply ends " Press Confirm to do it." too (once, not twice) |
 | A model reply that already says it made the change | Nothing changes: only Confirm by id changes the configuration (the model has no way to confirm). *(review)* Its words aren't spoken: the reply is the payload's offer, so a change that also drops speech says so |
-| *(review)* `topics` includes `parts` and a reported part is simulated (and the obstacles line didn't apply) | " Some of this walker's parts are simulated." is added |
+| *(review)* `topics` includes `parts` and a reported part is simulated (and the obstacles line didn't apply) | " Some of this walker's parts are simulated." is added; when every reported part is simulated (the simulator), " All of this walker's parts are simulated." instead (rehearsal, 2026-10-24) |
 | *(review)* A replay after the proposal expired, or the walker dropping offline during the model call | The response's `proposal` is read after expiry: `expired`, never `open` |
 | *(review)* The walker is forgotten while the model answers | `404 not_found`, not `503` |
 | A device turn carries its own snapshot | That snapshot, received now, is the turn's context instead of the heartbeat's (a stale heartbeat zone reads as measured from the turn's snapshot) |

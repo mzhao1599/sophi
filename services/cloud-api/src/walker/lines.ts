@@ -33,6 +33,7 @@ export function cuesSummary(from: readonly Cue[], to: readonly Cue[]): string {
 export const PRESS_CONFIRM = "Press Confirm to do it.";
 export const SIMULATED_READINGS = "These readings are simulated.";
 export const SIMULATED_PARTS = "Some of this walker's parts are simulated.";
+export const SIMULATED_ALL_PARTS = "All of this walker's parts are simulated.";
 
 /** What the person hears when a proposal opens: the change itself, from the payload ("I can switch your alerts…"). */
 export function offerLine(summary: string): string {

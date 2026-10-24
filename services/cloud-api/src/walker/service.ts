@@ -33,6 +33,7 @@ import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Wor
 import {
   OFFLINE_NO_CHANGE,
   PRESS_CONFIRM,
+  SIMULATED_ALL_PARTS,
   SIMULATED_PARTS,
   SIMULATED_READINGS,
   armsLine,
@@ -475,9 +476,11 @@ export function applyRules(
   }
   let reply = out.reply;
   const simulatedTof = status.parts.some((p) => p.module_id === "perception.tof" && p.instance_id !== null && p.simulated);
-  const simulatedPart = status.parts.some((p) => p.instance_id !== null && p.simulated);
+  // The parts the walker reports (a configured part it never reported has no instance and isn't counted).
+  const reported = status.parts.filter((p) => p.instance_id !== null);
+  const simulatedParts = reported.filter((p) => p.simulated).length;
   if (out.topics.includes("obstacles") && simulatedTof) reply = `${reply} ${SIMULATED_READINGS}`;
-  else if (out.topics.includes("parts") && simulatedPart) reply = `${reply} ${SIMULATED_PARTS}`;
+  else if (out.topics.includes("parts") && simulatedParts > 0) reply = `${reply} ${simulatedParts === reported.length ? SIMULATED_ALL_PARTS : SIMULATED_PARTS}`;
   return { reply: withReminder(reply, status), answered_by: "model", reason: null, proposal: null };
 }
 

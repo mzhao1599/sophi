@@ -173,4 +173,22 @@ describe.skipIf(!live)("live walker turns on Gemini", () => {
     },
     15 * 60_000,
   );
+
+  it("says all parts are simulated, once, on a walker whose every part is", async () => {
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) throw new Error("GEMINI_API_KEY isn't set here or in apps/web/.env.local.");
+    const clock = new Clock();
+    clock.t = Date.now();
+    const service = new WalkerService(new MemoryWalkerStore(), { assistant: createWalkerAssistant({ model: createGeminiModel({ apiKey }) }), onTurn: () => {} });
+    const { response } = await service.createPairingCode({ kind: "owner", secret: undefined });
+    const w = await service.pair({ code: response.code, service_version: "live" }, "live");
+    const allSimulated = demoManifest(clock);
+    for (const m of allSimulated.modules) m.simulated = true;
+    await service.heartbeat({ kind: "device", credential: w.credential }, w.device_id, { sent_at: clock.iso(), service_version: "live", manifest: allSimulated, snapshot: snapshot(clock), events: [] });
+    const r = await service.turn({ kind: "device", credential: w.credential }, w.device_id, { client_turn_id: crypto.randomUUID(), input: { type: "text", text: "Which parts are simulated?" }, snapshot: snapshot(clock) });
+    console.log(`all simulated: ${r.turn.answered_by} reply=${JSON.stringify(r.turn.reply)}`);
+    expect(r.turn.answered_by).toBe("model");
+    expect(r.turn.reply.endsWith("All of this walker's parts are simulated.")).toBe(true);
+    expect(r.turn.reply).not.toContain("Some of this walker's parts are simulated.");
+  }, 60_000);
 });

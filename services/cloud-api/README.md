@@ -187,7 +187,7 @@ One question and its answer (`WalkerService.turn`, routes `POST /devices/{id}/tu
 | A valid `cues_change` | A proposal opens: summary written from the payload ("Switch your alerts from buzzing to short sounds."), the turn's `client_turn_id`, 60 s to answer. The reply is written from the same payload ("I can switch your alerts from buzzing to short sounds. Press Confirm to do it."), so the person hears exactly what Confirm will do, never the model's description of it; it stays `answered_by: "model"`, since the model chose the change |
 | A proposal is already open | The reply gets "Still waiting for you: … Press Confirm to do it." |
 | `topics` has `obstacles` and a ToF part is simulated | The reply gets "These readings are simulated." |
-| `topics` has `parts` and a reported part is simulated (and the line above didn't apply) | The reply gets "Some of this walker's parts are simulated." |
+| `topics` has `parts` and a reported part is simulated (and the line above didn't apply) | The reply gets "All of this walker's parts are simulated." when every part the walker reports is (as on the simulator), otherwise "Some of this walker's parts are simulated." |
 | An error, a refusal, a bad reply twice, 8 s, or no key | A fixed line from the status view, `answered_by: "fixed"`; a voice turn with no transcript has `heard: null` |
 
 The model can't confirm anything: only Confirm by id changes a walker (piece 2). A turn's response reads its proposal after expiry, so a replay of an expired proposal, or a walker that dropped offline while the model answered, never comes back as `open`. The rules are one pure function, `applyRules` in `service.ts`.
