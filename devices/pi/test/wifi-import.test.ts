@@ -51,7 +51,8 @@ const remove = (ssid: string) => ["connection", "delete", "id", `walker: ${ssid}
 
 const EXAMPLE_HEADER = readFileSync(new URL("../systemd/wifi.txt.example", import.meta.url), "utf8");
 
-describe("walker-wifi-import.sh", () => {
+// Each case runs the real script with bash several times; under CI load one case took 6.7 s, past the 5 s default.
+describe("walker-wifi-import.sh", { timeout: 30_000 }, () => {
   it("W1–W6: adds each new block once, keeps comments and orphan lines, saves passwords, and a second run adds nothing", () => {
     const before = [
       EXAMPLE_HEADER.trimEnd(),
