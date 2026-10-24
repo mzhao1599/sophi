@@ -66,7 +66,11 @@ export function readPiConfig(env: NodeJS.ProcessEnv): PiConfig {
   };
 }
 
-/** `walker run`: the real service on the Pi. Not yet run on a Pi. Resolves when SIGTERM or SIGINT arrives. */
+/**
+ * `walker run`: the real service on the Pi. Ran on a Pi 5 on 2026-10-24 (paired with the Render server, online,
+ * offline and back); its buttons, mic, speaker and serial modules haven't been tried there yet. Resolves when
+ * SIGTERM or SIGINT arrives.
+ */
 export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   const log = createLogger();
   const config = readPiConfig(env);

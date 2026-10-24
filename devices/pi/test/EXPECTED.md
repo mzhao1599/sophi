@@ -150,3 +150,16 @@ Near is entered under 500 mm and left over 650 mm (*placeholder*, hysteresis). A
 6. Network down: offline within 2 heartbeats; the offline notice is spoken; a Talk press gets the local line.
 7. Network up: "I'm back online."; a Talk turn works.
 8. The fake cloud forgets the walker: the next heartbeat gets 401 and "pair me again" is spoken.
+
+## Wi-Fi from the SD card (`scripts/walker-wifi-import.sh`, added 2026-10-24)
+
+Run with bash on a temporary `wifi.txt`, with a fake `nmcli` first on `PATH` that only records its arguments, so no test touches the Mac's or a Pi's networks. What real NetworkManager does with the result was checked once on the Pi (devices/pi/README.md, "Wi-Fi on any network"), not here.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| W1 | A `name:` / `password:` block | One `nmcli connection add` named `walker: <name>` for that SSID, with WPA-PSK and the password, `connection.autoconnect yes`, `ipv4.may-fail yes`, `ipv6.method auto`, `ipv6.may-fail yes`. Any older connection of the same name is deleted first. The password line becomes `password: (saved)`. |
+| W2 | A name with spaces, a straight apostrophe or a typographic one ("M’s Phone"), or spaces around the values | The SSID is passed exactly, trimmed, as one argument. |
+| W3 | `password:` left empty | An open network: the same add without any `wifi-sec` setting. The line still becomes `password: (saved)`. |
+| W4 | A block already `password: (saved)` | Skipped: no `nmcli` call for it. |
+| W5 | Comment lines (including the example's `# name:` and `# password:`), blank lines and other text; a file saved with Windows line endings | Comments and other lines stay byte for byte and are never read as a network. A `password:` line with no `name:` line since the last block (for example under a commented-out name) adds nothing and is left as it is. A block with Windows line endings parses the same (the carriage return is not part of the name or password). |
+| W6 | A second run over the rewritten file | No `nmcli` call and the file is unchanged. A missing `wifi.txt` exits 0 with no call. |

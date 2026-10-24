@@ -11,7 +11,8 @@ import { signalChild } from "./process";
  * ground with the internal pull-up on, so pressing pulls the line low: falling = pressed, rising = released.
  * Not yet run on a Pi.
  *
- * libgpiod changed its command line between versions: Raspberry Pi OS Bookworm ships v1 (`gpiomon --bias=...
+ * libgpiod changed its command line between versions: Raspberry Pi OS trixie ships v2 (2.2.1, seen on a Pi 5 on
+ * 2026-10-24) and the older Bookworm v1 (`gpiomon --bias=...
  * --format='%o %e' gpiochip0 17 27`, where %e is 1 rising / 0 falling); v2 takes `--chip` and prints the edge
  * name with %E. Both outputs parse here; pick the flavour with WALKER_GPIOMON.
  */

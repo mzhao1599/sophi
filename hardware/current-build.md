@@ -4,6 +4,10 @@
 
 This page is the working inventory for the Cal Hacks prototype. Record substitutions, actual labels, measurements, and photos of the final wiring here before changing firmware assumptions. [Hardware and power guidance](../docs/subsystems/hardware-and-power.md) explains the safety and bench checks.
 
+## Tested on 2026-10-24
+
+The Raspberry Pi 5, 4 GB, from the compute row below ran on the official 27 W USB-C supply with Raspberry Pi OS Lite image "2026-10-06" (Debian 13 trixie, aarch64), and `vcgencmd get_throttled` read `0x0` (no undervoltage or throttling flagged since boot). That is the only hardware check so far; what the Pi service did on it is in [devices/pi/README.md](../devices/pi/README.md#set-up-the-pi).
+
 ## Purchased inventory
 
 | Area | Item and quantity | Integration note |

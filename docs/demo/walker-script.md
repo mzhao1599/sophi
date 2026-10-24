@@ -318,7 +318,7 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
 Needs Max. None of the Pi steps has been run yet.
 
 1. **Render** (Max, once): follow [Deploy on Render](../../apps/web/README.md#deploy-on-render). Paste `GEMINI_API_KEY`, and `CARTESIA_API_KEY` if there is one (or `none`). Check that `/api/v1/health` on the Render address says `{"status":"ok","walker_store":"postgres"}`. If this Mac's network filter blocks `onrender.com`, open the page on a phone or iPad.
-2. **The Pi** (Max): follow the Pi checklist in [devices/pi/README.md](../../devices/pi/README.md#set-up-the-pi-maxs-checklist-every-step-unverified):
+2. **The Pi** (Max): follow the Pi checklist in [devices/pi/README.md](../../devices/pi/README.md#set-up-the-pi):
    - OS and Node 22;
    - Talk on GPIO17 and Confirm on GPIO27, declared with `WALKER_GPIO_BUTTONS=wired`;
    - a USB microphone and speaker;

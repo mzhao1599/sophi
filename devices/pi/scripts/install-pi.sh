@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Installs Steady's walker service on a Raspberry Pi. NOT YET RUN ON A PI.
+# Installs Steady's walker service on a Raspberry Pi. Ran as far as the walker service on a Pi 5 with
+# Raspberry Pi OS trixie on 2026-10-24, and again with the Wi-Fi part the same night.
 # Usage, on the Pi, from a copy of devices/pi: sudo ./scripts/install-pi.sh dist/walker.mjs
 # What it does: creates the `steady` system user, copies the bundle to /opt/steady-walker, creates the
 # 0700 state folder, installs the systemd unit and (only if missing) /etc/steady-walker.env, and enables
-# the service. It does not pair the walker or start the service: see devices/pi/README.md.
+# the service. It also installs the Wi-Fi helpers (walker-wifi.service reads the SD card's wifi.txt at
+# boot; `sudo walker-wifi-add.sh` adds a network over SSH) and puts the instructions file on the card if
+# it has none. It does not pair the walker or start the service: see devices/pi/README.md.
 set -euo pipefail
 
 bundle="${1:-}"
@@ -47,6 +50,20 @@ if [[ ! -f /etc/steady-walker.env ]]; then
   echo "Wrote /etc/steady-walker.env from the example: edit the ALSA names and pins before starting."
 fi
 install -m 0644 "$here/systemd/steady-walker.service" /etc/systemd/system/steady-walker.service
+
+# Wi-Fi on any network: wifi.txt on the card's boot partition (editable from any computer), read at boot.
+install -m 0755 "$here/scripts/walker-wifi-import.sh" /opt/steady-walker/walker-wifi-import.sh
+install -m 0755 "$here/scripts/walker-wifi-add.sh" /opt/steady-walker/walker-wifi-add.sh
+ln -sf /opt/steady-walker/walker-wifi-add.sh /usr/local/sbin/walker-wifi-add.sh
+install -m 0644 "$here/systemd/walker-wifi.service" /etc/systemd/system/walker-wifi.service
+if [[ ! -d /boot/firmware ]]; then
+  echo "Note: no /boot/firmware on this system, so no wifi.txt was put on the card." >&2
+elif [[ ! -f /boot/firmware/wifi.txt ]]; then
+  # Plain cp: the boot partition is FAT, which can't take the file modes `install` would set.
+  cp "$here/systemd/wifi.txt.example" /boot/firmware/wifi.txt
+  echo "Wrote /boot/firmware/wifi.txt: add Wi-Fi networks there from any computer (README, \"Wi-Fi on any network\")."
+fi
+
 systemctl daemon-reload
-systemctl enable steady-walker.service
+systemctl enable walker-wifi.service steady-walker.service
 echo "Installed and enabled (not started). Next: edit /etc/steady-walker.env, pair, then sudo systemctl start steady-walker."

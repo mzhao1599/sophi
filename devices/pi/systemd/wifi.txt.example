@@ -1,0 +1,10 @@
+# Wi-Fi networks for Steady's walker.
+#
+# To add a network from any computer: put the walker's SD card in the computer, open this file
+# (wifi.txt, on the card's "bootfs" drive), add a block like the one below, save, and put the card
+# back in the walker. On its next start the walker adds the network and replaces the password here
+# with "(saved)", so the password doesn't stay on the card. Leave the password empty for an open
+# network. Networks that need a sign-in web page won't work; use a phone hotspot instead.
+#
+# name: Example Network
+# password: example-password

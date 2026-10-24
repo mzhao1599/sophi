@@ -1,0 +1,13 @@
+[Unit]
+Description=Add the Wi-Fi networks listed in the SD card's wifi.txt
+After=NetworkManager.service
+Wants=NetworkManager.service
+Before=network-online.target steady-walker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/steady-walker/walker-wifi-import.sh /boot/firmware/wifi.txt
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
