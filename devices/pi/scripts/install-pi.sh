@@ -6,7 +6,11 @@
 # 0700 state folder, installs the systemd unit and (only if missing) /etc/steady-walker.env, and enables
 # the service. It also installs the Wi-Fi helpers (walker-wifi.service reads the SD card's wifi.txt at
 # boot; `sudo walker-wifi-add.sh` adds a network over SSH) and puts the instructions file on the card if
-# it has none. It does not pair the walker or start the service: see devices/pi/README.md.
+# it has none. It also installs four small system settings from systemd/ (README, "Set up the Pi"): the
+# soundbar's udev name, its full volume at each service start, a journal kept across power-offs, and a
+# power button that ignores a short press. Those four were set by hand on the Pi on 2026-10-24 with the
+# same contents, then this script installed them over those on the same Pi (2026-10-24, 23:28). It does not pair the walker or
+# start the service.
 set -euo pipefail
 
 bundle="${1:-}"
@@ -50,6 +54,24 @@ if [[ ! -f /etc/steady-walker.env ]]; then
   echo "Wrote /etc/steady-walker.env from the example: edit the ALSA names and pins before starting."
 fi
 install -m 0644 "$here/systemd/steady-walker.service" /etc/systemd/system/steady-walker.service
+# Our soundbar at full volume each time the service starts (it came up at 30%).
+install -d -m 0755 /etc/systemd/system/steady-walker.service.d
+install -m 0644 "$here/systemd/steady-walker.service.d/10-volume.conf" /etc/systemd/system/steady-walker.service.d/10-volume.conf
+
+# Our soundbar's ALSA card is always called "Speaker" (applies when it's next plugged in, or at boot).
+install -m 0644 "$here/systemd/85-walker-audio.rules" /etc/udev/rules.d/85-walker-audio.rules
+udevadm control --reload-rules
+
+# Keep the journal across power-offs (Raspberry Pi OS keeps it in memory only).
+install -d -m 0755 /etc/systemd/journald.conf.d
+install -m 0644 "$here/systemd/journald-walker.conf" /etc/systemd/journald.conf.d/90-walker-persistent.conf
+systemctl restart systemd-journald
+journalctl --flush
+
+# A short press of the Pi 5's power button does nothing (holding it ~10 s still forces it off).
+install -d -m 0755 /etc/systemd/logind.conf.d
+install -m 0644 "$here/systemd/logind-walker.conf" /etc/systemd/logind.conf.d/90-walker-power-key.conf
+systemctl kill -s HUP systemd-logind
 
 # Wi-Fi on any network: wifi.txt on the card's boot partition (editable from any computer), read at boot.
 install -m 0755 "$here/scripts/walker-wifi-import.sh" /opt/steady-walker/walker-wifi-import.sh

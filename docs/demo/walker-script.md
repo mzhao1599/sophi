@@ -14,15 +14,16 @@ The onboarding demo's script is [script.md](script.md); it stays the source for 
 
 **What is real today:**
 - the walker assistant's server, with pairing, heartbeats, the assistant turn on Google's Gemini, offers and Confirm, on Postgres;
-- the Pi service, which runs here as the simulator on a Mac;
+- the Pi service, rehearsed as the simulator on a Mac (the results below);
+- since the night of 2026-10-24, the real walker hardware so far: a Raspberry Pi 5 running the walker service with a real USB microphone and USB soundbar and one real ESP32 hand board (its Talk button, for now a temporary wire), paired to the server on Render. One real spoken turn ran on it: "What can you help me with?", answered by Gemini about 4 seconds after Talk was let go and heard through the soundbar in Cartesia's voice ([what each Pi step showed](../../devices/pi/README.md#set-up-the-pi));
 - the "Your walker" page.
 
-**What is simulated tonight:** the whole walker. The simulator stands in for the Raspberry Pi's buttons, microphone and speaker, the hand controls and the obstacle sensors. The page labels every one of them "Simulated", and the whole walker "Simulator".
+**What is simulated:** in the Mac rehearsal, the whole walker: the simulator stands in for the buttons, microphone and speaker, the hand controls and the obstacle sensors. The page labels every one of them "Simulated", and the whole walker "Simulator". On the real Pi, the obstacle sensors and the other hand are still simulated or missing, and the page labels whatever is simulated.
 
 **What is planned or unverified:**
-- the real Pi, which isn't connected yet;
-- the ESP32 hand and obstacle boards, whose firmware is tested on a computer but hasn't run on a board;
-- Cartesia's voice in the demo itself: the key is in and a reply came back in Cartesia's voice from the deployed server on 2026-10-24, but the rehearsal above ran before that, in the walker's own voice.
+- the six beats on the real Pi: only the one spoken turn above has run on it; Confirm, obstacles, the alert change, the offline beat and a full run haven't been rehearsed on hardware;
+- the ESP32 obstacle board, whose firmware is tested on a computer but hasn't run with the Pi; and a haptic cue sent by the Pi to the hand board;
+- Cartesia's voice in a rehearsal: the rehearsal below ran before the key was in, in the walker's own voice. Cartesia's voice has since been heard from the deployed server and on the real Pi's one turn (2026-10-24).
 
 Nothing in this script presents a simulated or planned part as working.
 
@@ -164,7 +165,7 @@ Say these when they come up, in these words or close to them.
 - **What it can change:** "The model can only offer one change: how alerts reach you. Nothing changes until a person presses Confirm, and the offer expires after a minute. Voice can't confirm."
 - **Motion:** "Nothing in this build can move the arms or the lift. There is no motion command at all."
 - **Obstacles:** "The buzz is a proximity cue from the walker itself, not collision avoidance. A missing or old reading is unknown, never clear."
-- **Numbers:** only our own timings, and say they're ours (the rehearsal results below). The hardware isn't measured: the boards' firmware has been tested on a computer, not on a board.
+- **Numbers:** only our own timings, and say they're ours (the rehearsal results below). On the real Pi there is one measured turn so far (about 4 seconds from letting go of Talk to the answer arriving); nothing else on the hardware is measured.
 - **What's kept:** "Voice clips are sent to Gemini for one answer and dropped; Steady never stores them. Google's free tier may keep what it receives. The words and replies are deleted from Steady after an hour, or at once with Forget this walker."
 - **It's not Wren's walker:** if this follows the onboarding demo, "Wren's setup has voice off; this is a walker set up with voice on."
 
@@ -186,15 +187,15 @@ Say these when they come up, in these words or close to them.
 
 **6. Can it move?** No. There is no motion command anywhere in this build. The only thing the walker can make a part do is play one of four fixed haptic patterns, for at most a second.
 
-**7. How fast is it?** These are our timings from the rehearsal below, on a laptop with the simulator: from releasing Talk to the reply's text arriving, 1.9 to 4.6 seconds, with a median of 2.7 seconds, over 16 spoken turns; 2 of them took over 4 seconds. The walker then has to say it: the Pi writes the whole line with its own voice before playing it, so the time until it's heard is longer, and we haven't measured it. The target in our design is 4 seconds to the start of a spoken answer. The real Pi isn't measured yet.
+**7. How fast is it?** These are our timings from the rehearsal below, on a laptop with the simulator: from releasing Talk to the reply's text arriving, 1.9 to 4.6 seconds, with a median of 2.7 seconds, over 16 spoken turns; 2 of them took over 4 seconds. The walker then has to say it: the Pi writes the whole line with its own voice before playing it, so the time until it's heard is longer, and we haven't measured it. The target in our design is 4 seconds to the start of a spoken answer. On the real Pi, one turn so far: 3.96 seconds from letting go of Talk to the answer arriving from Render (2026-10-24); one turn isn't a timing range.
 
-**8. Which models?** Google's Gemini (`gemini-3.7-flash`) hears the clip and writes the answer in one call. Cartesia's text-to-speech (`sonic-3.6`, a stock voice; no one's voice is cloned) speaks it once the server has a key. Tonight there's no Cartesia key, so the walker speaks with its own voice.
+**8. Which models?** Google's Gemini (`gemini-3.7-flash`) hears the clip and writes the answer in one call. Cartesia's text-to-speech (`sonic-3.6`, a stock voice; no one's voice is cloned) speaks it; the server has had a key since 2026-10-24. If Cartesia's audio doesn't come, the walker speaks with its own voice (Piper on the Pi).
 
 **9. Who can see the page?** The browser that paired the walker, through a cookie; there are no accounts yet. A walker is paired with a one-time 6-digit code that lasts 10 minutes. The walker gets its own key, and the server keeps only a hash of it. Five wrong codes lock pairing for 10 minutes.
 
 **10. Does it work without sight or speech?** Every spoken answer also appears on the page. Every offer can be confirmed from the page or the walker's button. The page works by keyboard and announces new replies, walker lines and offers once through a polite live region. It was checked by keyboard alone, at 390 px wide and at 200% zoom, and with reduced motion, in a headless browser against the page's development fake on 2026-10-24. A VoiceOver or NVDA pass is still to do.
 
-**11. What's real hardware here?** Tonight, none of it: it's the simulator, and the page says so on every part. The real Pi isn't connected yet. The ESP32 firmware for the hand controls and obstacle sensors compiles and is tested on a computer, but hasn't run on a board.
+**11. What's real hardware here?** On the Mac simulator, none of it, and the page says so on every part. On the real walker: the Raspberry Pi 5 running the walker service, its USB microphone and soundbar, and one ESP32 hand board whose Talk button is, for now, a temporary wire. The obstacle sensors and the other hand are still simulated or not fitted, and the page labels anything simulated. The obstacle board's firmware is tested on a computer but hasn't run with the Pi. Nothing in this build can move: there is no motion command.
 
 ## The 60-second cut
 
@@ -315,7 +316,7 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
 
 ### B. The real Pi on Max's phone hotspot, server on Render
 
-Needs Max. None of the Pi steps has been run yet.
+Needs Max. On the night of 2026-10-24 the Pi steps ran up to one spoken turn: OS, Node, the service, pairing with Render, the USB mic and soundbar, Piper, and one ESP32 hand board for Talk ([what each showed](../../devices/pi/README.md#set-up-the-pi)). Not yet run on the Pi: the GPIO buttons, Confirm, an obstacle board, and the six beats in order.
 
 1. **Render** (Max, once): follow [Deploy on Render](../../apps/web/README.md#deploy-on-render). Paste `GEMINI_API_KEY`, and `CARTESIA_API_KEY` if there is one (or `none`). Check that `/api/v1/health` on the Render address says `{"status":"ok","walker_store":"postgres"}`. If this Mac's network filter blocks `onrender.com`, open the page on a phone or iPad.
 2. **The Pi** (Max): follow the Pi checklist in [devices/pi/README.md](../../devices/pi/README.md#set-up-the-pi):
@@ -327,7 +328,7 @@ Needs Max. None of the Pi steps has been run yet.
    Each step there says what to check.
 3. **Network:** the Pi joins Max's phone hotspot, and the laptop stays on venue Wi-Fi. That way, turning off the hotspot (beat 6) takes only the walker offline.
 4. **Pair:** open `/walker` on the Render address, press "Get a pairing code", and on the Pi run the pair command from the Pi checklist with `--server https://<the Render address>`. The page switches to the walker. On a sleeping free server the first request can take a minute: the Pi wakes it before using the code.
-5. **Obstacle sensors and hand boards:** their firmware hasn't run on a board. If no sensor board is connected, the page shows "No obstacle sensors reporting." In that case skip beat 3, and in beat 4 say the cue change is saved for when the sensors are fitted. If no hand board is connected, Talk and Confirm are the Pi's GPIO buttons.
+5. **Obstacle sensors and hand boards:** one hand board (`hand-left-01`) has run with the Pi, giving Talk on a temporary wire; the obstacle board hasn't. If no sensor board is connected, the page shows "No obstacle sensors reporting." In that case skip beat 3, and in beat 4 say the cue change is saved for when the sensors are fitted. If no hand board is connected, Talk and Confirm are the Pi's GPIO buttons.
 6. **Cartesia,** only with a key: the page says "In Cartesia's voice"† under spoken replies. Its terms (read 2026-10-24) allow training on inputs unless agreed otherwise, so the same scripted-lines-only rule as Gemini's free tier applies.
 7. **Run it once** on the venue network: all six beats, including the hotspot off and on. Time beat 6's return on the real hotspot; it isn't measured.
 8. **Card on the walker:** "Only the presenter speaks to this walker. Type on the page instead; it says where typed words go."
