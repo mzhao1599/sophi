@@ -418,6 +418,27 @@ void test_B2_contact_bounce_gives_one_edge() {
   CHECK(at == 58);  // 20 ms after the last flip at 38
 }
 
+void test_B2_short_release_during_hold_is_ignored() {
+  Debouncer button(20, 250);
+  for (uint32_t t = 0; t < 50; ++t) CHECK(button.update(false, t) == Debouncer::Result::None);
+  int presses = 0;
+  int releases = 0;
+  for (uint32_t t = 50; t < 800; ++t) {
+    // Two open-contact gaps while the user is still holding the button.
+    const bool pressed = !(t >= 200 && t < 320) && !(t >= 400 && t < 570);
+    const auto edge = button.update(pressed, t);
+    if (edge == Debouncer::Result::Pressed) ++presses;
+    if (edge == Debouncer::Result::Released) ++releases;
+  }
+  CHECK(presses == 1);
+  CHECK(releases == 0);
+  for (uint32_t t = 800; t <= 1050; ++t) {
+    const auto edge = button.update(false, t);
+    if (edge == Debouncer::Result::Released) ++releases;
+  }
+  CHECK(releases == 1);
+}
+
 void test_B4_button_held_at_boot_is_ignored_until_released() {
   Debouncer button;
   for (uint32_t t = 0; t < 500; ++t) CHECK(button.update(true, t) == Debouncer::Result::None);
@@ -546,6 +567,7 @@ int main() {
   RUN(test_H8_each_pattern_is_a_finite_sequence);
   RUN(test_B1_B3_debounced_press_and_release);
   RUN(test_B2_contact_bounce_gives_one_edge);
+  RUN(test_B2_short_release_during_hold_is_ignored);
   RUN(test_B4_button_held_at_boot_is_ignored_until_released);
   RUN(test_B5_button_lines);
   RUN(test_Z1_to_Z3_range_status);

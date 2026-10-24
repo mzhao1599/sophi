@@ -154,8 +154,8 @@ class Drv2605Output : public walker::HapticOutput {
 board::SerialOutput output;
 Drv2605Output driver;
 walker::HapticController cue(driver);
-walker::Debouncer talk;
-walker::Debouncer confirm;
+walker::Debouncer talk(walker::kButtonDebounceMs, walker::kHandReleaseDebounceMs);
+walker::Debouncer confirm(walker::kButtonDebounceMs, walker::kHandReleaseDebounceMs);
 walker::ModuleCore* core = nullptr;
 bool hasHaptic = false;
 

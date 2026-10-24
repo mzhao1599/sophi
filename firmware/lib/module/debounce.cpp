@@ -9,7 +9,8 @@ Debouncer::Result Debouncer::update(bool pressed, uint32_t now) {
     candidateSince_ = now;
     return Result::None;
   }
-  if (now - candidateSince_ < stableMs_) return Result::None;
+  const uint32_t settleMs = settled_ && stable_ && !candidate_ ? releaseStableMs_ : stableMs_;
+  if (now - candidateSince_ < settleMs) return Result::None;
   if (!settled_) {
     settled_ = true;
     stable_ = candidate_;

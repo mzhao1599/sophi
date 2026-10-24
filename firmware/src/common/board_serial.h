@@ -9,7 +9,7 @@
 namespace board {
 
 constexpr unsigned long kBaud = 115200;
-constexpr const char* kFirmwareVersion = "0.1.0";
+constexpr const char* kFirmwareVersion = "0.1.1";
 
 // Writes a whole line or nothing: if the transmit buffer can't take all of it now, the line is dropped
 // (the core then counts it as tx_dropped), so the loop never blocks on a slow port.

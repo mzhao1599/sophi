@@ -44,7 +44,7 @@ The Pi should maintain a capability manifest based on **detected and healthy** m
 
 ## Example: hand button to voice answer
 
-The right-hand ESP32 emits a `hand.input` edge for GPIO32. The Pi treats that as Talk, gives an immediate recording cue, and captures audio with a maximum duration. The left-hand ESP32 uses the same wire event for its GPIO32 control, but the Pi maps it to Confirm. On right-hand Talk release, the Pi uploads a bounded clip; the cloud returns text and possibly audio, and the Pi plays the response. If the cloud times out, it discards the clip and gives a local offline line. A new Talk press while recording ends the recording. Ensure there is a way to cancel without precise finger movement. This side mapping needs a physical two-handle check.
+The right-hand ESP32 emits a `hand.input` edge for GPIO32. The Pi treats that as Talk, gives an immediate recording cue, and captures audio with a maximum duration. The left-hand ESP32 uses the same wire event for its GPIO32 control, but the Pi maps it to Confirm. On right-hand Talk release, the firmware requires 250 ms of continuous release and the Pi waits another 900 ms before closing the recording. A re-press from the same hand during that grace continues one recording; a duplicate press while held is ignored. After the grace, the Pi uploads a bounded clip; the cloud returns text and possibly audio, and the Pi plays the response. If the cloud times out, it discards the clip and gives a local offline line. A Talk press after upload while waiting for the answer cancels that turn. Ensure there is a way to cancel without precise finger movement. This side mapping needs a physical two-handle check.
 
 ## Example: local obstacle cue
 

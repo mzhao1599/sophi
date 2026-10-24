@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SerialHapticPlaySchema } from "@walker/contracts";
-import { CONFIRM_PRESS_HAPTIC_MS, TALK_PRESS_HAPTIC_MS } from "../src/constants";
+import { CONFIRM_PRESS_HAPTIC_MS, ESP32_TALK_RELEASE_GRACE_MS, TALK_PRESS_HAPTIC_MS } from "../src/constants";
 import { boot, flush, makeHarness, type Harness } from "./support/fakes";
 
 /** The haptic.play lines the Pi actually wrote to the simulated hand, as "pattern ms". */
@@ -23,7 +23,7 @@ async function handTalk(h: Harness): Promise<void> {
   h.hand!.press("talk", "pressed");
   await h.clock.advance(2000);
   h.hand!.press("talk", "released");
-  await flush();
+  await h.clock.advance(ESP32_TALK_RELEASE_GRACE_MS);
 }
 
 describe("press buzz: the hand that was pressed buzzes", () => {
@@ -41,7 +41,7 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     expect(h.service.talk).toBe("recording");
     await h.clock.advance(2000);
     h.hand!.press("talk", "released");
-    await flush();
+    await h.clock.advance(ESP32_TALK_RELEASE_GRACE_MS);
     // The release doesn't buzz; the turn goes out as usual.
     expect(handLines(h)).toEqual([`hand-right-01 recording ${TALK_PRESS_HAPTIC_MS}`]);
     expect(h.client.calls.filter((c) => c === "turn")).toHaveLength(1);

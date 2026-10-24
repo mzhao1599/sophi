@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CapabilityManifestSchema } from "@walker/contracts";
 import { toneWav } from "../src/audio/wav";
+import { ESP32_TALK_RELEASE_GRACE_MS } from "../src/constants";
 import { LINES } from "../src/notices";
 import { boot, flush, makeHarness, pairInto, type Harness } from "./support/fakes";
 
@@ -65,6 +66,30 @@ describe("boot and pairing", () => {
 });
 
 describe("Talk", () => {
+  it("a brief ESP32 release and re-press keeps one recording and one turn", async () => {
+    const h = makeHarness();
+    await boot(h);
+    const edge = (kind: "pressed" | "released") =>
+      h.bus.emit("button", { button: "talk", edge: kind, source: "esp32", detail: "hand-right-01" });
+    edge("pressed");
+    await h.clock.advance(1000);
+    edge("released");
+    await h.clock.advance(500);
+    edge("pressed");
+    edge("pressed"); // a duplicate edge while held also must not toggle the mic
+    expect(h.service.talk).toBe("recording");
+    expect(h.capture.starts).toBe(1);
+    expect(h.client.calls).not.toContain("turn");
+    await h.clock.advance(1000);
+    edge("released");
+    await h.clock.advance(ESP32_TALK_RELEASE_GRACE_MS - 1);
+    expect(h.client.calls).not.toContain("turn");
+    await h.clock.advance(1);
+    expect(h.client.calls.filter((call) => call === "turn")).toHaveLength(1);
+    expect(h.capture.starts).toBe(1);
+    expect(h.spoken("local_reply")).not.toContain(LINES.cancelled);
+  });
+
   it("B1: hold 2 s and release: listening cue, one turn with a 2 s 16 kHz WAV, reply spoken, clip zeroed", async () => {
     const h = makeHarness();
     await boot(h);
@@ -178,8 +203,8 @@ describe("Talk", () => {
     h.hand!.press("talk", "pressed");
     await h.clock.advance(1500);
     h.hand!.press("talk", "released");
-    await flush();
-    expect(h.device()?.clips).toEqual([{ bytes: 48_044, durationMs: 1500 }]);
+    await h.clock.advance(ESP32_TALK_RELEASE_GRACE_MS);
+    expect(h.device()?.clips).toEqual([{ bytes: 76_844, durationMs: 2400 }]);
   });
 });
 

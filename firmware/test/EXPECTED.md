@@ -67,7 +67,7 @@ Each Pi line gets the reply below. "Same code as the contract" means the problem
 | --- | --- | --- |
 | B1 | Talk pressed and held | One `hand.input` `{"button":"talk","edge":"pressed"}` 20 ms (*placeholder*) after the level settles. |
 | B2 | Contact bounce: the level flips at 0, 3, 5, 7 and 8 ms, then stays pressed | No edge until the level has held for 20 ms, then exactly one `pressed`. |
-| B3 | Released | One `released`, the same way. |
+| B3 | Hand button released | One `released` after 250 ms continuously released. A shorter open-contact gap during a hold produces no edge; the next stable press is still the same hold. |
 | B4 | A button held down at boot | No edge at all until it has been seen released; the next press reports normally. A stuck button can't start a recording on its own. |
 | B5 | Talk and Confirm | Named `talk` and `confirm` on the wire, matching `button.talk` and `button.confirm` in the hello. |
 

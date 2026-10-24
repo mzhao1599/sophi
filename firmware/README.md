@@ -74,7 +74,9 @@ Assumptions to check: the DRV2605L board has its own I2C pull-up resistors (Adaf
 
 ### Buttons
 
-A button's level must stay the same for 20 ms (*placeholder, not measured*) before the board reports a `pressed` or `released` edge, which filters out contact bounce. A button already held down when the board starts is ignored until it has been released once, so a stuck button can't start a recording on its own. The buttons are named `talk` and `confirm` on the wire, matching `button.talk` and `button.confirm` in the hello, which is what the Pi expects.
+A hand button must stay down for 20 ms before the board reports `pressed`. Once held, it must stay released for 250 ms before the board reports `released`. The longer release filter was added after the Pi logged repeated right-button releases followed by new presses only 65–170 ms later during an intended hold on 2026-10-24; each new press restarted the microphone. Both values are prototype choices, not a measurement of the switch's bounce specification. Release now reaches the Pi about 250 ms after the physical action. A button already held when the board starts is ignored until it has been released once, so a stuck button cannot start a recording on its own. The buttons are named `talk` and `confirm` on the wire, matching `button.talk` and `button.confirm` in the hello. If a hold still splits into multiple presses, inspect the GPIO32-to-button-to-GND wiring and strengthen the pull-up instead of increasing this delay indefinitely.
+
+Firmware `0.1.1` with this filter was flashed to both physical handles on 2026-10-24; each app image was read back and verified. The Pi then logged `hand-right-01` and `hand-left-01`, both version `0.1.1` and healthy. The owner's repeat-hold check is pending.
 
 ### Haptic cues (AGENTS.md rule 8)
 

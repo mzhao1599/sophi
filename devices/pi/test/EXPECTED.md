@@ -32,6 +32,7 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 | B1 | Online, idle. Talk pressed (GPIO), released after 2 s | "listening" cue, then the mic opens. On release: "done" cue, one turn sent with a fresh `client_turn_id` and a 16 kHz mono 16-bit WAV of 2 s (64,044 bytes). The reply is spoken. The clip buffer is zeroed once the request settles. |
 | B2 | Talk held past 15 s | Recording stops at 15 s and the turn is sent. The clip is at most 480,044 bytes (under 1 MB). The later release does nothing. |
 | B3 | Talk tapped for under 300 ms (*placeholder*) | Nothing is sent. Spoken "I didn't catch that. Hold Talk while you speak." |
+| B24 | ESP32 Talk briefly released and re-pressed | The firmware filters releases shorter than 250 ms. If a release reaches the Pi, it waits another 900 ms before sending; a re-press from that same hand during the grace continues the original recording, with one mic start and one turn. A duplicate pressed edge during the hold is ignored. An actual release adds 900 ms before the clip is sent. |
 | B4 | Talk pressed while a turn is waiting | The request is aborted, "Cancelled." is spoken, and a late reply is never spoken. |
 | B5 | Talk pressed while a reply is being spoken | Speech stops and a new recording starts. |
 | B6 | Keyboard (simulator): Talk, Talk | First press starts recording, the second press sends. A terminal can't see key release, so no release events exist. |

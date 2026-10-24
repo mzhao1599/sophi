@@ -48,6 +48,8 @@ export const CONFIRM_PRESS_HAPTIC_MS = 700;
 export const GPIOMON_SETTLE_MS = 1000;
 /** Placeholder, not measured: a GPIO button must hold a level this long before the Pi believes it. */
 export const GPIO_DEBOUNCE_MS = 30;
+/** Prototype: keep an ESP32 Talk recording open through a brief release and re-press. Adds this much send delay. */
+export const ESP32_TALK_RELEASE_GRACE_MS = 900;
 
 // ---- Voice clips (from the walker contract: at most 15 s, 16 kHz mono 16-bit WAV, at most 1 MB) ----
 

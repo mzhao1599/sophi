@@ -9,6 +9,7 @@ import { PiSpeaker } from "../src/audio/speech";
 import { Bus } from "../src/bus";
 import { GpioButtons } from "../src/buttons";
 import { CuePolicy } from "../src/cues";
+import { ESP32_TALK_RELEASE_GRACE_MS } from "../src/constants";
 import { LINES } from "../src/notices";
 import { listSerialPorts, sttyArgs } from "../src/serial/port";
 import { SimulatedPort } from "../src/sim/fakeModules";
@@ -386,7 +387,7 @@ describe("S16: a re-hello from a known module (hello.request, PR #28)", () => {
     expect(hellos()).toBe(before + 1);
     expect(h.service.talk).toBe("recording");
     h.hand!.press("talk", "released");
-    await flush();
+    await h.clock.advance(ESP32_TALK_RELEASE_GRACE_MS);
     expect(h.client.calls).toContain("turn");
   });
 

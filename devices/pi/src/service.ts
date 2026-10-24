@@ -18,6 +18,7 @@ import {
   CLIP_MAX_MS,
   CLIP_MIN_MS,
   CONFIRM_PRESS_HAPTIC_MS,
+  ESP32_TALK_RELEASE_GRACE_MS,
   HEARTBEAT_BACKOFF_MS,
   HEARTBEAT_DEADLINE_MS,
   HEARTBEAT_INTERVAL_MS,
@@ -175,9 +176,11 @@ interface PendingTurn {
  * network. Nothing records until a Talk press, the model never speaks unprompted, and every line the Pi says
  * on its own also goes to the walker page (as a heartbeat event).
  *
- * Talk (the design's button map): hold to talk, release to send; a press while waiting cancels; a press while
- * a reply is playing stops it and starts listening. The simulator keyboard only presses, so a second press
- * sends. Confirm answers the open proposal by id; with none it plays the "nothing to confirm" sound. The Pi
+ * Talk (the design's button map): hold to talk, release to send. The ESP32 handle waits briefly after a
+ * release so a quick re-press continues the same recording; after the turn is sent, a press while waiting
+ * cancels. A press while a reply is playing stops it and starts listening. The simulator keyboard only
+ * presses, so a second press sends. Confirm answers the open proposal by id; with none it plays the
+ * "nothing to confirm" sound. The Pi
  * never judges a proposal's expiry by its own clock: the server says whether it is still open.
  */
 export class WalkerService {
@@ -190,6 +193,7 @@ export class WalkerService {
   private cloud: CloudClient | null = null;
   private failures = 0;
   private recording: Recording | null = null;
+  private cancelTalkRelease: Cancel | null = null;
   private turn: PendingTurn | null = null;
   private readonly unheardTurns: string[] = [];
   /** Bumped whenever a turn, Confirm, cancel or link change learns something newer about the open proposal. */
@@ -240,6 +244,8 @@ export class WalkerService {
     this.cancelHeartbeat?.();
     this.recording?.session?.abort();
     this.recording?.cancelMax?.();
+    this.cancelTalkRelease?.();
+    this.cancelTalkRelease = null;
     this.recording = null;
     this.turn?.abort.abort(new CancelledError("Service stopped."));
     this.voice.stopAll();
@@ -252,10 +258,27 @@ export class WalkerService {
     if (this.stopped) return;
     if (event.button === "talk") {
       if (event.edge === "pressed") {
+        // A hand button briefly opening during a hold must not start another mic or cancel the turn.
+        if (event.source === "esp32" && this.talk === "recording" &&
+            this.recording?.source === event.source && this.recording.detail === event.detail) {
+          this.cancelTalkRelease?.();
+          this.cancelTalkRelease = null;
+          return;
+        }
         this.talkPressed(event);
         // After the press is handled, so the buzz never delays the listening sound or the mic.
         this.pressBuzz(event, "recording");
-      } else if (this.talk === "recording") void this.finishRecording();
+      } else if (this.talk === "recording" && this.recording?.source === event.source &&
+                 this.recording.detail === event.detail) {
+        if (event.source === "esp32") {
+          if (!this.cancelTalkRelease) {
+            this.cancelTalkRelease = this.deps.clock.setTimeout(() => {
+              this.cancelTalkRelease = null;
+              void this.finishRecording();
+            }, ESP32_TALK_RELEASE_GRACE_MS);
+          }
+        } else void this.finishRecording();
+      }
     } else if (event.edge === "pressed") {
       void this.confirmPressed(event);
     }
@@ -347,6 +370,8 @@ export class WalkerService {
     const recording = this.recording;
     if (!recording || this.talk !== "recording" || recording.source !== lost.source) return;
     if (lost.source === "esp32" && recording.detail !== lost.detail) return;
+    this.cancelTalkRelease?.();
+    this.cancelTalkRelease = null;
     this.recording = null;
     recording.cancelMax?.();
     recording.session?.abort();
@@ -358,6 +383,8 @@ export class WalkerService {
   private async finishRecording(): Promise<void> {
     const recording = this.recording;
     if (!recording || this.talk !== "recording") return;
+    this.cancelTalkRelease?.();
+    this.cancelTalkRelease = null;
     this.recording = null;
     recording.cancelMax?.();
     const heldMs = this.deps.clock.monotonic() - recording.openedAt;
