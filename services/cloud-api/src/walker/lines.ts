@@ -98,5 +98,7 @@ export function distanceLine(status: WalkerStatusView): string {
   });
   const extra = status.zones.length - zones.length;
   const prefix = `The obstacle sensors read ${zones.join("; ")}${extra ? `; ${extra} more readings` : ""}.`;
-  return status.zones.some((zone) => zone.simulated) ? `${prefix} ${SIMULATED_READINGS}` : prefix;
+  const simulated = status.zones.filter((zone) => zone.simulated).length;
+  if (simulated === 0) return prefix;
+  return `${prefix} ${simulated === status.zones.length ? SIMULATED_READINGS : "Some readings are simulated."}`;
 }
