@@ -7,7 +7,9 @@
 // It reads GEMINI_API_KEY from the environment, or else from apps/web/.env.local (WALKER_LIVE_ENV_FILE
 // names another file), and never prints it. Only the presenter's scripted, fictional lines and three
 // fresh wordings reach the model, and the voice is synthetic, so no real person is recorded. Each turn's
-// latency is printed. WALKER_LIVE_RUNS sets the runs per mode (3).
+// latency and the model that answered it are printed. The models are the server's own, from
+// walkerModelsFromEnv: WALKER_AGENT_MODEL, WALKER_BACKUP_MODEL ("none" for one model) and
+// WALKER_BACKUP_AFTER_MS apply here as on the server. WALKER_LIVE_RUNS sets the runs per mode (3).
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +17,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { sameCues, type CapabilityManifest, type DeviceTurnRequest, type WalkerTurnResponse } from "@walker/contracts";
-import { MemoryWalkerStore, WalkerService, createGeminiModel, createWalkerAssistant, type TurnEvent } from "../../src";
+import { MemoryWalkerStore, WalkerService, createWalkerAssistantFor, walkerModelsFromEnv, type TurnEvent } from "../../src";
 import { PRESS_CONFIRM, SIMULATED_READINGS } from "../../src/walker/lines";
 import { Clock, snapshot } from "./support";
 
@@ -47,6 +49,9 @@ function demoManifest(clock: Clock): CapabilityManifest {
 const live = process.env.WALKER_LIVE === "1";
 const ENV_FILE = process.env.WALKER_LIVE_ENV_FILE?.trim() || fileURLToPath(new URL("../../../../apps/web/.env.local", import.meta.url));
 if (live && existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+
+/** The walker's models as the server picks them from its environment. */
+const MODELS = walkerModelsFromEnv(process.env);
 
 const ARMS = "This walker doesn't have robot arms, so I can't pick things up or move things.";
 const words = (s: string) => s.toLowerCase().replace(/[^a-z ]/g, "").split(/\s+/).filter(Boolean);
@@ -110,7 +115,7 @@ describe.skipIf(!live)("live walker turns on Gemini", () => {
       const clock = new Clock();
       clock.t = Date.now();
       const service = new WalkerService(new MemoryWalkerStore(), {
-        assistant: createWalkerAssistant({ model: createGeminiModel({ apiKey }) }),
+        assistant: createWalkerAssistantFor(apiKey, MODELS),
         onTurn: (e) => events.push(e),
       });
       const rows: string[] = [];
@@ -139,7 +144,7 @@ describe.skipIf(!live)("live walker turns on Gemini", () => {
         const r = await service.turn({ kind: "device", credential: w.credential }, w.id, request);
         const ms = Math.round(performance.now() - started);
         const e = events.at(-1)!;
-        rows.push(`${beat.padEnd(3)} ${mode.padEnd(5)} run ${run} ${String(ms).padStart(5)} ms (model ${e.model_ms}, tries ${e.attempts}) ${r.turn.answered_by.padEnd(5)} heard=${JSON.stringify(r.turn.heard)} reply=${JSON.stringify(r.turn.reply)}`);
+        rows.push(`${beat.padEnd(3)} ${mode.padEnd(5)} run ${run} ${String(ms).padStart(5)} ms (model ${e.model_ms}, tries ${e.attempts}, ${e.model ?? "none"}) ${r.turn.answered_by.padEnd(5)} heard=${JSON.stringify(r.turn.heard)} reply=${JSON.stringify(r.turn.reply)}`);
         try {
           check(r);
           if (mode === "audio") {
@@ -166,8 +171,11 @@ describe.skipIf(!live)("live walker turns on Gemini", () => {
         }
         for (const { beat, line, check } of FRESH) await ask(await walker(), line, mode, beat, 1, check);
       }
+      console.log(`main=${MODELS.main} backup=${MODELS.backup ?? "none"} after_ms=${MODELS.backup ? MODELS.backupAfterMs : "-"}`);
       console.log(rows.join("\n"));
       const latencies = rows.map((r) => Number(/(\d+) ms/.exec(r)![1])).sort((a, b) => a - b);
+      const byBackup = MODELS.backup ? events.filter((e) => e.model === MODELS.backup).length : 0;
+      console.log(`answered by the backup: ${byBackup} of ${events.length}`);
       console.log(`turns=${latencies.length} median=${latencies[Math.floor(latencies.length / 2)]} ms max=${latencies.at(-1)} ms`);
       expect(failures).toEqual([]);
     },
@@ -179,7 +187,7 @@ describe.skipIf(!live)("live walker turns on Gemini", () => {
     if (!apiKey) throw new Error("GEMINI_API_KEY isn't set here or in apps/web/.env.local.");
     const clock = new Clock();
     clock.t = Date.now();
-    const service = new WalkerService(new MemoryWalkerStore(), { assistant: createWalkerAssistant({ model: createGeminiModel({ apiKey }) }), onTurn: () => {} });
+    const service = new WalkerService(new MemoryWalkerStore(), { assistant: createWalkerAssistantFor(apiKey, MODELS), onTurn: () => {} });
     const { response } = await service.createPairingCode({ kind: "owner", secret: undefined });
     const w = await service.pair({ code: response.code, service_version: "live" }, "live");
     const allSimulated = demoManifest(clock);

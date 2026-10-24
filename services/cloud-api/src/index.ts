@@ -45,4 +45,20 @@ export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store
 export { WALKER_MIGRATIONS } from "./walker/migrations";
 export { buildStatusView } from "./walker/status";
 export { ActivityLog, MAX_IN_FLIGHT } from "./walker/activity";
-export { sharedWalkerActivity, sharedWalkerAgent, sharedWalkerBackend, walkerAgentFromEnv, walkerBackendFromEnv, type WalkerAgent, type WalkerBackend } from "./walker/config";
+export {
+  WALKER_BACKUP_AFTER_MS,
+  WALKER_BACKUP_MODEL,
+  WALKER_DEFAULT_MODEL,
+  backupThinkingFor,
+  createWalkerAssistantFor,
+  sharedWalkerActivity,
+  sharedWalkerAgent,
+  sharedWalkerBackend,
+  walkerAgentFromEnv,
+  walkerBackendFromEnv,
+  walkerModelsFromEnv,
+  type WalkerAgent,
+  type WalkerBackend,
+  type WalkerModels,
+} from "./walker/config";
+export { createHedgedAssistant, BACKUP_MARGIN_MS } from "./walker/hedge";

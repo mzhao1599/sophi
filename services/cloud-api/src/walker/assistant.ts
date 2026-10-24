@@ -113,13 +113,17 @@ export function walkerContext(status: WalkerStatusView, source: "walker" | "page
   });
 }
 
+/** `model` names the model that answered (or, on a failure, the one whose failure is reported), for logs. */
 export type AssistantResult =
-  | { ok: true; reply: WalkerReply; attempts: number; ms: number }
-  | { ok: false; reason: AgentFailure; attempts: number; ms: number };
+  | { ok: true; reply: WalkerReply; attempts: number; ms: number; model?: string }
+  | { ok: false; reason: AgentFailure; attempts: number; ms: number; model?: string };
 
 export interface WalkerAssistant {
-  /** `timeoutMs` shortens the deadline when the turn has less time left than WALKER_TIMEOUT_MS. */
-  reply(status: WalkerStatusView, source: "walker" | "page", words: Words, now: Date, timeoutMs?: number): Promise<AssistantResult>;
+  /**
+   * `timeoutMs` shortens the deadline when the turn has less time left than WALKER_TIMEOUT_MS. `signal`
+   * cancels the attempt early (the hedge cancels the model it didn't use).
+   */
+  reply(status: WalkerStatusView, source: "walker" | "page", words: Words, now: Date, timeoutMs?: number, signal?: AbortSignal): Promise<AssistantResult>;
 }
 
 class RejectedReply extends Error {
@@ -157,11 +161,12 @@ function deadline<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-export function createWalkerAssistant({ model, timeoutMs = WALKER_TIMEOUT_MS }: { model: AgentModel; timeoutMs?: number }): WalkerAssistant {
+export function createWalkerAssistant({ model, name, timeoutMs = WALKER_TIMEOUT_MS }: { model: AgentModel; name?: string; timeoutMs?: number }): WalkerAssistant {
   return {
-    async reply(status, source, words, now, limitMs = timeoutMs) {
+    async reply(status, source, words, now, limitMs = timeoutMs, cancel) {
       const started = Date.now();
-      const signal = AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, limitMs)));
+      const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, limitMs)));
+      const signal = cancel ? AbortSignal.any([deadlineSignal, cancel]) : deadlineSignal;
       let request: AgentRequest = {
         system: WALKER_SYSTEM_PROMPT,
         context: walkerContext(status, source, words, now),
@@ -175,7 +180,7 @@ export function createWalkerAssistant({ model, timeoutMs = WALKER_TIMEOUT_MS }: 
         attempts++;
         try {
           const reply = parseReply(await deadline(model.generate(request, signal), signal));
-          return { ok: true, reply, attempts, ms: Date.now() - started };
+          return { ok: true, reply, attempts, ms: Date.now() - started, model: name };
         } catch (error) {
           if (!(error instanceof RejectedReply)) {
             reason = signal.aborted ? "timeout" : "model_error";
@@ -186,7 +191,7 @@ export function createWalkerAssistant({ model, timeoutMs = WALKER_TIMEOUT_MS }: 
           request = { ...request, retry: error.note };
         }
       }
-      return { ok: false, reason, attempts, ms: Date.now() - started };
+      return { ok: false, reason, attempts, ms: Date.now() - started, model: name };
     },
   };
 }

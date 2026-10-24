@@ -112,6 +112,8 @@ export interface TurnEvent {
   /** Why the model's reply wasn't used as is, or null. */
   reason: string | null;
   attempts: number;
+  /** The model whose answer (or failure) the turn used; null when no model ran. */
+  model: string | null;
   model_ms: number;
   voiced_by: "cartesia" | "walker" | null;
   voice_ms: number;
@@ -392,6 +394,7 @@ export class WalkerService {
       replayed: !saved.created,
       reason: decided.reason,
       attempts: result?.attempts ?? 0,
+      model: result?.model ?? null,
       model_ms: result?.ms ?? 0,
       voice_ms: source === "walker" ? voiceMs : 0,
       proposal_opened: saved.created && decided.proposal !== null,
@@ -562,6 +565,7 @@ function turnEvent(deviceId: string, source: "walker" | "page", input: "audio" |
     answered_by: turn.answered_by,
     reason: null,
     attempts: 0,
+    model: null,
     model_ms: 0,
     voiced_by: turn.voiced_by,
     voice_ms: 0,
@@ -572,7 +576,7 @@ function turnEvent(deviceId: string, source: "walker" | "page", input: "audio" |
 
 function logTurn(e: TurnEvent) {
   console.info(
-    `[walker] turn device=${e.device_id} source=${e.source} input=${e.input} replayed=${e.replayed} answered_by=${e.answered_by} reason=${e.reason ?? "none"} attempts=${e.attempts} model_ms=${e.model_ms} voiced_by=${e.voiced_by ?? "none"} voice_ms=${e.voice_ms} proposal=${e.proposal_opened} ms=${e.ms}`,
+    `[walker] turn device=${e.device_id} source=${e.source} input=${e.input} replayed=${e.replayed} answered_by=${e.answered_by} reason=${e.reason ?? "none"} attempts=${e.attempts} model=${e.model ?? "none"} model_ms=${e.model_ms} voiced_by=${e.voiced_by ?? "none"} voice_ms=${e.voice_ms} proposal=${e.proposal_opened} ms=${e.ms}`,
   );
 }
 

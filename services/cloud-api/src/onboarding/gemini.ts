@@ -24,6 +24,8 @@ const RETRYABLE = new Set([500, 502, 503, 504]);
 export interface GeminiModelOptions {
   apiKey: string;
   model?: string;
+  /** The request's thinkingConfig; null sends none. Defaults to thinkingFor(model). */
+  thinking?: Record<string, unknown> | null;
   /** For tests: answers requests instead of the network. */
   fetch?: typeof fetch;
 }
@@ -33,11 +35,10 @@ interface GenerateContentResponse {
   promptFeedback?: { blockReason?: string };
 }
 
-export function createGeminiModel({ apiKey, model = DEFAULT_GEMINI_MODEL, fetch: fetchImpl = fetch }: GeminiModelOptions): AgentModel {
-  // Google's model list names models "models/gemini-…"; accept that form too.
-  const name = model.replace(/^models\//, "");
+export function createGeminiModel({ apiKey, model = DEFAULT_GEMINI_MODEL, thinking: thinkingOption, fetch: fetchImpl = fetch }: GeminiModelOptions): AgentModel {
+  const name = geminiModelName(model);
   const url = `${API_BASE}/models/${encodeURIComponent(name)}:generateContent`;
-  const thinking = thinkingFor(name);
+  const thinking = thinkingOption === undefined ? thinkingFor(name) : thinkingOption;
   return {
     async generate({ system, context, retry, schema, audio }, signal) {
       // A voice clip goes inline after the context, in the same call as the schema (checked live 2026-10-24).
@@ -76,6 +77,11 @@ export function createGeminiModel({ apiKey, model = DEFAULT_GEMINI_MODEL, fetch:
       return { stop_reason: stopReason(candidate?.finishReason), text };
     },
   };
+}
+
+/** Google's model list names models "models/gemini-…"; accept that form too. */
+export function geminiModelName(model: string): string {
+  return model.replace(/^models\//, "");
 }
 
 /**

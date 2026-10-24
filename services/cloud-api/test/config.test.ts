@@ -3,6 +3,7 @@ import { MemorySessionStore, OnboardingService } from "../src";
 import { AGENT_REPLY_JSON_SCHEMA } from "../src/onboarding/agent";
 import { agentNoticeClause, agentProviderFromEnv, engineFromEnv } from "../src/onboarding/config";
 import { createGeminiModel, thinkingFor } from "../src/onboarding/gemini";
+import { backupThinkingFor } from "../src/walker/config";
 
 interface Captured {
   url: string;
@@ -68,6 +69,22 @@ describe("Gemini model", () => {
     expect(thinkingFor("gemini-2.5-flash-lite")).toEqual({ thinkingBudget: 0 });
     expect(thinkingFor("gemini-2.5-pro")).toBeNull();
     expect(thinkingFor("gemini-flash-latest")).toBeNull();
+  });
+
+  it("takes a thinking setting, and gives the walker's backup minimal thinking where the model accepts it", async () => {
+    const { impl, requests } = fakeFetch(reply([{ text: "{}" }]), reply([{ text: "{}" }]));
+    const signal = new AbortController().signal;
+    await createGeminiModel({ apiKey: "k", model: "models/gemini-3.6-flash", thinking: backupThinkingFor("gemini-3.6-flash"), fetch: impl }).generate(request, signal);
+    await createGeminiModel({ apiKey: "k", model: "gemini-3.6-flash", fetch: impl }).generate(request, signal);
+    const thinking = (i: number) => (requests[i]!.body.generationConfig as Record<string, unknown>).thinkingConfig;
+    expect(requests[0]!.url).toContain("/models/gemini-3.6-flash:generateContent");
+    expect(thinking(0)).toEqual({ thinkingLevel: "minimal" });
+    // Without the setting, thinkingFor as before.
+    expect(thinking(1)).toEqual({ thinkingLevel: "low" });
+    // gemini-3.7-flash rejects "minimal", so a 3.7 backup keeps "low".
+    expect(backupThinkingFor("gemini-3.7-flash")).toEqual({ thinkingLevel: "low" });
+    expect(backupThinkingFor("gemini-3.5-flash-lite")).toEqual({ thinkingLevel: "minimal" });
+    expect(backupThinkingFor("gemini-2.5-flash")).toEqual({ thinkingBudget: 0 });
   });
 
   it("reports declines and cut-off replies in the agent's terms", async () => {
