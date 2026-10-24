@@ -287,7 +287,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 1. **Code and dependencies.** In the main checkout, on the commit you'll demo:
 
    ```bash
-   cd /Users/max/Desktop/calhacks26
+   cd /Users/max/Desktop/sophi
    ```
 
    ```bash

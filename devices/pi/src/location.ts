@@ -8,7 +8,7 @@ type ReverseResult = {
 };
 
 const DEFAULT_URL = "https://nominatim.openstreetmap.org/reverse";
-const USER_AGENT = "SophiWalker-CalHacks26/0.1 (https://github.com/mzhao1599/calhacks26)";
+const USER_AGENT = "SophiWalker-CalHacks26/0.1 (https://github.com/mzhao1599/sophi)";
 const CACHE_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; text: string }>();
 let nextRequestAt = 0;
