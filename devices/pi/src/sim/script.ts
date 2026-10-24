@@ -14,7 +14,8 @@ import type { Bus, BusEvents } from "../bus";
  * Event names and what their text is matched against: spoke (the line), link, talk and mic (the state), cue (the
  * cue name), haptic (the pattern), config (the version), turn (the outcome), heartbeat (ok or failed),
  * module (`<instance> <health>`), screen (the walker screen's state name, with `--screen`), lift (`<kind> <text>`,
- * with `--lift`: the lift client's requests, faults and the simulated lift's state).
+ * with `--lift`: the lift client's requests, faults and the simulated lift's state), motion (`<kind> <text>`, what
+ * the motion coordinator did) and sim (what the simulated servos saw, with `--arms`).
  */
 export type ScriptStep =
   | { kind: "key"; key: string; line: number }
@@ -22,7 +23,7 @@ export type ScriptStep =
   | { kind: "absent"; event: keyof BusEvents; match: string; forMs: number; line: number }
   | { kind: "wait"; forMs: number; line: number };
 
-const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen", "lift"]);
+const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen", "lift", "motion", "sim"]);
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 600_000;
 
@@ -92,6 +93,10 @@ export function eventText<K extends keyof BusEvents>(name: K, payload: BusEvents
       return String(p.state);
     case "lift":
       return `${String(p.kind)} ${String(p.text)}`;
+    case "motion":
+      return `${String(p.kind)} ${String(p.text)}`;
+    case "sim":
+      return String(p.text);
     default:
       return "";
   }
@@ -124,8 +129,34 @@ export class ScriptRunner {
     return this.seen.slice(this.cursor).some((item) => item.event === event && item.text.includes(match));
   }
 
-  async run(steps: readonly ScriptStep[], press: (key: string) => void, report: (message: string) => void): Promise<string | null> {
+  /**
+   * Runs the steps. With `advance` (a fake clock's), time moves only by it, in 10 ms steps while an `expect`
+   * waits, so a test runs a script deterministically; without it, real time passes.
+   */
+  async run(
+    steps: readonly ScriptStep[],
+    press: (key: string) => void,
+    report: (message: string) => void,
+    advance?: (ms: number) => Promise<void>,
+  ): Promise<string | null> {
     for (const step of steps) {
+      if (advance && step.kind === "expect") {
+        let waited = 0;
+        while (!this.find(step.event, step.match) && waited < step.timeoutMs) {
+          await advance(10);
+          waited += 10;
+        }
+        if (!this.find(step.event, step.match)) return `step ${step.line}: no "${step.event}" event matching "${step.match}" within ${step.timeoutMs} ms`;
+        report(`step ${step.line}: saw ${step.event} ${step.match}`.trimEnd());
+        continue;
+      }
+      if (advance && (step.kind === "wait" || step.kind === "absent")) {
+        await advance(step.forMs);
+        if (step.kind === "absent" && this.find(step.event, step.match)) {
+          return `step ${step.line}: "${step.event}" matching "${step.match}" happened but shouldn't have`;
+        }
+        continue;
+      }
       if (step.kind === "key") {
         this.cursor = this.seen.length;
         report(`step ${step.line}: key ${step.key}`);

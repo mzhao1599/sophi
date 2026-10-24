@@ -529,8 +529,15 @@ describe("fake STS3215", () => {
     expect(port.servo(1).get("presentPosition")).toBe(3048);
   });
 
-  it("F34: with torque off a goal doesn't move it; by default torque on then drives to that goal", async () => {
-    const { bus, clock } = setup();
+  it("F34: by default a goal written with torque off turns torque on and drives there; without that, torque on drives to it", async () => {
+    // Default (goalEnablesTorque, the dangerous assumption): the goal itself stiffens the servo and it moves.
+    const first = setup();
+    await first.bus.write(1, "goalPosition", 100);
+    await first.clock.advance(3000);
+    expect((await first.bus.read(1, "torqueEnable")).value).toBe(1);
+    expect((await first.bus.read(1, "presentPosition")).value).toBe(100);
+    const { bus, clock, port } = setup();
+    port.servo(1).goalEnablesTorque = false;
     await bus.write(1, "goalPosition", 100);
     await clock.advance(1000);
     expect((await bus.read(1, "presentPosition")).value).toBe(2048);
@@ -541,6 +548,7 @@ describe("fake STS3215", () => {
     // With torqueOnHoldsPosition, the servo holds where it is instead.
     const clock2 = new FakeClock();
     const port2 = new FakeStsBus(clock2, { torqueOnHoldsPosition: true });
+    port2.servo(1).goalEnablesTorque = false;
     const bus2 = new FeetechBus({ port: port2, clock: clock2 });
     await bus2.write(1, "goalPosition", 100);
     await bus2.setTorque([1], true);

@@ -1,0 +1,21 @@
+# M1. Start-up, before any motion: each arm's adapter gets an echo check, then a ping and a model check per
+# servo, then one read of every servo. The simulated followers power up with torque off, so read before act
+# means no goal is written to them at all (a goal may turn torque on: these fake servos do, the dangerous way).
+# The goal left 300 steps away in their registers stays there, unused; torque on rewrites it (M2).
+# SIMULATED arms. Run: node dist/walker.mjs simulate --arms --script test/sim/motion/01-startup.walk
+expect motion check left follower passed echo=off servos=6 model=777
+expect motion check right follower passed echo=off servos=6 model=777
+expect motion check left leader passed echo=off servos=6 model=777
+expect motion check right leader passed echo=off servos=6 model=777
+expect motion startup left follower torque-off no-goals
+expect motion startup right follower torque-off no-goals
+expect motion mode ready
+key inspect-goals-left
+expect sim left follower goals gap=300
+key inspect-goals-right
+expect sim right follower goals gap=300
+# Nothing turns torque on by itself, and no goal is written.
+key motion-status
+absent 1000 sim torque-on
+absent 10 sim goal-write
+key q

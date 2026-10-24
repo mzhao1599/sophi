@@ -1,0 +1,42 @@
+# M4. Any handle press stops motion: Talk during an offered move, then Confirm during a terminal move. The
+# press that stops is the motion's, so Talk doesn't start a recording.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key offer-ready-left
+wait 2100
+key c
+expect motion command arm.go_to_pose started offer
+wait 200
+key t
+expect motion command arm.go_to_pose stopped offer
+expect motion stop handle_press
+absent 500 talk recording
+# On the servos: held within 5° of where it is, and no goal written after the stop's hold.
+wait 200
+key inspect-hold-left
+expect sim left follower hold ok
+absent 1000 sim goal-write left follower
+# The hold read the arm first: each goal is where the arm was at the stop, within 0.5°.
+key inspect-hold-tight-left
+expect sim left follower hold tight ok
+# A move from the terminal, stopped by a Confirm press.
+key pose-handover-left
+expect motion target arm.go_to_pose operator_cli
+wait 2100
+key c
+expect motion command arm.go_to_pose started operator_cli
+wait 200
+key c
+expect motion command arm.go_to_pose stopped operator_cli
+expect motion stop handle_press
+wait 200
+key inspect-hold-left
+expect sim left follower hold ok
+absent 1000 sim goal-write left follower
+# The hold read the arm first: each goal is where the arm was at the stop, within 0.5°.
+key inspect-hold-tight-left
+expect sim left follower hold tight ok
+key q

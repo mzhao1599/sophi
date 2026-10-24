@@ -2,7 +2,7 @@
 
 The low-level driver for the two SO-101 arms: each arm is six Feetech STS3215 servos (ids 1 to 6 by SO-101 convention) daisy-chained on one half-duplex serial line, reached through one USB adapter board. This folder turns "read joint 3's position" into bytes on that line and checks the bytes that come back.
 
-**Status (2026-10-23):** built and unit-tested on a Mac against Feetech's Python SDK (golden vectors) and a simulated bus. **Not yet run against a real servo, adapter or Pi.** It has no motion policy and isn't wired into the Pi service: joint names, limits, faults and who may move an arm belong to the motion contract in `packages/contracts` and the motion coordinator (rule 8 in AGENTS.md). Nothing here decides that a motion is safe.
+**Status (2026-10-23):** built and unit-tested on a Mac against Feetech's Python SDK (golden vectors) and a simulated bus. **Not yet run against a real servo, adapter or Pi.** It has no motion policy: joint names, limits, faults and who may move an arm belong to the motion contract in `packages/contracts` and the motion coordinator (`../coordinator.ts`, rule 8 in AGENTS.md), which uses this driver (2026-10-24, simulated servos only). Nothing here decides that a motion is safe.
 
 | File | What it holds |
 |---|---|
@@ -112,7 +112,7 @@ Modelled assumptions to check on the bench (they are not facts about the servo):
 `walker check` on the walker (`src/check/arms.ts`, [README](../../../README.md#check-the-walker-first-walker-check)) answers the read-only parts of items 1, 2 and 8 with this driver: `detectEcho`, then PING and READ of ids 1 to 6 for model, firmware, the EEPROM voltage limits, torque enable, position, voltage and temperature. It sends nothing else (a guard on the port refuses any other packet), so items 3 to 7 still need the bench.
 
 1. The adapter's echo (`detectEcho`), and that `stty` sets 1,000,000 baud on the Pi's CH343 port; reply latency through USB, to replace the 50 ms timeout and 5 ms settle placeholders.
-2. Model number 777 and the firmware version on all 12 servos; Response Status Level (address 8) and Return Delay Time (7) as shipped.
+2. A SYNC READ of the 31-byte span 40 to 70 (the coordinator's every-tick read of the control registers and the feedback): that the firmware answers it, and how long it takes. Model number 777 and the firmware version on all 12 servos; Response Status Level (address 8) and Return Delay Time (7) as shipped.
 3. SYNC READ support in that firmware, reply order, and what the others do when one servo is missing.
 4. Units: goal/present speed (step/s?), acceleration (100 step/s² per unit?), load and current scaling, voltage against a multimeter.
 5. Torque-on behavior: with the arm supported, write a goal a few steps away while torque is off, then enable torque: does it move?

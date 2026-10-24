@@ -1,0 +1,21 @@
+# M3. An offer (ids only; the SIMULATED offer source stands in for a later cloud request) becomes the Confirm
+# target, worded by the Pi from the pose's own title. A handle Confirm press accepts it and the arm goes there.
+# A second press does nothing: the target is single use.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key offer-ready-left
+expect motion target arm.go_to_pose offer: Move the left arm to ready
+expect spoke Move the left arm to ready. Park the walker and lock the brakes, then press Confirm.
+wait 2100
+key c
+expect motion command arm.go_to_pose started offer
+expect 5000 motion command arm.go_to_pose completed offer
+# Single use: the next Confirm press starts nothing and writes no goal.
+wait 2100
+key c
+absent 1500 motion started
+absent 500 sim goal-write left follower
+key q

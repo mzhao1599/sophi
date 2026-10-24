@@ -328,7 +328,10 @@ export class ModuleManager {
     let asked = false;
     if (record.lastSeq !== null && message.seq <= record.lastSeq) {
       this.deps.log.warn("module's seq went back: it rebooted", { module: record.instanceId });
-      if (record.type === "hand") this.deps.bus.emit("buttonsLost", { source: "esp32", detail: record.instanceId });
+      if (record.type === "hand") {
+        this.deps.bus.emit("buttonsLost", { source: "esp32", detail: record.instanceId });
+        this.deps.bus.emit("handLink", { instanceId: record.instanceId, why: "seq_back" });
+      }
       this.refreshHello(record);
       asked = true;
     } else if (port.wantHello) {
@@ -384,6 +387,8 @@ export class ModuleManager {
         return;
       case "error":
         this.deps.log.warn("module reported an error", { module: record.instanceId, code: message.code });
+        // A hand that couldn't read a line may have missed a button edge's context: Confirm stops trusting it.
+        if (record.type === "hand") this.deps.bus.emit("handLink", { instanceId: record.instanceId, why: "error" });
         return;
       case "haptic.play":
       case "hello.request":
@@ -431,10 +436,15 @@ export class ModuleManager {
       simulated: record.simulated,
     });
     this.deps.bus.emit("module", { instanceId: id, health: record.health });
+    if (record.type === "hand") this.deps.bus.emit("handLink", { instanceId: id, why: "hello" });
   }
 
   private countSeq(record: ModuleRecord, seq: number): void {
-    if (record.lastSeq !== null && seq > record.lastSeq + 1) record.droppedLines += seq - record.lastSeq - 1;
+    if (record.lastSeq !== null && seq > record.lastSeq + 1) {
+      record.droppedLines += seq - record.lastSeq - 1;
+      // A lost line from a hand may have been a press or a release: what Confirm knows about it is gone.
+      if (record.type === "hand") this.deps.bus.emit("handLink", { instanceId: record.instanceId, why: "seq_gap" });
+    }
     record.lastSeq = seq;
   }
 
@@ -463,7 +473,10 @@ export class ModuleManager {
     this.deps.bus.emit("module", { instanceId: record.instanceId, health: "unavailable" });
     // Emitted once per transition from available to unavailable.
     this.deps.bus.emit("moduleDown", { module: this.view(record), reason });
-    if (record.type === "hand") this.deps.bus.emit("buttonsLost", { source: "esp32", detail: record.instanceId });
+    if (record.type === "hand") {
+      this.deps.bus.emit("buttonsLost", { source: "esp32", detail: record.instanceId });
+      this.deps.bus.emit("handLink", { instanceId: record.instanceId, why: "lost" });
+    }
   }
 
   private detach(port: Port, reason: string): void {

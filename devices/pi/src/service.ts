@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  MANIFEST_MAY_LIST_ARMS,
   SERIAL_PROTOCOL_VERSION,
   type CapabilityManifest,
   type Cue,
@@ -55,6 +56,11 @@ export interface ServiceDeps {
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
   /** Optional GPS reader. The server's per-heartbeat opt-in is its only enable signal. */
   location?: { setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; stop(): void };
+  /**
+   * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
+   * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
+   */
+  motion?: { handlePress(event: ButtonEvent): boolean; ownsConfirm(): boolean };
   newId?: () => string;
 }
 
@@ -260,6 +266,7 @@ export class WalkerService {
 
   private onButton(event: ButtonEvent): void {
     if (this.stopped) return;
+    if (this.deps.motion?.handlePress(event)) return;
     if (event.button === "talk") {
       if (event.edge === "pressed") {
         // A hand button briefly opening during a hold must not start another mic or cancel the turn.
@@ -445,7 +452,13 @@ export class WalkerService {
       const reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(body, signal), turn.abort.signal);
       if (this.turn !== turn) return;
       this.endTurn(turn);
-      if (reply.proposal?.state === "open") this.setOpenProposal(reply.proposal);
+      if (reply.proposal?.state === "open") {
+        // A motion Confirm target shown first owns Confirm: this proposal is declined, never answered by that press.
+        if (this.deps.motion?.ownsConfirm()) {
+          this.deps.log.info("a proposal arrived while a motion Confirm target is pending; declining it");
+          this.rememberUnheard(body.client_turn_id);
+        } else this.setOpenProposal(reply.proposal);
+      }
       this.deps.bus.emit("turn", { outcome: "answered" });
       const wav = reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined;
       this.deps.log.info("turn answered", {
@@ -647,6 +660,17 @@ export class WalkerService {
     }
   }
 
+  /** One of the Pi's own fixed lines from another part (the motion coordinator's prompts and faults). */
+  /** Whether the walker's own proposal is open (it owns Confirm, so the arms prepare no Confirm target). */
+  hasOpenProposal(): boolean {
+    return this.openProposal !== null;
+  }
+
+  announce(text: string): void {
+    if (this.stopped) return;
+    void this.say(text, "notice");
+  }
+
   // ---- Cloud link ----
 
   /**
@@ -702,8 +726,9 @@ export class WalkerService {
         if (open && this.unheardTurns.includes(open.client_turn_id)) {
           this.setOpenProposal(null);
           void this.declineCancelled(open, cloud);
-        } else if (this.proposalEpoch === epoch) {
-          // Only if nothing newer (a turn's proposal, a Confirm, a cancel) was learned while this was in flight.
+        } else if (this.proposalEpoch === epoch && !(open && this.deps.motion?.ownsConfirm())) {
+          // Only if nothing newer (a turn's proposal, a Confirm, a cancel) was learned while this was in flight,
+          // and not while a motion Confirm target owns Confirm (it is adopted on a later heartbeat).
           this.setOpenProposal(open);
         }
         // Newer is the usual case; a different version (even a lower one) means what is held belongs elsewhere.
@@ -876,7 +901,9 @@ export class WalkerService {
       device_configuration_version: this.configuration?.version ?? null,
       generated_at: iso(now),
       simulator: this.deps.simulator,
-      modules,
+      // The arms are never listed while MANIFEST_MAY_LIST_ARMS is false: listing them changes the server's fixed
+      // arms reply, which demo beat 5 expects word for word (docs/subsystems/manipulation.md, "Manifest").
+      modules: MANIFEST_MAY_LIST_ARMS ? modules : modules.filter((module) => module.module_id !== "manipulation.arm"),
     };
   }
 

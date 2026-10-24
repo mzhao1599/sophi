@@ -17,7 +17,7 @@ SupplementaryGroups=audio dialout gpio
 EnvironmentFile=/etc/steady-walker.env
 Environment=WALKER_STATE_DIR=/var/lib/steady-walker
 # Each open serial port holds one libuv thread-pool thread for its blocking reads.
-Environment=UV_THREADPOOL_SIZE=8
+Environment=UV_THREADPOOL_SIZE=12
 ExecStart=/usr/bin/node /opt/steady-walker/walker.mjs run
 Restart=always
 RestartSec=2

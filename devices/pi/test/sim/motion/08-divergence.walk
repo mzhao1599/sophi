@@ -1,0 +1,22 @@
+# M8. Divergence while holding: something pushes the left elbow 25° away from its goal. After 300 ms the Pi
+# latches feedback_divergence and the arm goes compliant: every joint's torque limit drops to 25% (no grasp is
+# active, so the gripper too).
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key push-left
+expect motion fault feedback_divergence arm_left elbow_flex
+expect motion comply arm_left
+key inspect-left
+expect sim left follower torque=1,1,1,1,1,1 limit=250,250,250,250,250,250
+# A compliant arm moves nothing until its torque is turned on again.
+key push-left
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+key pose-ready-left
+expect motion command arm.go_to_pose refused:torque_off operator_cli
+key q

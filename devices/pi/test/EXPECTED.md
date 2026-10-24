@@ -329,3 +329,46 @@ Written before the tests. **Simulated only:** no lift board has run against this
 | LW5 | `walker simulate --lift --script test/sim/lift.walk` | The script passes. |
 
 Mutation checks (run by hand, results in the PR): naming the request in heartbeats regardless of the hold, and dropping `lift.stop` when the port is busy, must each fail a test.
+
+## Motion: the arms (`src/motion/`, added 2026-10-24; simulated servos only)
+
+Written from the motion contract (`packages/contracts/src/motion.ts`) before the tests. M1 to M10 are the `.walk` scripts in `test/sim/motion/`, run on a fake clock by `test/motion-walk.test.ts` (and by `walker simulate --arms --script`); the rest are in `test/motion.test.ts`. Every published motion state must pass `MotionStateSchema`. The simulated servos take the dangerous side of both unknowns: they drive to whatever goal is in the register when torque comes on, and a goal written with torque off turns torque on (`goalEnablesTorque`). Nothing here is a hardware result.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| M1 | Start-up *(read before act, review 2026-10-24)* | Each arm: echo check, then a ping and model 777 for all six servos, then one read, before any write. The simulated followers read torque off, so no goal is written to them: the goal left 300 steps away stays on both, unused. Mode `ready`. No torque comes on and no goal is written. |
+| M2 | The terminal asks for torque on | It becomes the Confirm target, said with the park prompt. Nothing happens without a Confirm press. A press in the first 2 s is ignored, and so is one less than 2 s after that button's last press. Then: every servo's goal equals its present position when torque comes on (limits first, then the goal, each read back). A second press doesn't run it again. |
+| M3 | An offer (ids only) for the left arm's `ready` | Worded from the pose's own title. Confirm runs it, prepared by `offer`, and it completes within 3°. A second Confirm starts nothing and writes no goal. |
+| M4 | A Talk press during an offered move; a Confirm press during a terminal move | Each stops (`handle_press`) and holds. On the servos: every torqued one's goal within 5° of where it is, and no goal written in the next second. The goals are within 0.5° of where the arm was at the press (the hold read first). The Talk press starts no recording. M5, M6 and M7 check the servos the same way (M6 with the 0.5° check too). |
+| M5 | The stop switch, idle and mid-move | Latches `stop_circuit_opened` (mode `fault`, the move `faulted`). Releasing it re-reads torque. Clearing is refused while it is pressed, and allowed (with Confirm) after. |
+| M6 | The handle unplugged mid-move; then idle | Mid-move: `hand_controls_lost`, the move `faulted`, clear refused until the handle is back. A pending target is withdrawn when the handle goes. With no handle, a move is refused `no_hand_control` before any Confirm. |
+| M7 | A servo stops answering mid-move | `feedback_stale` on that arm, and no goal is written to it afterwards. Once it answers again, the fault clears. |
+| M8 | The elbow pushed 25° from its goal while holding | `feedback_divergence` after 300 ms. Every joint's torque limit is 25% (no grasp is active). A pose is then refused `torque_off` until torque is turned on again. |
+| M9 | Teleop | Confirm engages it. A slow leader (15°/s) is followed with no fault. A leader at 360°/s for 250 ms latches `teleop_overspeed` (over 2× 90°/s for 200 ms). |
+| M10 | A stiff elbow that moves at about 5°/s | Not a stall (it moves faster than 3°/s) and no divergence (the goal waits within 5°). The deadline latches `motion_timeout`. |
+| M11 | Settings | Bench mode only for exactly `no-hardware-stop`, and anything else is an error. Ports only under `/dev/serial/by-id` or `by-path`. `WALKER_STOP_SENSE` is `not_wired` or `gpio:<n>`. An arm port is recognised under another link to the same device. |
+| M12 | Limits | A goal leads the measured position by at most 5°, and moves at most 2° a step. Teleop is capped at 60°/s while recording. The servo speed is never 0. The centring offset makes the middle read 2048. |
+| M13 | The start-up check | An echoing adapter is reopened in echo mode. A missing servo or a wrong model fails the check, with only pings and reads sent. |
+| M14 | The terminal channel | Fields claiming an initiator, a preparer, a confirm record or `base_parked` are ignored. The target is `operator_cli`, and no torque comes on. A terminal that disconnects withdraws its target. |
+| M15 | The manifest | Never lists `manipulation.arm` while `MANIFEST_MAY_LIST_ARMS` is false. |
+| M16 | Real handle presses (ESP32) | Ignored: in the target's first 2 s, within 2 s of that button's release, or a second press edge with no release seen. Accepted 2 s after a seen release. A hand's hello withdraws a pending target. |
+| M17 | The walker's own proposal is open | Preparing is refused `confirm_busy`. |
+| M18 | Calibration of a follower | Its Confirm turns torque off. The middle offsets make every servo read 2048, then ranges are recorded. It is saved as a valid `ArmCalibrationSchema`, the old file and the arm's old poses set aside. |
+| M19 | An offer with words, or an unknown pose | Dropped. |
+| M20 | Torque on for both followers | Every leader servo's torque stays 0. |
+| M21 | The stop reads pressed right after the torque-on Confirm | Torque on is abandoned, and every servo's torque ends at 0. |
+| M22 | A servo stops answering while holding | `feedback_stale` on that arm. |
+| M23 | The GPIO stop-sense input | Reads pressed until the first gpioget answer. Released only after 30 ms low; pressed at once on a rising edge; pressed when gpiomon exits. |
+| M24 | A stop while a follower's torque is off | No goal is written to it (one would turn its torque on). |
+| M25 | A joint blocked mid-move *(stall rule, 2026-10-24)* | Its goal more than 3° ahead while it moves under 3°/s, for 300 ms (*placeholders*), latches `feedback_divergence` for that arm (the contract's fault, `comply`). That is within 300 ms + the lead building (about 67 ms at 45°/s) + 2 ticks of the block, and not before 300 ms. Afterwards the blocked joint's goal is where it is, every joint is at 25% torque, and no further goal is sent. |
+| M26 | A load on a holding joint *(load rule)* | 40% against a 60% limit (threshold 80% of it, 48%, *placeholder*): no fault in 1 s. 50% (under the limit, so the 80% overload rule can't see it): `feedback_divergence` and comply within 300 ms + 2 ticks, not before 300 ms. |
+| M27 | Torque on, and one servo misses the unacknowledged goal write *(read before act)* | The read-back finds it (`read-back mismatch (goal, speed, acceleration) on servo 4`). Torque on aborts, every servo ends with torque off, and the request is `error`. |
+| M28 | A torque limit changes under a torqued arm | `limits-lost`. A pose is then refused `torque_off` until torque is turned on again. |
+| M29 | A Talk or Confirm press while torque on is running | It stops it, torque ends off, and the press starts no recording. |
+| M30 | A torque limit write that doesn't take (acknowledged, not stored) | `read-back mismatch (torque limit)`. No goal is written, and torque ends off. |
+| M31 | The arm's 12 V drops for 300 ms while it holds, with no stop-sense edge (`test/sim/motion/31-power-loss.walk`) | `feedback_stale` while silent. After the clear, the re-read shows torque off. No goal is written and no torque comes on. A pose is refused `torque_off`. |
+| M32 | A stop press during a pose, then a release latched in the same turn (an overload; or a miswired stop that doesn't cut power), with goals turning torque on | The stop's hold had queued its read before the torque off, and writes no goal after it. After 500 ms every servo of that arm reads torque 0. |
+| M33 | A stop press during a terminal torque off | The arm ends torque off. |
+| M34 | A stop press after torque on's last write, before its read-back | Torque ends off, and the request is `error`, not `completed`. |
+| M35 | Every terminal command's title | Fits the contract's 60 characters, so it can be prepared (a too-long torque-off title used to throw). |
+| M36 | One arm's bus keeps retrying (a silent servo on the right) | The healthy left arm's reading never goes stale: no fault on it, torque still on. |

@@ -1,0 +1,25 @@
+# M31. The left arm loses its 12 V for 300 ms while holding, with no stop-sense edge (a loose plug). Its servos
+# reboot with torque off and their torque limit reset. Read before act: the coordinator latches feedback_stale
+# while they are silent, and once they answer it reads torque off and the limit not the one it wrote. After the
+# clear it writes no goal to them (a goal could turn torque on), and a pose is refused until torque is turned
+# on again from the terminal with Confirm.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key power-cycle-left
+expect motion fault feedback_stale arm_left
+expect sim left follower power back
+wait 300
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+expect motion torque left follower off (re-read)
+absent 1000 sim torque-on
+key pose-ready-left
+expect motion command arm.go_to_pose refused:torque_off operator_cli
+key inspect-goals-left
+absent 500 sim goal-write left follower
+key q

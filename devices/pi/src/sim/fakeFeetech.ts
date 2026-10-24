@@ -28,6 +28,10 @@ export interface FakeServoFaults {
   corruptReplies?: number;
   /** ORed into every reply's error byte and the status register. */
   errorBits?: number;
+  /** Misses every SYNC WRITE (an unacknowledged write that never arrived): only a read-back can tell. */
+  dropSyncWrites?: boolean;
+  /** Acknowledges writes to these addresses but keeps the old value (a write that didn't take). */
+  ignoreWritesTo?: number[];
 }
 
 export interface FakeServoOptions {
@@ -88,6 +92,17 @@ export class FakeSts3215 {
   /** Instruction packets this servo acted on. */
   readonly log: Array<{ instruction: number; params: number[] }> = [];
   torqueOnHoldsPosition: boolean;
+  /** Simulator: a hand or an object holds the joint at this present-position reading; null lets go. */
+  heldAt: number | null = null;
+  /**
+   * Whether a goal written while torque is off turns torque on. Not known for the STS3215; true (the dangerous
+   * direction) by default, so a coordinator that writes a goal to a limp arm stiffens it in the tests.
+   */
+  goalEnablesTorque = true;
+  /** Simulator: a stiff joint that moves no faster than this many steps/s, whatever its goal speed. */
+  slowTo: number | null = null;
+  /** Simulator: called when torque goes from off to on, with the goal and present position at that moment. */
+  onTorqueOn: ((goal: number, present: number) => void) | null = null;
 
   constructor(options: FakeServoOptions) {
     this.torqueOnHoldsPosition = options.torqueOnHoldsPosition ?? false;
@@ -150,7 +165,7 @@ export class FakeSts3215 {
       if (!(min === 0 && max === 0)) goal = Math.min(max, Math.max(min, goal));
       const target = goal + offset;
       const speed = this.get("goalSpeed");
-      const vmax = speed === 0 ? FAKE_MAX_SPEED : Math.min(Math.abs(speed), FAKE_MAX_SPEED);
+      const vmax = Math.min(speed === 0 ? FAKE_MAX_SPEED : Math.min(Math.abs(speed), FAKE_MAX_SPEED), this.slowTo ?? Infinity);
       const accRaw = this.get("acceleration");
       const accel = accRaw === 0 ? FAKE_MAX_ACCEL : accRaw * 100;
       const stalled = Math.abs(this.externalLoad) >= limit;
@@ -168,6 +183,10 @@ export class FakeSts3215 {
     } else {
       this.velocity = 0;
     }
+    if (this.heldAt !== null) {
+      this.encoder = this.heldAt + offset;
+      this.velocity = 0;
+    }
     const motionLoad = this.torqueOn ? Math.sign(this.velocity) * Math.min(200, (Math.abs(this.velocity) / FAKE_MAX_SPEED) * 200) : 0;
     const load = this.torqueOn ? Math.max(-limit, Math.min(limit, this.externalLoad + motionLoad)) : 0;
     // Heating with load, cooling toward ambient (fake rates).
@@ -183,6 +202,13 @@ export class FakeSts3215 {
     this.memory[STS3215.status.address] = status;
     if (status & this.get("unloadingCondition")) this.memory[STS3215.torqueEnable.address] = 0;
     this.writeFeedback(load);
+  }
+
+  /** Simulator: moves the joint by hand so it reads `present` (it stays there unless torque drives it back). */
+  moveByHand(present: number): void {
+    this.encoder = present + this.get("homingOffset");
+    this.velocity = 0;
+    this.step(0);
   }
 
   private refreshFeedback(): void {
@@ -206,11 +232,13 @@ export class FakeSts3215 {
     for (let i = 0; i < data.length; i += 1) {
       const at = address + i;
       if (at >= STS3215.presentPosition.address || at <= 4) continue; // read-only
+      if (this.faults.ignoreWritesTo?.includes(at)) continue;
       if (at === STS3215.torqueEnable.address) {
         if (data[i]! > 1) continue; // damping (2) and recalibration (128) aren't modelled
         if (data[i] === 1 && !this.torqueOn) {
           // Assumptions, not checked on a servo: see torqueOnHoldsPosition; and turning torque on clears a
           // latched overload/overheat.
+          this.onTorqueOn?.(this.get("goalPosition"), this.get("presentPosition"));
           if (this.torqueOnHoldsPosition) this.set("goalPosition", this.get("presentPosition"));
           this.latched = 0;
           this.overloadMs = 0;
@@ -218,6 +246,14 @@ export class FakeSts3215 {
       }
       this.memory[at] = data[i]!;
       if (at < 40 && this.memory[STS3215.lock.address] === 0) this.saved[at] = data[i]!;
+    }
+    const goal = STS3215.goalPosition.address;
+    if (this.goalEnablesTorque && !this.torqueOn && address <= goal + 1 && address + data.length > goal) {
+      // Assumption, the dangerous way: a goal turns torque on, and the servo drives to it.
+      this.onTorqueOn?.(this.get("goalPosition"), this.get("presentPosition"));
+      this.memory[STS3215.torqueEnable.address] = 1;
+      this.latched = 0;
+      this.overloadMs = 0;
     }
   }
 
@@ -385,7 +421,8 @@ export class FakeStsBus implements FeetechPort {
     if (instruction === Instruction.SYNC_WRITE) {
       const [address = 0, length = 0] = params;
       for (let i = 2; i + length < params.length; i += length + 1) {
-        this.listening(params[i]!)?.handle(Instruction.WRITE, [address, ...params.slice(i + 1, i + 1 + length)], true);
+        const servo = this.listening(params[i]!);
+        if (!servo?.faults.dropSyncWrites) servo?.handle(Instruction.WRITE, [address, ...params.slice(i + 1, i + 1 + length)], true);
       }
       this.update();
       return;

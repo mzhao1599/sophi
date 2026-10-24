@@ -15,6 +15,9 @@ import { SERIAL_BY_PATH_DIR, SerialScanner } from "./serial/port";
 import { localWallTime } from "./screen/machine";
 import { defaultScreenAssets, readScreenPort, startWalkerScreen } from "./screen";
 import { WalkerService } from "./service";
+import { handControlsConnected } from "./motion/handControls";
+import { createPiMotion } from "./motion/runtime";
+import { isArmPort, readMotionSettings } from "./motion/settings";
 import { StateStore } from "./store";
 
 /**
@@ -88,7 +91,9 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   const store = new StateStore(config.stateDir, log);
   const cues = writeCueSounds(join(config.stateDir, "cues"));
   const modules = new ModuleManager({ clock, log, bus });
-  const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir, excludedPort: env.WALKER_GPS_PORT });
+  // The arms' Feetech adapters are also under /dev/serial: the ESP32 scanner never opens them (compared by the
+  // device each link points to), nor the GPS.
+  const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir, excludedPort: env.WALKER_GPS_PORT, exclude: (path) => isArmPort(path, env) });
   const location = env.WALKER_GPS_PORT
     ? new GpsSampler(env.WALKER_GPS_PORT, Number(env.WALKER_GPS_BAUD || "9600"), (error) => log.warn("GPS read failed", { code: (error as NodeJS.ErrnoException).code ?? error.name }))
     : null;
@@ -115,6 +120,34 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
     log,
   );
   attachLogging(bus, log, { replyText: false });
+  // Motion (the arms): only when arm ports are configured. A setting that can't be read turns motion off,
+  // logged, and never stops the rest of the walker.
+  const motionSettings = readMotionSettings(env);
+  if (motionSettings.kind === "error") log.error("motion is off: a motion setting can't be read", { reason: motionSettings.reason });
+  let announce: (text: string) => void = () => {};
+  let proposalOpen: () => boolean = () => false;
+  let motion: ReturnType<typeof createPiMotion> | null = null;
+  try {
+    motion =
+      motionSettings.kind === "on"
+        ? createPiMotion({
+          settings: motionSettings.settings,
+          stateDir: config.stateDir,
+          runtimeDir: env.RUNTIME_DIRECTORY,
+          clock,
+          log,
+          bus,
+          gpio: { flavor: config.gpiomon, chip: config.gpioChip },
+          handControls: () => handControlsConnected(modules, buttons),
+          walkerProposalOpen: () => proposalOpen(),
+          say: (text) => announce(text),
+        })
+        : null;
+  } catch (error) {
+    // A motion folder or port problem turns motion off; the rest of the walker keeps running.
+    log.error("motion is off: it couldn't start", { error: (error as Error).message });
+    motion = null;
+  }
   const service = new WalkerService({
     clock,
     log,
@@ -128,8 +161,11 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
     coordinatorInstanceId: "pi-coordinator",
     ...(location ? { location } : {}),
     ...(buttons ? { gpioButtons: buttons } : {}),
+    ...(motion ? { motion: motion.coordinator } : {}),
     makeCloud: (credential) => new HttpCloudClient(credential.server_url, credential.device_id, credential.credential),
   });
+  announce = (text) => service.announce(text);
+  proposalOpen = () => service.hasOpenProposal();
   // Report the buttons the moment they count as watched, not at the next 5 s tick.
   if (buttons) buttons.onWatching = () => service.reportSoon();
   log.info("starting", {
@@ -145,6 +181,16 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   scanner.start();
   buttons?.start();
   service.start();
+  if (motion) {
+    // An error nothing caught, anywhere in the service, stops motion (and is logged); the service keeps running.
+    const running = motion;
+    process.on("unhandledRejection", (reason) => {
+      log.error("unhandled error; stopping motion", { error: reason instanceof Error ? reason.message : String(reason) });
+      running.coordinator.emergencyStop("unhandled error");
+    });
+    void motion.coordinator.start().catch((error: unknown) => log.error("motion coordinator failed to start", { error: (error as Error).message }));
+    void motion.socket.listen().catch((error: unknown) => log.error("operator socket failed to start", { error: (error as Error).message }));
+  }
   // The screen never holds up or takes down the walker: startWalkerScreen logs a failure and returns.
   const screenPort = readScreenPort(env.WALKER_SCREEN_PORT);
   const screen =
@@ -165,6 +211,8 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   if ("off" in screenPort) log.info("walker screen off", { reason: screenPort.off });
   const signal = await stopSignal;
   log.info("stopping", { signal });
+  motion?.socket.close();
+  await motion?.coordinator.stop();
   service.stop();
   await screen?.stop();
   buttons?.stop();

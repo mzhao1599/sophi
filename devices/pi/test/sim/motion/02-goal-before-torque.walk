@@ -1,0 +1,28 @@
+# M2. Torque on writes goal = present position first. The simulated servos use the dangerous default: turning
+# torque on drives to whatever goal is in the register, so a goal left there must be rewritten first.
+# The terminal only prepares it: the walker shows and says it, and only a handle Confirm press 2 s or more
+# after that starts it. A press in the first 2 s is ignored (and starts that button's 2 s again).
+expect motion mode ready
+key stray-goal-left
+expect sim left follower goals moved away
+key torque-on-left
+expect motion target arm.torque operator_cli: Turn on the left arm's motors
+expect spoke Turn on the left arm's motors. Park the walker and lock the brakes, then press Confirm.
+absent 1000 sim torque-on
+key c
+expect motion press-ignored ignore_too_early
+absent 1200 sim torque-on
+key c
+expect motion press-ignored ignore_too_early
+wait 2100
+key c
+expect sim torque-on left follower servo 1 goal-at-present
+expect sim torque-on left follower servo 3 goal-at-present
+expect sim torque-on left follower servo 6 goal-at-present
+expect motion torque left on
+absent 500 sim goal-away
+# Single use: another Confirm press doesn't run it again.
+wait 2100
+key c
+absent 1000 motion torque left on
+key q

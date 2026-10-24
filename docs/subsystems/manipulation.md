@@ -2,7 +2,13 @@
 
 **For:** the robotics and Pi developers integrating two SO-101 arms (with their leader arms), the cameras, and the ball-screw lift.
 
-**Status, 2026-10-24: proposed, not built.** The motion contract exists as schemas and tests in [`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts) and [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts). Only the lift ESP32 firmware uses it so far, written and tested on a computer but not run on hardware ([firmware/README.md](../../firmware/README.md#lift-board)); there is no servo driver, Pi motion coordinator, simulator or screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it. Nothing here moves hardware today.
+**Status, 2026-10-24: proposed, partly built, nothing run on the walker.** The motion contract exists as schemas and tests in [`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts) and [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts). Built on 2026-10-24, and tested only against simulated or bench-free stand-ins:
+
+- the lift ESP32 firmware, written and tested on a computer ([firmware/README.md](../../firmware/README.md#lift-board));
+- the Pi's Feetech servo driver;
+- the Pi's motion coordinator for the arms ([`devices/pi/src/motion/`](../../devices/pi/README.md#the-arms-motion-coordinator-part-a)): Confirm targets, guards, calibration, poses, teleop and a simulator.
+
+None of these has run on real arms or a real lift. Not built: the lift's side of the coordinator, taught skills, and the screen's motion controls. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
 
 ## The rule
 
@@ -136,7 +142,7 @@ More rules behind the table:
 - **Lost servo bus:** each servo keeps its last goal, at most 5° away. The Pi stops the lift and latches `servo_bus_lost`. Only the hardware stop can cut those arms now.
 - **Lost lift ESP32:** the Pi stops all arm motion, latches `lift_module_lost`, and stops sending heartbeats, so the lift's own watchdog stops it too.
 - **Lost hand controls:** motion stops and holds, and `hand_controls_lost` latches. Outside bench mode, nothing starts without a hand control.
-- **Pi restart:** the coordinator starts `disabled`, reads every arm before writing any goal, and sets every goal to the measured position. Its first line to the lift is a `hello.request`, which stops any lift motion.
+- **Pi restart:** the coordinator starts `disabled` and reads every arm before writing any goal. On each servo that reads torque on, it sets the goal to the measured position. A servo that reads torque off gets no goal, because a Feetech goal may turn torque on. It needs a torque on before it moves. Its first line to the lift is a `hello.request`, which stops any lift motion.
 - **Two skill checks,** at load and before every run: `SkillSchema` (time order, gaps, duration, speeds, start pose, gripper events, `let_go` for exactly the arms still grasping), then `checkSkillAgainstSetup` (calibration, the let-go angle, the lift).
 
 ## Faults

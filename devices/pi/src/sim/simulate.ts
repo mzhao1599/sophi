@@ -21,6 +21,10 @@ import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
 import { ScriptRunner, parseScript } from "./script";
 import { LIFT_HELP, LIFT_KEYS, LiftSim, liftSimBench } from "./liftSim";
+import { MOTION_HELP, MOTION_KEYS, MotionSim, type MotionSimHand } from "./motionSim";
+import { handControlsConnected } from "../motion/handControls";
+import { OperatorSocket } from "../motion/operator";
+import { readBench } from "../motion/settings";
 
 export interface SimulateOptions {
   /** A real cloud URL; without it the simulator starts the fake cloud on 127.0.0.1. */
@@ -36,6 +40,8 @@ export interface SimulateOptions {
   screen?: boolean;
   /** A SIMULATED lift board driven by the real lift client, from a stand-in loop (no motion coordinator). */
   lift?: boolean;
+  /** SIMULATED arms: fake servo buses through the real motion coordinator, and a simulated stop switch. */
+  arms?: boolean;
 }
 
 /** What the fake cloud says on the simulator's demo path, in order. Every line says it is the fake cloud. */
@@ -125,9 +131,9 @@ export async function simulate(options: SimulateOptions): Promise<number> {
 
   // ---- Simulated modules ----
   const modules = new ModuleManager({ clock, log, bus });
-  const handPort = new SimulatedPort("sim:hand-right");
+  let handPort = new SimulatedPort("sim:hand-right");
   const tofPort = new SimulatedPort("sim:tof-front");
-  const hand = new SimulatedHand(handPort, "hand-right-sim", clock);
+  let hand = new SimulatedHand(handPort, "hand-right-sim", clock);
   const tof = new SimulatedTof(tofPort, "tof-front-sim", clock);
   hand.onHaptic = (pattern, ms) => log.info("SIMULATED handle buzz", { pattern, ms });
   modules.attach(handPort);
@@ -136,6 +142,48 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   tof.start();
   // ---- SIMULATED lift (--lift): the real lift client against a simulated lift board ----
   const lift = options.lift ? new LiftSim({ clock, log, bus, modules, bench: liftSimBench(process.env) }) : null;
+
+  // ---- SIMULATED arms (--arms): fake servo buses through the real motion coordinator ----
+  let announce: (text: string) => void = () => {};
+  let proposalOpen: () => boolean = () => false;
+  let motion: { sim: MotionSim; socket: OperatorSocket; actions: Record<string, () => void> } | null = null;
+  if (options.arms) {
+    const bench = readBench(process.env);
+    if (!bench.ok) {
+      log.error(bench.reason);
+      return 2;
+    }
+    const handControl: MotionSimHand = {
+      get plugged() {
+        return hand.isRunning;
+      },
+      unplug() {
+        hand.hang();
+        handPort.unplug();
+        log.info("SIMULATED handle unplugged");
+      },
+      plug() {
+        handPort = new SimulatedPort("sim:hand-right");
+        hand = new SimulatedHand(handPort, "hand-right-sim", clock);
+        hand.onHaptic = (pattern, ms) => log.info("SIMULATED handle buzz", { pattern, ms });
+        modules.attach(handPort);
+        hand.start();
+        log.info("SIMULATED handle plugged in");
+      },
+    };
+    const sim = new MotionSim({
+      clock,
+      log,
+      bus,
+      stateDir,
+      bench: bench.bench,
+      hand: handControl,
+      handControls: () => handControlsConnected(modules, null),
+      walkerProposalOpen: () => proposalOpen(),
+      say: (text) => announce(text),
+    });
+    motion = { sim, socket: new OperatorSocket(join(stateDir, "motion.sock"), sim.coordinator, log), actions: sim.actions() };
+  }
 
   // ---- Service ----
   const steps = options.script ? parseScript(readFileSync(options.script, "utf8")) : null;
@@ -155,10 +203,21 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     coordinatorInstanceId: "sim-coordinator",
     makeCloud: (credential) =>
       new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
+    ...(motion ? { motion: motion.sim.coordinator } : {}),
   });
+  announce = (text) => service.announce(text);
+  proposalOpen = () => service.hasOpenProposal();
   service.start();
   // After the script runner exists, so a script sees the lift's first events.
   lift?.start();
+  if (motion) {
+    await motion.sim.coordinator.start();
+    // A Unix socket path over about 104 bytes (macOS) can't be opened: the arms still run, without the terminal.
+    await motion.socket.listen().catch((error: unknown) =>
+      log.error("the terminal's socket couldn't open (a shorter --state path helps)", { error: (error as Error).message }),
+    );
+    log.info("SIMULATED arms ready; the terminal commands work against them", { socket: join(stateDir, "motion.sock") });
+  }
 
   let screen: WalkerScreen | null = null;
   if (options.screen) {
@@ -220,12 +279,16 @@ export async function simulate(options: SimulateOptions): Promise<number> {
         void pairFake();
         return;
       case "?":
-        return process.stdout.write(`${HELP}\n${lift ? `${LIFT_HELP}\n` : ""}`);
+        return process.stdout.write(`${HELP}\n${lift ? `${LIFT_HELP}\n` : ""}${motion ? `${MOTION_HELP}\n` : ""}`);
       case "q":
         return finish(0);
       default: {
-        // Lift: a script names the action ("key lift-home"); the keyboard uses LIFT_KEYS.
-        const action = lift ? (lift.actions()[key] ?? lift.actions()[LIFT_KEYS[key] ?? ""]) : undefined;
+        // Lift and arms: a script names the action ("key lift-home", "key torque-on-left"); the keyboard uses
+        // LIFT_KEYS and MOTION_KEYS.
+        const action =
+          (lift ? (lift.actions()[key] ?? lift.actions()[LIFT_KEYS[key] ?? ""]) : undefined) ??
+          motion?.actions[key] ??
+          motion?.actions[MOTION_KEYS[key] ?? ""];
         if (action) return action();
         return log.warn("unknown key", { key });
       }
@@ -263,6 +326,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   // Against a real cloud the audio folder holds real replies; it goes unless the person asked for it (--out).
   if (options.server && !options.out) rmSync(outDir, { recursive: true, force: true });
   lift?.stop();
+  motion?.socket.close();
+  await motion?.sim.stop();
   service.stop();
   await screen?.stop();
   hand.hang();

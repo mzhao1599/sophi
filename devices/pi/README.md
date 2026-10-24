@@ -4,7 +4,7 @@
 
 On 2026-10-24, the Pi's `/dev/serial/by-id` showed only one CP2102 symlink because both bridges reported serial `0001`. The deployed service now scans `/dev/serial/by-path`, removes duplicate aliases for the same tty, and saw `hand-right-01` and `hand-left-01` simultaneously, both healthy. The right board was reflashed and its app image verified before deployment. After the service restarted it logged the new fixed boot notice, "Sophi is on." Its systemd unit was active and its cloud link online. The owner's physical press check for right Talk and left Confirm is still pending.
 
-Nothing in this service can move the arms or the lift. It has no motion command of any kind. (A lift client exists in `src/motion/lift/`, but only `walker simulate --lift` uses it, against a simulated lift.) The only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second.
+With no arm ports configured (the default), nothing in this service can move the arms or the lift, and the only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second. With arm ports set in its settings file, it also runs the **motion coordinator for the two SO-101 arms** ([The arms](#the-arms-motion-coordinator-part-a)), built 2026-10-24 and tested only against simulated servos: **not yet run on a real servo, adapter or Pi.** A lift client exists in `src/motion/lift/`, but only `walker simulate --lift` uses it, against a simulated lift; the coordinator doesn't drive the lift, and taught skills aren't built.
 
 ## What runs where
 
@@ -425,6 +425,164 @@ The status strip says Online or Offline, the time when the clock has synced, and
 
 **The page.** On the Mac it drew each new state within about 100 ms of the key that caused it, usually 10 to 40 ms (D14). If the walker service stops, it shows "Waiting for the walker service." after 5 s rather than a state that may no longer be true. Every 2 s it then asks `/screen/check` whether its token is still good: if the service restarted (a new token) it reloads itself; if the stream was only refused (too many screens) or dropped, it connects again without reloading. Captions appear when the reply starts playing, and "Done" only once the new configuration is in force on the walker; if it can't be fetched, the offer simply closes.
 
+## The arms (motion coordinator, part A)
+
+**Status, 2026-10-24: built and tested on a Mac against simulated STS3215 servos only. Not yet run on a real servo, adapter, Pi, stop switch or person.** The coordinator follows the motion contract ([`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts), [manipulation guide](../../docs/subsystems/manipulation.md)). Part A is the arms: safety, calibration, named poses, teleop and the simulator. The lift and taught skills (`skill.run`, "Let go?") are part B and are refused here. Every number not from the contract is a placeholder, not measured.
+
+**The rule: motors move only while a person at the walker is acting.** Nothing but a handle Confirm press starts anything:
+
+- **Preparing.** The terminal (`walker arms ...`, `walker motion clear`) and, later, the cloud's id-only offers and the screen can only *prepare* a command. A prepared command becomes the walker's one pending Confirm target. The walker says it aloud in the Pi's own words, such as "Turn on the left arm's motors. Park the walker and lock the brakes, then press Confirm."
+- **Starting.** The target runs only on a handle Confirm press at least 2 s and less than 30 s after it appeared. That button must have been seen released for the whole 2 s, with no hello, gap or loss from its hand module since. A press too early is ignored, and its 2 s starts again from its release.
+- **What withdraws a target.** It is single use. A hand module's hello or loss withdraws it, and so do a Talk press, a fault, a stop, the mode leaving `ready`, and the terminal that prepared it going away (Ctrl-C).
+- **Stopping.** Any Talk or Confirm press while anything moves stops it and holds; that press does nothing else. `walker motion stop` stops too.
+- **The guard stops and latches a fault on:**
+  - the stop-sense input reading pressed (any mode, idle or at boot);
+  - the last hand control going away, or a hand module rebooting or losing a line during motion;
+  - a reading older than 100 ms (that arm then gets no more goals at all);
+  - goal and position more than 10° apart for 300 ms (that arm goes soft at 25% torque);
+  - **a blocked joint:** while its arm is being moved, a goal more than 3° ahead of a joint moving under 3°/s, for 300 ms; or, moving or holding, a load above 80% of the joint's own torque limit for 300 ms. Both are this coordinator's rules, mapped to the contract's `feedback_divergence` and its comply reaction. Without them the 5° lead clamp hides a blocked joint from the 10° rule, and the contract's 80% overload sits above the 60% torque limit, so the joint was pushed at its limit until the deadline. (Placeholders: `STALL_*` in `coordinator.ts`.)
+  - a move past its deadline;
+  - a teaching arm faster than 2× the teleop limit for 200 ms, or a follower 20° behind its leader for 1 s;
+  - servo temperature, supply and load limits, and the servos' own fault bits.
+- **Clearing a fault.** Faults clear only with `walker motion clear --reason "..."` and a Confirm press, once the cause is gone. The reason is logged.
+- **Goals.** Every goal is clamped to within 5° of the measured position, at most 2° a control step (50 Hz). The servo's own speed register is set as a second layer.
+- **READ BEFORE ACT.** The coordinator never acts on what it believes a servo is doing, only on what it read from the servo.
+  - **Every reading carries the control registers.** Each 50 Hz read takes, per servo, torque enable, goal, goal speed, acceleration and torque limit along with the feedback. Torque counts as on only when the latest fresh reading says so; otherwise it is unknown.
+  - **Torque on reads back every write, and aborts on any mismatch:**
+    1. the torque limits (acknowledged, then read back);
+    2. goal = the position just read, with nonzero speed and acceleration (an unacknowledged SYNC WRITE, so read back);
+    3. torque, read back with the limits.
+
+    An abort turns that arm's torque off. So does a fault, the stop, or a handle press part-way through: the press stops it and does nothing else.
+  - **Moving needs `limitsWritten`.** A pose or teleop needs torque to have written and read back its limits. A reading that shows torque off, or a torque limit other than the one written (a power loss resets both), ends that. So do stale readings and a lost bus. The arm must then be turned on again from the terminal with Confirm.
+  - **Holds read first.** A hold (a stop, a fault, a clear) reads the arm, then writes goal = the position just read, only to servos that read torque on. A torque off always wins: each torque off bumps a counter before it is sent, and a hold or re-read that started before it writes nothing.
+  - **Each arm is read on its own.** A slow bus (retries) never makes a healthy arm's reading stale, and no goal is queued behind an arm's read that is still on the bus. A Feetech servo may turn torque on when it gets a goal, so a limp arm (calibration, or released after a fault) never gets one. A clear reads every arm before anything holds.
+  - Leaders never get torque, and one that reads torque on gets it turned off.
+- **Start-up check.** Before anything is written, each arm gets an echo check (the bus is reopened in echo mode if the adapter echoes), then a ping and a model check (777, STS3215) on all six servos, then one read. Servos that read torque on get goal = the measured position and the mode's torque limits, so they hold where they are. Servos that read torque off get nothing. This narrows the contract's restart rule, and `manipulation.md` says so.
+- **Stopping the service.** On SIGTERM it holds every arm where it is, then closes its buses. **A follower whose torque was on stays torqued and holding, and nothing watches it any more:** no stall, divergence, temperature or stop-sense checks. Before stopping the service with an arm torqued, support the arm and turn torque off (`arms torque off` with Confirm), or switch the arms' 12 V off.
+- **No broadcast** except one torque off, when an acknowledged torque off fails.
+- **Bench mode** (`WALKER_MOTION_BENCH=no-hardware-stop`) is the only way to move without a wired stop. It uses the bench limits: poses 20°/s, teleop 45°/s, torque 40% (gripper 35%). It logs the moving arm's angles twice a second. It still needs Confirm for everything, and a lost hand control mid-motion still stops it.
+
+**Files** (`src/motion/`): `coordinator.ts` (the loop, Confirm targets, commands, guards, faults, calibration, the published `MotionStateSchema` state on the bus as `motionState`), `arm.ts` (the start-up check and the few writes motion needs, over `feetech/`), `limits.ts` (goal ramps and clamps), `stopSense.ts` (the GPIO stop-sense input), `operator.ts` (the terminal's local socket), `cli.ts` (`walker arms`, `walker motion`), `files.ts` (calibration and pose files), `settings.ts`, `handControls.ts`, `runtime.ts`. The simulator's arms are `src/sim/motionSim.ts`.
+
+**Kept on the Pi** in `/var/lib/steady-walker/motion/` (0700, files 0600, no secrets and no one's words):
+- `calibration-<side>-<follower|leader>.json`, each a contract `ArmCalibrationSchema`. A calibration made on another adapter (`bus_id`) isn't used.
+- `poses.json`, the follower poses, each a `NamedPoseSchema`.
+
+Old files are renamed `*.replaced-<time>`, never deleted. Recalibrating a follower sets its poses aside, since its angles change. The contract's single `MotionSetupSchema` file isn't used: it needs a `stowed` pose for each calibrated follower, which can't exist before the first calibration.
+
+**Terminal commands** (on the Pi, as root: `sudo node /opt/steady-walker/walker.mjs arms status`, and so on). Each talks to the running service's socket. Everything but `stop` waits for a Confirm press on the walker:
+
+```text
+walker arms status
+walker arms torque <on|off> [--arm left|right]
+walker arms calibrate <left|right> [--leader]
+walker arms pose save <name> [--arm left|right] [--title "<words the walker says>"]
+walker arms pose go <name> [--arm left|right]
+walker arms pose list
+walker arms teleop <left|right>
+walker motion stop
+walker motion clear --reason "<why it is safe>"
+walker motion status
+```
+
+**In the simulator:** `node dist/walker.mjs simulate --arms` adds four SIMULATED servo buses (two followers, two leaders) with made-up calibrations and poses (`stowed`, `ready`, `handover`), and a simulated stop switch. The simulated servos use the dangerous default, where turning torque on drives to whatever goal is in the register. Press `?` for the keys (`s` stop switch, `h` unplug the handle, `1` torque on left, then `c`, and so on). The terminal commands work against it with `--socket <state folder>/motion.sock`. The scripts in `test/sim/motion/*.walk` run there too (`simulate --arms --script ...`), and `test/motion-walk.test.ts` runs them all on a fake clock.
+
+### Bench bring-up with real arms (2026-10-25 plan; nothing below has been done yet)
+
+Two people: one at the arm, one at the terminal. The person at the arm keeps a hand on the **arms' 12 V switch**, which is the stop until the latching stop switch is wired. Do the left side completely before the right. If anything moves that shouldn't, switch the 12 V off first and read the log after (`journalctl -u steady-walker -f`).
+
+**Gate: nobody else within the arms' reach.** The walker's user, and any bystander, stay out of the arms' reach (on a walker, that means off it) until the hardware stop (step 21) has passed **three times in a row**, idle and mid-move. Until then only the two bring-up people are near, and only the person at the switch is within reach.
+
+**Before power**
+
+1. **Settings.** Stop the walker service first (`sudo systemctl stop steady-walker`), so nothing opens the adapters while you look. Plug in only the left follower's adapter (USB, no 12 V yet). Find its stable name with `ls -l /dev/serial/by-id/ /dev/serial/by-path/`, then repeat for each adapter in turn. Put the names into `/etc/steady-walker.env` **before** the arms are plugged in together:
+
+   ```text
+   WALKER_ARM_LEFT_PORT=/dev/serial/by-id/<name>
+   WALKER_LEADER_LEFT_PORT=/dev/serial/by-id/<name>
+   WALKER_MOTION_BENCH=no-hardware-stop
+   WALKER_STOP_SENSE=not_wired
+   ```
+
+   - If two adapters show one shared by-id name (as the hand boards' CP2102s do), use their by-path names instead. By-path names stay valid only while each adapter stays in the same USB socket.
+   - Plug in the left hand board, which carries Confirm: nothing starts without a Confirm press.
+   - Then `sudo systemctl restart steady-walker`.
+2. **Support the arm.** Rest the follower in a folded pose on the bench or a stand, gripper empty, with nothing and nobody within its reach except the person at the switch.
+
+**Power on and the start-up check**
+
+3. **Unpowered.** With the 12 V still off, the servos can't answer. The check is retried every 3 s and logged at most every 30 s as `arm check failed ... nothing is written to it`. `arms status` says `NOT connected`.
+4. **Power on.** Switch the 12 V on. Within 3 s the log shows `arm check passed arm="left follower" echo=false firmware=...`, then the startup event: `torque-off no-goals`, or `torque-on=N goals-at-present` if the servos power up with torque on. Record which, the echo result and the firmware versions. **Unverified until now:** every control tick reads, per servo, one SYNC READ of addresses 40 to 70 (31 bytes: the control registers and the feedback). If `arms status` shows no readings, or the log shows read timeouts once the check has passed, the firmware may not answer a span that long, so record it and stop. If the check fails (a missing id, model not 777), stop here: ids and wiring come first.
+5. **Status.** `arms status` shows the left follower connected, `NOT calibrated`, and torque `off` (or `on`, if the servos power up with torque on: record which).
+6. **Limp before torque on.** Gently move one joint by hand: with torque off it must move freely. The coordinator wrote nothing to it: start-up writes goals only to servos that read torque on, since Feetech servos are reported to turn torque on when they get a goal (`feetech/README.md` doesn't settle it). If it resists, stop: something turned torque on.
+
+**Calibration** (torque off; the arm goes limp)
+
+7. **Left follower.** Run `arms calibrate left`.
+   - The walker says "Calibrate the left arm. Its motors turn off, so hold it. Park the walker and lock the brakes, then press Confirm." Hold the arm, wait 2 s, press Confirm on the handle.
+   - Move every joint to the middle of its range, gripper half open, and press Enter. The servos' offset registers are written so the middle reads 2048. If a servo then doesn't read about 2048, the old offsets are written back and it stops: the offset convention is wrong, so record it and stop.
+   - Move each joint slowly through its whole range, one at a time, and press Enter. Any joint that moved less than 20° is refused.
+8. **Left leader.** Run `arms calibrate left --leader`. No Confirm is needed, because a leader never gets torque.
+9. **Record.** Copy the two calibration files into `hardware/current-build.md` with the date.
+
+**Poses** (taught by hand, torque off)
+
+10. Move the follower by hand to each pose and save it:
+    - `arms pose save stowed --arm left --title "Fold the left arm away"`
+    - then `ready`, and `handover` (title "Hold it out to you").
+
+    A pose outside the calibrated range less 2° is refused.
+
+**First torque on, at the bench limits**
+
+11. Support the arm where it is. Run `arms torque on --arm left`, wait 2 s, press Confirm.
+    - **Expected: no motion at all.** The arm now holds at 40% torque (gripper 35%), and `arms status` shows torque `on`.
+    - Any jump means goal = present failed: switch off and stop.
+12. **Push test.** Push the elbow gently about 15° and hold it.
+    - Within half a second the log shows `motion fault code="feedback_divergence"`, and the arm goes soft (25%) and stops resisting.
+    - Check that it doesn't sag onto your hand: 25% is a placeholder that must be at least the torque that holds the arm up.
+    - Then `motion clear --reason "push test"` and Confirm, and `arms torque on --arm left` and Confirm again.
+
+**First pose**
+
+13. **Short move, with the stop tests on this very first move.** Move the arm near `ready` by hand, or use a pose a few degrees away. Run `arms pose go ready --arm left`, wait 2 s, press Confirm. It moves at 20°/s and the log shows `BENCH motion` lines.
+    - Expected: `completed`. Hand on the switch throughout.
+    - Before any other move, do step 15 on this one: start it again and press Talk mid-move, then Confirm mid-move, then `motion stop` from the terminal. Each must stop it within a moment and hold.
+14. **Back and forth.** Then `stowed`, then `ready`.
+
+**Stop tests** (start a pose move each time; each must stop and hold where it is; step 15 was first done on the first move)
+
+15. **Handle presses:**
+    - a Talk press mid-move (`stopped`);
+    - a Confirm press mid-move (`stopped`);
+    - `motion stop` from the terminal.
+16. **Hand board unplugged mid-move.** Expected: fault `hand_controls_lost`. Plug it back, `motion clear` and Confirm.
+17. **Arm adapter USB unplugged mid-move.** Expected: fault `servo_bus_lost`. **Measure how far each joint went after the unplug**: the design says at most 5° and then it holds, and only the 12 V switch can make it limp now. Plug it back; it reconnects within 3 s; then `motion clear`.
+18. **12 V off mid-move.** The arm goes limp, and the readings stop (`feedback_stale`). Record whether it sags. Power back on, then `motion clear`.
+19. **Blocked.** Start a pose, and block one joint with a soft object (a folded towel or a foam block, never a hand first). **It must go limp within about 0.5 s:** the log shows `motion fault code="feedback_divergence" ... detail="stalled: ..."`, and the arm drops to 25% torque and stops pushing. Then `motion clear` and Confirm, and torque on again with Confirm.
+    - Also lean on a *holding* joint gently: above 80% of its torque limit (32% of full torque in bench mode) for 0.3 s, it goes soft the same way (`detail="load ..."`).
+    - **Check while holding still, in every pose:** if it trips with nothing touching it (its own weight takes more than 80% of the limit), record the load `arms status` shows. Raise `STALL_LOAD_FRACTION` or the torque limit only after measuring, and never above what lets it yield to a push.
+
+**Teleop**
+
+20. Turn torque on for the follower, and move the leader by hand to within 10° of the follower on every joint (compare them in `arms status`). Run `arms teleop left`, wait 2 s, press Confirm.
+    - Move the leader slowly; the follower copies it at up to 45°/s.
+    - Any handle press, or Ctrl-C at the terminal, stops it.
+    - A very fast leader move (over 90°/s for 0.2 s) latches `teleop_overspeed`.
+
+**The real stop, once it is wired**
+
+21. Set `WALKER_STOP_SENSE=gpio:<line>`, remove `WALKER_MOTION_BENCH`, and restart.
+    - Idle, press the latching stop: `stop_circuit_opened`. Release it, then `motion clear` and Confirm.
+    - Then mid-move. Record what the arms do when it cuts their 12 V.
+
+22. **Power loss without the stop.** With the arm holding (torque on, nothing moving), pull its 12 V plug for a moment and put it back.
+    - Expected: `feedback_stale` while it is out. Once it answers, `arms status` shows torque `off`: the servos rebooted, and their limits reset.
+    - `motion clear` and Confirm. Then a pose is refused ("That arm's motors are off") until `arms torque on` and Confirm again. No goal is written to it meanwhile.
+
+Afterwards, write every result, measured value and surprise into `hardware/current-build.md`, with the date. In bench mode the log also shows `BENCH loop` every 5 s, with the slowest control tick and each bus's retries and timeouts: record them.
+
 ## Settings (environment variables)
 
 | Variable | Default | Meaning |
@@ -446,6 +604,11 @@ The status strip says Online or Offline, the time when the clock has synced, and
 | `WALKER_SCREEN_PORT` | `8740` | The walker screen page's port on 127.0.0.1 (1024 to 65535), or `off` for no screen page. Also read by `walker simulate --screen`. |
 | `WALKER_SCREEN_ASSETS` | `screen-page` beside `walker.mjs` | Where the page's built files are (`/opt/steady-walker/screen-page` on the Pi). |
 | `WALKER_SCREEN_GREETING` | unset | A name for "Good evening, Nan" on the clock (up to 12 characters), until the circle brings her own. |
+| `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT` | unset | The follower arms' Feetech adapters, as `/dev/serial/by-id/<name>` or `/dev/serial/by-path/<name>`. Unset: no arm, and no motion at all. Set them **before** plugging an arm into a running Pi, so the ESP32 scanner never opens a servo bus. See [The arms](#the-arms-motion-coordinator-part-a). |
+| `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` | unset | The leader (teaching) arms' adapters, the same way. |
+| `WALKER_STOP_SENSE` | `not_wired` | `gpio:<BCM line>` once the hardware stop's normally closed stop-sense contact is wired to that pin (to ground, pull-up on). `not_wired` refuses all motion unless bench mode is on. |
+| `WALKER_MOTION_BENCH` | unset | Exactly `no-hardware-stop` for bench mode: the bench speed and torque limits, every motion logged, no hardware stop required. Anything else is an error that turns motion off. |
+| `WALKER_MOTION_SOCKET` | `/run/steady-walker/motion.sock` | Read by `walker arms` and `walker motion` (the service puts the socket in its runtime folder). |
 
 ## Cloud link
 
@@ -466,7 +629,7 @@ A `401 unauthenticated` from any of them means "pair me again". The real server 
 - **Placeholders, not measured:** module heartbeat timeout 3 s; zone freshness 500 ms; near under 500 mm, clear over 650 mm; cue repeat 3 s and minimum gap 1 s; haptic 400 ms; GPIO debounce 30 ms; shortest clip 0.3 s; heartbeat deadline 5 s; retry delays 5, 10, 15 s. All in `src/constants.ts`.
 - **From the design:** heartbeat every 5 s; offline after 2 failed heartbeats or a 10 s turn; clips at most 15 s, 16 kHz mono 16-bit, at most 500,000 bytes.
 - **Serial:** 115200 baud (to confirm with the firmware). One module per port. A module is known only after its hello. The Pi asks for one with `hello.request` when it opens a port, again (at most every 2 s, *placeholder*) while an unknown module keeps talking, and when a module that went silent comes back. A hello whose `seq` kept running is an answer. Any line whose `seq` went back (a hello or not, since a boot hello can be lost) is a reboot, which drops any recording that module's button started and asks for a fresh hello. Two boards flashed with the same id: whichever said hello last keeps the id (each board's reboot takes it again); the Pi ignores the other port, logs it once, and never asks it for a hello, so the two don't trade the id back and forth. The Pi's reply to a hello beyond that (protocol version, report rate) is still unspecified, so it sends none. Assumed, to confirm with the firmware: a module's `seq` starts at 0 on boot, strictly increases on the wire (two tasks must never send the same number), and never wraps during a demo.
-- **Reads:** serial ports are read with blocking file reads on libuv's thread pool, so the unit sets `UV_THREADPOOL_SIZE=8`. Checked only through a macOS pseudo-terminal, not on a Pi.
+- **Reads:** serial ports are read with blocking file reads on libuv's thread pool, so the unit sets `UV_THREADPOOL_SIZE=12`: three ESP32 boards and four arm adapters each hold a thread, with room for file work and reopened ports. Checked only through a macOS pseudo-terminal, not on a Pi.
 - **GPIO:** buttons wire to ground with the internal pull-up (so pressed reads low). Pin and chip defaults are assumptions to check with `gpioinfo`.
 - **Audio:** the soundbar's `default:CARD=` device mixes, so a cue can play over speech (step 5 checks it). The mic records with `arecord` in raw PCM; the Pi builds the WAV header itself.
 - **The snapshot travels with each turn** (the contract asks for it), and is `null` when no obstacle sensor has said hello.

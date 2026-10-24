@@ -1,4 +1,4 @@
-import type { Cue, ProposalView, ScreenStateName } from "@walker/contracts";
+import type { Cue, MotionState, ProposalView, ScreenStateName } from "@walker/contracts";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
 /**
@@ -61,6 +61,17 @@ export interface BusEvents {
   screen: { state: ScreenStateName; revision: number };
   /** `walker simulate --lift` only: what the lift client, the simulated lift and the stand-in loop did. */
   lift: { kind: string; text: string };
+  /**
+   * A hand module said hello, went away, or its line numbers jumped (a lost line) or went back (a reboot):
+   * whatever was known about its buttons may be wrong, so a pending motion Confirm target is withdrawn.
+   */
+  handLink: { instanceId: string; why: "hello" | "seq_gap" | "seq_back" | "error" | "lost" };
+  /** What the motion coordinator did, in a few words (checks, commands, faults, offers), for logs and scripts. */
+  motion: { kind: string; text: string };
+  /** The motion state, as the contract's MotionStateSchema (the walker screen's motion slot, later). */
+  motionState: { state: MotionState };
+  /** Simulator only: what the simulated servos saw (never emitted on the Pi). */
+  sim: { text: string };
 }
 
 type Listener<T> = (payload: T) => void;

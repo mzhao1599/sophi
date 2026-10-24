@@ -1,0 +1,42 @@
+# M6. Losing the last handle control mid-motion stops and holds (hand_controls_lost), and outside bench mode
+# nothing starts without one. A handle's hello or loss also withdraws a pending Confirm target.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key pose-ready-left
+wait 2100
+key c
+expect motion command arm.go_to_pose started operator_cli
+wait 200
+key hand-unplug
+expect motion fault hand_controls_lost system
+expect motion command arm.go_to_pose faulted operator_cli
+wait 200
+key inspect-hold-left
+expect sim left follower hold ok
+absent 1000 sim goal-write left follower
+# The hold read the arm first: each goal is where the arm was at the stop, within 0.5°.
+key inspect-hold-tight-left
+expect sim left follower hold tight ok
+# The cause is still there.
+key operator-clear
+expect motion command fault.clear refused:cause_present operator_cli
+key hand-unplug
+expect module hand-right-sim ok
+# It says hello twice (at boot and to the Pi's hello.request); each hello would withdraw a pending target.
+wait 500
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+# A pending target is withdrawn when the handle goes away.
+key pose-handover-left
+expect motion target arm.go_to_pose operator_cli
+key hand-unplug
+expect motion target-ended withdrawn: hand control lost
+# Idle with no handle: a move is refused before anyone is asked to press Confirm.
+key pose-handover-left
+expect motion command arm.go_to_pose refused:no_hand_control operator_cli
+key q

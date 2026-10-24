@@ -1,0 +1,28 @@
+# M7. Stale feedback mid-move: the arm's servo 3 stops answering, so the arm has no fresh reading. The Pi
+# latches feedback_stale and stops writing goals to that arm (it never writes a goal from a stale reading).
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key pose-ready-left
+wait 2100
+key c
+expect motion command arm.go_to_pose started operator_cli
+wait 200
+key stale-left
+expect motion fault feedback_stale arm_left
+expect motion goals-stopped arm_left
+expect motion command arm.go_to_pose faulted operator_cli
+key motion-status
+absent 1500 sim goal-write left follower
+key inspect-hold-left
+expect sim left follower hold ok
+# Answering again: the fault can be cleared.
+key stale-left
+wait 300
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+key q

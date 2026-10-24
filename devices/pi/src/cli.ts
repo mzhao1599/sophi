@@ -7,6 +7,7 @@ import { pairWalker } from "./pair";
 import { StateStore } from "./store";
 import { realCheckDeps, walkerCheck } from "./check";
 import { readGps } from "./gps";
+import { ARMS_USAGE, armsCommand, motionCommand } from "./motion/cli";
 
 const USAGE = `walker: Sophi's always-on walker service
 
@@ -26,16 +27,18 @@ const USAGE = `walker: Sophi's always-on walker service
       only by root and the service). --sim checks simulated serial boards, lift and arms instead of real
       ports. The arms are only PINGed and READ; the lift is only sent hello.request.
   walker simulate [--script <file>] [--mic-file <16 kHz mono WAV>] [--mic mac] [--loud]
-                  [--server <url>] [--state <dir>] [--out <dir>] [--screen] [--lift]
+                  [--server <url>] [--state <dir>] [--out <dir>] [--screen] [--lift] [--arms]
       Runs the whole walker on this computer with simulated parts and, unless --server is given, a FAKE
       cloud on 127.0.0.1. Silent by default: speech is written to audio files. --loud plays it.
       --screen also serves the walker screen's page on http://127.0.0.1:8740/ (WALKER_SCREEN_PORT).
       --lift adds a SIMULATED lift board driven by the real lift client from a stand-in loop (the motion
       coordinator isn't wired in); press ? for its keys.
+      --arms adds SIMULATED arms (fake servo buses) and a simulated stop switch; press ? for their keys.
+${ARMS_USAGE}
 
 State folder: --state, else WALKER_STATE_DIR, else ${DEFAULT_STATE_DIR} (run and pair) or a new temp folder (simulate).`;
 
-const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen", "lift"]);
+const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen", "lift", "arms", "leader"]);
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];
@@ -127,6 +130,10 @@ async function main(argv: string[]): Promise<number> {
         realCheckDeps(sim),
       );
     }
+    case "arms":
+      return armsCommand(positional, flags);
+    case "motion":
+      return motionCommand(positional, flags);
     case "simulate": {
       const mic = text(flags.get("mic"));
       if (mic !== undefined && mic !== "mac") throw new Error("--mic only takes mac.");
@@ -135,6 +142,7 @@ async function main(argv: string[]): Promise<number> {
         micFile: text(flags.get("mic-file")),
         mic,
         loud: flags.get("loud") === true,
+        arms: flags.get("arms") === true,
         state: text(flags.get("state")),
         out: text(flags.get("out")),
         script: text(flags.get("script")),

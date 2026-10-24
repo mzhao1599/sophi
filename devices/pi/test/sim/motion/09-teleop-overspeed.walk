@@ -1,0 +1,20 @@
+# M9. Teleop: Confirm engages; a slow leader move is followed. A leader moved fast is normal while teaching
+# (the follower just lags), but over 2x the teleop limit for 200 ms it holds and latches teleop_overspeed.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key leader-match-left
+key teleop-left
+expect motion target teleop.start operator_cli
+wait 2100
+key c
+expect motion command teleop.start started operator_cli
+expect motion mode teleop
+key leader-sweep-left
+absent 1600 motion fault
+key leader-jerk-left
+expect motion fault teleop_overspeed leader_left shoulder_pan
+expect motion command teleop.start faulted operator_cli
+key q

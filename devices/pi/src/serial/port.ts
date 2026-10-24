@@ -102,7 +102,15 @@ export class SerialScanner {
   private cancel: Cancel | null = null;
 
   constructor(
-    private readonly deps: { clock: Clock; log: Logger; modules: ModuleManager; dir?: string; excludedPort?: string },
+    private readonly deps: {
+      clock: Clock;
+      log: Logger;
+      modules: ModuleManager;
+      dir?: string;
+      excludedPort?: string;
+      /** Ports never to open: the arms' servo buses (a JSON hello at 115200 baud doesn't belong on them). */
+      exclude?: (path: string) => boolean;
+    },
   ) {}
 
   start(): void {
@@ -115,7 +123,7 @@ export class SerialScanner {
 
   private scan(): void {
     for (const path of listSerialPorts(this.deps.dir, this.deps.excludedPort)) {
-      if (this.open.has(path)) continue;
+      if (this.open.has(path) || this.deps.exclude?.(path)) continue;
       try {
         const conn = openSerialPort(path, this.deps.log);
         this.open.add(path);

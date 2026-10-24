@@ -1,0 +1,45 @@
+# M5. The stop switch latches stop_circuit_opened when idle and when moving. Releasing it resumes nothing,
+# torque is read afresh, and the fault can't be cleared while the stop is still pressed.
+expect motion mode ready
+# Idle.
+key stop-switch
+expect motion fault stop_circuit_opened system
+expect motion mode fault
+key stop-switch
+expect motion stop-sense released
+expect motion torque left follower off (re-read)
+key operator-clear
+expect motion target fault.clear operator_cli
+expect spoke Clear the arm faults. Press Confirm to go ahead.
+wait 2100
+key c
+expect motion cleared all faults
+expect motion mode ready
+# Moving.
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key offer-ready-left
+wait 2100
+key c
+expect motion command arm.go_to_pose started offer
+wait 200
+key stop-switch
+expect motion fault stop_circuit_opened system
+expect motion command arm.go_to_pose faulted offer
+# On the servos: within 5° of where it stopped (its power is cut), and no goal written after.
+wait 200
+key inspect-hold-left
+expect sim left follower hold ok
+absent 1000 sim goal-write left follower
+# Still pressed: clearing is refused at once, before anyone is asked to press Confirm.
+key operator-clear
+expect motion command fault.clear refused:cause_present operator_cli
+key stop-switch
+expect motion stop-sense released
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+key q

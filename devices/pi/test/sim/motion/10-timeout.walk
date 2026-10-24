@@ -1,0 +1,17 @@
+# M10. A stiff elbow that still moves, but at about 5°/s, can't reach the pose in time. It isn't stalled (it
+# moves faster than 3°/s) and its goal waits within 5° of it (no divergence), so the move's deadline ends it:
+# stop, hold and latch motion_timeout. (A blocked elbow is the stall rule, M25.)
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key slow-left
+key pose-ready-left
+wait 2100
+key c
+expect motion command arm.go_to_pose started operator_cli
+absent 2000 motion fault feedback_divergence
+expect 3000 motion fault motion_timeout arm_left
+expect motion command arm.go_to_pose faulted operator_cli
+key q
