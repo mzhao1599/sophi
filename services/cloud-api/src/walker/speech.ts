@@ -85,7 +85,18 @@ async function readCapped(response: Response, maxBytes: number): Promise<Buffer 
  * and what the Pi's player accepts (devices/pi readWav), so a reply sent as speech is one it can play.
  */
 export function isWav16kMono(wav: Buffer): boolean {
-  if (wav.length < 12 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") return false;
+  return (wav16kMonoBytes(wav) ?? 0) > 0;
+}
+
+/** The clip's length in milliseconds, from the samples actually there (16 kHz mono 16-bit is 32 bytes a millisecond). */
+export function wav16kMonoMs(wav: Buffer): number | null {
+  const bytes = wav16kMonoBytes(wav);
+  return bytes === null ? null : Math.round(bytes / 32);
+}
+
+/** The bytes of samples in a 16 kHz mono 16-bit PCM WAV, or null when it isn't one. */
+function wav16kMonoBytes(wav: Buffer): number | null {
+  if (wav.length < 12 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") return null;
   let fmtOk: boolean | null = null;
   for (let at = 12; at + 8 <= wav.length; ) {
     const id = wav.toString("ascii", at, at + 4);
@@ -95,9 +106,9 @@ export function isWav16kMono(wav: Buffer): boolean {
       fmtOk = wav.readUInt16LE(body) === 1 && wav.readUInt16LE(body + 2) === 1 && wav.readUInt32LE(body + 4) === 16_000 && wav.readUInt16LE(body + 14) === 16;
     } else if (id === "data") {
       // Streaming encoders may leave the size at 0xFFFFFFFF; what counts is the samples actually there.
-      return fmtOk === true && Math.min(wav.length, body + size) > body;
+      return fmtOk === true ? Math.max(0, Math.min(wav.length, body + size) - body) : null;
     }
     at = body + size + (size % 2);
   }
-  return false;
+  return null;
 }

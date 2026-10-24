@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
-import { WalkerService, isWalkerError, sharedWalkerAgent, sharedWalkerBackend, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
+import { WalkerService, isWalkerError, sharedWalkerActivity, sharedWalkerAgent, sharedWalkerBackend, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
 import { WALKER_ERROR_STATUS, type ProposalView, type WalkerError, type WalkerErrorCode } from "@walker/contracts";
 import type { z } from "zod";
 
@@ -22,11 +22,14 @@ export const MAX_BODY_BYTES = 64_000;
 /** A walker's turn: a voice clip of up to 1 MB is about 1.34 MB in base64, plus its snapshot. */
 export const MAX_TURN_BODY_BYTES = 800_000;
 
-/** The service for one request. It's only a few references; the store and its connection pool are shared. */
+/**
+ * The service for one request. It's only a few references; the store and its connection pool, the
+ * model and voice, and the page's activity log are shared by every route in the process.
+ */
 export function walkerService(): WalkerService {
   const backend = sharedWalkerBackend();
   const { assistant, voice } = sharedWalkerAgent();
-  return new WalkerService(backend.store, { blocked: backend.blocked, assistant, voice });
+  return new WalkerService(backend.store, { blocked: backend.blocked, assistant, voice, activity: sharedWalkerActivity() });
 }
 
 export function ownerCaller(request: NextRequest): OwnerCaller {

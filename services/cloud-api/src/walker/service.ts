@@ -25,10 +25,12 @@ import {
   type ProposalView,
   type WalkerConfiguration,
   type WalkerErrorCode,
+  type WalkerActivityView,
   type WalkerStatusView,
   type WalkerTurnResponse,
   type WalkerTurnView,
 } from "@walker/contracts";
+import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
 import {
   OFFLINE_NO_CHANGE,
@@ -43,7 +45,7 @@ import {
   offerLine,
   stillWaiting,
 } from "./lines";
-import { isWav16kMono, type WalkerVoice } from "./speech";
+import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
 import { SECRET_PATTERN, newSecret, sha256, type DeviceRecord, type WalkerStore } from "./store";
 
@@ -94,6 +96,11 @@ export interface WalkerServiceOptions {
   turnBudgetMs?: number;
   /** The voice's own limit (default VOICE_TIMEOUT_MS). */
   voiceTimeoutMs?: number;
+  /**
+   * The page's live companion: turns in flight and recent turn traces, in memory. One per server
+   * process (sharedWalkerActivity), since a service is built per request. Without one, nothing is tracked.
+   */
+  activity?: ActivityLog | null;
 }
 
 export interface TurnEvent {
@@ -151,6 +158,7 @@ export class WalkerService {
   private readonly onTurn: (event: TurnEvent) => void;
   private readonly turnBudgetMs: number;
   private readonly voiceTimeoutMs: number;
+  private readonly activity: ActivityLog | null;
 
   constructor(
     private readonly store: WalkerStore,
@@ -165,6 +173,7 @@ export class WalkerService {
     this.onTurn = options.onTurn ?? logTurn;
     this.turnBudgetMs = options.turnBudgetMs ?? TURN_BUDGET_MS;
     this.voiceTimeoutMs = options.voiceTimeoutMs ?? VOICE_TIMEOUT_MS;
+    this.activity = options.activity ?? null;
   }
 
   /** At server start: the store's migrations, then the history sweep. */
@@ -259,11 +268,14 @@ export class WalkerService {
   // A page can keep reading a walker that has stopped sending heartbeats, so page reads sweep old
   // history too, once per request, before building any view.
 
-  async list(caller: OwnerCaller): Promise<{ walkers: WalkerStatusView[] }> {
+  async list(caller: OwnerCaller): Promise<{ walkers: WalkerStatusView[]; activity?: WalkerActivityView[] }> {
     const owner = await this.owner(caller);
     const devices = await this.store.devicesForOwner(owner);
     await this.sweep(this.now());
-    return { walkers: await Promise.all(devices.map((d) => this.status(d))) };
+    const walkers = await Promise.all(devices.map((d) => this.status(d)));
+    // Page only, and only this owner's own walkers: the ids come from devicesForOwner, never the log.
+    const activity = this.activity?.view(devices.map((d) => d.device_id)) ?? [];
+    return activity.length > 0 ? { walkers, activity } : { walkers };
   }
 
   async get(caller: OwnerCaller, deviceId: string): Promise<{ walker: WalkerStatusView }> {
@@ -276,6 +288,7 @@ export class WalkerService {
   async forget(caller: OwnerCaller, deviceId: string): Promise<void> {
     const device = await this.resolve(caller, deviceId);
     if (!(await this.store.forget(device.device_id, device.owner_hash))) throw notFound();
+    this.activity?.forget(device.device_id);
   }
 
   // ---- Both ----
@@ -302,11 +315,33 @@ export class WalkerService {
       this.onTurn({ ...turnEvent(device.device_id, source, input.type, prior.turn), replayed: true, ms: Date.now() - started });
       return response;
     }
-    if (input.type === "audio" && !isWav16kMono(Buffer.from(input.data_base64, "base64"))) {
+    const clip = input.type === "audio" ? Buffer.from(input.data_base64, "base64") : null;
+    if (clip && !isWav16kMono(clip)) {
       throw new WalkerError("invalid_request", "The voice clip must be a 16 kHz mono 16-bit WAV file.");
     }
+    const clipMs = clip && wav16kMonoMs(clip);
 
     const now = this.now();
+    // Accepted: the page's companion shows it until it ends, however it ends.
+    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs });
+    try {
+      return await this.answerTurn(device, source, request, now, started, left, clipMs, flight);
+    } finally {
+      flight?.end();
+    }
+  }
+
+  private async answerTurn(
+    device: DeviceRecord,
+    source: "walker" | "page",
+    request: DeviceTurnRequest | PageTurnRequest,
+    now: Date,
+    started: number,
+    left: () => number,
+    clipMs: number | null,
+    flight: FlightHandle | undefined,
+  ): Promise<WalkerTurnResponse> {
+    const input = request.input;
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
@@ -318,7 +353,14 @@ export class WalkerService {
     const heard = input.type === "text" ? { heard: input.text, heard_by: "typed" as const } : transcript ? { heard: transcript, heard_by: "gemini" as const } : { heard: null, heard_by: null };
 
     const voiceStarted = Date.now();
-    const speech = source === "walker" ? await this.speak(decided.reply, left()) : null;
+    let voiceCalled = false;
+    const speech =
+      source === "walker"
+        ? await this.speak(decided.reply, left(), () => {
+            voiceCalled = true;
+            flight?.stage("voicing");
+          })
+        : null;
     const voiceMs = Date.now() - voiceStarted;
     const turn: WalkerTurnView = storable({
       turn_id: this.randomId(),
@@ -330,7 +372,8 @@ export class WalkerService {
       voiced_by: source === "walker" ? (speech ? "cartesia" : "walker") : null,
       created_at: now.toISOString(),
     });
-    const saved = await this.store.saveTurn(device.device_id, turn, decided.proposal, this.now());
+    const savedAt = this.now();
+    const saved = await this.store.saveTurn(device.device_id, turn, decided.proposal, savedAt);
     // Forgotten while the model was answering.
     if (!saved) throw notFound();
     // The status read expires proposals (say the walker went offline during the turn), so read the
@@ -344,7 +387,7 @@ export class WalkerService {
       speech: saved.created && speech ? { mime: "audio/wav", data_base64: speech } : null,
       status: after,
     });
-    this.onTurn({
+    const event: TurnEvent = {
       ...turnEvent(device.device_id, source, input.type, saved.turn),
       replayed: !saved.created,
       reason: decided.reason,
@@ -353,13 +396,34 @@ export class WalkerService {
       voice_ms: source === "walker" ? voiceMs : 0,
       proposal_opened: saved.created && decided.proposal !== null,
       ms: Date.now() - started,
-    });
+    };
+    this.onTurn(event);
+    // Only a turn that saved a new row; another upload of it that saved first has its own trace.
+    if (saved.created) {
+      flight?.record({
+        turn_id: saved.turn.turn_id,
+        client_turn_id: saved.turn.client_turn_id,
+        at: savedAt.toISOString(),
+        input: input.type,
+        clip_ms: clipMs,
+        model_ran: event.attempts > 0,
+        model_ms: event.attempts > 0 ? event.model_ms : null,
+        rule: event.reason,
+        answered_by: event.answered_by,
+        proposal_opened: event.proposal_opened,
+        voiced_by: event.voiced_by,
+        voice_ms: voiceCalled ? event.voice_ms : null,
+        total_ms: event.ms,
+      });
+    }
     return response;
   }
 
-  private async speak(text: string, leftMs: number): Promise<string | null> {
+  /** `onCall` runs just before Cartesia is asked, so the page can show the voice step. */
+  private async speak(text: string, leftMs: number, onCall: () => void): Promise<string | null> {
     const ms = Math.min(this.voiceTimeoutMs, leftMs);
     if (!this.voice || ms < VOICE_MIN_MS) return null;
+    onCall();
     return this.voice.speak(text, AbortSignal.timeout(ms)).catch(() => null);
   }
 

@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { createGeminiModel } from "../onboarding/gemini";
+import { ActivityLog } from "./activity";
 import { createWalkerAssistant, type WalkerAssistant } from "./assistant";
 import { PostgresWalkerStore } from "./postgres-store";
 import { createCartesiaVoice, type WalkerVoice } from "./speech";
@@ -76,4 +77,14 @@ export function sharedWalkerBackend(env: Record<string, string | undefined> = pr
 /** The model and voice, made once per server process. The keys stay on the server. */
 export function sharedWalkerAgent(env: Record<string, string | undefined> = process.env): WalkerAgent {
   return (globalForWalker.__walkerAgent ??= walkerAgentFromEnv(env));
+}
+
+const globalForActivity = globalThis as unknown as { __walkerActivity?: ActivityLog };
+
+/**
+ * The page's live companion log, one per server process for the same reason as the backend: every
+ * route builds its own WalkerService, and a turn's route must write where the list route reads.
+ */
+export function sharedWalkerActivity(): ActivityLog {
+  return (globalForActivity.__walkerActivity ??= new ActivityLog());
 }

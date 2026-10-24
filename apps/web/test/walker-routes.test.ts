@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { MemoryWalkerStore, type WalkerAgent, type WalkerBackend } from "@walker/cloud-api";
-import { AnswerProposalResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, WalkerTurnResponseSchema, type HeartbeatRequest } from "@walker/contracts";
+import { AnswerProposalResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, WalkerListResponseSchema, WalkerTurnResponseSchema, type HeartbeatRequest } from "@walker/contracts";
 import { clientAddress } from "@/server/walker";
 import * as health from "../app/api/v1/health/route";
 import * as pairingCodes from "../app/api/v1/walkers/pairing-codes/route";
@@ -219,6 +219,31 @@ describe("walker routes", () => {
     const huge = { ...voice, client_turn_id: crypto.randomUUID(), padding: "A".repeat(800_000) };
     const refused = await expectError(await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: huge }), params), "invalid_request");
     expect(refused.error.message).toBe("That request is too large.");
+  });
+
+  it("lists the owner's own walker activity (page only) after a turn, shared across routes, never another owner's", async () => {
+    const w = await pairOverHttp();
+    const other = await pairOverHttp("198.51.100.22");
+    await heartbeat.POST(request(`/api/v1/devices/${w.deviceId}/heartbeat`, { bearer: w.credential, body: beat() }), ctx({ id: w.deviceId }));
+    const typed = { client_turn_id: crypto.randomUUID(), input: { type: "text", text: "What can you help me with?" } };
+    expect((await pageTurns.POST(request(`/api/v1/walkers/${w.deviceId}/turns`, { cookie: w.cookie, body: typed }), ctx({ id: w.deviceId }))).status).toBe(200);
+    const voice = { client_turn_id: crypto.randomUUID(), input: { type: "audio", mime: "audio/wav", data_base64: wav(1000).toString("base64"), duration_ms: 1000 }, snapshot: null };
+    expect((await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: voice }), ctx({ id: w.deviceId }))).status).toBe(200);
+
+    const listed = await walkers.GET(request("/api/v1/walkers", { cookie: w.cookie }));
+    expect(listed.status).toBe(200);
+    const body = WalkerListResponseSchema.parse(await listed.json());
+    expect(body.activity).toHaveLength(1);
+    expect(body.activity![0]).toMatchObject({ device_id: w.deviceId, in_flight: [] });
+    expect(body.activity![0]!.traces.map((t) => [t.client_turn_id, t.input, t.clip_ms, t.model_ran, t.rule, t.voiced_by])).toEqual([
+      [typed.client_turn_id, "text", null, false, "no_model", null],
+      [voice.client_turn_id, "audio", 1000, false, "no_model", "walker"],
+    ]);
+    expect(JSON.stringify(body.activity)).not.toContain("help me");
+    // The other owner's list carries none of it.
+    const theirs = await (await walkers.GET(request("/api/v1/walkers", { cookie: other.cookie }))).json();
+    expect(WalkerListResponseSchema.parse(theirs).activity).toBeUndefined();
+    expect(JSON.stringify(theirs)).not.toContain(w.deviceId);
   });
 
   it("refuses a pairing code asked for by another site, and accepts a lowercase bearer scheme", async () => {

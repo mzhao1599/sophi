@@ -70,3 +70,30 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 | Every turn response | Parses with `WalkerTurnResponseSchema` |
 | Logs | Ids, outcomes, attempts and milliseconds (model and voice); never words or audio |
 | Stored turn text | NUL and half surrogate pairs become U+FFFD, as in piece 2 |
+
+## Activity log (page only, the /walker page's live companion)
+
+Written before the code (2026-10-23). The server keeps one `ActivityLog` per process (on `globalThis`), in memory only, and returns it on `GET /walkers` as `activity` (`WalkerActivityViewSchema`). It holds ids, kinds, rule codes and milliseconds, never anyone's words. Stub model, in-memory store, fake clock.
+
+| Case | Expected |
+| --- | --- |
+| A turn while the model is still answering (a slow stub) | The owner's list shows one `in_flight` entry for that walker: its `client_turn_id`, `input`, `since` (the server's clock when the clip or text was accepted), `clip_ms` (from the WAV's samples, 1,200 ms clip → 1200; null for text) and `stage: "hearing"` |
+| The same turn while Cartesia is making the audio (a slow stub voice) | `stage: "voicing"` |
+| After the turn answers | `in_flight` is empty, and one trace is there |
+| The model throws; the model passes its deadline (fallback line); the walker is forgotten during the model (`saveTurn` returns null, 404); the response fails its schema; the store throws while saving | `in_flight` is empty afterwards every time |
+| A clip that isn't a 16 kHz mono WAV; a replay of a stored `client_turn_id` | Never shows in `in_flight` (it's set only after those checks) and adds no trace |
+| Two uploads of one `client_turn_id` at once | One `in_flight` entry while both run; it stays while the second is still running after the first ends; it clears when both end. One trace (the second saved nothing new) |
+| Trace for the model's own words (typed on the walker, no voice configured) | `model_ran: true`, `model_ms` a number, `rule: null`, `answered_by: "model"`, `proposal_opened: false`, `voiced_by: "walker"`, `voice_ms: null` (no Cartesia call), `input: "text"`, `clip_ms: null`, `at` = when it was saved, `total_ms` a number, `turn_id` and `client_turn_id` the stored turn's |
+| Trace for the arms line | `rule: "arms"`, `answered_by: "fixed"`, `model_ran: true` |
+| Trace for a cues change that would turn alerts off | `rule: "cues_alerts_off"`, `answered_by: "fixed"`, `proposal_opened: false` |
+| Trace for an opened proposal | `proposal_opened: true`, `answered_by: "model"`, `rule: null` |
+| Trace for a typed page turn | `input: "text"`, `voiced_by: null`, `voice_ms: null` |
+| Trace for a spoken walker turn with Cartesia answering | `input: "audio"`, `clip_ms: 1200`, `voiced_by: "cartesia"`, `voice_ms` a number |
+| No model configured | `model_ran: false`, `model_ms: null`, `rule: "no_model"`, `answered_by: "fixed"` |
+| 12 turns on one walker | 10 traces (`RECENT_TURNS`), the newest 10, oldest first |
+| 5 turns of one walker in flight at once | 4 `in_flight` entries; the fifth isn't shown. *(design, while building)* Its trace is still recorded when it saves, so 5 traces afterwards |
+| The clock moves past `WALKER_HISTORY_RETENTION_MS` (an hour) after a trace | The trace is gone, and a walker with nothing left is left out of `activity` |
+| The owner forgets the walker | Its activity entry is deleted at once |
+| Owner A and owner B each have a walker with activity | A's list carries only A's walker's activity, B's only B's; an owner with no activity gets no `activity` key at all (`{ walkers: [...] }` as before) |
+| The log, dumped as JSON after typed and spoken turns | Contains none of the person's words or the replies |
+| `GET /api/v1/walkers` after a page turn, over HTTP | 200, parses with `WalkerListResponseSchema`, and carries that walker's trace |

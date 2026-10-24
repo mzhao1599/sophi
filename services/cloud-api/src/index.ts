@@ -44,4 +44,5 @@ export { MemoryWalkerStore, newSecret, sha256, type DeviceRecord, type WalkerSto
 export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
 export { WALKER_MIGRATIONS } from "./walker/migrations";
 export { buildStatusView } from "./walker/status";
-export { sharedWalkerAgent, sharedWalkerBackend, walkerAgentFromEnv, walkerBackendFromEnv, type WalkerAgent, type WalkerBackend } from "./walker/config";
+export { ActivityLog, MAX_IN_FLIGHT } from "./walker/activity";
+export { sharedWalkerActivity, sharedWalkerAgent, sharedWalkerBackend, walkerAgentFromEnv, walkerBackendFromEnv, type WalkerAgent, type WalkerBackend } from "./walker/config";

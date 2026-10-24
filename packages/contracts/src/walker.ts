@@ -462,7 +462,62 @@ export const PairingCodeResponseSchema = z.strictObject({
 export type PairingCodeResponse = z.infer<typeof PairingCodeResponseSchema>;
 
 /** GET /api/v1/walkers: the owner's walkers. GET /api/v1/walkers/{id}: one. DELETE answers 204 with no body. */
-export const WalkerListResponseSchema = z.strictObject({ walkers: z.array(WalkerStatusViewSchema).max(MAX_WALKERS_PER_OWNER) });
+// ---- Activity (page only) ----
+//
+// What the server itself saw of a walker's turns, for the /walker page's live companion ("behind the
+// scenes"). Page only: it rides on the list response, which the Pi never reads. Never put it in the status
+// or turn views, which the Pi parses strictly. It holds no one's words: only kinds, codes and timings. It
+// lives in server memory, so a restart empties it; the page then draws only what the status view shows.
+
+/** A turn the server is working on right now: set once the clip or text is accepted, cleared when it ends however it ends. */
+export const WalkerTurnInFlightSchema = z.strictObject({
+  client_turn_id: id,
+  input: z.enum(["audio", "text"]),
+  /** When the server accepted it. */
+  since: time,
+  /** The clip's length; null for typed text. */
+  clip_ms: z.int().min(0).nullable(),
+  /** "hearing": waiting for the model; "voicing": waiting for Cartesia's audio. */
+  stage: z.enum(["hearing", "voicing"]),
+});
+export type WalkerTurnInFlight = z.infer<typeof WalkerTurnInFlightSchema>;
+
+/** How one saved turn went, measured by the server. Only for turns that saved a new row (never a replay). */
+export const WalkerTurnTraceSchema = z.strictObject({
+  turn_id: id,
+  client_turn_id: id,
+  /** When the turn was saved. */
+  at: time,
+  input: z.enum(["audio", "text"]),
+  clip_ms: z.int().min(0).nullable(),
+  /** False when no model call was made (no model configured): the page then draws no model step. */
+  model_ran: z.boolean(),
+  model_ms: z.int().min(0).nullable(),
+  /** The rule that decided the reply, as a code ("arms", "offline", "cues_alerts_off", "model_error", …); null when the model's own words were used. */
+  rule: z.string().min(1).max(40).nullable(),
+  answered_by: z.enum(["model", "fixed"]),
+  /** A proposal was opened: its words were written by the server, not the model. */
+  proposal_opened: z.boolean(),
+  /** The voice the server sent with the reply, not proof it was heard. */
+  voiced_by: z.enum(["cartesia", "walker"]).nullable(),
+  voice_ms: z.int().min(0).nullable(),
+  total_ms: z.int().min(0),
+});
+export type WalkerTurnTrace = z.infer<typeof WalkerTurnTraceSchema>;
+
+export const WalkerActivityViewSchema = z.strictObject({
+  device_id: id,
+  in_flight: z.array(WalkerTurnInFlightSchema).max(4),
+  /** Oldest first, at most RECENT_TURNS, none older than WALKER_HISTORY_RETENTION_MS. */
+  traces: z.array(WalkerTurnTraceSchema).max(RECENT_TURNS),
+});
+export type WalkerActivityView = z.infer<typeof WalkerActivityViewSchema>;
+
+export const WalkerListResponseSchema = z.strictObject({
+  walkers: z.array(WalkerStatusViewSchema).max(MAX_WALKERS_PER_OWNER),
+  /** One entry per listed walker that has any; optional so a page and server of different versions still agree. */
+  activity: z.array(WalkerActivityViewSchema).max(MAX_WALKERS_PER_OWNER).optional(),
+});
 export const WalkerResponseSchema = z.strictObject({ walker: WalkerStatusViewSchema });
 
 // ---- Errors ----
