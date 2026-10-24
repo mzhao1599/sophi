@@ -35,6 +35,18 @@ export const SIMULATED_READINGS = "These readings are simulated.";
 export const SIMULATED_PARTS = "Some of this walker's parts are simulated.";
 export const SIMULATED_ALL_PARTS = "All of this walker's parts are simulated.";
 
+/**
+ * How old an obstacle reading is, worded the way it's said aloud, for the model to repeat: "just now" under
+ * a second, then whole seconds ("3 seconds ago"). The model never sees milliseconds, which it once read out
+ * ("…from 44 milliseconds ago", rehearsal 2026-10-24). null when there's no age to say.
+ */
+export function readingAge(ageMs: number | null | undefined): string | null {
+  if (ageMs == null || !Number.isFinite(ageMs) || ageMs < 0) return null;
+  if (ageMs < 1_000) return "just now";
+  const seconds = Math.floor(ageMs / 1_000);
+  return seconds === 1 ? "1 second ago" : `${seconds} seconds ago`;
+}
+
 /** What the person hears when a proposal opens: the change itself, from the payload ("I can switch your alerts…"). */
 export function offerLine(summary: string): string {
   return `I can ${summary.charAt(0).toLowerCase()}${summary.slice(1)}`;

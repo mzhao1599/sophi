@@ -22,7 +22,7 @@ import {
   type TurnEvent,
   type WalkerVoice,
 } from "../../src";
-import { PRESS_CONFIRM, SIMULATED_ALL_PARTS, SIMULATED_PARTS, SIMULATED_READINGS } from "../../src/walker/lines";
+import { PRESS_CONFIRM, SIMULATED_ALL_PARTS, SIMULATED_PARTS, SIMULATED_READINGS, readingAge } from "../../src/walker/lines";
 import { isWav16kMono } from "../../src/walker/speech";
 import { Clock, SKIP_POSTGRES, manifest, memoryHarness, postgresHarness, snapshot, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
 
@@ -308,8 +308,20 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       await service.turn(device(w.credential), w.id, typed("Is anything in front of me?"));
       await service.turn(owner(w.secret), w.id, { client_turn_id: uuid(), input: { type: "text", text: "Is anything in front of me?" } });
       const [fromWalker, fromPage] = stub.requests.map((r) => JSON.parse(r.context).zones[0]);
-      expect(fromWalker).toEqual({ zone: "front", sensor: "tof-front-01", measured_mm: 640, reading_age_ms: 120 });
+      // The age is worded for speech (120 ms is "just now"): no milliseconds reach the model.
+      expect(fromWalker).toEqual({ zone: "front", sensor: "tof-front-01", measured_mm: 640, reading_age: "just now" });
       expect(fromPage).toEqual({ zone: "front", sensor: "tof-front-01", unknown: "stale" });
+    });
+
+    it("words an older reading's age in whole seconds", async () => {
+      const stub = stubModel({ reply: "Something is about 64 centimetres ahead.", topics: ["obstacles"] });
+      const service = serviceWith(stub.model);
+      const w = await walker(service);
+      clock.advance(3_000); // the heartbeat's snapshot is 3,120 ms old, still fresh
+      await service.turn(owner(w.secret), w.id, { client_turn_id: uuid(), input: { type: "text", text: "Is anything in front of me?" } });
+      const context = stub.requests[0]!.context;
+      expect(JSON.parse(context).zones[0]).toEqual({ zone: "front", sensor: "tof-front-01", measured_mm: 640, reading_age: "3 seconds ago" });
+      expect(context).not.toMatch(/age_ms|3120/);
     });
 
     it("builds the context in order, with the policy as the system prompt and the person's words last, as data", async () => {
@@ -484,6 +496,24 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
     });
   });
 }
+
+describe("the walker assistant's wording", () => {
+  it("says a reading's age as a person would: just now under a second, then whole seconds", () => {
+    expect(readingAge(0)).toBe("just now");
+    expect(readingAge(999)).toBe("just now");
+    expect(readingAge(1_000)).toBe("1 second ago");
+    expect(readingAge(1_999)).toBe("1 second ago");
+    expect(readingAge(44_000)).toBe("44 seconds ago");
+    expect(readingAge(undefined)).toBeNull();
+    expect(readingAge(null)).toBeNull();
+  });
+
+  it("tells the model the server adds the all-simulated line, so it leaves it out", () => {
+    expect(WALKER_SYSTEM_PROMPT).toContain(`the server ends your reply with "${SIMULATED_ALL_PARTS}" itself`);
+    expect(WALKER_SYSTEM_PROMPT).toContain("reading_age");
+    expect(WALKER_SYSTEM_PROMPT).not.toMatch(/millisecond|age_ms/);
+  });
+});
 
 describeTurns("memory", async () => memoryHarness());
 
