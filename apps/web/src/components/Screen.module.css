@@ -35,12 +35,13 @@
 }
 
 .doneTitle {
-  font-family: var(--font-display);
   font-size: var(--fs-title);
-  font-weight: 400;
-  line-height: 1.04;
+  font-weight: 800;
+  font-stretch: 80%;
+  font-variation-settings: "wdth" 80;
+  line-height: 1.1;
   letter-spacing: -0.01em;
-  max-width: 22ch;
+  max-width: 24ch;
   text-wrap: balance;
 }
 
@@ -63,6 +64,37 @@
   margin-top: 28px;
 }
 
+/* The walker as the answers have shaped it, under the "that's everything" title. */
+.preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
+  align-items: start;
+  gap: 24px;
+  margin-top: 40px;
+  padding: var(--pad);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.previewText {
+  display: grid;
+  gap: 8px;
+}
+
+.previewHeading {
+  font-size: var(--fs-heading);
+  font-weight: 600;
+}
+
+.previewNote {
+  max-width: 40ch;
+  color: var(--muted);
+}
+
+.previewFigure figure {
+  --d-ground: var(--surface);
+}
+
 @media (max-width: 900px) {
   .span8,
   .span4 {
@@ -74,8 +106,12 @@
   .main {
     padding: 32px 16px 80px;
   }
+  .preview {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
   .doneTitle {
-    font-size: 34px;
+    font-size: 28px;
   }
   .actions .button {
     width: 100%;

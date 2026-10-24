@@ -103,3 +103,53 @@ Top three problems:
    next to the verbs (desktop-page-01).
 3. No product photograph: the walker is a drawing until the hardware exists.
 ```
+
+## App screens (onboarding and review)
+
+**Style.** `achromatic-ledger`, seed 1253139886, with the landing's palette and type kept
+(`--keep palette,type`), chosen over `editorial-greeting` (the first design's style). Why: setup is
+done once, by one person who may have low vision, so ink on white with a single hue on what you chose
+gives the clearest selected state, and it breaks from the tonal-panel look the team called generic.
+The style's move, kept: no colour in the chrome, a near-black primary action, and the one hue
+(ultramarine `#1423b8`, 9.9:1 on white) on the main data, which here is your choices: a chosen
+answer, a module on your walker, the progress bar, the parts drawn on the walker.
+
+**Shell.** The sheet dealt an icon rail, and redraws only alternated with an open plane. I used the
+library's "No sidebar" shell instead (app-screens.md §3.1, "for products with few destinations"):
+the app has two destinations, so a rail would be empty chrome. The bar holds the product's mark and
+wordmark (the landing's condensed capitals), the demo scope and "Delete my answers"; a sign-in link
+can join the same row. `TopBar`'s props are unchanged.
+
+**Face and signature.** Face: the hue on the main data element, plus the landing's type (Archivo; titles
+at 800 and 80% width). Signature element: the walker drawing with each module where it mounts, now on
+the "That's everything I need" screen too ("Your walker so far", suggestions dashed), where it also
+fills what used to be an empty block.
+
+**Each screen's question.**
+- Start: "What will this do with my answers?" The "Before you start" notes are the biggest block.
+- Question: "What's being asked, and what have I said so far?" The question at 40px, the summary beside it.
+- Done: "Is this what I meant?" The summary and the walker so far, then Review modules.
+- Review: "Which modules will my walker have?" The list with reasons; the drawing and Save pinned beside it.
+- Saved: "What was saved, and what would the walker get?" Modules, cues and the configuration itself.
+
+**Accessibility changes from the sheet.** Body 16px and meta 14px (the sheet says 14 and 12); control
+borders `#6e7380` (4.7:1 on white); targets 44px or more (buttons 48px, answer rows 60px); a chosen
+answer changes its border colour and fill and shows the native check, so it never relies on colour.
+
+**Check (app-screens.md §2.7).**
+1. The biggest thing on each screen answers its question: the question itself, the module list, the
+   saved modules. Yes.
+2. Shared edges: every block sits on the 1100px column; the saved screen's two halves are one panel
+   now (they ended 38px apart as two cards).
+3. Colour is on data and the primary action only. The hue shows on the first screen of every step
+   (the progress bar, a chosen answer, a module, the drawing).
+4. Figures: "Question 3 of 7", "3 of 7 modules" and the progress bar come from the same session values.
+5. Empty states: "Nothing yet. Your answers will appear here…" in the summary; the drawing shows the
+   frame alone when nothing is suggested.
+6. The legend's swatches are the drawing's own marks (solid, dashed in the hue, dashed in grey).
+7. Phone: no navigation to fold; the summary moves above the list on review, and every block keeps
+   its question.
+
+Inspector warnings kept: `app-title-size` on the question screen (40px; the question is the one thing
+to read there, and larger type helps people with low vision) and `below-fold` on review (seven
+modules with their reasons don't fit one screen; the summary with Save stays pinned beside the list).

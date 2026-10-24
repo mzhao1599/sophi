@@ -1,4 +1,6 @@
+/* The shell's one bar: on the page ground, divided from it by one rule, with no colour of its own. */
 .bar {
+  border-bottom: 1px solid var(--rule);
   background: var(--chrome);
 }
 
@@ -13,16 +15,22 @@
   padding: 0 var(--pad);
 }
 
+/* The wordmark in the landing page's condensed capitals. */
 .brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   min-height: var(--target);
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 800;
+  font-stretch: 75%;
+  font-variation-settings: "wdth" 75;
+  text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
 }
 
+/* The demo scope, then the bar's actions; further links (sign-in) join the same row. */
 .scope {
   display: flex;
   align-items: center;

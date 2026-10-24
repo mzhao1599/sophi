@@ -1,55 +1,60 @@
 /*
- * Design tokens: taste-skill app style "editorial-greeting" (seed 2016038647), adjusted for this
- * product's users. Changes from the dealt sheet, each for accessibility:
+ * Design tokens for the app screens: taste-skill app style "achromatic-ledger" (seed 1253139886),
+ * with the landing page's type and its ultramarine kept. The style's move: no colour in the chrome;
+ * the one hue goes on the screen's main data element, which here is what you chose (a selected
+ * answer, a module on your walker, the progress so far). The primary action is near-black.
+ * Changes from the sheet, each for accessibility:
  *   - body 16px instead of 14px, meta 14px instead of 12px (people with low vision use this flow);
- *   - control borders #8c8c88 instead of #d9d9d6, so field and checkbox edges reach 3:1 (WCAG 1.4.11);
+ *   - control borders #6e7380, so field and checkbox edges reach 3:1 on white and on the panels;
  *   - every interactive target is at least 44px tall.
- * Grid: a centred 1100px column, 12 columns of 77px with 16px gutters (12 x 77 + 11 x 16 = 1100).
+ * Shell: no sidebar (the product has two destinations so far), a 56px bar naming the product and the
+ * demo scope. Grid: a centred 1100px column, 12 columns of 77px with 16px gutters (12 x 77 + 11 x 16 = 1100).
  */
 
 :root {
   --ground: #ffffff;
-  --chrome: #f6f6f4;
-  --surface: #f9f9f9;
-  --surface-step: #f0f0ed;
+  --chrome: #ffffff;
+  --surface: #f3f4f7;
+  --surface-step: #e6e8ee;
   --raised: #ffffff;
-  --border: #eaeaea;
-  --rule: #ececea;
-  --control: #8c8c88;
-  --text: #1f201d;
-  --muted: #636361;
-  --primary: #1f201d;
+  --border: #e3e5ea;
+  --rule: #e3e5ea;
+  --control: #6e7380;
+  --text: #0b0c10;
+  --muted: #4f5361;
+  --primary: #0b0c10;
+  --primary-hover: #2a2c33;
   --on-primary: #ffffff;
-  --accent: #1b6e66;
-  --accent-tint: #e4f0ee;
+  --accent: #1423b8;
+  --accent-tint: #e9ebfb;
   --negative: #b42318;
   --pill-positive-bg: #dcfae5;
   --pill-positive-ink: #04250e;
   --pill-warning-bg: #fffbeb;
   --pill-warning-ink: #92400e;
-  --pill-neutral-bg: #f0f0ed;
-  --pill-neutral-ink: #3d3d3a;
-  --pill-accent-bg: #e4f0ee;
-  --pill-accent-ink: #0f4a44;
+  --pill-neutral-bg: #e6e8ee;
+  --pill-neutral-ink: #343844;
+  --pill-accent-bg: #e9ebfb;
+  --pill-accent-ink: #0e1880;
 
-  --radius-card: 22px;
-  --radius-inner: 14px;
-  --radius-field: 12px;
-  --radius-control: 999px;
+  --radius-card: 8px;
+  --radius-inner: 6px;
+  --radius-field: 6px;
+  --radius-control: 6px;
+  --radius-pill: 999px;
 
   --gap: 16px;
   --pad: 24px;
   --column: 1100px;
   --target: 44px;
 
-  --fs-title: 48px;
+  --fs-title: 32px;
   --fs-heading: 20px;
   --fs-lead: 18px;
   --fs-body: 16px;
   --fs-small: 14px;
 
-  --font-text: var(--font-instrument-sans), "Instrument Sans", system-ui, sans-serif;
-  --font-display: var(--font-instrument-serif), "Instrument Serif", Georgia, serif;
+  --font-text: var(--font-archivo), "Archivo", system-ui, sans-serif;
 }
 
 *,
@@ -140,10 +145,11 @@ a {
   border: 0;
 }
 
+/* Clipped out of sight (not moved off-screen) until it has focus, then shown on the column's left edge. */
 .skip-link {
   position: absolute;
-  left: 16px;
-  top: -100px;
+  left: max(16px, calc((100vw - var(--column)) / 2));
+  top: 8px;
   z-index: 10;
   padding: 10px 16px;
   border-radius: var(--radius-control);
@@ -152,8 +158,13 @@ a {
   text-decoration: none;
 }
 
-.skip-link:focus {
-  top: 8px;
+.skip-link:not(:focus) {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ---- Buttons ---- */
@@ -163,12 +174,12 @@ a {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: var(--target);
+  min-height: 48px;
   padding: 0 22px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   font-size: var(--fs-body);
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
@@ -185,7 +196,7 @@ a {
 }
 
 .button-primary:hover:not(:disabled) {
-  background: #3a3b37;
+  background: var(--primary-hover);
 }
 
 .button-secondary {
@@ -232,7 +243,7 @@ a {
   align-items: center;
   min-height: 24px;
   padding: 0 10px;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-pill);
   font-size: var(--fs-small);
   font-weight: 500;
   white-space: nowrap;

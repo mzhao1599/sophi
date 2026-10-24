@@ -1,5 +1,5 @@
 .panel {
-  align-self: stretch;
+  align-self: start;
   padding: var(--pad);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -8,6 +8,21 @@
 .heading {
   font-size: var(--fs-heading);
   font-weight: 600;
+}
+
+/* What was saved: the modules on the left, how the walker reaches you on the right. */
+.split {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 24px var(--gap);
+}
+
+.modulesPart {
+  grid-column: span 8;
+}
+
+.prefsPart {
+  grid-column: span 4;
 }
 
 .modules {
@@ -54,8 +69,15 @@
   border-radius: var(--radius-inner);
   background: var(--raised);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .modulesPart,
+  .prefsPart {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 640px) {
@@ -64,6 +86,6 @@
   }
   .panel {
     padding: 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-card);
   }
 }

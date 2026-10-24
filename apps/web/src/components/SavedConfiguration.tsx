@@ -56,35 +56,38 @@ export function SavedConfiguration({
         </p>
       </header>
 
-      <section className={`${screen.span8} ${styles.panel}`} aria-labelledby="saved-modules">
-        <h2 id="saved-modules" className={styles.heading}>
-          On your walker
-        </h2>
-        <ul className={styles.modules}>
-          {modules.map((m) => (
-            <li key={m.id}>
-              <p className={styles.name}>{m.name}</p>
-              <p className={styles.meta}>{m.placement}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* One panel for what was saved, so its two halves share a top and a bottom edge. */}
+      <div className={`${screen.span12} ${styles.panel} ${styles.split}`}>
+        <section className={styles.modulesPart} aria-labelledby="saved-modules">
+          <h2 id="saved-modules" className={styles.heading}>
+            On your walker
+          </h2>
+          <ul className={styles.modules}>
+            {modules.map((m) => (
+              <li key={m.id}>
+                <p className={styles.name}>{m.name}</p>
+                <p className={styles.meta}>{m.placement}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-      <section className={`${screen.span4} ${styles.panel}`} aria-labelledby="saved-prefs">
-        <h2 id="saved-prefs" className={styles.heading}>
-          How it reaches you
-        </h2>
-        <dl className={styles.prefs}>
-          <div>
-            <dt>Cues</dt>
-            <dd>{list(configuration.preferences.cues.map((c) => CUE[c]), "Not chosen yet")}</dd>
-          </div>
-          <div>
-            <dt>Start a request with</dt>
-            <dd>{list(configuration.preferences.request_start.map((c) => START[c]), "Not chosen yet")}</dd>
-          </div>
-        </dl>
-      </section>
+        <section className={styles.prefsPart} aria-labelledby="saved-prefs">
+          <h2 id="saved-prefs" className={styles.heading}>
+            How it reaches you
+          </h2>
+          <dl className={styles.prefs}>
+            <div>
+              <dt>Cues</dt>
+              <dd>{list(configuration.preferences.cues.map((c) => CUE[c]), "Not chosen yet")}</dd>
+            </div>
+            <div>
+              <dt>Start a request with</dt>
+              <dd>{list(configuration.preferences.request_start.map((c) => START[c]), "Not chosen yet")}</dd>
+            </div>
+          </dl>
+        </section>
+      </div>
 
       <section className={`${screen.span12} ${styles.panel}`} aria-labelledby="saved-json">
         <h2 id="saved-json" className={styles.heading}>

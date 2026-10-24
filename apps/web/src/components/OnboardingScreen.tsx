@@ -2,13 +2,64 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import { MODULE_CATALOG, type ModuleId, type SessionView } from "@walker/contracts";
 import { useOnboarding, type Onboarding } from "@/lib/useOnboarding";
 import { FactsPanel } from "./FactsPanel";
 import { QuestionStep } from "./QuestionStep";
 import { StartPanel } from "./StartPanel";
 import { TopBar } from "./TopBar";
 import { Transcript } from "./Transcript";
+import { WalkerDiagram, type PartState } from "./WalkerDiagram";
 import styles from "./Screen.module.css";
+
+/**
+ * The walker as the answers have shaped it so far: suggested modules dashed, the frame solid. After
+ * saving, the saved modules are solid. Nothing here is chosen; choosing happens on the review page.
+ */
+function SuggestedWalker({ session }: { session: SessionView }) {
+  const saved = session.state === "confirmed" ? session.configuration?.selected_module_ids : undefined;
+  const status = new Map(session.recommendations.map((r) => [r.module_id, r.status]));
+  const states = Object.fromEntries(
+    MODULE_CATALOG.modules.map((m) => {
+      const st = status.get(m.id);
+      const state: PartState = saved
+        ? saved.includes(m.id)
+          ? "selected"
+          : "off"
+        : st === "required"
+          ? "selected"
+          : st === "recommended" || st === "consider"
+            ? "suggested"
+            : st === "unavailable"
+              ? "unavailable"
+              : "off";
+      return [m.id, state];
+    }),
+  ) as Record<ModuleId, PartState>;
+  const nameOf = (id: ModuleId) => MODULE_CATALOG.modules.find((m) => m.id === id)!.name;
+  const suggested = MODULE_CATALOG.modules.filter((m) => states[m.id] === "suggested").map((m) => m.name);
+  const caption = saved
+    ? `On your saved walker: ${saved.map(nameOf).join(", ")}.`
+    : suggested.length > 0
+      ? `Suggested so far: ${suggested.join(", ")}. The frame is part of every setup.`
+      : "Nothing is suggested yet beyond the frame, which is part of every setup.";
+
+  return (
+    <section className={styles.preview} aria-labelledby="preview-heading">
+      <div className={styles.previewText}>
+        <h2 id="preview-heading" className={styles.previewHeading}>
+          {saved ? "Your saved walker" : "Your walker so far"}
+        </h2>
+        <p className={styles.previewNote}>
+          {saved ? "Solid parts are on the configuration you saved." : "Dashed parts are suggestions from your answers. You choose what to keep on the next page."}
+        </p>
+      </div>
+      <div className={styles.previewFigure}>
+        <WalkerDiagram states={states} highlight={null} caption={caption} legend={!saved} />
+      </div>
+    </section>
+  );
+}
 
 /**
  * The onboarding conversation. Screen question: "What's the next thing you'd like to tell me?" — the
@@ -95,6 +146,7 @@ export function OnboardingView({ o, agent = false }: { o: Onboarding; agent?: bo
                   {s.state === "confirmed" ? "See your saved setup" : "Review modules"}
                 </Link>
               </div>
+              <SuggestedWalker session={s} />
             </section>
             <div className={styles.span4}>
               <FactsPanel

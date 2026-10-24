@@ -83,13 +83,14 @@
   margin-top: 12px;
 }
 
+/* The reason's edge is structure (grey) until the module is chosen; then it takes the one hue. */
 .reasons li {
   padding-left: 14px;
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--surface-step);
 }
 
 .module[data-checked="true"] .reasons li {
-  border-left-color: var(--pill-accent-ink);
+  border-left-color: var(--accent);
 }
 
 .from {
@@ -120,9 +121,26 @@
 .details summary {
   display: inline-flex;
   align-items: center;
+  gap: 10px;
   min-height: var(--target);
   font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
+}
+
+/* A drawn triangle marks the disclosure (the native marker goes with inline-flex); it turns when open. */
+.details summary::before {
+  content: "";
+  flex: none;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.details[open] summary::before {
+  transform: rotate(90deg);
 }
 
 .detailBody {
@@ -160,6 +178,10 @@
   padding: var(--pad);
   border-radius: var(--radius-card);
   background: var(--surface);
+}
+
+.summaryCard figure {
+  --d-ground: var(--surface);
 }
 
 .summaryHeading {
@@ -211,11 +233,11 @@
   .module {
     grid-template-columns: 32px minmax(0, 1fr);
     padding: 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-card);
   }
   .summaryCard {
     padding: 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-card);
   }
   .saveRow .button,
   .bottomSave .button {
