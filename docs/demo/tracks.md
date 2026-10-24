@@ -2,7 +2,7 @@
 
 This page is for the presenter and for whoever writes the Devpost submission. For each sponsor track Steady enters, it says what the judges score, what Steady really shows today, a 2-minute cut that opens on that track's moment, and the proof to bring. The [main demo script](script.md) stays the source for Wren's lines, the setup checklist and the honesty lines; this page only reorders and frames them.
 
-**Status, 2026-10-24.** Real today: the onboarding website (conversation, the walker drawing, "Your walker", save, and an order in Stripe's test mode). Built and rehearsed on the walker simulator: the always-on walker assistant (the Pi service, its server with the assistant on Gemini, and the "Your walker" live page); its script is [walker-script.md](walker-script.md). Not yet run: the real Pi, the server on Render, and Cartesia's voice (built, but there's no key yet). Not built: the walker hardware integration. Nothing below presents a planned part as working; each cut that needs a planned part says so.
+**Status, 2026-10-24.** Real today: the onboarding website (conversation, the walker drawing, "Your walker", save, and an order in Stripe's test mode). Built and rehearsed on the walker simulator: the always-on walker assistant (the Pi service, its server with the assistant on Gemini, and the "Your walker" live page); its script is [walker-script.md](walker-script.md). The server runs on Render (<https://steady-walker.onrender.com>), checked end to end on 2026-10-24, including a reply in Cartesia's voice. Not yet run: the real Pi. Not built: the walker hardware integration. Nothing below presents a planned part as working; each cut that needs a planned part says so.
 
 **Which tracks, and why.** The sponsor-track analysis (2026-10-24) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and MLH's "Best Use of Gemini API". The others don't fit without work off the demo path or against the project's safety and consent rules.
 
@@ -70,7 +70,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **What the judges score (25% each):** problem and originality; use of Cartesia (core to the experience; clear, responsive and natural voice); execution; impact and responsibility (accessibility, privacy, responsible use). Submission: a working demo, a 2-minute demo-first presentation, a short README (setup, Cartesia features used, known limitations), source access, and no keys in the repo. The README part is the section below; the Devpost text can link straight to it.
 
-**Status, 2026-10-24:** built on `main` (#39) and tested with a stubbed Cartesia only. There is no Cartesia key yet, so every walker reply is spoken in the walker's own voice (`voiced_by: "walker"`): in the 2026-10-24 rehearsal ([walker-script.md](walker-script.md#rehearsal-results)) the page said "In the walker's own voice" under every spoken reply, and "In Cartesia's voice" hasn't been seen on screen yet. Don't name Cartesia in a demo until a key is in and that day's run shows "In Cartesia's voice" under a reply. The walker itself has run only as the Pi service's simulator on a Mac, not yet on the real Pi with its speaker.
+**Status, 2026-10-24:** built on `main` (#39). Max's key is in on Render, and a spoken question to the deployed server came back in Cartesia's voice (4.1 s end to end). The simulator rehearsal ran before the key, so every reply there was spoken in the walker's own voice (`voiced_by: "walker"`): in that rehearsal ([walker-script.md](walker-script.md#rehearsal-results)) the page said "In the walker's own voice" under every spoken reply, and "In Cartesia's voice" hasn't been seen on screen yet. Don't name Cartesia in a demo until a key is in and that day's run shows "In Cartesia's voice" under a reply. The walker itself has run only as the Pi service's simulator on a Mac, not yet on the real Pi with its speaker.
 
 **Why voice is core here:** a walker user's hands are on the handles. Talk is a button on the handle; the answer comes back out loud, and the same words appear on the "Your walker" page, so voice is never the only way to get them.
 
@@ -95,7 +95,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **Known limitations:**
 
-- Not yet heard live: no key yet, so Cartesia's latency and voice quality on the walker are unmeasured.
+- Heard live through the deployed server on 2026-10-24 (a spoken question answered in Cartesia's voice, 4.1 s end to end; two replies made in 0.9 and 1.3 s), but not yet on the real Pi's speaker, and not yet seen as "In Cartesia's voice" on the page.
 - On the simulator, without Cartesia, the reply's text reached the walker 1.9 to 4.6 seconds after Talk was released (median 2.7 seconds over 16 spoken turns; [walker-script.md](walker-script.md#rehearsal-results)). Cartesia's time, at most 3 seconds, comes on top of the server's part of that.
 - The whole reply is made before it plays (the bytes endpoint, not streaming), so Cartesia's time adds to the wait after Talk is released. Streaming over Cartesia's WebSocket would start sooner; it isn't built.
 - English and one stock voice only.

@@ -22,7 +22,7 @@ The onboarding demo's script is [script.md](script.md); it stays the source for 
 **What is planned or unverified:**
 - the real Pi, which isn't connected yet;
 - the ESP32 hand and obstacle boards, whose firmware is tested on a computer but hasn't run on a board;
-- Cartesia's voice, which has no key yet.
+- Cartesia's voice in the demo itself: the key is in and a reply came back in Cartesia's voice from the deployed server on 2026-10-24, but the rehearsal above ran before that, in the walker's own voice.
 
 Nothing in this script presents a simulated or planned part as working.
 
