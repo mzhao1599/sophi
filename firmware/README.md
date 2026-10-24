@@ -1,4 +1,4 @@
-# Steady ESP32 firmware
+# Sophi ESP32 firmware
 
 **Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. The left hand board was flashed and answered USB serial commands on a Mac; its connected control reported a press and triggered a haptic cue felt by the owner. See the bench record below. The right hand board and obstacle firmware have not run in this Mac bench check. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
 

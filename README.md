@@ -1,8 +1,8 @@
-# Assistive Walker
+# Sophi
 
-An experimental, modular AI assistive walker for Cal Hacks. A user starts in an accessible web app, describes the tasks they want help with, and receives a small, explainable set of recommended modules. On the walker, physical controls, speech, haptics, cameras, and optional robot arms work through a Raspberry Pi 5. Local software handles time-sensitive sensing and stop behavior; cloud software handles conversation, planning, and user preferences.
+Sophi is an experimental physical augmentation walker for Cal Hacks. A user starts in an accessible web app, describes the tasks they want help with, and receives a small, explainable set of recommended modules. On the walker, physical controls, speech, haptics, cameras, and optional robot arms work through a Raspberry Pi 5. Local software handles time-sensitive sensing and stop behavior; cloud software handles conversation, planning, and user preferences.
 
-**Status:** the web app, **Steady** ("A smart walker you set up by talking to it."), is a one-page demo that works end to end: a conversation with the onboarding assistant beside a pen-drawn walker that draws in what's suggested, then the walker as a sheet to adjust, save and order in Stripe test mode, backed by a deterministic onboarding engine (or, when configured, a model that words the questions) and shared contracts (see [apps/web](apps/web/README.md)). There is no working walker yet. The Pi service ([devices/pi](devices/pi/README.md)) runs the walker's demo path in a simulator on a Mac against a fake cloud; it has not yet run on a Pi. The ESP32 firmware for the hand controls and obstacle sensors ([firmware](firmware/README.md)) is written and tested on a computer; it has not yet run on a board. Hardware selections and electrical budgets still need bench validation. This is a prototype, not a certified mobility aid or a substitute for a caregiver.
+**Status:** the web app, **Sophi** ("A physical augmentation walker."), is a one-page demo that works end to end: a conversation with the onboarding assistant beside a pen-drawn walker that draws in what's suggested, then the walker as a sheet to adjust, save and order in Stripe test mode, backed by a deterministic onboarding engine (or, when configured, a model that words the questions) and shared contracts (see [apps/web](apps/web/README.md)). There is no working walker yet. The Pi service ([devices/pi](devices/pi/README.md)) runs the walker's demo path in a simulator on a Mac against a fake cloud; it has not yet run on a Pi. The ESP32 firmware for the hand controls and obstacle sensors ([firmware](firmware/README.md)) is written and tested on a computer; it has not yet run on a board. Hardware selections and electrical budgets still need bench validation. This is a prototype, not a certified mobility aid or a substitute for a caregiver.
 
 To run the web app: `pnpm install`, then `pnpm dev`, and open <http://localhost:3000>. `pnpm test` and `pnpm typecheck` cover every package.
 
@@ -63,13 +63,13 @@ The proposed software baseline is TypeScript/Next.js for the web app, a cloud AP
 
 ## Sponsor technologies
 
-What each sponsor's technology does in Steady, and whether it runs today. How the demo frames each sponsor track is in [docs/demo/tracks.md](docs/demo/tracks.md).
+What each sponsor's technology does in Sophi, and whether it runs today. How the demo frames each sponsor track is in [docs/demo/tracks.md](docs/demo/tracks.md).
 
 | Technology | Where | Status |
 | --- | --- | --- |
 | Google Gemini API (`gemini-3.7-flash`) | The onboarding agent reads the person's words and words each question ([gemini.ts](services/cloud-api/src/onboarding/gemini.ts)); the walker assistant hears a spoken question and answers it in one call, with `gemini-3.6-flash` asked alongside as a backup when 3.7 is slow ([walker assistant](services/cloud-api/README.md#walker-assistant)) | Onboarding: runs on the demo laptop. Walker: built and checked live with the demo's lines, not yet on the real walker |
 | Anthropic Claude (`claude-opus-5-5`) | The same onboarding agent, behind the same adapter ([anthropic.ts](services/cloud-api/src/onboarding/anthropic.ts)) | Built and tested with stub models; not yet run live |
-| Cartesia text-to-speech (`sonic-3.6`) | The walker assistant's spoken replies, made on the server from the reply's text ([speech.ts](services/cloud-api/src/walker/speech.ts)); the walker's own voice covers offline lines and any failure. Setup, features and limits: [Steady and Cartesia](docs/demo/tracks.md#steady-and-cartesia-the-readme-section-for-cartesias-judges) | Built; heard live through the deployed server on 2026-10-24, not yet on the real Pi |
+| Cartesia text-to-speech (`sonic-3.6`) | The walker assistant's spoken replies, made on the server from the reply's text ([speech.ts](services/cloud-api/src/walker/speech.ts)); the walker's own voice covers offline lines and any failure. Setup, features and limits: [Sophi and Cartesia](docs/demo/tracks.md#sophi-and-cartesia-the-readme-section-for-cartesias-judges) | Built; heard live through the deployed server on 2026-10-24, not yet on the real Pi |
 | Stripe Checkout (test mode only) | "Order (Demo)" for a saved walker, at placeholder prices | Runs today |
 
 ## Contributing

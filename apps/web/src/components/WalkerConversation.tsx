@@ -13,7 +13,7 @@ import styles from "./Walker.module.css";
 const MAX_TYPED = 500;
 
 /**
- * The walker's conversation: what was said to it (by voice on the walker, or typed here), Steady's
+ * The walker's conversation: what was said to it (by voice on the walker, or typed here), Sophi's
  * replies, and the lines the walker said on its own, oldest first. Below it, the open offer with
  * Confirm and Decline, the data notice, and the text box. The log isn't a live region: the page's one
  * polite region reads each new reply, line and offer once.
@@ -28,7 +28,7 @@ export function WalkerConversation({ page, walker }: { page: WalkerPage; walker:
   const sending = page.sending !== null;
   const errorId = `${ids}-error`;
 
-  // Keep the newest line in view, and let the ground move a little when Steady answers.
+  // Keep the newest line in view, and let the ground move a little when Sophi answers.
   const newest = entries.at(-1)?.key;
   useEffect(() => {
     const log = logRef.current;
@@ -85,7 +85,7 @@ export function WalkerConversation({ page, walker }: { page: WalkerPage; walker:
               <div className={demo.said}>
                 <Mark state={i === lastReply ? (sending ? "past" : "live") : "past"} />
                 <p className={demo.saidText}>
-                  <span className="visually-hidden">Steady: </span>
+                  <span className="visually-hidden">Sophi: </span>
                   <Words text={e.turn.reply} animate={!reduced && !page.oldTurns.has(e.turn.turn_id)} />
                 </p>
                 {e.engineNote || e.voiceNote ? (
@@ -148,7 +148,7 @@ export function WalkerConversation({ page, walker }: { page: WalkerPage; walker:
           noValidate
         >
           <label htmlFor={`${ids}-input`} className="visually-hidden">
-            Ask Steady
+            Ask Sophi
           </label>
           <input
             ref={inputRef}
@@ -158,7 +158,7 @@ export function WalkerConversation({ page, walker }: { page: WalkerPage; walker:
             value={text}
             maxLength={MAX_TYPED}
             autoComplete="off"
-            placeholder="Ask Steady about your walker"
+            placeholder="Ask Sophi about your walker"
             onChange={(e) => setText(e.target.value)}
             aria-describedby={page.sendError ? `${ids}-notice ${errorId}` : `${ids}-notice`}
           />
@@ -214,7 +214,7 @@ function OfferCard({ page, focusIn }: { page: WalkerPage; focusIn: React.RefObje
   return (
     <section className={styles.offer} data-closed={outcome ? "" : undefined} aria-labelledby={`${ids}-kicker`}>
       <h3 id={`${ids}-kicker`} ref={headingRef} tabIndex={-1} className={styles.offerKicker}>
-        Steady offers
+        Sophi offers
         {/* The heading names the card's state, so focus moved here reads how the offer ended. */}
         {outcome ? <span className="visually-hidden">: {outcome}</span> : null}
       </h3>

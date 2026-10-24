@@ -1,6 +1,6 @@
 # Instructions for future coding agents
 
-This repository describes an assistive walker prototype. Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs/interfaces.md](docs/interfaces.md), and the guide for your subsystem before editing. The repo starts as documentation; do not imply a planned component already works.
+This repository describes Sophi, a physical augmentation walker prototype. Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs/interfaces.md](docs/interfaces.md), and the guide for your subsystem before editing. The repo starts as documentation; do not imply a planned component already works.
 
 ## The goal right now: the best demo
 
@@ -12,7 +12,7 @@ This is a CalHacks project. The goal is the best demo in human history, not a co
   - Never present something unbuilt as working.
   - Never pass a scripted or recorded stand-in for the agent off as live.
   - Keep hardware claims to what was measured.
-- Consent for real people's words, secrets, and accessibility (keyboard, screen reader, large text, reduced motion) still apply in full. This is an assistive product, so accessibility is part of the demo.
+- Consent for real people's words, secrets, and accessibility (keyboard, screen reader, large text, reduced motion) still apply in full. Sophi is an assistive product, so accessibility is part of the demo.
 
 ## How to work here
 

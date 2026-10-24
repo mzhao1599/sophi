@@ -5,7 +5,7 @@
  "seed": 1253139886,
  "input": {
   "kind": "workspace",
-  "brief": "Assistive walker setup: a person answers one question at a time about daily tasks, checks an editable summary of what was understood, then chooses which walker modules to keep and saves the configuration the walker will receive",
+  "brief": "Setting up Sophi, a physical augmentation walker: a person answers one question at a time about daily tasks, checks an editable summary of what was understood, then chooses which walker modules to keep and saves the configuration the walker will receive",
   "theme": "light",
   "screens": [
    "settings",

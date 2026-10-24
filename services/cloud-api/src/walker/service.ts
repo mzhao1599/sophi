@@ -88,7 +88,7 @@ export interface WalkerServiceOptions {
   blocked?: string;
   /** The model step for turns; without one, every turn gets a fixed line. */
   assistant?: WalkerAssistant | null;
-  /** Steady's spoken voice for walker turns; without one, the walker speaks replies itself. */
+  /** Sophi's spoken voice for walker turns; without one, the walker speaks replies itself. */
   voice?: WalkerVoice | null;
   /** One event per turn, for the log: ids, outcomes and timings, never words. */
   onTurn?: (event: TurnEvent) => void;

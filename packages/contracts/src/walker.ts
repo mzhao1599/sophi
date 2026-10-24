@@ -239,7 +239,7 @@ export const WalkerTurnViewSchema = z
 export type WalkerTurnView = z.infer<typeof WalkerTurnViewSchema>;
 
 /**
- * A line the walker said on its own, with no turn behind it: a fixed notice ("Steady is on", a part stopped
+ * A line the walker said on its own, with no turn behind it: a fixed notice ("Sophi is on", a part stopped
  * responding, "pair me again") or its offline reply to a Talk press. Status lines only, never a clip. The
  * walker keeps the newest MAX_QUEUED_EVENTS until a heartbeat succeeds; the server ignores an `event_id`
  * it already has. `ago_ms` is how long before sending it was said, measured on a monotonic clock (one that

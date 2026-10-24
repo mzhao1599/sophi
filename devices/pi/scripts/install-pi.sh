@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs Steady's walker service on a Raspberry Pi. Ran as far as the walker service on a Pi 5 with
+# Installs Sophi's walker service on a Raspberry Pi. Ran as far as the walker service on a Pi 5 with
 # Raspberry Pi OS trixie on 2026-10-24, and again with the Wi-Fi part the same night.
 # Usage, on the Pi, from a copy of devices/pi: sudo ./scripts/install-pi.sh dist/walker.mjs
 # What it does: creates the `steady` system user, copies the bundle to /opt/steady-walker, creates the

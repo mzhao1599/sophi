@@ -1,6 +1,6 @@
-# Steady on the walker: live demo script
+# Sophi on the walker: live demo script
 
-**Steady. A smart walker you set up by talking to it, and that you can talk to every day after.**
+**Sophi. A physical augmentation walker.** You set it up by talking to it, and you can talk to it every day after.
 
 This is the script for showing the always-on walker assistant to judges at Cal Hacks (October 23 to 25, 2026). It has:
 - a click and speak sequence for the six beats, with the presenter's exact spoken lines and fresh-wording alternates;
@@ -33,7 +33,7 @@ Nothing in this script presents a simulated or planned part as working.
 
 | Beat | Presenter does | The walker | The page |
 | --- | --- | --- | --- |
-| 1. Boot | Starts the walker | Says "Steady is on." | Online, each part with its health and "Simulated", the "Simulator" badge, alerts "Applied" |
+| 1. Boot | Starts the walker | Says "Sophi is on." | Online, each part with its health and "Simulated", the "Simulator" badge, alerts "Applied" |
 | 2. Ask | Holds Talk: "What can you help me with?" | Answers out loud | "You said (as heard by Gemini)", the reply, "In the walker's own voice" |
 | 3. Obstacles | Hand in front of the sensor, then asks "Is anything in front of me?" | Buzzes the handle at once (local), then answers with the distance and "These readings are simulated." | Front left about 30 cm, "Simulated" |
 | 4. Change a setting | Asks "Stop buzzing me, use short sounds instead.", then presses Confirm | "I can switch your alerts from buzzing to short sounds. Press Confirm to do it.", then "Done. Obstacle alerts now use short sounds." A hand in front now gives the short sound, no buzz | The offer card, then "Version 2", "Short sounds", "Applied" |
@@ -52,10 +52,10 @@ The reply's text reaches the walker 1.9 to 4.6 seconds after you let go, and the
 
 ### Beat 1. Boot (0:00 to 0:15)
 
-> "This is Steady on the walker. It runs whenever the walker is on, and nothing listens until I hold Talk."
+> "This is Sophi on the walker. It runs whenever the walker is on, and nothing listens until I hold Talk."
 
 1. Start the walker. The Pi starts on its own at power-on; for the simulator, start it with the command in the setup checklist.
-2. The walker says "Steady is on."
+2. The walker says "Sophi is on."
 3. Within about 2 seconds the page shows:
    - "Online";
    - the drawing with each part and its health: Hand controls, Obstacle sensors, Voice, Walker and coordinator, each "Healthy";
@@ -98,7 +98,7 @@ The page's distance comes from the walker's report every 5 seconds, so it can re
 1. Talk: **"Stop buzzing me, use short sounds instead."**
 2. The walker says: "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." This line is written by the server from the change itself, never by the model.
 3. The page shows the offer card:
-   - "Steady offers";
+   - "Sophi offers";
    - "Switch your alerts from buzzing to short sounds.";
    - "Now", "After";
    - "Confirm" and "Decline";
@@ -148,7 +148,7 @@ Only the presenter speaks to the walker: the Gemini key is on the free tier, whi
 | 5 | "Can you pick up my keys?" | "Could you grab the glasses I dropped?"; "Can you reach the shelf for me?" | Exactly "This walker doesn't have robot arms, so I can't pick things up or move things." |
 | 6 | Any line while offline | | "I'm offline right now. Your short-sound alerts still work." (plus "The obstacle sensor is simulated." in the simulator) |
 
-**For judges, typed on the page.** Click "Ask Steady about your walker", type, press Enter. The page shows "You typed", and the reply arrives in about 2 seconds. Suggested lines:
+**For judges, typed on the page.** Click "Ask Sophi about your walker", type, press Enter. The page shows "You typed", and the reply arrives in about 2 seconds. Suggested lines:
 - "Which of your parts are simulated?"
 - "Are any of your parts not real hardware?"
 - "Is anything in front of me?"
@@ -160,13 +160,13 @@ The notice above the box says where typed words go: Gemini, which may keep a cop
 Say these when they come up, in these words or close to them.
 
 - **What's simulated:** "This is the simulator on a laptop. Every part marked Simulated is a stand-in, and the page says Simulator for the whole walker." On the real Pi: "The Pi, its buttons, microphone and speaker are real. Anything still marked Simulated is a stand-in."
-- **Who hears and who speaks:** "Google's Gemini hears my voice and writes the answer. Tonight the walker reads the answer out with its own voice, and the page says so. With a Cartesia key, Cartesia speaks it, and only Steady's reply text goes to Cartesia, never my voice."
+- **Who hears and who speaks:** "Google's Gemini hears my voice and writes the answer. Tonight the walker reads the answer out with its own voice, and the page says so. With a Cartesia key, Cartesia speaks it, and only Sophi's reply text goes to Cartesia, never my voice."
 - **Why judges type:** "Our Gemini key is on the free tier, which is for scripted, made-up lines, and Cartesia's terms allow it to train on what it receives, so only I speak to it. You can type on the page; the notice says where typed words go."
 - **What it can change:** "The model can only offer one change: how alerts reach you. Nothing changes until a person presses Confirm, and the offer expires after a minute. Voice can't confirm."
 - **Motion:** "Nothing in this build can move the arms or the lift. There is no motion command at all."
 - **Obstacles:** "The buzz is a proximity cue from the walker itself, not collision avoidance. A missing or old reading is unknown, never clear."
 - **Numbers:** only our own timings, and say they're ours (the rehearsal results below). On the real Pi there is one measured turn so far (about 4 seconds from letting go of Talk to the answer arriving); nothing else on the hardware is measured.
-- **What's kept:** "Voice clips are sent to Gemini for one answer and dropped; Steady never stores them. Google's free tier may keep what it receives. The words and replies are deleted from Steady after an hour, or at once with Forget this walker."
+- **What's kept:** "Voice clips are sent to Gemini for one answer and dropped; Sophi never stores them. Google's free tier may keep what it receives. The words and replies are deleted from Sophi after an hour, or at once with Forget this walker."
 - **It's not Wren's walker:** if this follows the onboarding demo, "Wren's setup has voice off; this is a walker set up with voice on."
 
 ## Judge Q&A
@@ -174,7 +174,7 @@ Say these when they come up, in these words or close to them.
 **1. Is it always listening?** No. Nothing records until Talk is pressed, and it stops at release, or after 15 seconds. There's no wake word. The model never speaks unprompted; the walker's own lines (it's on, offline, back online, pair me again) are fixed and written in the Pi's code.
 
 **2. What happens to my voice?**
-- The clip goes to Google's Gemini with that one question, is held in memory for the turn, and is then dropped. Steady never stores or logs it.
+- The clip goes to Google's Gemini with that one question, is held in memory for the turn, and is then dropped. Sophi never stores or logs it.
 - The transcript and the reply are kept for an hour, so the page can show the conversation. "Forget this walker" deletes them at once.
 - Typed words go to Gemini too. A reply the walker speaks goes to Cartesia as text when the server has a Cartesia key; replies to typed questions on the page aren't spoken, so they don't.
 - On the free tiers, Google and Cartesia may use what they receive, so only scripted, made-up lines go to them.
@@ -203,7 +203,7 @@ The walker is paired, on and "Online"; the page is open.
 
 **0:00 to 0:10**
 
-> "This is Steady on the walker. Nothing listens until I hold Talk, and everything it hears or says shows up here."
+> "This is Sophi on the walker. Nothing listens until I hold Talk, and everything it hears or says shows up here."
 
 **0:10 to 0:25**
 
@@ -219,7 +219,7 @@ The walker is paired, on and "Online"; the page is open.
 
 **0:50 to 1:00**
 
-> "Nothing here can move a motor, the parts marked Simulated are stand-ins, and it keeps its alerts working offline. That's Steady."
+> "Nothing here can move a motor, the parts marked Simulated are stand-ins, and it keeps its alerts working offline. That's Sophi."
 
 ## Joined with the onboarding demo (3 to 4 minutes)
 
@@ -232,7 +232,7 @@ The walker is paired, on and "Online"; the page is open.
 3. **1:10 to 3:10:** beats 2 to 6 above, from "What can you help me with?" to the walker coming back online. Skip beat 3 if time is short.
 4. **3:10 to 3:30, the close:**
 
-   > "Steady is a prototype, not a certified mobility aid. The model never controls a motor, and every simulated part says so. What's real: she said what's hard, the walker drew itself around her, and every day after, a walker like this one can just be asked."
+   > "Sophi is a prototype, not a certified mobility aid. The model never controls a motor, and every simulated part says so. What's real: she said what's hard, the walker drew itself around her, and every day after, a walker like this one can just be asked."
 
 ## Setup checklist
 
@@ -348,7 +348,7 @@ Needs Max. On the night of 2026-10-24 the Pi steps ran up to one spoken turn: OS
 
 ## Rehearsal results
 
-**Date:** 2026-10-24, 05:31 to 05:39 PDT (five runs; times from the simulator's logs). **Code:** `main` at `37a691c`, as merged, with no patches: the server (#31, #39, #44), the page (#34), the Pi service (#36, #45) and the contract (#43). **Setup:**
+**Date:** 2026-10-24, 05:31 to 05:39 PDT (five runs; times from the simulator's logs). These runs came before the rename on 2026-10-23, so the boot line they checked was "Steady is on."; it is now "Sophi is on.", and nothing else in the beats changed. **Code:** `main` at `37a691c`, as merged, with no patches: the server (#31, #39, #44), the page (#34), the Pi service (#36, #45) and the contract (#43). **Setup:**
 - a production build of `apps/web` on port 3009, with a throwaway Postgres 17 (Homebrew) on port 55433 as `DATABASE_URL`;
 - Max's Gemini key from `apps/web/.env.local`, and no Cartesia key, so every spoken reply was offered "In the walker's own voice";
 - the walker simulator, bundled from `37a691c`, paired from the page each run, talking to the server directly, with beat 6 cut by its own `o` key;
@@ -373,7 +373,7 @@ Needs Max. On the night of 2026-10-24 the Pi steps ran up to one spoken turn: OS
 Spoken beats give the time from releasing Talk to the reply's text arriving on the walker. "Applied" is from Confirm to the page showing "Applied". "Typed" is from Enter to the reply on the page.
 
 **What each beat checked, every run:**
-- **Boot:** "Steady is on." 0.1 to 0.2 s after start; the page "Online" in about 1.5 s; every part "Healthy" and "Simulated", including "Walker and coordinator"; alerts "Version 1", "Applied".
+- **Boot:** "Sophi is on." 0.1 to 0.2 s after start; the page "Online" in about 1.5 s; every part "Healthy" and "Simulated", including "Walker and coordinator"; alerts "Version 1", "Applied".
 - **Ask:** "You said (as heard by Gemini)" with the exact words, answered by the model, "In the walker's own voice".
 - **Obstacles:**
   - the handle buzz within 0.1 s of the hand;
@@ -393,7 +393,7 @@ Spoken beats give the time from releasing Talk to the reply's text arriving on t
 - **The page's polite live-region text,** in order, in run 2 (captured from the page; not heard through a screen reader):
   1. "Paired with My walker."
   2. each reply;
-  3. "Steady offers: Switch your alerts from buzzing to short sounds. Confirm or decline within a minute.";
+  3. "Sophi offers: Switch your alerts from buzzing to short sounds. Confirm or decline within a minute.";
   4. "Your walker applied the new alerts. Confirmed. Switching your alerts to spoken messages and short sounds." (in the wrong order: request 3);
   5. "Your walker went offline.";
   6. "Your walker is back online." with the walker's offline line;

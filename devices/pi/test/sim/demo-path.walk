@@ -3,7 +3,7 @@
 
 # 1. Boot: the walker says it's on and reaches the fake cloud. Pairing already saved configuration 1
 # (vibration and speech), so there is nothing to fetch; step 3's buzz shows it is in force.
-expect spoke Steady is on.
+expect spoke Sophi is on.
 expect link online
 expect heartbeat ok
 

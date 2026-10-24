@@ -379,7 +379,7 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
       const configuration: WalkerConfiguration = { version: 1, ...WALKER_SETUP, cues: [...WALKER_SETUP.cues], selected_module_ids: [...WALKER_SETUP.selected_module_ids], created_at: iso(t) };
       walkers.unshift({
         device_id: crypto.randomUUID(),
-        name: "Steady walker",
+        name: "Sophi walker",
         online: true,
         lastSeenMs: t,
         simulator: true,
@@ -388,7 +388,7 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
         appliedVersion: 1,
         appliesAtMs: t,
         turns: [],
-        said: [{ event_id: crypto.randomUUID(), kind: "notice", text: "Steady is on.", at: iso(t) }],
+        said: [{ event_id: crypto.randomUUID(), kind: "notice", text: "Sophi is on.", at: iso(t) }],
         queued: [],
         proposal: null,
         replaced: [],

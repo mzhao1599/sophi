@@ -6,7 +6,7 @@ import { canBuzz, type ModuleView } from "./serial/modules";
  * speaks unprompted, and none of these lines comes from the cloud.
  */
 export const LINES = {
-  boot: "Steady is on.",
+  boot: "Sophi is on.",
   backOnline: "I'm back online.",
   notPaired: "I'm not paired yet. Open the walker page to get a pairing code.",
   pairAgain: "I need to be paired again. Open the walker page to get a new pairing code.",

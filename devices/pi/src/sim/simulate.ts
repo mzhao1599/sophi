@@ -33,7 +33,7 @@ export interface SimulateOptions {
 
 /** What the fake cloud says on the simulator's demo path, in order. Every line says it is the fake cloud. */
 export const FAKE_DEMO_TURNS = [
-  { reply: "Fake cloud: this is where Steady's spoken answer goes. The real assistant isn't connected in this run." },
+  { reply: "Fake cloud: this is where Sophi's spoken answer goes. The real assistant isn't connected in this run." },
   {
     reply: "Fake cloud: I can switch your alerts from buzzing to short sounds. Press Confirm to do it.",
     proposeCues: ["sound" as const],
@@ -93,7 +93,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     fake = new FakeCloud(clock);
     fake.script = FAKE_DEMO_TURNS.map((turn) => ({ ...turn }));
     fakeServer = await startFakeCloudServer(fake, log);
-    log.info("FAKE cloud listening (not Steady's assistant: scripted replies only)", { url: fakeServer.url });
+    log.info("FAKE cloud listening (not Sophi's assistant: scripted replies only)", { url: fakeServer.url });
     await pairFake();
   }
 

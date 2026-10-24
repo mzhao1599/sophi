@@ -1,12 +1,12 @@
-# Steady: live demo script
+# Sophi: live demo script
 
-**Steady. A smart walker you set up by talking to it.**
+**Sophi. A physical augmentation walker.** You set it up by talking to it.
 
 This is the script for showing the website to judges at Cal Hacks: a click sequence for the website alone, a 3-minute main script, a 60-second cut, the persona's exact lines, what each line should do with both onboarding engines, the honesty lines, judge Q&A, the setup checklist, and the rehearsal results. How to frame it for each sponsor track, with a 2-minute cut per track, is in [tracks.md](tracks.md). `pnpm --filter @walker/cloud-api rehearse` re-runs the rehearsal below (see "Rehearse on a model" in tracks.md).
 
 **What is real today:** the website. A person types what they need, the onboarding assistant asks short questions, the walker drawing lights up suggested modules, and the person switches modules, saves the walker and orders it through Stripe's test mode. **What is planned:** the walker hardware (frame, hand controls, obstacle sensors, voice module, robot arms, arm lift) and location sharing. The parts are ordered; nothing is assembled or tested yet. Nothing in this script presents a planned part as working.
 
-**Labels marked † are UI labels.** They were checked against the code on `main` (`daea268`, the Steady redesign) on 2026-10-23, not on the live page; the lead does the live page check. A polish change may still move small things (the logo mark, the Next.js badge), so re-check any † label that looks different on the day.
+**Labels marked † are UI labels.** They were checked against the code on `main` (`daea268`, the redesign) on 2026-10-23, not on the live page (the name and its line changed to Sophi on 2026-10-23); the lead does the live page check. A polish change may still move small things (the logo mark, the Next.js badge), so re-check any † label that looks different on the day.
 
 ## Click sequence (website only)
 
@@ -52,10 +52,10 @@ If the assistant asks the questions in a different order, type the line that mat
 
 ## The story
 
-- **The arc:** one sentence in, a walker out. Wren says what is hard in her own words, and Steady draws the walker that helps her. She says no to one part and it's marked as her no, she sees why each suggested part is there, she switches on the experimental parts herself, and she orders it.
+- **The arc:** one sentence in, a walker out. Wren says what is hard in her own words, and Sophi draws the walker that helps her. She says no to one part and it's marked as her no, she sees why each suggested part is there, she switches on the experimental parts herself, and she orders it.
 - **The first ten seconds:** the page is already open, and Wren's first sentence is already typed in the box. The presenter reads it aloud and presses Enter. There is no intro slide and no speech before the product moves.
 - **The moment to retell:** "She typed one sentence, the walker drew itself, and every suggested part could say why it was there, in her own words." Two beats carry it: the parts arriving one at a time after the first line (0:10), and the panel that quotes her words back (1:33).
-- **The ending:** by 2:01 every one of Steady's seven parts is on screen in its true state: the frame and everything she chose on, Voice marked "You Said No"†, and location sharing "Not Available Yet"†. The success page then ends on her drawn walker.
+- **The ending:** by 2:01 every one of Sophi's seven parts is on screen in its true state: the frame and everything she chose on, Voice marked "You Said No"†, and location sharing "Not Available Yet"†. The success page then ends on her drawn walker.
 - **When the presenter stops talking:** three planned silences, each about 3 seconds. After the first Enter, let the walker draw. When "Your walker"† rises to centre stage, let it land. On the success page, stop and let the judges read it.
 - **Who it's aimed at:** Microsoft's "Built for the Real World" judges first. The real-world points are made by the demo itself: no diagnosis asked, the person's "no" is respected and shown, the line under the text box says who reads her words and asks her to leave out names and medical details before she types, each reply says who read it, it keeps working when the model doesn't answer, it works without a mouse, and it is honest about what is a prototype.
 
@@ -118,9 +118,9 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 **0:23 to 0:36. Name it, and say where her words go**
 
-> "This is Steady. The line under the box says her answers are kept temporarily for this setup, Google's Gemini reads them and Google may keep a copy, and it asks her to leave out names and medical details. Each reply says who read it."
+> "This is Sophi. The line under the box says her answers are kept temporarily for this setup, Google's Gemini reads them and Google may keep a copy, and it asks her to leave out names and medical details. Each reply says who read it."
 
-1. Point at the name in the header, Steady†, then at the line under the text box†, then at "Read by Gemini"†.
+1. Point at the name in the header, Sophi†, then at the line under the text box†, then at "Read by Gemini"†.
 
 **0:36 to 0:47. Where she'll use it (L2)**
 
@@ -187,7 +187,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 **2:42 to 3:00. Close**
 
-> "Steady is a prototype, not a certified mobility aid. The hardware is planned, and the model will never control a motor. What's real: she said what's hard, and the walker drew itself around her. Try it on your phone at assistive-walker.vercel.app."
+> "Sophi is a prototype, not a certified mobility aid. The hardware is planned, and the model will never control a motor. What's real: she said what's hard, and the walker drew itself around her. Try it on your phone at assistive-walker.vercel.app."
 
 1. Leave the success page on screen.
 
@@ -197,7 +197,7 @@ Same setup: a fresh page with L1 already typed in the box.
 
 **0:00 to 0:10**
 
-> "This is Steady. Wren is made up. She says: 'I keep bumping into things, small buttons are hard, and I'd like help picking things up.'"
+> "This is Sophi. Wren is made up. She says: 'I keep bumping into things, small buttons are hard, and I'd like help picking things up.'"
 
 1. Read L1 aloud as part of the line. Press Enter.
 
@@ -228,7 +228,7 @@ Same setup: a fresh page with L1 already typed in the box.
 
 **0:48 to 1:00**
 
-> "It's a prototype, not a certified mobility aid, and the model never controls a motor. Steady: a smart walker you set up by talking to it. Try it at assistive-walker.vercel.app."
+> "It's a prototype, not a certified mobility aid, and the model never controls a motor. Sophi: a physical augmentation walker you set up by talking to it. Try it at assistive-walker.vercel.app."
 
 1. Leave the checkout page on screen.
 
@@ -239,7 +239,7 @@ Use these only when they are true on the day.
 - **The unplug beat (Built for the Real World).** Only if rehearsed on the venue network that day, and only if the projector is on a cable, not AirPlay. Before L4, turn Wi-Fi off and say "Hackathon Wi-Fi. Let's lose it." Type L4 and L5. The replies come from the fixed questions, and the note under each says so ("Fixed questions: the model's reply didn't come through"†). Say: "Those answers came from the fixed questions, not the model, and it's the same walker." Turn Wi-Fi back on before "Save"†, because Stripe needs the internet. Not verified: how fast the model call fails with Wi-Fi off. If it hangs, the turn waits up to the 15-second deadline before falling back.
 - **Voice's panel.** Clicking Voice on the "Your walker"† view shows "You said no"†, quotes her decline under "You said"†, and gives the rule's reason. Use it if a judge asks what happens when someone says no.
 - **Hardware, only if the walker is built.** Point at the physical walker and name only the parts that are on it and have been tested by the team that day. Say "planned" for everything else. Don't demo a part that hasn't been tested that day.
-- **Location sharing (Meta's "Bringing People Closer Together"), only if built.** Today it shows "Not Available Yet"†, and the fixed reply to L6 says "once that's built". If you type L6, say: "She'd like her family to see where the walker is. It isn't built yet; Steady notes her answer."
+- **Location sharing (Meta's "Bringing People Closer Together"), only if built.** Today it shows "Not Available Yet"†, and the fixed reply to L6 says "once that's built". If you type L6, say: "She'd like her family to see where the walker is. It isn't built yet; Sophi notes her answer."
 - **Voice (Cartesia), only if built.** The voice module doesn't exist. Don't mention Cartesia unless it does.
 - **Claude (Anthropic's track), only if Claude is on.** Mention Claude only if the setup checklist's engine check shows "Anthropic's Claude". These lines were rehearsed with the deterministic engine and Gemini, not Claude.
 
@@ -249,7 +249,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 - "The model never controls motors. It reads her words, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement; that's all."
 - "Modules are suggested by fixed rules that anyone can read, and each suggestion points back to the person's own words."
-- "Steady is a prototype, not a certified mobility aid, and it doesn't replace a caregiver or a clinician's advice."
+- "Sophi is a prototype, not a certified mobility aid, and it doesn't replace a caregiver or a clinician's advice."
 - "Prices are placeholders, not quotes. Checkout is Stripe's test mode, and no money moves."
 - "We haven't measured the hardware. Every cost, weight and power figure in our catalog says not measured."
 - "The walker hardware is planned. The parts are ordered; nothing is assembled or tested yet."
@@ -324,7 +324,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= ONBOARDING_ALLOW_MEMORY_STORE=true pnpm --filter @walker/web exec next start --port 3004
    ```
 
-   Open <http://localhost:3004>. What the 2026-10-23 run gave: the server was ready in under a second; `/`, `/checkout/cancelled` and `/api/v1/checkout/status` answered 200, and the status said ordering is on (that check only reads the test key; it doesn't contact Stripe); the page held the name Steady and the notice "Google's Gemini reads them to choose each question, and Google may keep a copy"; and L1 sent through the API came back in 2.9 seconds with both new assistant turns marked `answered_by: "model"`, the next topic places, and hand controls, obstacle sensors and robot arms lit. The terminal printed `[onboarding-agent] outcome=agent attempts=1 reason=none ms=2824`.
+   Open <http://localhost:3004>. What the 2026-10-23 run gave: the server was ready in under a second; `/`, `/checkout/cancelled` and `/api/v1/checkout/status` answered 200, and the status said ordering is on (that check only reads the test key; it doesn't contact Stripe); the page held the name Sophi and the notice "Google's Gemini reads them to choose each question, and Google may keep a copy"; and L1 sent through the API came back in 2.9 seconds with both new assistant turns marked `answered_by: "model"`, the next topic places, and hand controls, obstacle sensors and robot arms lit. The terminal printed `[onboarding-agent] outcome=agent attempts=1 reason=none ms=2824`.
 
 6. **Fallback: development mode.** If the build fails, run the development server instead (not re-run on 2026-10-23; it shows a Next.js badge, and each page compiles slowly the first time it opens, so pre-warm in step 9):
 
@@ -332,7 +332,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= pnpm --filter @walker/web exec next dev --port 3004
    ```
 
-7. **Engine check.** The header says Steady†. The line under the text box† must include "Google's Gemini reads them to choose each question, and Google may keep a copy"†. After the first answer, the reply shows "Read by Gemini"† and the terminal prints `[onboarding-agent] outcome=agent …`. If the notice doesn't name Google, the deterministic engine is running: fix `.env.local`, rebuild and restart. Only if it names "Anthropic's Claude" may you mention Claude.
+7. **Engine check.** The header says Sophi†. The line under the text box† must include "Google's Gemini reads them to choose each question, and Google may keep a copy"†. After the first answer, the reply shows "Read by Gemini"† and the terminal prints `[onboarding-agent] outcome=agent …`. If the notice doesn't name Google, the deterministic engine is running: fix `.env.local`, rebuild and restart. Only if it names "Anthropic's Claude" may you mention Claude.
 8. **Free-tier check.** Ask the key's owner whether its Google Cloud project has billing on, and write the answer into Q&A 2.
 9. **Run it through once.** Run the whole 3-minute script once, end to end, including the test payment and the success page. This checks Gemini and Stripe on the venue network (and, in development mode, compiles every page). Then reset (step 13).
 10. **Browser.** Use a separate browser profile with no saved data, so Stripe's email field can't autofill a real address. Close every other tab: email, chat, Messages, password managers, other localhost tabs (another project may use ports 3000 to 3003; the only localhost tab should be this demo on port 3004), any editor showing `.env.local`, and the vercel.app tab. Turn on Do Not Disturb.
@@ -361,7 +361,7 @@ Design changes for the demo, sent to the redesign session. Status checked agains
 
 ## Rehearsal results
 
-**Date:** 2026-10-23. **Code:** `main` at `daea268` (with PR #20's agent wording and PR #22's Steady redesign), in the worktree `claude/demo-script-update`. **Method:** a scratch Vitest test (not committed) ran Wren's lines through the real onboarding service, `OnboardingService` with `MemorySessionStore`, in-process; no browser was involved. Each path was a new session. For each turn the presenter's rule was applied: read the topic asked, type that topic's line. A path passed only if all of these held: every topic came in the bank's order; the lit modules matched the expected list after every line; the final walker matched; the session reached review; voice was off; the robot arms were suggested but off; no turn fell back; and every model reply was marked `answered_by: "model"` (none with the deterministic engine). The expected results were written before the first run.
+**Date:** 2026-10-23. **Code:** `main` at `daea268` (with PR #20's agent wording and PR #22's redesign), in the worktree `claude/demo-script-update`. **Method:** a scratch Vitest test (not committed) ran Wren's lines through the real onboarding service, `OnboardingService` with `MemorySessionStore`, in-process; no browser was involved. Each path was a new session. For each turn the presenter's rule was applied: read the topic asked, type that topic's line. A path passed only if all of these held: every topic came in the bank's order; the lit modules matched the expected list after every line; the final walker matched; the session reached review; voice was off; the robot arms were suggested but off; no turn fell back; and every model reply was marked `answered_by: "model"` (none with the deterministic engine). The expected results were written before the first run.
 
 The 3-minute path is L1 to L5 then "Show My Walker"; the 60-second path is L1 then "Show My Walker" (the Gemini runs) or L1, "Skip", then "Show My Walker" (the deterministic run, as performed on stage; skips never reach the model, so the model's part is the same L1 turn); the full path is L1 to L7.
 

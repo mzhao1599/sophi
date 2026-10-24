@@ -6,7 +6,7 @@ import { simulate } from "./sim/simulate";
 import { pairWalker } from "./pair";
 import { StateStore } from "./store";
 
-const USAGE = `walker: Steady's always-on walker service
+const USAGE = `walker: Sophi's always-on walker service
 
   walker pair <6-digit code> --server <https://...> [--name <walker name>] [--state <dir>]
       Pairs this walker with the walker page's code and saves the device credential (mode 0600).

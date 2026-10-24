@@ -99,7 +99,7 @@ export interface WalkerAgent {
  *   voice turns need audio input. The models come from walkerModelsFromEnv: the main one
  *   (WALKER_DEFAULT_MODEL) and a backup asked alongside it (WALKER_BACKUP_MODEL); onboarding's model is
  *   set separately. Without the key every turn gets a fixed line, marked as such.
- * - CARTESIA_API_KEY: Steady's spoken voice (CARTESIA_VOICE_ID optionally picks another stock voice).
+ * - CARTESIA_API_KEY: Sophi's spoken voice (CARTESIA_VOICE_ID optionally picks another stock voice).
  *   Without it (or set to "none"), the walker speaks replies with its own voice.
  */
 export function walkerAgentFromEnv(env: Record<string, string | undefined>): WalkerAgent {

@@ -252,11 +252,11 @@ otp_expiry = 3600
 # Sign-in emails carry both a one-time code and a link (see apps/web/README.md, "Sign-in emails").
 # Paste the same templates into the hosted project's Auth > Email Templates.
 [auth.email.template.magic_link]
-subject = "Your Assistive Walker sign-in code"
+subject = "Your Sophi sign-in code"
 content_path = "./supabase/templates/sign-in.html"
 
 [auth.email.template.confirmation]
-subject = "Your Assistive Walker sign-in code"
+subject = "Your Sophi sign-in code"
 content_path = "./supabase/templates/sign-in.html"
 
 # Uncomment to customize notification email template

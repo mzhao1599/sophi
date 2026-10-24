@@ -136,7 +136,7 @@ function factsText(): string {
 }
 
 /** Rules from docs/subsystems/cloud-agents.md and docs/agent-runtime.md. Stable across turns, so it caches. */
-export const SYSTEM_PROMPT = `You run one step of a friendly setup conversation for a modular assistive walker. A person is telling us, in their own words, what they'd like the walker to help with. Each time they reply you:
+export const SYSTEM_PROMPT = `You run one step of a friendly setup conversation for Sophi, a physical augmentation walker built from modules. A person is telling us, in their own words, what they'd like the walker to help with. Each time they reply you:
 1. read their typed words (if any) as tags: what they ask for, and what they say they don't want;
 2. choose the next topic to ask about, or finish;
 3. write what you say next: a short acknowledgement, or none, and one question.

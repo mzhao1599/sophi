@@ -23,10 +23,10 @@ async function goOffline(h: Harness): Promise<void> {
 }
 
 describe("boot and pairing", () => {
-  it("P1: says 'Steady is on.' first, and records nothing until Talk", async () => {
+  it("P1: says 'Sophi is on.' first, and records nothing until Talk", async () => {
     const h = makeHarness();
     await boot(h);
-    expect(h.spoken()[0]).toBe("Steady is on.");
+    expect(h.spoken()[0]).toBe("Sophi is on.");
     expect(h.service.link).toBe("online");
     expect(h.service.configuration?.version).toBe(1);
     expect(h.named("config")).toEqual([]);
@@ -326,7 +326,7 @@ describe("offline", () => {
     await h.clock.advance(5000);
     expect(h.service.link).toBe("offline");
     await h.clock.advance(60_000);
-    expect(h.spoken("notice")).toEqual(["Steady is on.", `${OFFLINE_VIBRATION} The obstacle sensor is simulated.`]);
+    expect(h.spoken("notice")).toEqual(["Sophi is on.", `${OFFLINE_VIBRATION} The obstacle sensor is simulated.`]);
   });
 
   it("O2: one failure then a success stays online, with no notice", async () => {
@@ -337,7 +337,7 @@ describe("offline", () => {
     h.client.network = "up";
     await h.clock.advance(5000);
     expect(h.named("link").map((l) => l.state)).toEqual(["connecting", "online"]);
-    expect(h.spoken("notice")).toEqual(["Steady is on."]);
+    expect(h.spoken("notice")).toEqual(["Sophi is on."]);
   });
 
   it("O3: a turn with no answer for 10 s goes offline and says so", async () => {
@@ -485,7 +485,7 @@ describe("reports", () => {
   it("O8: a line's ago_ms comes from the monotonic clock, so the page shows when it was said", async () => {
     const h = makeHarness();
     await boot(h);
-    const bootLine = h.device()!.events.find((e) => e.text === "Steady is on.");
+    const bootLine = h.device()!.events.find((e) => e.text === "Sophi is on.");
     expect(bootLine?.at).toBe("2026-10-24T12:00:00.000Z");
     h.client.network = "down";
     await h.clock.advance(10_000);

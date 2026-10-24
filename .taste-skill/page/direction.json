@@ -4,7 +4,7 @@
  "seed": 1681769881,
  "redraws": 2,
  "input": {
-  "brief": "An experimental modular walker built on a steel rollator: describe what you'd like help with, then keep only the modules that help (hand controls with vibration, obstacle sensors, voice, two small robot arms on a lift); the arms move only after you press start",
+  "brief": "Sophi, an experimental physical augmentation walker built from modules on a steel rollator: describe what you'd like help with, then keep only the modules that help (hand controls with vibration, obstacle sensors, voice, two small robot arms on a lift); the arms move only after you press start",
   "sector": "physical-product",
   "tone": null,
   "have": [

@@ -1,5 +1,5 @@
 /**
- * Steady's mark: an "S" drawn as one pen line that ends in a signal-green nib, the same pen that draws
+ * Sophi's mark: an "S" drawn as one pen line that ends in a signal-green nib, the same pen that draws
  * the walker. Ink tile, paper line, green nib; fixed colours, so it reads the same on light and dark
  * grounds. `app/icon.svg` is the same drawing, used as the favicon. Decorative next to the wordmark.
  */

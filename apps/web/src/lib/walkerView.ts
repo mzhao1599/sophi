@@ -24,7 +24,7 @@ import {
 
 /** Shown above the text box before anyone types. */
 export const TYPED_NOTICE =
-  "Your words go to Google's Gemini, which may keep a copy, and the text of Steady's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.";
+  "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.";
 
 /** How often the page asks for the walker's status while the tab is visible. */
 export const POLL_MS = 1_500;
@@ -239,7 +239,7 @@ export interface Presence {
 }
 
 export function presence(status: Pick<WalkerStatusView, "online" | "last_seen_at">, serverNowMs: number, live: boolean): Presence {
-  if (!live) return { word: "Status unknown", detail: "no connection to Steady's server", tone: "unknown" };
+  if (!live) return { word: "Status unknown", detail: "no connection to Sophi's server", tone: "unknown" };
   const seen = status.last_seen_at ? `last seen ${relativeAgo(serverNowMs - Date.parse(status.last_seen_at))}` : "never seen";
   return status.online ? { word: "Online", detail: null, tone: "online" } : { word: "Offline", detail: seen, tone: "offline" };
 }
@@ -274,7 +274,7 @@ export type ConversationEntry =
       turn: WalkerTurnView;
       /** "You said (as heard by Gemini)", "You typed", "Typed on the walker". */
       heardLabel: string;
-      /** Her words, or null when nothing was heard ("Steady didn't catch that"). */
+      /** Her words, or null when nothing was heard ("Sophi didn't catch that"). */
       heard: string | null;
       /** A quiet line under the reply when the fixed replies answered; null when the model did. */
       engineNote: string | null;
@@ -283,7 +283,7 @@ export type ConversationEntry =
     }
   | { kind: "line"; key: string; at: number; event: WalkerEventView; label: string };
 
-export const NOT_CAUGHT = "Steady didn't catch that";
+export const NOT_CAUGHT = "Sophi didn't catch that";
 
 export function heardLabel(turn: WalkerTurnView): string {
   if (turn.heard_by === "gemini") return "You said (as heard by Gemini)";
@@ -391,14 +391,14 @@ export function nextCard(prev: ProposalCard | null, status: WalkerStatusView, se
 /** A walker that went away under the page (forgotten in another tab, or never this browser's). */
 export const goneMessage = (name: string) => `${name} isn't connected to this browser any more.`;
 
-export const CONNECTION_LOST = "Lost the connection to Steady's server. What's on screen may be out of date.";
-export const CONNECTION_BACK = "Connected to Steady's server again.";
+export const CONNECTION_LOST = "Lost the connection to Sophi's server. What's on screen may be out of date.";
+export const CONNECTION_BACK = "Connected to Sophi's server again.";
 
 /** Every error the page can get, in plain words. */
 export function errorMessage(code: WalkerErrorCode | "network" | "not_offered"): string {
   switch (code) {
     case "not_offered":
-      return "Steady's server can't do that yet.";
+      return "Sophi's server can't do that yet.";
     case "unauthenticated":
       return "This browser isn't connected to a walker any more. Connect one again.";
     case "not_found":
@@ -416,9 +416,9 @@ export function errorMessage(code: WalkerErrorCode | "network" | "not_offered"):
     case "invalid_request":
       return "The server didn't accept that. Try again.";
     case "unavailable":
-      return "Steady's server isn't available right now. Try again in a moment.";
+      return "Sophi's server isn't available right now. Try again in a moment.";
     case "network":
-      return "Can't reach Steady's server. Check the connection.";
+      return "Can't reach Sophi's server. Check the connection.";
   }
 }
 
@@ -463,11 +463,11 @@ export function announcements(before: Heard | undefined, status: WalkerStatusVie
   if (before.online && !status.online) lines.push("Your walker went offline.");
   if (!before.online && status.online) lines.push(before.everOnline ? "Your walker is back online." : "Your walker is online.");
   for (const entry of conversation(status)) {
-    if (entry.kind === "turn" && !before.turns.has(entry.turn.turn_id)) lines.push(`Steady: ${entry.turn.reply}`);
+    if (entry.kind === "turn" && !before.turns.has(entry.turn.turn_id)) lines.push(`Sophi: ${entry.turn.reply}`);
     if (entry.kind === "line" && !before.lines.has(entry.event.event_id)) lines.push(`On the walker: ${entry.event.text}`);
   }
   const p = status.open_proposal;
-  if (p && !before.proposals.has(p.proposal_id)) lines.push(`Steady offers: ${sentence(p.summary)} Confirm or decline within a minute.`);
+  if (p && !before.proposals.has(p.proposal_id)) lines.push(`Sophi offers: ${sentence(p.summary)} Confirm or decline within a minute.`);
   if (heard.applied && (!before.applied || before.version !== heard.version) && heard.version > 1) lines.push("Your walker applied the new alerts.");
   return { lines, heard };
 }

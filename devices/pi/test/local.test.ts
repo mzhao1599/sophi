@@ -155,7 +155,7 @@ describe("state store", () => {
 
   it("O8: a line older than 24 h is dropped for good, so it can't get every heartbeat refused", () => {
     const store = new StateStore(mkdtempSync(join(tmpdir(), "walker-state-")), captureLogger());
-    store.pushEvent({ event_id: "old", kind: "notice", text: "Steady is on.", saidMono: 0 });
+    store.pushEvent({ event_id: "old", kind: "notice", text: "Sophi is on.", saidMono: 0 });
     store.pushEvent({ event_id: "new", kind: "local_reply", text: "Cancelled.", saidMono: 60_000 });
     expect(store.pendingEvents(24 * 3_600_000).map((e) => e.event_id)).toEqual(["old", "new"]);
     expect(store.pendingEvents(24 * 3_600_000 + 1).map((e) => e.event_id)).toEqual(["new"]);
@@ -183,9 +183,9 @@ describe("misc", () => {
   });
 
   it("the simulator script parser reads keys, expectations and waits, and refuses unknown lines", () => {
-    expect(parseScript("# c\nkey t\nexpect spoke Steady is on.\nabsent 500 haptic\nwait 100\n")).toEqual([
+    expect(parseScript("# c\nkey t\nexpect spoke Sophi is on.\nabsent 500 haptic\nwait 100\n")).toEqual([
       { kind: "key", key: "t", line: 2 },
-      { kind: "expect", event: "spoke", match: "Steady is on.", timeoutMs: 20_000, line: 3 },
+      { kind: "expect", event: "spoke", match: "Sophi is on.", timeoutMs: 20_000, line: 3 },
       { kind: "absent", event: "haptic", match: "", forMs: 500, line: 4 },
       { kind: "wait", forMs: 100, line: 5 },
     ]);

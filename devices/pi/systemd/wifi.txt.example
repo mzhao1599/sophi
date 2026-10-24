@@ -1,4 +1,4 @@
-# Wi-Fi networks for Steady's walker.
+# Wi-Fi networks for Sophi's walker.
 #
 # To add a network from any computer: put the walker's SD card in the computer, open this file
 # (wifi.txt, on the card's "bootfs" drive), add a block like the one below, save, and put the card

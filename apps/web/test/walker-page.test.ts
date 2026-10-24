@@ -76,7 +76,7 @@ function proposal(over: Partial<ProposalView> = {}): ProposalView {
 function status(over: Partial<WalkerStatusView> = {}): WalkerStatusView {
   return WalkerStatusViewSchema.parse({
     device_id: id(1),
-    name: "Steady walker",
+    name: "Sophi walker",
     online: true,
     last_seen_at: iso(T0),
     simulator: true,
@@ -206,7 +206,7 @@ describe("countdowns and pairing", () => {
 
   it("splits the code for reading aloud and builds the pair command", () => {
     expect(formatCode("482913")).toBe("482 913");
-    expect(pairCommand("482913", "https://steady.example")).toBe("walker pair 482913 --server https://steady.example");
+    expect(pairCommand("482913", "https://sophi.example")).toBe("walker pair 482913 --server https://sophi.example");
   });
 });
 
@@ -220,7 +220,7 @@ describe("conversation", () => {
         turn(4, T0 + 6_000, { heard_by: "typed", heard: "hello" }),
       ],
       walker_said: [
-        { event_id: id(401), kind: "notice", text: "Steady is on.", at: iso(T0) },
+        { event_id: id(401), kind: "notice", text: "Sophi is on.", at: iso(T0) },
         { event_id: id(402), kind: "local_reply", text: "I'm offline right now.", at: iso(T0 + 4_000) },
       ],
     });
@@ -275,7 +275,7 @@ describe("proposals", () => {
 
 describe("announcements", () => {
   it("reads nothing on load, then each new reply, walker line, proposal and change once", () => {
-    const first = status({ turns: [turn(1, T0)], walker_said: [{ event_id: id(401), kind: "notice", text: "Steady is on.", at: iso(T0) }] });
+    const first = status({ turns: [turn(1, T0)], walker_said: [{ event_id: id(401), kind: "notice", text: "Sophi is on.", at: iso(T0) }] });
     const loaded = announcements(undefined, first);
     expect(loaded.lines).toEqual([]);
 
@@ -287,8 +287,8 @@ describe("announcements", () => {
     const second = announcements(loaded.heard, next);
     expect(second.lines).toEqual([
       "On the walker: A part stopped responding.",
-      "Steady: I can switch your alerts. Press Confirm to do it.",
-      "Steady offers: Switch your alerts from vibration to short sounds. Confirm or decline within a minute.",
+      "Sophi: I can switch your alerts. Press Confirm to do it.",
+      "Sophi offers: Switch your alerts from vibration to short sounds. Confirm or decline within a minute.",
     ]);
     expect(announcements(second.heard, next).lines).toEqual([]);
 
@@ -335,7 +335,7 @@ describe("announcements", () => {
   it("reads a summary without a full stop as its own sentence", () => {
     const loaded = announcements(undefined, status());
     const next = status({ open_proposal: proposal({ summary: "Switch your alerts to short sounds" }) });
-    expect(announcements(loaded.heard, next).lines).toEqual(["Steady offers: Switch your alerts to short sounds. Confirm or decline within a minute."]);
+    expect(announcements(loaded.heard, next).lines).toEqual(["Sophi offers: Switch your alerts to short sounds. Confirm or decline within a minute."]);
   });
 });
 
@@ -361,7 +361,7 @@ describe("errors in plain words", () => {
 
   it("keeps the typed-words notice exactly as written", () => {
     expect(TYPED_NOTICE).toBe(
-      "Your words go to Google's Gemini, which may keep a copy, and the text of Steady's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
+      "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
     );
   });
 });
@@ -377,7 +377,7 @@ describe("real API client", () => {
       calls.push({ url: String(url), init: init! });
       return answers.shift()!;
     });
-    expect(((await api.listWalkers()).walkers).map((w) => w.name)).toEqual(["Steady walker"]);
+    expect(((await api.listWalkers()).walkers).map((w) => w.name)).toEqual(["Sophi walker"]);
     await api.forgetWalker(id(1));
     expect(calls.map((c) => [c.init.method, c.url])).toEqual([
       ["GET", "/api/v1/walkers"],
@@ -442,7 +442,7 @@ describe("development fake", () => {
     expect((await api.listWalkers()).walkers).toEqual([]);
     expect(controls.pairFromWalker()).toBe(true);
     const [w] = (await api.listWalkers()).walkers;
-    expect([w!.online, w!.simulator, w!.walker_said.map((e) => e.text)]).toEqual([true, true, ["Steady is on."]]);
+    expect([w!.online, w!.simulator, w!.walker_said.map((e) => e.text)]).toEqual([true, true, ["Sophi is on."]]);
 
     const asked = await api.sendTurn(w!.device_id, id(900), "Stop buzzing me, use short sounds instead.");
     expect(asked.status.open_proposal?.state).toBe("open");

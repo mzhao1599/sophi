@@ -42,7 +42,7 @@ import { DEVICE_ROUTES, errorFromResponse, toCloudError, type CloudClient } from
 import type { Logger } from "../log";
 
 /**
- * A FAKE cloud for tests and `walker simulate`. It is not Steady's assistant: it understands no speech, its
+ * A FAKE cloud for tests and `walker simulate`. It is not Sophi's assistant: it understands no speech, its
  * replies are scripted lines that say they come from the fake cloud, and every answer is `answered_by: "fixed"`.
  * It speaks the walker contract (packages/contracts/src/walker.ts), validates what the Pi sends against it,
  * and exists to exercise the Pi's side of pairing, heartbeats, configuration, turns and proposals.

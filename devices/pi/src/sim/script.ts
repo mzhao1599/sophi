@@ -4,7 +4,7 @@ import type { Bus, BusEvents } from "../bus";
  * A tiny script language for driving the simulator end to end, one step per line:
  *
  *   key t                      press a simulator key (same keys as the interactive keyboard)
- *   expect spoke Steady is on. wait (up to 20 s) for an event, here a spoken line containing that text
+ *   expect spoke Sophi is on. wait (up to 20 s) for an event, here a spoken line containing that text
  *   expect 60000 link offline  the same, waiting up to 60,000 ms (for steps outside the script's control)
  *   absent 1500 haptic         fail if a matching event happens within 1,500 ms
  *   wait 1000                  let 1,000 ms pass (for example, holding Talk while "speaking")

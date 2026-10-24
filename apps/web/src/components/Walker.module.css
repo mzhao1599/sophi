@@ -172,7 +172,7 @@
   color: var(--text-strong);
 }
 
-/* Steady's server can't be reached: what's on screen is old. */
+/* Sophi's server can't be reached: what's on screen is old. */
 .stale {
   padding: 10px 14px;
   border: 1px solid var(--hairline-strong);

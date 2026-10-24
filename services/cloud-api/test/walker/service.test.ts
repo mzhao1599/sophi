@@ -146,10 +146,10 @@ function describeService(name: string, makeHarness: () => Promise<StoreHarness>)
       const a = await pairWalker();
       const odd = manifest(clock);
       odd.modules[0]!.firmware_version = "0.3\u0000";
-      const line: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Steady\u0000 is on \ud800.", ago_ms: 0 };
+      const line: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Sophi\u0000 is on \ud800.", ago_ms: 0 };
       await service.heartbeat(device(a.credential), a.device_id, beat({ manifest: odd, events: [line], service_version: "pi\udc00" }));
       const { walker } = await service.get(owner(a.secret), a.device_id);
-      expect(walker.walker_said.map((l) => l.text)).toEqual(["Steady\uFFFD is on \uFFFD."]);
+      expect(walker.walker_said.map((l) => l.text)).toEqual(["Sophi\uFFFD is on \uFFFD."]);
       expect(walker.online).toBe(true);
     });
 
@@ -248,17 +248,17 @@ function describeService(name: string, makeHarness: () => Promise<StoreHarness>)
 
     it("places walker lines in time by ago_ms, stores each once, and skips ones older than an hour", async () => {
       const a = await pairWalker();
-      const on: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Steady is on.", ago_ms: 30_000 };
+      const on: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Sophi is on.", ago_ms: 30_000 };
       const offline: WalkerEvent = { event_id: uuid(), kind: "local_reply", text: "I'm offline right now. Your buzz alerts still work.", ago_ms: 2_000 };
       const back: WalkerEvent = { event_id: uuid(), kind: "notice", text: "I'm back online.", ago_ms: 0 };
-      const ancient: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Steady is on.", ago_ms: WALKER_HISTORY_RETENTION_MS + 1 };
+      const ancient: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Sophi is on.", ago_ms: WALKER_HISTORY_RETENTION_MS + 1 };
       const pairAgain: WalkerEvent = { event_id: uuid(), kind: "notice", text: "Pair me again from the Your walker page.", ago_ms: 0 };
       await service.heartbeat(device(a.credential), a.device_id, beat({ events: [back, on, ancient, offline, pairAgain] }));
       clock.advance(5_000);
       await service.heartbeat(device(a.credential), a.device_id, beat({ events: [on] }));
       const said = (await service.get(owner(a.secret), a.device_id)).walker.walker_said;
       expect(said.map((l) => [l.text, l.at])).toEqual([
-        ["Steady is on.", new Date(T0 - 30_000).toISOString()],
+        ["Sophi is on.", new Date(T0 - 30_000).toISOString()],
         ["I'm offline right now. Your buzz alerts still work.", new Date(T0 - 2_000).toISOString()],
         ["I'm back online.", new Date(T0).toISOString()],
         // Said at the same moment: kept in the order the walker sent them.
@@ -428,7 +428,7 @@ function describeService(name: string, makeHarness: () => Promise<StoreHarness>)
 
     it("deletes turns and walker lines an hour after they happen, on a heartbeat", async () => {
       const a = await pairWalker();
-      await service.heartbeat(device(a.credential), a.device_id, beat({ events: [{ event_id: uuid(), kind: "notice", text: "Steady is on.", ago_ms: 0 }] }));
+      await service.heartbeat(device(a.credential), a.device_id, beat({ events: [{ event_id: uuid(), kind: "notice", text: "Sophi is on.", ago_ms: 0 }] }));
       await h.store().saveTurn(a.device_id, turn(clock), null, clock.now());
       clock.advance(60_000);
       await h.store().saveTurn(a.device_id, turn(clock, { reply: "Your hand controls are working." }), null, clock.now());
@@ -465,7 +465,7 @@ function describeService(name: string, makeHarness: () => Promise<StoreHarness>)
       const kept = await pairWalker(a.secret);
       const other = await pairWalker(undefined, "198.51.100.77");
       for (const w of [a, kept, other]) {
-        await service.heartbeat(device(w.credential), w.device_id, beat({ events: [{ event_id: uuid(), kind: "notice", text: "Steady is on.", ago_ms: 0 }] }));
+        await service.heartbeat(device(w.credential), w.device_id, beat({ events: [{ event_id: uuid(), kind: "notice", text: "Sophi is on.", ago_ms: 0 }] }));
         await openProposal(w.device_id);
       }
       await service.forget(owner(a.secret), a.device_id);

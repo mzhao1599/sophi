@@ -4,7 +4,7 @@
 
 # 1. Boot and reach the real server. The runner planted configuration 2 "from an earlier pairing", so the
 #    heartbeat's version 1 differs and the walker fetches configuration 1 from the server.
-expect spoke Steady is on.
+expect spoke Sophi is on.
 expect link online
 expect heartbeat ok
 expect config 1

@@ -2,7 +2,7 @@
 # offline beat shown with the simulator's own network switch (o), no server pause needed.
 # Run: walker simulate --server <url> --state <dir> --mic-file ask.wav,front.wav --script test/sim/real-server-beats.walk
 
-expect spoke Steady is on.
+expect spoke Sophi is on.
 expect link online
 expect heartbeat ok
 

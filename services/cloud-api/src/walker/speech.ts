@@ -1,7 +1,7 @@
 import { SPEECH_MAX_BYTES } from "@walker/contracts";
 
 /**
- * Steady's spoken voice, from Cartesia's text-to-speech. Only the text of Steady's reply is sent (a
+ * Sophi's spoken voice, from Cartesia's text-to-speech. Only the text of Sophi's reply is sent (a
  * reply can repeat some of the person's words), never their clip. Checked against docs.cartesia.ai/api-reference/tts/bytes
  * on 2026-10-24: `POST /tts/bytes`, `Authorization: Bearer`, `Cartesia-Version: 2026-08-14`, model
  * `sonic-3.6` (which follows Cartesia's latest stable snapshot), and a stock voice by id (never a cloned

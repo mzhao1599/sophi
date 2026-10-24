@@ -126,7 +126,7 @@ function Loading({ page }: { page: WalkerPage }) {
           </h1>
           {page.pollFailure ? (
             <p className={styles.stale} role="alert">
-              {page.pollFailure === "network" ? "Can't reach Steady's server. Check the connection; this page keeps trying." : "Steady's server isn't available right now. This page keeps trying."}
+              {page.pollFailure === "network" ? "Can't reach Sophi's server. Check the connection; this page keeps trying." : "Sophi's server isn't available right now. This page keeps trying."}
             </p>
           ) : null}
         </div>
@@ -249,7 +249,7 @@ function NotLive({ page }: { page: WalkerPage }) {
   const now = useNow(1000);
   if (page.lastOkAtMs && now - page.lastOkAtMs <= NOT_LIVE_AFTER_MS) return null;
   const ago = page.lastOkAtMs ? ` Showing what it said ${relativeAgo(now - page.lastOkAtMs)}.` : "";
-  return <p className={styles.stale}>Can&apos;t reach Steady&apos;s server.{ago}</p>;
+  return <p className={styles.stale}>Can&apos;t reach Sophi&apos;s server.{ago}</p>;
 }
 
 function Paired({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }) {
@@ -291,7 +291,7 @@ function Paired({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }
 
       <BehindTheScenes page={page} walker={walker} />
 
-      {/* Dimmed while Steady's server can't be reached, so old readings don't look current. */}
+      {/* Dimmed while Sophi's server can't be reached, so old readings don't look current. */}
       <section className={styles.walker} data-stale={live ? undefined : ""} aria-label="What the walker reports">
         <LiveWalkerDiagram rows={rows} caption={caption} />
         <div className={styles.cards}>

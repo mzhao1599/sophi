@@ -78,7 +78,7 @@ function proposal(over: Partial<ProposalView> = {}): ProposalView {
 function status(over: Partial<WalkerStatusView> = {}): WalkerStatusView {
   return WalkerStatusViewSchema.parse({
     device_id: id(1),
-    name: "Steady walker",
+    name: "Sophi walker",
     online: true,
     last_seen_at: iso(T0),
     simulator: true,

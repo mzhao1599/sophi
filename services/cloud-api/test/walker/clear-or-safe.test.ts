@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { saysClearOrSafe, type WalkerReply } from "../../src/walker/assistant";
 
-/** The words Steady never says about the way ahead (assistant.ts, saysClearOrSafe). */
+/** The words Sophi never says about the way ahead (assistant.ts, saysClearOrSafe). */
 const reply = (text: string, extra: Partial<WalkerReply> = {}): WalkerReply => ({ transcript: "", reply: text, topics: ["obstacles"], cues_change: null, ...extra });
 
 describe("saysClearOrSafe", () => {

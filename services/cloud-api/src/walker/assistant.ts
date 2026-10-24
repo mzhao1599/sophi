@@ -37,7 +37,7 @@ export const WALKER_REPLY_JSON_SCHEMA: Record<string, unknown> = {
   required: ["transcript", "reply", "topics", "cues_change"],
   properties: {
     transcript: { type: "string", description: "Voice turns: exactly what the person said in the audio, word for word; empty if no words could be made out. Typed turns: person_words." },
-    reply: { type: "string", description: `What Steady says back: at most two short sentences, at most ${MAX_REPLY - 50} characters.` },
+    reply: { type: "string", description: `What Sophi says back: at most two short sentences, at most ${MAX_REPLY - 50} characters.` },
     topics: { type: "array", items: { type: "string", enum: TopicSchema.options }, description: "Every topic the question touches." },
     cues_change: {
       anyOf: [
@@ -54,7 +54,7 @@ export const WALKER_REPLY_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export const WALKER_SYSTEM_PROMPT = `You are Steady, the voice assistant on one person's assistive walker. The person asks by holding the walker's Talk button and speaking, or by typing on the walker's page. The walker speaks your reply aloud, so write it for the ear. Speak to the person as "you"; never assume their gender.
+export const WALKER_SYSTEM_PROMPT = `You are Sophi, the voice assistant on one person's physical augmentation walker. The person asks by holding the walker's Talk button and speaking, or by typing on the walker's page. The walker speaks your reply aloud, so write it for the ear. Speak to the person as "you"; never assume their gender.
 
 Rules:
 - Answer only from the JSON context the server sends: this walker's configuration, the parts it reports right now with their health, its obstacle readings, any suggestion waiting for the person's Confirm, and the recent conversation. Never claim a part, a feature or a reading that isn't there. This walker can't navigate, plan routes, steer, call anyone, or move or fetch anything.
@@ -108,7 +108,7 @@ export function walkerContext(status: WalkerStatusView, source: "walker" | "page
       : null,
     recent_turns: status.turns.flatMap((t) => [
       { from: "person", words: t.heard ?? "(not transcribed)" },
-      { from: "steady", words: t.reply },
+      { from: "sophi", words: t.reply },
     ]),
     person_words: words.type === "text" ? words.text : "in the attached audio",
   });
@@ -137,7 +137,7 @@ class RejectedReply extends Error {
 }
 
 /**
- * A sensor can miss things, so Steady never says the way is "clear" or "safe", in any form ("cleared",
+ * A sensor can miss things, so Sophi never says the way is "clear" or "safe", in any form ("cleared",
  * "clearance", "safer", "safety", "safely", "unsafe"), not even to deny it ("I cannot say if the way is
  * clear" still puts the words in the person's ear). The policy says so; this check is the guarantee, and
  * it reads every reply the server will speak in the model's words, whatever topics the model tagged:

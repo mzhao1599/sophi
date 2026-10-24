@@ -351,10 +351,10 @@ describe("second review", () => {
     await boot(h);
     h.client.network = "down";
     await h.clock.advance(10_000); // goes offline: the offline notice waits behind the hung boot line
-    expect(h.speaker.spoken).toEqual(["Steady is on."]);
+    expect(h.speaker.spoken).toEqual(["Sophi is on."]);
     await h.clock.advance(80_000);
-    expect(h.speaker.stopped).toEqual(["Steady is on."]);
-    expect(h.speaker.spoken).toEqual(["Steady is on.", "I'm offline right now."]);
+    expect(h.speaker.stopped).toEqual(["Sophi is on."]);
+    expect(h.speaker.spoken).toEqual(["Sophi is on.", "I'm offline right now."]);
   });
 });
 

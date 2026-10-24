@@ -7,9 +7,9 @@ The "scroll" images are the inspector's contact sheets: four screens of the page
 left to right and top to bottom. Full-size originals are regenerated into `.taste-skill/before` and
 `.taste-skill/after` (both git-ignored) by running the inspector.
 
-## Steady (October 2026)
+## Sophi (October 2026)
 
-`steady-*.jpg` are the Steady redesign of the one-page demo, taken from the development previews
+`steady-*.jpg` are the October redesign of the one-page demo (made before the rename, so they show the earlier name, Steady), taken from the development previews
 (`/dev/preview/{start,chat,walker,order}`, the deterministic engine answering the demo persona's lines)
 through the inspector's Chrome driver: at 1440 by 900; at `200pct` (720 by 450 CSS pixels at twice
 the pixel density, as 200% zoom on a 1440 by 900 screen); and with `reduced-motion` emulated. The

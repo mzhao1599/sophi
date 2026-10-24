@@ -33,15 +33,15 @@ Times below are on the server's clock. The page estimates it from each response'
 - **Conversation**, oldest first, turns (`created_at`) and walker lines (`at`) merged by time:
   - a walker turn heard by Gemini: "You said (as heard by Gemini)" and the words;
   - a page turn: "You typed" and the words; a typed walker turn: "Typed on the walker";
-  - `heard: null`: "Steady didn't catch that" in place of the words;
-  - the reply beside Steady's mark;
+  - `heard: null`: "Sophi didn't catch that" in place of the words;
+  - the reply beside Sophi's mark;
   - `answered_by: "fixed"`: a quiet "Answered by the fixed replies" under the reply; nothing for `model`;
   - `voiced_by: "cartesia"`: "In Cartesia's voice"; `"walker"`: "In the walker's own voice"; `null` (page turns): nothing. (A replayed walker turn can say Cartesia although the walker spoke it itself; the contract records the voice offered, so this edge stays.) (The field records the voice the server offered, not what played, so the label names the voice, not a claim that it played.)
   - a walker line: "On the walker" and its text; a `local_reply` adds "offline reply".
   - Nothing yet: "Nothing said yet. Hold Talk on the walker, or type below."
 - **Open proposal:** a card with the server's summary (large), "Now: …" and "After: …" cue lists, a countdown "Expires in 0:42" that is not announced each second, and two real buttons, **Confirm** and **Decline**, each described by the summary.
   - Confirm sends `POST /api/v1/walkers/{id}/proposals/{proposal_id}` with `{"answer":"confirm"}`; Decline with `"decline"`. Both lock while it waits.
-  - One rule for every way an offer closes (answered here, answered on the walker, replaced, out of time): the card's heading always names its state ("Steady offers: Expired. Nothing changed."), and when the buttons go with focus on them, focus moves to that heading, which reads the outcome. The live region reads a closing unless focus is on the card's buttons (whose removal moves focus to the heading), so it's read exactly once: a person resting on the heading of a still-open card hears it from the live region, and an outcome for a walker no longer shown isn't read. Outcomes: "Confirmed. Switching your alerts to …" / "Declined. Nothing changed." / "Expired. Nothing changed." / "Replaced by a newer offer."
+  - One rule for every way an offer closes (answered here, answered on the walker, replaced, out of time): the card's heading always names its state ("Sophi offers: Expired. Nothing changed."), and when the buttons go with focus on them, focus moves to that heading, which reads the outcome. The live region reads a closing unless focus is on the card's buttons (whose removal moves focus to the heading), so it's read exactly once: a person resting on the heading of a still-open card hears it from the live region, and an outcome for a walker no longer shown isn't read. Outcomes: "Confirmed. Switching your alerts to …" / "Declined. Nothing changed." / "Expired. Nothing changed." / "Replaced by a newer offer."
   - When the countdown reaches 0 before anyone answers: the buttons go away and the card says "Time's up: this offer can't be answered here any more." until the next status says how it ended. (The server owns expiry, and the page can't know from its own clock that nothing changed.) With focus on the buttons at that moment, the heading reads "Time's up…", and the next poll's "Expired. Nothing changed." is read too: the second line is the server's word that nothing changed, which the page's countdown can't say.
   - When the open proposal disappears without the page answering it: "Confirmed. Switching your alerts to …" if the configuration moved to `base_configuration_version + 1` with the proposal's cues; "Replaced by a newer offer." if another proposal is open; "Expired. Nothing changed." only if the configuration is still at `base_configuration_version` and its time is up or the walker is offline; otherwise "No longer open."
   - A closed card stays until a newer turn arrives; if focus is in it when it goes, focus moves to the text box.
@@ -53,7 +53,7 @@ Times below are on the server's clock. The page estimates it from each response'
 
 ### Not live (polls failing)
 - Every request has a deadline (polls 5 s, typed questions 20 s, everything else 10 s), so a stalled request reads as a failure instead of freezing the page.
-- After about 5 s without a successful poll, the live region says once "Lost the connection to Steady's server. What's on screen may be out of date." and, when a poll succeeds again, "Connected to Steady's server again." Also, the status says "Can't reach Steady's server. Showing what it said <n> s ago." The online word becomes "Status unknown", every zone shows "Unknown" with "no update from the server", the drawing and its details are dimmed and grey, and the proposal's buttons stay, but a failed answer says so. When a poll succeeds again, the warning and the dimming go.
+- After about 5 s without a successful poll, the live region says once "Lost the connection to Sophi's server. What's on screen may be out of date." and, when a poll succeeds again, "Connected to Sophi's server again." Also, the status says "Can't reach Sophi's server. Showing what it said <n> s ago." The online word becomes "Status unknown", every zone shows "Unknown" with "no update from the server", the drawing and its details are dimmed and grey, and the proposal's buttons stay, but a failed answer says so. When a poll succeeds again, the warning and the dimming go.
 - **Fits one screen:** at 1440 x 900 with an offer open, the whole paired page is visible without scrolling.
 
 ### Behind the scenes (the latest turn, drawn as it happens)
@@ -76,18 +76,18 @@ Written before it was built (2026-10-23). The source is the list response's opti
 - **Accessibility:** a region named "Behind the scenes", reachable by Tab, holding an ordered list with one sentence per station (for example "Gemini wrote an answer in 2.1 seconds."). Not a live region, and nothing new goes to the polite live region. Reduced motion: stations and lines appear at once, no pen travel, no pulse. Forced colours: line styles (solid done, dashed toward a live station, dotted to an end) and the words carry the meaning. At 1440 x 900 the stepper runs across the page under the walker and the conversation, with the whole page still on one screen; under 880 px of panel width (390 px phones, 200% zoom) it runs down the page, with no sideways scroll.
 
 ## Typed questions
-- Above the box, on screen before anyone types, exactly: "Your words go to Google's Gemini, which may keep a copy, and the text of Steady's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker." The box is described by it.
+- Above the box, on screen before anyone types, exactly: "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker." The box is described by it.
 - Enter or the Send button sends `POST /api/v1/walkers/{id}/turns` with `{"client_turn_id": <new uuid>, "input": {"type":"text","text": <trimmed>}}`. Empty or space-only text sends nothing. Text is limited to 500 characters.
-- While waiting: the person's words show as "You typed", Steady's mark breathes, Send is locked, focus stays in the box.
+- While waiting: the person's words show as "You typed", Sophi's mark breathes, Send is locked, focus stays in the box.
 - On success: the box clears and the turn appears from the response's status. On failure: the words go back in the box, the error shows, and sending the same words again reuses the same `client_turn_id` (so a reply that did arrive isn't run twice).
 
 ## Live updates
 - `GET /api/v1/walkers` every 1.5 s while the tab is visible (0.7 s while a turn is in flight: see Behind the scenes); none while it's hidden; one at once when it becomes visible again. Polls never overlap, and a poll that started before a Confirm, Decline, send or Forget answered never overwrites what that answer returned.
-- After an outage, "Connected to Steady's server again." is read before any news from the same poll, never overwritten by it.
+- After an outage, "Connected to Sophi's server again." is read before any news from the same poll, never overwritten by it.
 - When an offer closes in the same poll as other news about the walker, the closing is read first, right after any connection line: "Confirmed. Switching your alerts to short sounds and spoken messages. Your walker applied the new alerts.", never the other way round.
 - Older browsers without `AbortSignal.any` still get deadlines (a timer aborts the request), so the page loads there too.
 - An action's answer for a walker no longer in the list is ignored (it never brings a forgotten walker back), and a poll starts right after each action so an older action answer is corrected at once. An answer for a walker other than the one now shown never puts its offer card on the shown walker.
-- A polite live region announces, once each: every new reply ("Steady: …"), every new walker line ("On the walker: …"), every new open proposal ("Steady offers: <summary>. Confirm or decline within a minute."), going offline ("Your walker went offline."), coming online ("Your walker is online." the first time the page sees it online, as right after pairing; "Your walker is back online." after that), and a new configuration becoming applied ("Your walker applied the new alerts."). What was already there when the page loaded is not read out.
+- A polite live region announces, once each: every new reply ("Sophi: …"), every new walker line ("On the walker: …"), every new open proposal ("Sophi offers: <summary>. Confirm or decline within a minute."), going offline ("Your walker went offline."), coming online ("Your walker is online." the first time the page sees it online, as right after pairing; "Your walker is back online." after that), and a new configuration becoming applied ("Your walker applied the new alerts."). What was already there when the page loaded is not read out.
 
 ## Errors, in plain words
 | What happens | What the page says and does |
@@ -99,9 +99,9 @@ Written before it was built (2026-10-23). The source is the list response's opti
 | `429 pairing_locked` | "Too many wrong codes were tried from this network. Wait 10 minutes, then get a new code." |
 | `429 rate_limited` | "Too many requests. Wait a moment and try again." |
 | `400 invalid_request` | "The server didn't accept that. Try again." (the typed words stay) |
-| `503 unavailable` | "Steady's server isn't available right now. Try again in a moment." |
-| Network failure | "Can't reach Steady's server. Check the connection." (and the not-live state above after 5 s of failed polls) |
-| A 404 that isn't one of the contract's errors (a route this server doesn't have yet, such as typed questions before the assistant turn lands) | "Steady's server can't do that yet." (the typed words stay) |
+| `503 unavailable` | "Sophi's server isn't available right now. Try again in a moment." |
+| Network failure | "Can't reach Sophi's server. Check the connection." (and the not-live state above after 5 s of failed polls) |
+| A 404 that isn't one of the contract's errors (a route this server doesn't have yet, such as typed questions before the assistant turn lands) | "Sophi's server can't do that yet." (the typed words stay) |
 | Any other response that doesn't match the contract | Treated as "unavailable"; never shown half-parsed |
 
 ## Accessibility

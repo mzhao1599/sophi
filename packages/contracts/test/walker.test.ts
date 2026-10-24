@@ -218,7 +218,7 @@ describe("pairing and heartbeat", () => {
   };
   const beat = {
     sent_at: T0, service_version: "0.1.0", manifest, snapshot: null,
-    events: [{ event_id: uuid(4), kind: "notice", text: "Steady is on.", ago_ms: 1200 }],
+    events: [{ event_id: uuid(4), kind: "notice", text: "Sophi is on.", ago_ms: 1200 }],
   };
 
   it("carries the walker's own lines and the simulated flags", () => {
@@ -242,7 +242,7 @@ describe("pairing and heartbeat", () => {
 
 describe("status view", () => {
   const status = {
-    device_id: uuid(3), name: "Steady walker", online: false, last_seen_at: null, simulator: false,
+    device_id: uuid(3), name: "Sophi walker", online: false, last_seen_at: null, simulator: false,
     configuration, applied_configuration_version: null,
     parts: [{ module_id: "voice", instance_id: null, health: "unavailable", simulated: false, in_configuration: true }],
     zones: [], open_proposal: null, turns: [], walker_said: [],
@@ -273,13 +273,13 @@ describe("status view", () => {
 
 describe("turn responses", () => {
   const status = {
-    device_id: uuid(3), name: "Steady walker", online: true, last_seen_at: T0, simulator: true,
+    device_id: uuid(3), name: "Sophi walker", online: true, last_seen_at: T0, simulator: true,
     configuration, applied_configuration_version: 1, parts: [], zones: [], open_proposal: null, turns: [],
     walker_said: [{ event_id: uuid(4), kind: "local_reply", text: "I'm offline right now.", at: T0 }],
   };
   const turn = {
     turn_id: uuid(5), client_turn_id: uuid(1), source: "walker", heard: "Hello", heard_by: "gemini",
-    reply: "Hi, I'm Steady.", answered_by: "model", voiced_by: "cartesia", created_at: T0,
+    reply: "Hi, I'm Sophi.", answered_by: "model", voiced_by: "cartesia", created_at: T0,
   };
   const speech = { mime: "audio/wav", data_base64: "UklGRiQAAABXQVZF" };
 

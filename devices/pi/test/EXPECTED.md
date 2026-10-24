@@ -10,7 +10,7 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 
 | Id | Situation | Expected |
 | --- | --- | --- |
-| P1 | Service starts | The first spoken line is "Steady is on." Nothing records until a Talk press. |
+| P1 | Service starts | The first spoken line is "Sophi is on." Nothing records until a Talk press. |
 | P2 | No credential file, Talk pressed | Spoken "I'm not paired yet. Open the walker page to get a pairing code." No recording, no request. |
 | P3 | `walker pair` succeeds | The credential file is written with mode 0600 in a 0700 folder, and the pairing's configuration 1 is saved *(contract)*. The command prints the device id, never the credential. |
 | P4 | Credential file appears while running | The next heartbeat tick reads it; the link goes `connecting`, then `online` on the first good heartbeat. |
@@ -148,7 +148,7 @@ Near is entered under 500 mm and left over 650 mm (*placeholder*, hysteresis). A
 
 `walker simulate --script test/sim/demo-path.walk` against the fake cloud over local HTTP, with a generated clip as the mic. Every step must pass in order, three runs out of three:
 
-1. "Steady is on." is spoken; the link goes online.
+1. "Sophi is on." is spoken; the link goes online.
 2. Talk, Talk: a turn is sent and the fake cloud's reply is spoken (it says it is the fake cloud).
 3. ToF near: a `haptic.play` reaches the simulated hand (configuration 1 is vibration).
 4. Talk, Talk: the fake cloud proposes short sounds. Confirm: configuration 2 is applied and "Done." is spoken.

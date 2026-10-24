@@ -1,6 +1,6 @@
-# Steady for each sponsor track
+# Sophi for each sponsor track
 
-This page is for the presenter and for whoever writes the Devpost submission. For each sponsor track Steady enters, it says what the judges score, what Steady really shows today, a 2-minute cut that opens on that track's moment, and the proof to bring. The [main demo script](script.md) stays the source for Wren's lines, the setup checklist and the honesty lines; this page only reorders and frames them.
+This page is for the presenter and for whoever writes the Devpost submission. For each sponsor track Sophi enters, it says what the judges score, what Sophi really shows today, a 2-minute cut that opens on that track's moment, and the proof to bring. The [main demo script](script.md) stays the source for Wren's lines, the setup checklist and the honesty lines; this page only reorders and frames them.
 
 **Status, 2026-10-24.** Real today: the onboarding website (conversation, the walker drawing, "Your walker", save, and an order in Stripe's test mode). Built and rehearsed on the walker simulator: the always-on walker assistant (the Pi service, its server with the assistant on Gemini, and the "Your walker" live page); its script is [walker-script.md](walker-script.md). The server runs on Render (<https://steady-walker.onrender.com>), checked end to end on 2026-10-24, including a reply in Cartesia's voice. Not yet run: the real Pi. Not built: the walker hardware integration. Nothing below presents a planned part as working; each cut that needs a planned part says so.
 
@@ -8,7 +8,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 ## Before submitting (all tracks)
 
-- **Say when the work started.** Cal Hacks 13.0's FAQ says "all implementation must occur during the hackathon". Max said on 2026-10-24 that Steady is already cleared under this rule. The submission still says plainly that work began on 2026-10-23 and lists what was built during the event, because the demo never hides anything from judges.
+- **Say when the work started.** Cal Hacks 13.0's FAQ says "all implementation must occur during the hackathon". Max said on 2026-10-24 that Sophi is already cleared under this rule. The submission still says plainly that work began on 2026-10-23 and lists what was built during the event, because the demo never hides anything from judges.
 - **Pick each track on Devpost** at submission, plus the MLH Gemini category. Ask at the event how many prizes one project may enter.
 - **Outward steps are Max's:** creating sponsor accounts, pasting keys, posting the submission and any public link.
 
@@ -16,7 +16,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **What the judges score:** customer understanding, measurable usefulness, a path from prototype to production, responsible design, and end-to-end functionality. The challenge asks for "a production-minded AI agent that solves a meaningful problem in finance, productivity, healthcare, or another high-impact domain". The track text doesn't require Microsoft products; ask at the Microsoft booth.
 
-**What Steady shows today:** the whole [3-minute script](script.md#the-3-minute-script). Its "real-world" points are made by the product itself: no diagnosis asked, a "no" recorded as a no, fixed rules (not the model) choosing modules, a note under each reply saying who read it, a fallback that says so, a privacy notice before anyone types, keyboard access, and test-mode checkout with honest labels.
+**What Sophi shows today:** the whole [3-minute script](script.md#the-3-minute-script). Its "real-world" points are made by the product itself: no diagnosis asked, a "no" recorded as a no, fixed rules (not the model) choosing modules, a note under each reply saying who read it, a fallback that says so, a privacy notice before anyone types, keyboard access, and test-mode checkout with honest labels.
 
 **Three things to add to the pitch (the weak criteria):**
 
@@ -36,7 +36,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
    - Measured on 2026-10-23 (rehearsal, `main` at `daea268`): across 39 Gemini turns of Wren's lines, no fallbacks, 1.8 to 3.6 seconds a turn, median 2.3 seconds.
    - Measured on 2026-10-24 (one run of the committed rehearsal, `main` at `0388a5d`, while this laptop was under heavy load from other builds): 13 Gemini turns, all 3 paths passed, no fallbacks, 2.9 to 7.6 seconds a turn, median 3.7 seconds. The time is measured in-process, so local load inflates it; this run isn't a fair speed figure.
    - Re-measure on the day, with nothing else running, using `REHEARSE_PROVIDER=gemini pnpm --filter @walker/cloud-api rehearse` (see "Rehearse on a model" below). If turns take more than about 5 seconds, follow the script's "The agent is slow" fallback.
-   - To measure at the venue: time three people who haven't seen Steady setting up a walker on the website without help, from the first keypress to "Your walker". Say who they were ("three hackers at the venue, not walker users"). Record each time below; never round up a sample this small into a claim.
+   - To measure at the venue: time three people who haven't seen Sophi setting up a walker on the website without help, from the first keypress to "Your walker". Say who they were ("three hackers at the venue, not walker users"). Record each time below; never round up a sample this small into a claim.
 
      | Date | Person (no names) | Engine | Time to "Your walker" | Turns | Needed help? |
      | --- | --- | --- | --- | --- | --- |
@@ -46,7 +46,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 3. **Path to production (15 seconds, in the close).** "What's built: continuous integration on every change, a live deploy, row-level security on saved setups, device authentication and versioned settings for the walker, and a fallback for every model turn. What isn't: bench validation of the hardware, testing with walker users, a paid model tier for real people's words, and a regulatory review we haven't started."
 
-**The 2-minute cut:** the 3-minute script's 0:00 to 1:50 (cold open, the walker drawing itself, the notice, "no" recorded as a no, "Your walker" quoting her words), then the path-to-production line above instead of the order beat. If the walker assistant is running and was rehearsed that day, swap the last 30 seconds for its "Change a setting" beat (a spoken request, Steady's proposal, the Confirm press, "Applied").
+**The 2-minute cut:** the 3-minute script's 0:00 to 1:50 (cold open, the walker drawing itself, the notice, "no" recorded as a no, "Your walker" quoting her words), then the path-to-production line above instead of the order beat. If the walker assistant is running and was rehearsed that day, swap the last 30 seconds for its "Change a setting" beat (a spoken request, Sophi's proposal, the Confirm press, "Applied").
 
 ## Visa: Reimagining Shopping
 
@@ -54,7 +54,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **The line:** "Shopping for a mobility aid usually means reading parts lists. Here she says what's hard, the cart builds itself, every item can say why it's there in her own words, and the price counts only what she chose."
 
-**What Steady shows today:**
+**What Sophi shows today:**
 - The cart is built from her words, not from browsing: the walker drawing lights up suggested parts as she answers.
 - Each part says why it's suggested, quoting her ("You said: …"), and a part she declined stays out, marked "You Said No".
 - The most experimental parts (robot arms, arm lift) are never added by default; she switches them on herself.
@@ -62,7 +62,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 - Stripe's checkout page lists each module with the catalog's one-sentence summary of what it does (never her own words, because Checkout data goes to Stripe), each name ending "(sample price)", and the page's note says "Prices are demo prices, not a real quote."
 - Trust: Stripe test mode only (the server refuses live keys), placeholder prices labelled everywhere, no card form on our site, ids-only metadata, and a success page that says "Demo order: no money moved".
 
-**Honest limits to say if asked:** nothing can really be sold (Steady is a prototype, not a certified mobility aid), prices are placeholders, and we have no sales or conversion data.
+**Honest limits to say if asked:** nothing can really be sold (Sophi is a prototype, not a certified mobility aid), prices are placeholders, and we have no sales or conversion data.
 
 **The 2-minute cut:** Wren's L1 (the cart starts building), L4 (her "no" stays out of the cart), "Show My Walker", one part's panel ("You said …"), switch on the arms and lift and point at the total changing, Save, Order (Demo), Stripe's page with the module summaries, pay with the test card, and end on "Demo order: no money moved".
 
@@ -74,9 +74,9 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **Why voice is core here:** a walker user's hands are on the handles. Talk is a button on the handle; the answer comes back out loud, and the same words appear on the "Your walker" page, so voice is never the only way to get them.
 
-### Steady and Cartesia (the README section for Cartesia's judges)
+### Sophi and Cartesia (the README section for Cartesia's judges)
 
-**What Cartesia does in Steady:** it is Steady's speaking voice on the walker. Hold Talk and ask a question; Google's Gemini hears the clip and writes the answer; the server sends only the answer's text to Cartesia's text-to-speech and returns the audio with the answer; the walker plays it. The page notes under each reply which voice spoke it: "In Cartesia's voice" or "In the walker's own voice".
+**What Cartesia does in Sophi:** it is Sophi's speaking voice on the walker. Hold Talk and ask a question; Google's Gemini hears the clip and writes the answer; the server sends only the answer's text to Cartesia's text-to-speech and returns the audio with the answer; the walker plays it. The page notes under each reply which voice spoke it: "In Cartesia's voice" or "In the walker's own voice".
 
 **Setup:**
 
@@ -91,7 +91,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 - WAV output at 16 kHz, mono, 16-bit PCM: what the walker's player takes. The server checks the header before sending it on.
 - Called from the server only, so the key never reaches the walker or the browser.
 
-**How it behaves when something goes wrong:** the voice gets at most 3 seconds inside the server's 8-second budget for a turn (the walker gives up at 10). No key, an error, a slow answer, audio longer than about a minute, or audio the walker can't play: the answer comes back without speech, and the walker says it in its own voice (Piper or espeak-ng on the Pi). The walker's fixed lines ("Steady is on", "I'm offline right now…", "I need to be paired again") always use its own voice, so it still talks with no internet. Typed questions from the page are answered on the page and not spoken.
+**How it behaves when something goes wrong:** the voice gets at most 3 seconds inside the server's 8-second budget for a turn (the walker gives up at 10). No key, an error, a slow answer, audio longer than about a minute, or audio the walker can't play: the answer comes back without speech, and the walker says it in its own voice (Piper or espeak-ng on the Pi). The walker's fixed lines ("Sophi is on", "I'm offline right now…", "I need to be paired again") always use its own voice, so it still talks with no internet. Typed questions from the page are answered on the page and not spoken.
 
 **Known limitations:**
 
@@ -101,21 +101,21 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 - English and one stock voice only.
 - Needs the internet; offline, the walker uses its own voice.
 - Not yet run on the real Pi with its USB speaker.
-- Data: Cartesia's terms (revised June 14, 2024; read 2026-10-24) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Only Steady's reply text is sent (it can repeat some of the person's words), never the voice clip. Until those terms allow real people's words, only scripted, made-up lines go through it.
+- Data: Cartesia's terms (revised June 14, 2024; read 2026-10-24) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Only Sophi's reply text is sent (it can repeat some of the person's words), never the voice clip. Until those terms allow real people's words, only scripted, made-up lines go through it.
 
 ### Notice wording
 
-- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types: "Your words go to Google's Gemini, which may keep a copy, and the text of Steady's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker."
-- **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. What's said goes to Google's Gemini, and Steady's replies are spoken by Cartesia from their text; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
-- **Said aloud at the Talk beat:** "Steady's answer is in Cartesia's voice. Only the answer's text goes to Cartesia, never the speaker's voice."
+- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types: "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker."
+- **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. What's said goes to Google's Gemini, and Sophi's replies are spoken by Cartesia from their text; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
+- **Said aloud at the Talk beat:** "Sophi's answer is in Cartesia's voice. Only the answer's text goes to Cartesia, never the speaker's voice."
 
 ### The 2-minute cut
 
 Demo first, then the why. The beats and their exact lines are in the walker script, [`walker-script.md`](walker-script.md); this cut uses four of them.
 
-1. **0:00 to 0:15, boot:** the walker says "Steady is on." in its own voice, and the page shows "Online" with each part's health.
+1. **0:00 to 0:15, boot:** the walker says "Sophi is on." in its own voice, and the page shows "Online" with each part's health.
 2. **0:15 to 0:40, ask:** Talk: "What can you help me with?" The answer comes back out loud in Cartesia's voice (in the model's own words), and the page shows "You said (as heard by Gemini)", the reply, and "In Cartesia's voice". Say the line about where the text goes.
-3. **0:40 to 1:15, change a setting:** Talk: "Stop buzzing me, use short sounds instead." Steady says "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." (the server writes this line from the change itself). Press Confirm on the walker. It says "Done. Obstacle alerts now use short sounds.", and the page's alerts change to "Version 2", "Short sounds" and then "Applied" (2 to 9 seconds after Confirm in the rehearsal; keep talking meanwhile).
+3. **0:40 to 1:15, change a setting:** Talk: "Stop buzzing me, use short sounds instead." Sophi says "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." (the server writes this line from the change itself). Press Confirm on the walker. It says "Done. Obstacle alerts now use short sounds.", and the page's alerts change to "Version 2", "Short sounds" and then "Applied" (2 to 9 seconds after Confirm in the rehearsal; keep talking meanwhile).
 4. **1:15 to 1:35, offline:** turn off the walker's hotspot. After about 6 to 10 seconds the walker says, once, "I'm offline right now. Your short-sound alerts still work.", in its own voice, and a Talk press then gets the same line at once. "Cartesia speaks when it can; the walker never goes silent." On the simulator, cutting the network needs the walker script's setup checklist.
 5. **1:35 to 2:00, why and how:** "Your hands are on the handles, so voice is how you ask. Push to talk, never a listening microphone. Gemini hears, Cartesia speaks, the walker's own voice covers offline, and every word is on the page too, for anyone who can't hear it."
 
@@ -132,9 +132,9 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 
 **The named community (pick after the conversation in the Microsoft section):** for example "people who use a rollator around home and local shops and find small buttons hard to press".
 
-**What Claude does in Steady:** the onboarding agent was built for Claude first (`services/cloud-api/src/onboarding/anthropic.ts`: Claude Opus 5.5 at low effort, one structured-output call per turn, the server-side refusal fallback on). It reads the person's words as a fixed list of needs, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement. It never picks a module.
+**What Claude does in Sophi:** the onboarding agent was built for Claude first (`services/cloud-api/src/onboarding/anthropic.ts`: Claude Opus 5.5 at low effort, one structured-output call per turn, the server-side refusal fallback on). It reads the person's words as a fixed list of needs, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement. It never picks a module.
 
-**Where it could go wrong, and what Steady does about it:** the model could misread a need (each part's panel quotes the words it came from, and every switch stays with the person); it could fail or be slow (a 15-second deadline, then the fixed questions, with a note saying so); it could be steered by what someone types (her words are passed as data, and fixed rules choose modules); and people's words leave the laptop (the notice names who reads them before anyone types).
+**Where it could go wrong, and what Sophi does about it:** the model could misread a need (each part's panel quotes the words it came from, and every switch stays with the person); it could fail or be slow (a 15-second deadline, then the fixed questions, with a note saying so); it could be steered by what someone types (her words are passed as data, and fixed rules choose modules); and people's words leave the laptop (the notice names who reads them before anyone types).
 
 **Status:** the adapter is built and tested with stub models only. It has never run live, because there is no Claude key on the demo laptop.
 

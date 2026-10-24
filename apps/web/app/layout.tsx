@@ -4,7 +4,7 @@ import { PRODUCT_LINE, PRODUCT_NAME } from "@/lib/brand";
 import "./globals.css";
 
 // Atkinson Hyperlegible, made by the Braille Institute for readers with low vision: legibility is the
-// brand of an assistive walker. Next for everything people read; Mono for the drawing's annotations.
+// brand of Sophi, a physical augmentation walker. Next for everything people read; Mono for the drawing's annotations.
 const text = Atkinson_Hyperlegible_Next({ subsets: ["latin"], variable: "--font-hyperlegible" });
 const mono = Atkinson_Hyperlegible_Mono({ subsets: ["latin"], variable: "--font-hyperlegible-mono" });
 
