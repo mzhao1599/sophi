@@ -6,6 +6,8 @@ An experimental, modular AI assistive walker for Cal Hacks. A user starts in an 
 
 To run the web app: `pnpm install`, then `pnpm dev`, and open <http://localhost:3000>. `pnpm test` and `pnpm typecheck` cover every package.
 
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `pnpm test`, `pnpm typecheck` and `pnpm build` on every pull request to `main` and every push to `main`.
+
 ## What a user experiences
 
 1. **Onboard:** sign in or use a clearly labeled demo mode; choose text, speech, or both. The onboarding assistant asks about daily tasks, environment, preferences, and access needs without requiring a diagnosis. It recommends only modules with a concrete benefit, shows why, and lets the user edit the recommendation.
