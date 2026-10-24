@@ -23,8 +23,6 @@
   min-width: 0;
   min-height: var(--target);
   white-space: nowrap;
-  --mark-fill: var(--ink);
-  --mark-ink: var(--on-ink);
 }
 
 .wordmark {
