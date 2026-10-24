@@ -3,7 +3,7 @@
 **Sophi. A physical augmentation walker.** You set it up by talking to it, and you can talk to it every day after.
 
 This is the script for showing the always-on walker assistant to judges at Cal Hacks (October 23 to 25, 2026). It has:
-- a click and speak sequence for the six beats, with the presenter's exact spoken lines and fresh-wording alternates, plus two later segments: the two phones, and the arms;
+- a click and speak sequence for the six beats, with the presenter's exact spoken lines and fresh-wording alternates, plus two later segments: the two phones, and the arms (with the lift, once it's ready);
 - what the "Your walker" page and the walker's own 5-inch screen show at each beat;
 - the honesty lines and judge Q&A;
 - a 60-second cut, and how this joins the onboarding demo in one 3 to 4 minute run;
@@ -27,7 +27,7 @@ The onboarding demo's script is [script.md](script.md); it stays the source for 
 - the walker's 5-inch screen: run only in the simulator under headless Chromium at 800 by 480. The kiosk that shows it full screen hasn't been installed on the Pi, and nothing has been seen on the panel;
 - the two-phone app at `/app` and the Phones card: live on Render, tested in a headless browser against the real routes, three runs in a row, before the opt-in GPS sharing was added. Not yet on real iPhones;
 - the arms: the Pi's motion coordinator for the two SO-101 arms, copy mode (teleop), taught skills and "Let go?", tested only against simulated servos. No arm has been calibrated, and the demo's tray task (`tray_pick_handover`) hasn't been taught;
-- the lift: its firmware is tested on a computer, and the Pi's lift client against a simulated lift board. The lift client isn't wired into the motion coordinator, so the walker service can't move the lift, and the screen's hold control never shows on a walker today;
+- the lift: its firmware is tested on a computer. Since 2026-10-24 the Pi's lift client is wired into the motion coordinator, tested only against a simulated lift board and simulated servos: a lift target is prepared at the terminal, and starts only on a handle Confirm press while someone holds the screen's hold control and both arms are folded. It has never talked to the real lift board, driver, motor or switches, and it can't move without the hardware stop, so it can't move on the walker today;
 - the hardware stop: chosen in the contract (a latching switch that cuts the arms' 12 V and the lift's step signal), but no switch is bought or wired;
 - `walker check`, the one read-only check of the whole walker: tested only with fakes on a Mac;
 - the USB GPS: it sent valid data on the Pi but had no fix indoors. Speaking a location or the weather hasn't been checked on the Pi.
@@ -53,8 +53,9 @@ Nothing in this script presents a simulated or planned part as working.
 | 6. Offline | Unplugs the Pi's Ethernet cable | A Talk press gets "I'm offline right now. Your short-sound alerts still work." at once † | "Offline", every part "Unavailable", every zone "Unknown"; it comes back when the network does | "No internet", "Alerts still work on the walker." |
 | 7. Two phones † | Adds Maya's phone, approves her with the consent line, she sends a message | Nothing: the walker isn't part of this | The Phones card: a code, Maya waiting, the consent line, Approve | Nothing: the screen has no messages yet |
 | 8. Arms † (only if rehearsed 3 of 3 that day) | A Confirm press runs the taught tray task, a second answers "Let go?", then copy mode, stopped by a handle press | Says each Confirm target aloud; the arm picks from the tray and holds it out | Nothing about the arms | The target and "Confirm" over the left handle; what moves and "Stop" over both handles; "Done" |
+| 8 with the lift † (only if the lift passed 3 of 3 that day) | Holds the screen's hold control and presses Confirm: home, raise to the tray, the tray task, "Let go?", lower | Says each lift target aloud ("Raise the lift to … mm."); the carriage moves only while held | Nothing about the lift | "Hold to raise" with "and press Confirm"; "Keep holding"; "Stopping" after a release |
 
-The lift isn't in the run today: see [The lift](#the-lift-not-in-the-run-today).
+The lift needs the hardware stop wired, so it stays out of the run until that's done: see [The lift, inside segment 8](#the-lift-inside-segment-8).
 
 ## Click and speak sequence
 
@@ -248,11 +249,37 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 
 > "Any button on either handle stops it. That's how a skill like the tray task is taught: someone moves the teaching arm once, and Sophi replays it only when Confirm is pressed." †
 
-### The lift (not in the run today)
+### The lift, inside segment 8
 
-The lift can't run yet: its client isn't wired into the motion coordinator, so the screen's hold control never shows on a walker, its firmware hasn't run on the lift board, and the drop test, guards and stop aren't done. Don't mention the lift as working.
+**Not yet run on the real lift: every line here is †.** The lift's code is built and wired into the Pi's motion coordinator, and has run only against a simulated lift board and simulated servos ([the lift on the Pi](../../devices/pi/README.md#the-lift-under-the-motion-coordinator)). The simulator runs this flow as a script (`test/sim/lift/01-demo-flow.walk`: home, raise to the tray, the tray task, "Let go?", fold, lower), which passed 3 of 3 in real time at the simulator's made-up tray height of 300 mm. Nothing has run on the lift board, driver, motor or switches. **Skip the lift** unless it passed 3 of 3 on the walker that day ([rehearsal checklist](#rehearsal-checklist)); segment 8 then runs as written above.
 
-**Planned beat, after all of that lands and passes 3 of 3 on the walker** (every line †): a teammate prepares a lift move; the screen shows "Hold to raise" with "and press Confirm"; the presenter holds the screen's control with one hand and presses Confirm on the left handle with the other; the screen says "Keep holding" and "Let go, or press a handle button, to stop."; lifting the finger stops it ("Stopping"). Say: "The lift moves only while a finger is on its control. Letting go stops it." The front obstacle sensors also stop a raise if they see the presenter, so rehearse standing exactly where you'll stand on stage.
+**It needs the hardware stop, and runs in normal mode.** The lift never moves without the hardware stop wired, bench mode or not: bench mode waives the stop for the arms only. With today's limits the lift can't move in bench mode at all: homing's fixed 15 mm/s and the lift's built-in 50 mm/s² are above bench's 10 mm/s and 25 mm/s², so every lift target is refused ("The lift's built-in speed is above this mode's limit, so it won't move."). So the lift joins the segment only after its bring-up in normal mode: the stop wired to the arms and the lift, the pinch guards fitted, the drop test passed (or a brake fitted), and `WALKER_MOTION_BENCH` removed ([setup B, step 14](#b-the-real-pi-on-the-venue-network-server-on-render)). The arms then run in normal mode too, so say the stop's safety line, not the bench one.
+
+**The rule for the lift** (as built):
+- **Prepared** only from the terminal: `walker lift home` or `walker lift move <mm>`. It becomes the walker's one pending Confirm target, and the walker says it, for example "Raise the lift to 300 mm. Park the walker and lock the brakes, then press Confirm."
+- **Started** only by a Confirm press on the left handle, while someone holds the screen's hold control and both arms are on and folded at `stowed`. Without the hold, the press is refused ("Keep holding the lift control to move it."); with an arm out, it's refused too. Nothing moves either way.
+- **Moves only while held.** Letting go stops it ("Stopping"), and a stopped move never resumes: it needs a new target and a new Confirm.
+- **Stopped** by any handle press (Talk or Confirm), the stop switch (which also cuts the lift's step signal itself), `walker motion stop`, or any fault. An obstacle screen taking over the walker's screen also lets go of the hold, so in every rehearsal stand where you'll stand on stage.
+
+**Who is where** (on top of segment 8's roles):
+- **The presenter holds the screen's hold control** with one hand and presses Confirm on the left handle with the other, then keeps holding until the screen says "Done". The rule asks for a person at the walker, and that's the presenter.
+- **The teammate at the Pi's terminal** prepares each lift step (`walker lift home`, `walker lift move <mm>`), as for the arms, and keeps a hand on the lift's 12 V switch, as in its bring-up.
+- **Judges stay outside the reach of the carriage and the arms** (the tape on the floor).
+
+**Before the segment:** both arms on (`walker arms torque on`, then Confirm) and folded at `stowed`; the carriage left near the bottom, because the lift is unhomed whenever the walker service starts and after every stop and fault, and homing from the very top takes about 67 s (the contract's arithmetic, not measured); the object on its taped spot on the tray.
+
+> "The lift moves only while a finger is on its control. Letting go stops it, and so does any button on either handle." †
+
+1. **Home.** The teammate runs `walker lift home`. The walker says "Home the lift. Park the walker and lock the brakes, then press Confirm." † The screen shows "Home the lift" and the hold control, "Hold to home" with "and press Confirm" †. Hold it, wait 2 seconds, press Confirm. It goes down to the bottom switch and ends homed †. While it moves, the screen says "Keep holding" and "Let go, or press a handle button, to stop." †
+2. **Raise to the tray.** The teammate runs `walker lift move <the tray height>`, the height the tray task was taught at. The walker says "Raise the lift to … mm." and the park line †, and the screen shows "Hold to raise" †. Hold, wait 2 seconds, press Confirm. It rises at up to the lift's built-in 20 mm/s (about 5 s for each 100 mm: arithmetic, not timed) and stops at that height †. Let go once the screen says "Done".
+3. **The arm to `ready`, then the tray task and "Let go?":** `walker arms pose go ready --arm left` and Confirm, then steps 1 to 7 above. The tray task runs only with the lift homed and within 1 mm of the height it was taught at; otherwise it's refused, and the reason names the `walker lift move` that fixes it.
+4. **Copy mode** (steps 8 to 10 above), if it's in today's run.
+5. **Fold.** `walker arms pose go stowed --arm left` and Confirm. The lift won't move with an arm out.
+6. **Lower.** The teammate runs `walker lift move <the starting height>`. The walker says "Lower the lift to … mm." and the park line †, and the screen shows "Hold to lower" †. Hold, wait 2 seconds, press Confirm, and keep holding until "Done".
+
+> "A person at the walker holds the control and presses Confirm. That's the only way the lift moves." †
+
+**If it stops partway** (a release, a press or a fault), the screen says "Stopping", then "Stopped" †. Say "It stops whenever I let go", and go on only with a new target and a new Confirm. A fault or the stop switch leaves the lift unhomed: home it again, or skip the rest of the lift.
 
 ## Fallbacks
 
@@ -260,6 +287,7 @@ The lift can't run yet: its client isn't wired into the motion coordinator, so t
 - **The real Pi isn't working:** run beats 1 to 6 on the simulator (setup A), and say "This is the simulator on a laptop".
 - **No obstacle board on the Pi:** skip beat 3, and in beat 4 say the cue change is saved for when the sensors are fitted.
 - **The phones don't work:** either use two browser windows on the laptop at phone width, against the same server (each in its own browser or private window, so each keeps its own cookie, apart from the page's), and say "these two windows stand in for the phones"; or skip segment 7 and use the website's "Your walker" beat from [script.md](script.md#the-3-minute-script). Never use `/app?preview=`, which is sample data.
+- **The lift:** skip it, and run segment 8 as written: the arms work at the carriage's fixed height. A tray task taught with the lift fitted runs only with the lift homed and at its taught height, so either raise the lift to that height before judges arrive (still with the hold and Confirm), or use a tray task taught with no `lift.json` on the Pi, which names no height. With no `lift.json` the walker has no lift.
 - **The arms:** skip segment 8 unless it passed 3 of 3 that day. If anything moves that shouldn't, the teammate switches the arms' 12 V off first. If a fault shows ("Stopped" and its sentence), say "It stopped and holds; a helper clears it at the walker", and move on.
 - **The agent is slow:** keep talking; the page's "Behind the scenes" panel shows what the server is doing.
 
@@ -296,7 +324,7 @@ Say these when they come up, in these words or close to them.
 - **The walker's screen:** "The screen shows what the walker is doing and the same words it says. So far it has run in the simulator, not on this panel" (until it has been rehearsed on the panel).
 - **The phones:** "Rose and Maya are made up. The family approves Maya on the walker page after asking Rose; it isn't Rose's own Confirm on the walker yet. That agreement is checked, not stored. People nearby is sample data." And until they've run on real phones three times in a row, don't show them as working on phones.
 - **Location (only if it's in the demo):** "Location sharing starts off, and only Rose's phone can turn it on. When it's on, the walker's latest GPS position goes to our server and to Maya's phone, and asking the walker where you are or about the weather sends one position to OpenStreetMap's or Open-Meteo's service. The GPS often has no fix indoors."
-- **Motion:** "The arms move only when a person at the walker presses Confirm on a handle; the model, the phones and the website can't start them, and any handle press stops them." With no hardware stop wired: "There's no hardware stop yet, so they run in bench mode, and the screen says so." Before the arms have run on hardware: "The arm code is built and tested on simulated servos; it hasn't run on these arms yet." The lift: "The lift isn't working yet."
+- **Motion:** "The arms move only when a person at the walker presses Confirm on a handle; the model, the phones and the website can't start them, and any handle press stops them." With no hardware stop wired: "There's no hardware stop yet, so they run in bench mode, and the screen says so." Before the arms have run on hardware: "The arm code is built and tested on simulated servos; it hasn't run on these arms yet." The lift, until it passed 3 of 3 on the walker: "The lift's code is built and tested against a simulated lift board; it hasn't moved this lift yet." With the lift in: "The lift moves only while a finger is on its control, after a Confirm press at the walker, with the arms folded, and never without the hardware stop."
 - **Numbers:** only our own timings, and say they're ours (the rehearsal results below). On the real Pi there is one timed turn so far (about 4 seconds from letting go of Talk to the answer arriving); nothing else on the hardware is timed.
 - **What's kept:** "Voice clips are sent to Gemini for one answer and dropped; Sophi never stores them. Google's free tier may keep what it receives. The words and replies are deleted from Sophi after an hour, or at once with Forget this walker. Messages between the phones are deleted after a day."
 - **It's not Wren's walker:** if this follows the onboarding demo, "Wren's setup has voice off; this is a walker set up with voice on."
@@ -321,8 +349,9 @@ Say these when they come up, in these words or close to them.
 - The model can't move anything. It can't even ask: the cloud may at most offer a taught skill or pose by its id, nothing sends such an offer yet, and even then it would only become a Confirm target.
 - Every motor start needs a Confirm press on the handle, at least 2 seconds after the walker showed and said what will move, with the button seen released for those 2 seconds. Any handle press stops what moves.
 - Each joint's goal stays within 5 degrees of where it is, so if the Pi stops mid-move, a joint goes at most 5 degrees further and holds.
-- The hardware stop is designed to cut the arms' power and the lift's step signal without the Pi; it isn't wired yet, and without it the arms run only in bench mode, which the screen says.
-- All of this is tested on simulated servos only; it hasn't run on real arms (until segment 8 passes 3 of 3). The lift can't move yet.
+- The hardware stop is designed to cut the arms' power and the lift's step signal without the Pi; it isn't wired yet. Without it the arms run only in bench mode, which the screen says, and the lift doesn't move at all.
+- The lift moves only while someone holds its control on the walker's screen, after a Confirm press, with both arms folded; letting go or any handle press stops it.
+- All of this is tested on simulated servos and a simulated lift board only; it hasn't run on the real arms or lift (until segment 8, or its lift part, passes 3 of 3).
 - Apart from the arms, the only thing the walker makes a part do is play one of four fixed haptic patterns, for at most a second.
 
 **7. How fast is it?** These are our timings from the rehearsal below, on a laptop with the simulator: from releasing Talk to the reply's text arriving, 1.9 to 4.6 seconds, with a median of 2.7 seconds, over 16 spoken turns; 2 of them took over 4 seconds. The walker then has to say it: the Pi writes the whole line with its own voice before playing it, so the time until it's heard is longer, and we haven't measured it. The target in our design is 4 seconds to the start of a spoken answer. On the real Pi, one timed turn so far: 3.96 seconds from letting go of Talk to the answer arriving from Render (2026-10-24); one turn isn't a timing range.
@@ -333,7 +362,7 @@ Say these when they come up, in these words or close to them.
 
 **10. Does it work without sight or speech?** Every spoken answer also appears on the page, and as captions on the walker's screen (so far only in the simulator). Every offer can be confirmed from the page or the walker's button. The page works by keyboard and announces new replies, walker lines and offers once through a polite live region. It was checked by keyboard alone, at 390 px wide and at 200% zoom, and with reduced motion, in a headless browser against the page's development fake on 2026-10-24. The phone app was checked the same way, headless, at 200% text and by keyboard; Rose's message is read aloud only when she taps it. A VoiceOver or NVDA pass, and a check on real iPhones, are still to do.
 
-**11. What's real hardware here?** On the Mac simulator, none of it, and the page says so on every part. On the real walker: the Raspberry Pi 5 running the walker service, its USB microphone and soundbar, both hand boards (Talk on the right, Confirm on the left), and a USB GPS that hasn't had a fix indoors. The obstacle sensors are still simulated or not fitted, and the page labels anything simulated. The obstacle board's firmware is tested on a computer but hasn't run with the Pi. The 5-inch screen, the arms and the lift are on the walker but haven't run with their software yet (unless segment 8 passed that day).
+**11. What's real hardware here?** On the Mac simulator, none of it, and the page says so on every part. On the real walker: the Raspberry Pi 5 running the walker service, its USB microphone and soundbar, both hand boards (Talk on the right, Confirm on the left), and a USB GPS that hasn't had a fix indoors. The obstacle sensors are still simulated or not fitted, and the page labels anything simulated. The obstacle board's firmware is tested on a computer but hasn't run with the Pi. The 5-inch screen, the arms and the lift are on the walker but haven't run with their software yet (unless segment 8, or its lift part, passed that day).
 
 **12. Can the caretaker see where she is?** Only if Rose turns location sharing on from her own phone; it starts off. Then Maya sees the walker's latest GPS position, at most a minute old, and nothing older: no trail is kept, and turning it off erases it. The assistant never sees coordinates. Asking the walker "Where am I?" or about the weather sends one position to OpenStreetMap's Nominatim or Open-Meteo. None of this has been checked with a real GPS fix.
 
@@ -499,6 +528,14 @@ Needs Max. On the night of 2026-10-24 the Pi steps ran up to one spoken turn: OS
 11. **The phones** (segment 7): both on cellular, `/app` on the Render address open and added to the Home Screen, Rose's phone linked before judges arrive. Between judges, remove Maya's phone on the Phones card ("Remove", then "Remove" again; "Keep it" cancels), so the next judge sees her join. A code lasts 10 minutes and a waiting phone 5, so make Maya's code during the segment, not before.
 12. **The arms** (segment 8), only after the bench bring-up and the tray task are done ([bench bring-up](../../devices/pi/README.md#bench-bring-up-with-real-arms-2026-10-25-plan-nothing-below-has-been-done-yet)): the arm ports in `/etc/steady-walker.env`, bench mode on until the hardware stop is wired and passed 3 of 3, the tray and the object's spot taped, tape on the floor at the arms' reach, the left arm on and at `ready`, and a way into the Pi's terminal. Then rehearse segment 8 three times in a row that day, or skip it.
 13. **Beat 5 on this walker:** if the arms are fitted, skip beat 5 (its line would be untrue).
+14. **The lift** (inside segment 8), only after its own bring-up ([the lift's bring-up](../../devices/pi/README.md#bench-bring-up-with-the-real-lift-after-the-arms-2026-10-25-plan-nothing-below-has-been-done-yet)). The lift needs the hardware stop wired even in bench mode, and with today's limits it can't move in bench mode at all, so its bring-up runs in normal mode, after:
+    - the arms' bring-up, with the stop wired and `WALKER_MOTION_BENCH` removed;
+    - the lift board's own bench steps, the drop test among them ([the lift board](../../firmware/README.md#lift-board));
+    - the pinch guards fitted;
+    - the stop's second contact wired to the lift board, and the stop tested on both;
+    - `lift.json` written with the board's configuration, the guards and the drop test result.
+
+    Then run the lift's stop tests (a release, a Talk press, a Confirm press, the stop switch) and record how far it went after each in `hardware/current-build.md`. The walker's screen must be on the panel (step 10), because the hold control is on it: the simulator's screen on the laptop can't hold the real lift. Teach the tray task at the tray height, then rehearse the lift's flow three times in a row that day, or skip it.
 
 ## Rehearsal checklist
 
@@ -514,7 +551,8 @@ Rehearse each segment three times in a row on the setup you'll demo, on the day,
 | Segment 7, two phones | Two real phones on cellular, Render | [ ] | [ ] | [ ] | | |
 | Segment 8, the taught task and "Let go?" | Real walker, real arms | [ ] | [ ] | [ ] | | Stop wired or bench mode |
 | Segment 8, copy mode and a handle-press stop | Real walker, real arms | [ ] | [ ] | [ ] | | |
-| The lift | Not in the run today | | | | | |
+| Segment 8 with the lift: home, raise to the tray, the tray task, "Let go?", lower | Real walker, real arms and lift, stop wired, normal mode | [ ] | [ ] | [ ] | | Who held the screen's control; the tray height; how long the segment took |
+| The lift: a release partway, and a handle press, each stop it | Real walker, real lift, stop wired, normal mode | [ ] | [ ] | [ ] | | How far it went after each |
 | The 60-second cut | The setup you'll demo | [ ] | [ ] | [ ] | | |
 | Joined with the onboarding demo | The setup you'll demo | [ ] | [ ] | [ ] | | |
 
@@ -524,8 +562,8 @@ After a passed set, take the † off the lines you saw and heard, with the date,
 
 **Open before the demo**, each with what it needs:
 1. **Beat 5 with the arms fitted.** On a walker with arms, the server's no-arms line is untrue, so beat 5 is skipped. To keep a beat 5, the Pi has to list `manipulation.arm` and `MANIFEST_MAY_LIST_ARMS` has to be set to true after the arms pass 3 of 3 (see beat 5's alternative). Decision: Max.
-2. **The lift.** The lift client's wiring into the motion coordinator, including the one line that takes the screen's hold control to it ([`src/motion/lift/README.md`](../../devices/pi/src/motion/lift/README.md)), plus the lift's own bench work. Until then the lift isn't in the demo.
-3. **The hardware stop.** Not chosen or wired. Until it is, the arms run only in bench mode and nobody else is within their reach.
+2. **The lift.** Wired into the motion coordinator since 2026-10-24 (tested only against a simulated lift board). Still to do: the lift board's bench steps and drop test, the guards, the stop wired to the lift, and its bring-up on the Pi in normal mode (setup B, step 14). Until then the lift isn't in the demo.
+3. **The hardware stop.** Chosen in the contract, not bought or wired. Until it is, the arms run only in bench mode, nobody else is within their reach, and the lift can't move at all.
 4. **The two phones after GPS sharing.** The three headless runs were before the opt-in GPS sharing changed the consent line and Rose's "My walker" screen. Run segment 7 again, ideally on two real phones.
 5. **Location sharing and the location and weather questions:** in the demo or not (Max).
 
