@@ -1,6 +1,6 @@
 # Steady ESP32 firmware
 
-**Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. One hand board was flashed and answered USB serial commands on a Mac; a temporary P32-to-GND contact reported Talk presses and triggered haptic cues felt by the owner. See the bench record below. The final button is not installed, and the obstacle firmware has not run on a board. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
+**Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. The left hand board was flashed and answered USB serial commands on a Mac; its connected control reported a press and triggered a haptic cue felt by the owner. See the bench record below. The right hand board and obstacle firmware have not run in this Mac bench check. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
 
 Nothing in this firmware can move the arms or the lift. The hand board's only output is the haptic buzz, and the obstacle board has no output at all.
 
@@ -8,7 +8,7 @@ Nothing in this firmware can move the arms or the lift. The hand board's only ou
 
 | PlatformIO environment | Board | What it does |
 | --- | --- | --- |
-| `hand` | One ESP32-WROOM-32 per handle (`hand-left-01`, `hand-right-01`) | Reports the **Talk** and **Confirm** buttons, and plays the four haptic cues the Pi asks for. |
+| `hand` | One ESP32-WROOM-32 per handle (`hand-left-01`, `hand-right-01`) | Reports the **Talk** and **Confirm** button inputs, and plays the four haptic cues the Pi asks for. The intended physical Talk control is on the right handle. |
 | `tof` | One ESP32 (`tof-front-01`) | Reads four VL53L1X time-of-flight distance sensors and reports them as obstacle zones. |
 | `native` | Your computer | Runs the unit tests (`pio test -e native`). |
 
@@ -46,9 +46,13 @@ Example lines, printed by the firmware's own code in the scripted session on a c
 
 ## Hand control board
 
+### Physical side assignment
+
+The ESP32 tested on the Mac is the **left** board and is provisioned as `hand-left-01`. The other ESP32 is for the **right** handle and should be provisioned as `hand-right-01` when flashed. The intended physical **Talk** control is on the **right** handle. Current firmware still reports a GPIO32 press as `button: "talk"` on either board; the left board's connected control produced that wire event in the bench test. Decide and implement the left control's final action before treating the wire event as the finished handle layout. Keep each board labeled with its provisioned ID rather than identifying it by USB port order.
+
 ### Parts (from [hardware/current-build.md](../hardware/current-build.md))
 
-- ESP32-WROOM-32 USB-C development board. Its USB-C port goes through a USB-to-serial chip on the board; that chip's model isn't recorded yet.
+- ESP32-WROOM-32 USB-C development board. The tested left board uses a CP2102 USB-to-serial bridge; confirm the right board's bridge when connected.
 - Two momentary push buttons.
 - A DRV2605L haptic driver board. It drives a small vibration motor and has a built-in library of vibration effects; the ESP32 talks to it over **I2C**, a two-wire bus (data SDA and clock SCL) that several chips can share.
 - One coin vibration motor. Assumed to be an **ERM** (eccentric rotating mass: a motor spinning an off-centre weight), the usual kind of coin motor. Check the motor's label or listing.
@@ -84,14 +88,14 @@ The hand board's only output. What may make it buzz, and what stops it:
 
 If the DRV2605L doesn't answer when the board starts, the hello leaves out `haptic`, the heartbeat says `degraded` with `haptic_missing`, and every `haptic.play` is rejected as `unsupported`, so the Pi falls back to its sound cue.
 
-How each pattern maps to the DRV2605L's built-in effects (effect numbers from the "Waveform Library Effects List" in TI's DRV2605L datasheet). The board repeats the sequence until the cue's duration ends. Most patterns include a pause so repeats feel like separate pulses; `near_obstacle` repeats without an added pause to feel more continuous. The peak drive voltage is unchanged.
+How each pattern maps to the DRV2605L's built-in effects (effect numbers from the "Waveform Library Effects List" in TI's DRV2605L datasheet). The board repeats the sequence until the cue's duration ends. On the tested coin motor, the earlier click and soft-bump effects were not felt on the Pi, so the current patterns use Strong Buzz with different gaps and counts. The peak drive voltage is unchanged.
 
 | Pattern | Sequence |
 | --- | --- |
-| `confirmation` | Effect 10, "Double Click 100%", then 200 ms of quiet |
-| `recording` | Effect 7, "Soft Bump 100%", then 300 ms |
+| `confirmation` | Two effect 14 Strong Buzz pulses, 120 ms apart, then 250 ms of quiet |
+| `recording` | Effect 14 Strong Buzz, then 300 ms of quiet |
 | `near_obstacle` | Effect 14, "Strong Buzz 100%", repeated without an added pause |
-| `error` | Effect 12, "Triple Click 100%", then 200 ms |
+| `error` | Three effect 14 Strong Buzz pulses, 60 ms apart, then 250 ms of quiet |
 
 Driver setup, from the datasheet's register map (written in `src/hand/main.cpp`, no third-party library): I2C address 0x5A; device id 7 (DRV2605L) or 3 (DRV2605) checked at boot; internal-trigger mode; effect library 1 ("Library A", for ERM motors) in open loop, as Adafruit's examples use. *Assumptions:* choose the library from the datasheet's table once the motor's rated voltage is known. The drive voltage in ERM open loop comes from the OD_CLAMP register (0x17), which the firmware leaves at its power-on default; check it against the motor's rated voltage with the datasheet's formula before running the motor for long.
 
@@ -209,10 +213,11 @@ The script's framing and press-to-cue behavior can be checked without a board us
 - Build: existing hand source, module ID `hand-left-01`, compiled with the locally installed Arduino-ESP32 core 3.3.5 and Arduino CLI 1.2.0 because PlatformIO was unavailable on this Mac. This is a separate build environment from the pinned PlatformIO core 2.0.17 used in CI.
 - Flash: `/dev/cu.SLAB_USBtoUART`; uploader reported hashes verified for bootloader, partitions, boot app, and firmware, then reset the board.
 - Reflash, 2026-10-24 23:42 PDT: rebuilt with the pinned PlatformIO environment (`WALKER_MODULE_ID=hand-left-01 pio run -e hand`) with the press patterns changed to Strong Buzz, and flashed from the walker's Pi over USB with esptool 5.6.0 (bootloader 0x1000, partitions 0x8000, boot_app0 0xe000, app 0x10000; all hashes verified). The board said hello to the Pi service as `hand-left-01`. The old `recording` (Soft Bump) buzz couldn't be felt on a Talk press; the new one could. Still the stock 100% effects in open loop: a stronger buzz needs the driver's voltage settings raised, which waits for the motor's voltage, current and temperature to be measured.
+- Left handle Mac bench: rebuilt the current Strong Buzz patterns from `main` with Arduino CLI 1.2.0 and Arduino-ESP32 core 3.3.5, provisioned as `hand-left-01`, then reflashed over `/dev/cu.SLAB_USBtoUART`. All upload hashes verified. The computer loopback saw a connected-control `talk` press and an accepted cue; the owner felt the buzz after the final reflash. The listener was stopped afterward. This identifies the tested ESP32 as the left board; the other board is reserved for the right handle and its intended Talk control.
 - Serial: a `hello.request` received a `hello` advertising `button.talk`, `button.confirm`, and `haptic`; subsequent heartbeats reported `health: ok`. A 150 ms `confirmation` request received `ack` `accepted`.
 - Haptic feel: the owner felt the 1000 ms `near_obstacle` cue when P32 was touched to GND. After the no-pause `near_obstacle` firmware was flashed, the owner reported that it felt stronger. The computer loopback received press events and `accepted` acknowledgements; the serial session was then stopped.
 - Motor: the owner identified the [VAKTOK 10 mm coin motor listing](https://www.amazon.com/dp/B0CC4LXNMZ), which advertises a 3 V rating. The DRV2605L's peak drive setting was not raised. Measure actual motor voltage, current, and temperature before sustained use; the listing does not establish those operating values in this wiring.
-- Still unverified: motor voltage/current/temperature, all other cue patterns and durations, the final P32 button and P33 Confirm input, reconnect behavior, and operation with the Pi. The DRV2605L responded to firmware initialization, but its breakout revision was not recorded.
+- Still unverified: motor voltage/current/temperature, all other cue patterns and durations on this Mac bench, the exact final left-control wiring and action, P33 Confirm input, and reconnect behavior. The DRV2605L responded to firmware initialization, but its breakout revision was not recorded.
 
 ## Tests
 
