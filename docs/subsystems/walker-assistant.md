@@ -54,3 +54,5 @@ Voice is never the only path. Every spoken answer also appears on the page, ever
 ## Build plan
 
 The full design, including the demo beats and what changed after the plan review, is kept by the lead. The pieces are: (1) this contract; (2) the cloud store, pairing, device auth and heartbeat on Render with Postgres; (3) the assistant turn and proposals; (4) the Pi service with a simulator on a Mac; (5) the "Your walker" page; (6) the demo script; (7) ESP32 firmware for the hand controls and obstacle sensors. Update this guide as each one lands.
+
+Piece 7 is written ([firmware/](../../firmware/README.md)): the hand boards report Talk and Confirm as `button.talk` and `button.confirm` and play the four haptic cues, and the obstacle board reports four zones at 12.5 Hz. It is tested on a computer and cross-checked against the serial contract, but has not run on an ESP32 yet.

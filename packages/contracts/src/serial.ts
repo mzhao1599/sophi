@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Pi ↔ ESP32 serial protocol, version 1: UTF-8 JSON Lines, one USB serial port per module.
- * See docs/interfaces.md ("Pi ↔ ESP32 USB serial"). The Pi service (devices/pi) speaks it; no firmware does yet.
+ * See docs/interfaces.md ("Pi ↔ ESP32 USB serial"). The Pi service (devices/pi) and the ESP32 firmware (firmware/) speak it.
  *
  * Every line carries `v`, `type`, `module_id` and `seq`. `module_id` is the module's provisioned ID
  * (for example `hand-left-01`), not a catalog id: on a module's own message it names the sender, on a

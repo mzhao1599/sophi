@@ -2,7 +2,7 @@
 
 An experimental, modular AI assistive walker for Cal Hacks. A user starts in an accessible web app, describes the tasks they want help with, and receives a small, explainable set of recommended modules. On the walker, physical controls, speech, haptics, cameras, and optional robot arms work through a Raspberry Pi 5. Local software handles time-sensitive sensing and stop behavior; cloud software handles conversation, planning, and user preferences.
 
-**Status:** the web app, **Steady** ("A smart walker you set up by talking to it."), is a one-page demo that works end to end: a conversation with the onboarding assistant beside a pen-drawn walker that draws in what's suggested, then the walker as a sheet to adjust, save and order in Stripe test mode, backed by a deterministic onboarding engine (or, when configured, a model that words the questions) and shared contracts (see [apps/web](apps/web/README.md)). There is no working walker or firmware yet. The Pi service ([devices/pi](devices/pi/README.md)) runs the walker's demo path in a simulator on a Mac against a fake cloud; it has not yet run on a Pi. Hardware selections and electrical budgets still need bench validation. This is a prototype, not a certified mobility aid or a substitute for a caregiver.
+**Status:** the web app, **Steady** ("A smart walker you set up by talking to it."), is a one-page demo that works end to end: a conversation with the onboarding assistant beside a pen-drawn walker that draws in what's suggested, then the walker as a sheet to adjust, save and order in Stripe test mode, backed by a deterministic onboarding engine (or, when configured, a model that words the questions) and shared contracts (see [apps/web](apps/web/README.md)). There is no working walker yet. The Pi service ([devices/pi](devices/pi/README.md)) runs the walker's demo path in a simulator on a Mac against a fake cloud; it has not yet run on a Pi. The ESP32 firmware for the hand controls and obstacle sensors ([firmware](firmware/README.md)) is written and tested on a computer; it has not yet run on a board. Hardware selections and electrical budgets still need bench validation. This is a prototype, not a certified mobility aid or a substitute for a caregiver.
 
 To run the web app: `pnpm install`, then `pnpm dev`, and open <http://localhost:3000>. `pnpm test` and `pnpm typecheck` cover every package.
 
@@ -37,9 +37,8 @@ The intended modules are two SO-101 arms with overhead and gripper cameras on a 
 apps/web/                 Next.js onboarding, settings, device pairing
 services/cloud-api/       Agent orchestration and authenticated device API
 devices/pi/               Raspberry Pi runtime and module adapters
-firmware/hand-controls/   Left/right ESP32 controls and haptics
-firmware/perception/      ToF sensing and local alert output
-firmware/voice/           Microphone, speaker, and button interface if used
+firmware/                 ESP32 firmware (PlatformIO): hand controls and haptics, ToF obstacle sensing
+firmware/voice/           Microphone, speaker, and button interface if used (planned)
 hardware/                 Schematics, CAD, BOM, wiring and test records
 packages/contracts/       Versioned event and command schemas
 supabase/                 Postgres migrations (tables, RLS), local stack config, sign-in email template

@@ -12,7 +12,7 @@ Nothing in this service can move the arms or the lift. It has no motion command 
 | Pi, once | `walker pair <code> --server <url>` | Trades the walker page's 6-digit code for a device credential, saved with mode 0600. |
 | Mac | `walker simulate` | The same service with every part simulated, and a fake cloud unless `--server` is given. |
 | Cloud (pieces 2 and 3) | Render web service | Pairing, heartbeats, the assistant turn, proposals. Not in this package. |
-| ESP32s (piece 7) | Hand controls, ToF | Serial v1 JSON Lines over USB. Not built yet; the simulator stands in. |
+| ESP32s (piece 7) | Hand controls, ToF | Serial v1 JSON Lines over USB, spoken by the firmware in [`firmware/`](../../firmware/README.md). Not yet run on a board; the simulator stands in until then. |
 
 The Pi runs one file, `dist/walker.mjs`, made by esbuild from `src/`. It has to be bundled because the shared contracts ship raw TypeScript with extensionless imports, which Node can't load directly. The bundle carries zod and the contracts inside it, so the Pi needs only Node 22.
 
