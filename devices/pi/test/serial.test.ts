@@ -227,7 +227,7 @@ describe("hello.request (serial v1, PR #28)", () => {
   it("S13: opening a port asks for a hello; a module that kept running answers and is registered", async () => {
     const { clock, modules, buttons } = manager();
     const port = new SimulatedPort("p1");
-    const hand = new SimulatedHand(port, "hand-left-01", clock);
+    const hand = new SimulatedHand(port, "hand-right-01", clock);
     hand.start(); // its boot hello goes nowhere: the Pi service wasn't listening yet
     await clock.advance(5000);
     modules.attach(port);
@@ -239,7 +239,7 @@ describe("hello.request (serial v1, PR #28)", () => {
       seq: 0,
     });
     await flush();
-    expect(modules.modules()).toEqual([expect.objectContaining({ instanceId: "hand-left-01", health: "ok" })]);
+    expect(modules.modules()).toEqual([expect.objectContaining({ instanceId: "hand-right-01", health: "ok" })]);
     hand.press("talk", "pressed");
     await flush();
     expect(buttons).toEqual(["esp32 talk pressed"]);
