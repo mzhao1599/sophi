@@ -59,7 +59,7 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 - Each part says why it's suggested, quoting her ("You said: …"), and a part she declined stays out, marked "You Said No".
 - The most experimental parts (robot arms, arm lift) are never added by default; she switches them on herself.
 - The walker sheet shows a running total beside the module count, for example "5 modules · $1,675 sample total", from the same table Checkout charges. Each switch's announcement reads the new total for screen-reader users.
-- Stripe's checkout page lists each module with the catalog's one-sentence summary of what it does (never her own words, because Checkout data goes to Stripe) and "demo price, not a real quote".
+- Stripe's checkout page lists each module with the catalog's one-sentence summary of what it does (never her own words, because Checkout data goes to Stripe), each name ending "(sample price)", and the page's note says "Prices are demo prices, not a real quote."
 - Trust: Stripe test mode only (the server refuses live keys), placeholder prices labelled everywhere, no card form on our site, ids-only metadata, and a success page that says "Demo order: no money moved".
 
 **Honest limits to say if asked:** nothing can really be sold (Steady is a prototype, not a certified mobility aid), prices are placeholders, and we have no sales or conversion data.

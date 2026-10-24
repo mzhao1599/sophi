@@ -30,6 +30,17 @@ export const SKIP_REPLY = "Skip";
 export const SKIP_REST_REPLY = "Show me my walker";
 
 /**
+ * The one line under the text box that says where answers go, who else reads them, and what to leave
+ * out. Sending the first answer starts on it. `agentNotice` is the agent's clause ("Google's Gemini
+ * reads them to choose each question, and Google may keep a copy"), null with the fixed questions.
+ */
+export function noticeLine(agentNotice: string | null, signedIn: boolean): string {
+  const where = signedIn ? "Your answers are saved to your account." : "Your answers are kept temporarily for this setup.";
+  const model = agentNotice ? ` ${agentNotice}.` : "";
+  return `${where}${model} Please leave out names and medical details.`;
+}
+
+/**
  * One bubble per reply: the engine records an acknowledgement and the next question as separate
  * assistant turns, and they read as one message. `opening` is the first question, shown before a
  * session exists (the session starts on the first send); the engine's greeting before it is left out,

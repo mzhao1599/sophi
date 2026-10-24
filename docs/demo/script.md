@@ -47,7 +47,7 @@ If the assistant asks the questions in a different order, type the line that mat
 **Checked live on 2026-10-23** on a production build of `main` (`6a5d088`) at 1440 by 900, with the agent on:
 - All five replies said "Read by Gemini", with no fallbacks.
 - The walker came out with hand controls and obstacle sensors on, the robot arms and arm lift worth considering, and Voice "You Said No".
-- The two switches made it 5 modules, and the Stripe test payment of $1,675.00 in demo prices reached the success page.
+- The two switches made it 5 modules, and the Stripe test payment of $1,675.00 at the placeholder prices reached the success page.
 - "Set up another walker" returned to a fresh first frame.
 
 ## The story
@@ -57,7 +57,7 @@ If the assistant asks the questions in a different order, type the line that mat
 - **The moment to retell:** "She typed one sentence, the walker drew itself, and every suggested part could say why it was there, in her own words." Two beats carry it: the parts arriving one at a time after the first line (0:10), and the panel that quotes her words back (1:33).
 - **The ending:** by 2:01 every one of Steady's seven parts is on screen in its true state: the frame and everything she chose on, Voice marked "You Said No"†, and location sharing "Not Available Yet"†. The success page then ends on her drawn walker.
 - **When the presenter stops talking:** three planned silences, each about 3 seconds. After the first Enter, let the walker draw. When "Your walker"† rises to centre stage, let it land. On the success page, stop and let the judges read it.
-- **Who it's aimed at:** Microsoft's "Built for the Real World" judges first. The real-world points are made by the demo itself: no diagnosis asked, the person's "no" is respected and shown, privacy is named on screen, each reply says who read it, it keeps working when the model doesn't answer, it works without a mouse, and it is honest about what is a prototype.
+- **Who it's aimed at:** Microsoft's "Built for the Real World" judges first. The real-world points are made by the demo itself: no diagnosis asked, the person's "no" is respected and shown, the line under the text box says who reads her words and asks her to leave out names and medical details before she types, each reply says who read it, it keeps working when the model doesn't answer, it works without a mouse, and it is honest about what is a prototype.
 
 ## The persona: Wren
 
@@ -118,7 +118,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 **0:23 to 0:36. Name it, and say where her words go**
 
-> "This is Steady. The line under the box says her answers are deleted after an hour, Google's Gemini reads them, and Google may keep a copy. Each reply says who read it."
+> "This is Steady. The line under the box says her answers are kept temporarily for this setup, Google's Gemini reads them and Google may keep a copy, and it asks her to leave out names and medical details. Each reply says who read it."
 
 1. Point at the name in the header, Steady†, then at the line under the text box†, then at "Read by Gemini"†.
 
@@ -258,7 +258,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 ## Judge Q&A
 
-**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†. With the agent on, each answer is also sent to Google's Gemini API, and the line under the text box names Google and says Google may keep a copy, before anyone types. Once sent, deleting here can't recall it from Google. That's why the demo uses a made-up persona and the notice asks people to leave out names and medical details.
+**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†; the line under the text box says only that they're "kept temporarily for this setup"†. With the agent on, each answer is also sent to Google's Gemini API, and that line names Google and says Google may keep a copy, before anyone types. Once sent, deleting here can't recall it from Google. That's why the demo uses a made-up persona and the line ends "Please leave out names and medical details."†
 
 **2. Does Google use it?** [Fill in from the setup checklist.] If the key's project is on Google's paid tier: Google doesn't use it to improve its products, and keeps it for a limited time to check for abuse. If it's on the free tier: Google can use it to improve its products, people may review it, and the terms say not to send sensitive or personal information. That's why the laptop only gets Wren's made-up lines. On the phone link tonight, no model runs, so nothing typed there goes to Google.
 
@@ -382,7 +382,7 @@ The 3-minute path is L1 to L5 then "Show My Walker"; the 60-second path is L1 th
 
 Model: `gemini-3.7-flash` at low thinking. Over all 39 agent turns: no fallbacks, no retries, 1.8 to 3.6 seconds, a median of 2.3 seconds. No line had to change. Every run read the same needs from each line, and they matched the keyword matcher's, except that the agent also read "picking up" from L5 (already known from L1) and didn't add "easy controls" from the word "button" in L4 (already known from L1), so the lit modules matched. The agent wrote its own question wording, which varied between runs (for example "Where will you mostly use it?" and "Where will you mostly use the walker?"), but the topic order never changed.
 
-**The "she decides" beat and the order.** A second scratch test, in the web app's own code, ran the 3-minute path, then the page's own switch logic: Robot arms on, then Arm lift on. Before the switches, all seven parts were in the expected states (frame, hand controls and obstacle sensors on; voice "You said no"; arms and lift suggested but off; location sharing unavailable). After them, the arms and lift were on with nothing else changed, the selection had no problems, and Save confirmed five modules. The Stripe line items built from that setup were the frame, hand controls, obstacle sensors, robot arms and arm lift, each at its placeholder price from `apps/web/src/server/checkout/order.ts` and labelled "demo price, not a real quote".
+**The "she decides" beat and the order.** A second scratch test, in the web app's own code, ran the 3-minute path, then the page's own switch logic: Robot arms on, then Arm lift on. Before the switches, all seven parts were in the expected states (frame, hand controls and obstacle sensors on; voice "You said no"; arms and lift suggested but off; location sharing unavailable). After them, the arms and lift were on with nothing else changed, the selection had no problems, and Save confirmed five modules. The Stripe line items built from that setup were the frame, hand controls, obstacle sensors, robot arms and arm lift, each at its placeholder price from `apps/web/src/server/checkout/order.ts` and labelled "demo price, not a real quote". (Since `8cc072e` on 2026-10-24, each line's name ends "(sample price)" instead; the note on Stripe's page still says "Prices are demo prices, not a real quote.")
 
 **Earlier runs.** The same lines also passed with both engines on `c2d3356` (before PR #20 and the redesign) and on PR #20's branch at `b23b1a9` (the lead's rerun).
 

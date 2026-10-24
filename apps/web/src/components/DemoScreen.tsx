@@ -17,6 +17,7 @@ import {
   type Choices,
   type PartState,
 } from "@/lib/walker";
+import { noticeLine } from "@/lib/chat";
 import { Chat, type FocusRequest } from "./Chat";
 import { CheckoutButton } from "./CheckoutButton";
 import { ContourField } from "./ContourField";
@@ -71,12 +72,6 @@ function chatCaption(states: Record<ModuleId, PartState>): string {
   ] as const;
   const said = parts.filter(([, names]) => names.length > 0).map(([lead, names]) => `${lead}: ${names.join(", ")}.`);
   return said.length > 0 ? said.join(" ") : FIRST_FRAME;
-}
-
-/** The one line under the text box that says where answers go. Sending the first answer starts on it. */
-function noticeLine(agentNotice: string | null, account: AccountSummary | null): string {
-  const where = account ? "Your answers are saved to your account." : "Your answers are kept temporarily for this setup.";
-  return agentNotice ? `${where} ${agentNotice}.` : where;
 }
 
 /**
@@ -231,7 +226,7 @@ export function DemoView({ o, opening, agentNotice = null, agentName = null, acc
             <h1 id="headline" className={styles.headline}>
               Let&apos;s build your walker.
             </h1>
-            <Chat o={o} opening={opening} focusRequest={focusRequest} notice={noticeLine(agentNotice, account)} describedBy="notice" agentName={agentName} />
+            <Chat o={o} opening={opening} focusRequest={focusRequest} notice={noticeLine(agentNotice, account !== null)} describedBy="notice" agentName={agentName} />
           </section>
           <div className={styles.preview}>
             <WalkerDiagram
