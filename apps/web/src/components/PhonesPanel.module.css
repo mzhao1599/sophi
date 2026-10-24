@@ -1,0 +1,95 @@
+/* "Phones" on the owner's /walker page: add a phone by code, approve a waiting caretaker, remove a phone. */
+
+.panel {
+  grid-column: 1 / -1;
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline-strong);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  font-size: 15px;
+}
+
+.choice input,
+.consent input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.field input {
+  min-height: var(--target);
+  max-width: 260px;
+  padding: 0 12px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-field);
+  background: var(--card-solid);
+  font-size: 16px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.code:focus {
+  outline: none;
+}
+
+.code:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: var(--target);
+  font-size: 15px;
+}
+
+.consent input {
+  flex: none;
+  margin-top: 3px;
+}
+
+.waiting {
+  padding: 12px 14px;
+  border-left: 3px solid var(--live);
+  border-radius: var(--radius-inner);
+  background: var(--wash);
+}

@@ -5,6 +5,8 @@ import type { WalkerStatusView } from "@walker/contracts";
 import { PRODUCT_NAME } from "@/lib/brand";
 import { useNow } from "@/lib/useNow";
 import { useWalkerPage, type WalkerPage } from "@/lib/useWalkerPage";
+import { createOwnerPhonesApi, type OwnerPhonesApi } from "@/lib/phoneApi";
+import { createDemoCircle } from "@/lib/phoneFake";
 import { createWalkerApi, type WalkerPageApi } from "@/lib/walkerApi";
 import { createFakeWalker, type FakeWalkerControls } from "@/lib/walkerFake";
 import {
@@ -26,6 +28,7 @@ import { BehindTheScenes } from "./BehindTheScenes";
 import { ContourField } from "./ContourField";
 import { FakeControls } from "./FakeWalkerControls";
 import { LiveWalkerDiagram } from "./LiveWalkerDiagram";
+import { PhonesPanel } from "./PhonesPanel";
 import { WalkerConversation } from "./WalkerConversation";
 import { WalkerMark } from "./WalkerMark";
 import demo from "./Demo.module.css";
@@ -43,6 +46,8 @@ export function WalkerScreen({ fake = false }: { fake?: boolean }) {
     fake ? createFakeWalker() : { api: createWalkerApi(), controls: null },
   );
   const page = useWalkerPage(api);
+  // The phones linked to the walker: the fake's own circle under the "Fake walker" banner, else the server.
+  const [phones] = useState<OwnerPhonesApi>(() => (fake ? createDemoCircle().owner() : createOwnerPhonesApi()));
   // Which walker the Forget dialog was opened for: it never opens for another one.
   const [forgetFor, setForgetFor] = useState<string | null>(null);
   useEffect(() => setForgetFor(null), [page.walker?.device_id]);
@@ -105,7 +110,7 @@ export function WalkerScreen({ fake = false }: { fake?: boolean }) {
         </p>
         {page.phase === "loading" ? <Loading page={page} /> : null}
         {page.phase === "none" || (adding && walker) ? <Connect page={page} back={adding && walker ? { name: walker.name, go: () => setAdding(false) } : null} /> : null}
-        {page.phase === "paired" && walker && !adding ? <Paired page={page} walker={walker} /> : null}
+        {page.phase === "paired" && walker && !adding ? <Paired page={page} walker={walker} phones={phones} /> : null}
       </main>
 
       {walker ? (
@@ -252,7 +257,7 @@ function NotLive({ page }: { page: WalkerPage }) {
   return <p className={styles.stale}>Can&apos;t reach Sophi&apos;s server.{ago}</p>;
 }
 
-function Paired({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }) {
+function Paired({ page, walker, phones }: { page: WalkerPage; walker: WalkerStatusView; phones: OwnerPhonesApi }) {
   const rows = useMemo(() => partRows(walker.parts), [walker.parts]);
   const caption = useMemo(() => drawingCaption(rows), [rows]);
   const now = useNow(1000);
@@ -319,6 +324,7 @@ function Paired({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }
               </ul>
             )}
           </section>
+          <PhonesPanel key={walker.device_id} api={phones} deviceId={walker.device_id} />
         </div>
       </section>
     </>

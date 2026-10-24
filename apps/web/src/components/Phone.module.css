@@ -1,0 +1,655 @@
+/*
+ * The two-phone app (/app): Rose's phone in a simple mode built the Assistive Access way (a few huge tiles,
+ * one action each) and Maya's phone as a calm, ordinary app. Same paper, ink, signal green and type as the
+ * site (globals.css), on solid cards (no glass, no moving background).
+ *
+ * Text follows the phone's text size. Every size here is in rem, and on iOS Safari the root font is
+ * `-apple-system-body` (see `.root` below), which is 17px at the default size and grows with Settings >
+ * Accessibility > Display & Text Size > Larger Text. Elsewhere the root is 17px. Targets are at least 44px
+ * (88px for Rose's tiles) whatever the text size. Motion: a 200 ms fade when a screen changes, and nothing
+ * at all under reduced motion. Nothing slides, scales or blurs.
+ */
+
+/*
+ * The root size, while the app is on screen. 106.25% is 17px at a browser's default 16px and follows the
+ * browser's own text-size setting. On iOS Safari (the only engine with both features below), the root takes
+ * the system's body text style instead, which is how a web page follows the iPhone's Larger Text setting.
+ */
+:global(html):has(.root) {
+  font-size: 106.25%;
+}
+
+@supports (font: -apple-system-body) and (-webkit-touch-callout: none) {
+  :global(html):has(.root) {
+    font: -apple-system-body;
+  }
+}
+
+.root {
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--text-strong);
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.preview {
+  padding: 8px 16px;
+  border-bottom: 1.5px dashed var(--control-edge);
+  background: var(--wash);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: 560px;
+  min-height: 56px;
+  margin: 0 auto;
+  padding: 8px 16px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.barWho {
+  margin-left: auto;
+  color: var(--text-meta);
+  font-size: 0.9375rem;
+}
+
+.main {
+  display: grid;
+  gap: 20px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 4px 16px 40px;
+  overflow-wrap: anywhere;
+}
+
+/* Only the wrapper that changes with the screen fades, so nested parts never fade twice. */
+@media (prefers-reduced-motion: no-preference) {
+  .fade {
+    animation: fade 200ms var(--ease-out) both;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.screen {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.kicker {
+  color: var(--text-meta);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.title:focus {
+  outline: none;
+}
+
+.title:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.lead {
+  color: var(--text-body);
+  font-size: 1.0625rem;
+}
+
+.meta {
+  color: var(--text-meta);
+  font-size: 0.9375rem;
+}
+
+.lasting {
+  padding: 12px 14px;
+  border-radius: var(--radius-inner);
+  background: var(--wash);
+  font-size: 1rem;
+}
+
+.alert {
+  padding: 12px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-left: 4px solid var(--danger);
+  border-radius: var(--radius-inner);
+  background: var(--danger-wash);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* "Sample", "Simulator", "Preview": a dashed pill, the site's mark for a stand-in. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75em;
+  padding: 0 0.6em;
+  border: 1.5px dashed var(--live);
+  border-radius: var(--radius-pill);
+  color: var(--live);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ---- Buttons ---- */
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: max(52px, 3rem);
+  padding: 8px 24px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-pill);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.primary {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.secondary {
+  border-color: var(--control-edge);
+  background: var(--card-solid);
+  color: var(--text-strong);
+}
+
+.primary[aria-disabled="true"],
+.secondary[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---- Join ---- */
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.label {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.codeInput {
+  width: 100%;
+  min-height: max(72px, 4rem);
+  padding: 8px 16px;
+  border: 2px solid var(--control-edge);
+  border-radius: var(--radius-field);
+  background: var(--card-solid);
+  font-family: var(--font-mono);
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+
+.textInput {
+  width: 100%;
+  min-height: max(52px, 3rem);
+  padding: 8px 16px;
+  border: 1.5px solid var(--control-edge);
+  border-radius: var(--radius-field);
+  background: var(--card-solid);
+  font-size: 1.0625rem;
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--danger);
+  border-width: 3px;
+}
+
+/* ---- Rose's phone: simple mode ---- */
+
+.tiles {
+  display: grid;
+  gap: 16px;
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  min-height: max(88px, 5.5rem);
+  padding: 16px 20px;
+  border: 2px solid var(--control-edge);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  color: var(--text-strong);
+  text-align: left;
+  box-shadow: var(--shadow-tile);
+}
+
+.tile:active {
+  background: var(--wash);
+}
+
+.tileIcon {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.tileIcon * {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tileText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tileLabel {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.tileSub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--text-body);
+  font-size: 1.25rem;
+}
+
+.tileSub strong {
+  color: var(--text-strong);
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
+  min-height: max(64px, 3.5rem);
+  padding: 8px 24px 8px 16px;
+  border: 2px solid var(--control-edge);
+  border-radius: var(--radius-pill);
+  background: var(--card-solid);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.back svg {
+  width: 1.25em;
+  height: 1.25em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.big {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.bigBody {
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.bigNote {
+  color: var(--text-body);
+  font-size: 1.25rem;
+}
+
+.message {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-height: max(88px, 5.5rem);
+  padding: 18px 20px;
+  border: 2px solid var(--control-edge);
+  border-left: 6px solid var(--live);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  color: var(--text-strong);
+  text-align: left;
+  box-shadow: var(--shadow-float);
+}
+
+.messageFrom {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.messageText {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.hear {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-body);
+  font-size: 1.25rem;
+}
+
+.hear svg {
+  width: 1.4em;
+  height: 1.4em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.replies {
+  display: grid;
+  gap: 12px;
+}
+
+.reply {
+  width: 100%;
+  min-height: max(88px, 5.5rem);
+  padding: 12px 20px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-card);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.reply[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+.h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.earlier {
+  display: grid;
+  gap: 10px;
+}
+
+.earlier li {
+  padding: 12px 16px;
+  border-radius: var(--radius-inner);
+  background: var(--wash);
+  font-size: 1.25rem;
+}
+
+.who {
+  font-weight: 700;
+}
+
+/* ---- Maya's phone ---- */
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.navItem {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: max(48px, 2.75rem);
+  padding: 6px 16px;
+  border: 1.5px solid var(--control-edge);
+  border-radius: var(--radius-pill);
+  background: var(--card-solid);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* The current section: ink fill and a word for screen readers (aria-current), not colour alone. */
+.navItem[aria-current="page"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.navNew {
+  font-weight: 500;
+}
+
+.card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  box-shadow: var(--shadow-tile);
+}
+
+.cardTitle {
+  color: var(--text-meta);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Filled and ringed when online, hollow when offline: shape as well as colour. Static: no pulse. */
+.dot {
+  flex: none;
+  position: relative;
+  width: 0.7em;
+  height: 0.7em;
+  border: 2.5px solid var(--text-meta);
+  border-radius: 50%;
+}
+
+.dot[data-online="true"] {
+  border-color: var(--live);
+  background: var(--live);
+  box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--live-soft);
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+  font-size: 1.0625rem;
+}
+
+/* Name and health on one line; at large text the health word moves under the name instead of splitting words. */
+.listRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.listRow > :first-child {
+  flex: 1 1 12rem;
+}
+
+.rowName {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-weight: 700;
+}
+
+.thread {
+  display: grid;
+  gap: 10px;
+}
+
+.bubble {
+  display: grid;
+  gap: 2px;
+  max-width: 85%;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  font-size: 1.0625rem;
+}
+
+.bubble[data-mine="true"] {
+  justify-self: end;
+  border-color: transparent;
+  background: var(--wash);
+}
+
+.bubbleWho {
+  color: var(--text-meta);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.sendRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sendRow .textInput {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.counter[data-over="true"] {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* ---- Nearby (sample) ---- */
+
+.nearby {
+  display: grid;
+  gap: 18px;
+}
+
+.section {
+  display: grid;
+  gap: 10px;
+}
+
+.people {
+  display: grid;
+  gap: 10px;
+}
+
+.person {
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1.5px dashed var(--hairline-strong);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  font-size: 1.0625rem;
+}
+
+.personName {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-weight: 700;
+}
+
+.distance {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+/* Rose's phone sets the sample larger. */
+.simple .person {
+  font-size: 1.375rem;
+}
+
+.simple .sectionTitle {
+  font-size: 1.5rem;
+}
+
+.sectionTitle {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+@media (forced-colors: active) {
+  .tile,
+  .message,
+  .reply,
+  .card,
+  .person,
+  .tag,
+  .navItem,
+  .back {
+    border: 1px solid CanvasText;
+  }
+  .dot[data-online="true"] {
+    background: CanvasText;
+  }
+}
