@@ -31,7 +31,10 @@ export const SNAPSHOT_MAX_AGE_MS = HEARTBEAT_INTERVAL_MS + 2_000;
 /** A proposal not answered by then is expired. */
 export const PROPOSAL_TTL_MS = 60_000;
 export const PAIRING_CODE_TTL_MS = 10 * 60_000;
-/** Wrong pairing codes from one client address within the window lock that address out for the window. */
+/**
+ * Wrong pairing codes from one client address: PAIRING_MAX_WRONG of them within a sliding window lock that
+ * address out until the oldest of them is PAIRING_LOCK_WINDOW_MS old.
+ */
 export const PAIRING_MAX_WRONG = 5;
 export const PAIRING_LOCK_WINDOW_MS = 10 * 60_000;
 /** Turns and walker lines are deleted this long after they happen, the same window as onboarding sessions. */
@@ -131,7 +134,8 @@ export function sameCues(a: readonly Cue[], b: readonly Cue[]): boolean {
  * (the server marks it expired on the first read after a gap longer than OFFLINE_AFTER_MS; it never comes
  * back on reconnect). Answering anything but an open proposal gets `409 proposal_closed` with the proposal
  * as it stands, so a retried Confirm that already won sees `confirmed`. Only confirming the one open
- * proposal changes the configuration; if its base version ever moved anyway, the server supersedes it. `summary` is written by the server
+ * proposal changes the configuration; if its base version ever moved anyway, the server supersedes it.
+ * No proposal opens while the walker is offline. `summary` is written by the server
  * from the payload, never by the model. `client_turn_id` names the turn that made it, so a walker that
  * cancelled that turn can decline it.
  */
@@ -333,9 +337,10 @@ export function zoneViewReading(
 }
 
 /**
- * Every zone in the snapshot as the page and the model see it. A zone's `simulated` comes from the
- * manifest part with the same `instance_id`; a zone from a part the manifest doesn't list reads as unknown
- * and simulated, since nothing vouches for it. Offline walkers show every zone unknown.
+ * Every zone in the snapshot as the page and the model see it. A zone's `simulated` is the flag of the
+ * manifest part with the same `instance_id` (each part's own flag carries the truth, even on a simulator
+ * with a real part plugged in); a zone from a part the manifest doesn't list reads as unknown and
+ * simulated, since nothing vouches for it. Offline walkers show every zone unknown.
  */
 export function zoneViews(
   snapshot: SensorSnapshot | null,
@@ -347,7 +352,7 @@ export function zoneViews(
   if (!snapshot) return [];
   return snapshot.zones.map((entry) => {
     const part = manifest?.modules.find((m) => m.instance_id === entry.instance_id);
-    const base = { zone: entry.zone, instance_id: entry.instance_id, simulated: part ? part.simulated || manifest!.simulator : true };
+    const base = { zone: entry.zone, instance_id: entry.instance_id, simulated: part ? part.simulated : true };
     if (!part) return { ...base, reading: { status: "unknown", reason: "missing" } };
     if (!online) return { ...base, reading: { status: "unknown", reason: "stale" } };
     return { ...base, reading: zoneViewReading(snapshot, entry.zone, receivedAtMs, nowMs) };
@@ -364,7 +369,12 @@ export const PairDeviceRequestSchema = z.strictObject({
 });
 export type PairDeviceRequest = z.infer<typeof PairDeviceRequestSchema>;
 
-/** The credential is shown once; the server keeps only its SHA-256. */
+/**
+ * The credential is shown once; the server keeps only its SHA-256. The walker adopts `configuration` as
+ * its current one: versions are numbered per device and start again at 1 for every pairing. Pairing isn't
+ * idempotent (a code works once), so a walker warms `GET /api/v1/health` before claiming a code, in case
+ * a sleeping server takes a minute to wake.
+ */
 export const PairDeviceResponseSchema = z.strictObject({
   device_id: id,
   credential: z.string().regex(/^[A-Za-z0-9_-]{43}$/),

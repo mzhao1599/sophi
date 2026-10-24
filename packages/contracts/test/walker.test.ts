@@ -124,6 +124,11 @@ describe("zone freshness across two clocks", () => {
     });
   });
 
+  it("trusts a real part plugged into a simulator", () => {
+    const mixed = { ...manifest, simulator: true, modules: [{ ...manifest.modules[0]!, simulated: false }] };
+    expect(zoneViews(snapshot, mixed, received, received + 100, true).find((v) => v.zone === "front_left")?.simulated).toBe(false);
+  });
+
   it("shows every zone unknown while the walker is offline", () => {
     expect(zoneViews(snapshot, manifest, received, received + 100, false).every((v) => v.reading.status === "unknown")).toBe(true);
     expect(zoneViews(null, manifest, received, received, true)).toEqual([]);
