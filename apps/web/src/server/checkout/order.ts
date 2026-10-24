@@ -2,22 +2,13 @@ import "server-only";
 import { MODULE_CATALOG, ModuleIdSchema, getCatalogEntry, type DeviceConfiguration, type ModuleId } from "@walker/contracts";
 import type Stripe from "stripe";
 import { PRODUCT_NAME } from "@/lib/brand";
-import { DEMO_PRICE_LABEL, STRIPE_CHECKOUT_ORIGIN } from "@/lib/checkout";
+import { DEMO_PLACEHOLDER_PRICES_USD_CENTS, DEMO_PRICE_LABEL, STRIPE_CHECKOUT_ORIGIN } from "@/lib/checkout";
 
-/**
- * Placeholder prices for the mock purchase, in US cents. They are NOT real quotes: the catalog's
- * cost for every module is "not_measured". This is the only place a price is defined; every page
- * that shows one labels it "demo price, not a real quote".
- */
-export const DEMO_PLACEHOLDER_PRICES_USD_CENTS: Record<ModuleId, number> = {
-  "base.walker": 40_000,
-  "controls.hand": 5_000,
-  "perception.tof": 7_500,
-  voice: 6_000,
-  "manipulation.arm": 90_000,
-  "manipulation.lift": 25_000,
-  "location.gps": 4_000,
-};
+// The placeholder price table lives in src/lib/checkout.ts so the walker sheet can show the same total.
+export { DEMO_PLACEHOLDER_PRICES_USD_CENTS };
+
+/** Said on every Checkout line under the module's own summary. */
+const LINE_NOTE = "Experimental prototype module, not a certified mobility aid. Test mode: nothing is charged or shipped.";
 
 /** Marks Checkout Sessions this app made, so the success page refuses anyone else's. */
 export const CHECKOUT_APP_TAG = "assistive-walker-mock-purchase";
@@ -42,22 +33,28 @@ export interface CheckoutClient {
   };
 }
 
-/** One line per selected module, quantity 1, priced from the placeholder table. */
+/**
+ * One line per selected module, quantity 1, priced from the placeholder table. Each line says what the
+ * module does in the catalog's plain words, never the person's own answers: Checkout data goes to Stripe.
+ */
 export function buildLineItems(
   configuration: Pick<DeviceConfiguration, "selected_module_ids">,
 ): Stripe.Checkout.SessionCreateParams.LineItem[] {
-  return configuration.selected_module_ids.map((id) => ({
-    quantity: 1,
-    metadata: { module_id: id },
-    price_data: {
-      currency: "usd",
-      unit_amount: DEMO_PLACEHOLDER_PRICES_USD_CENTS[id],
-      product_data: {
-        name: `${getCatalogEntry(MODULE_CATALOG, id).name} (${DEMO_PRICE_LABEL})`,
-        description: "Experimental prototype module, not a certified mobility aid. Test mode: nothing is charged or shipped.",
+  return configuration.selected_module_ids.map((id) => {
+    const entry = getCatalogEntry(MODULE_CATALOG, id);
+    return {
+      quantity: 1,
+      metadata: { module_id: id },
+      price_data: {
+        currency: "usd",
+        unit_amount: DEMO_PLACEHOLDER_PRICES_USD_CENTS[id],
+        product_data: {
+          name: `${entry.name} (${DEMO_PRICE_LABEL})`,
+          description: `${entry.summary} ${LINE_NOTE}`,
+        },
       },
-    },
-  }));
+    };
+  });
 }
 
 export function checkoutParams(input: {

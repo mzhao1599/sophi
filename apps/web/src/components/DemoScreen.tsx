@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ModuleId, Question } from "@walker/contracts";
 import { PRODUCT_LINE, PRODUCT_NAME } from "@/lib/brand";
+import { demoPriceLine } from "@/lib/checkout";
 import { surge, useReducedMotion } from "@/lib/motion";
 import { useOnboarding, type Onboarding, type Phase } from "@/lib/useOnboarding";
 import {
@@ -165,7 +166,8 @@ export function DemoView({ o, opening, agentNotice = null, agentName = null, acc
     if (o.busy) return;
     const r = toggleModule(recs, choices, id, on);
     if (r.changed) setChoices(r.choices);
-    announce(r.changed ? `${r.message} ${countLine(r.selected)}.` : r.message);
+    // The price line beside the heading changes too, so it is read out with the count.
+    announce(r.changed ? `${r.message} ${countLine(r.selected)}, ${demoPriceLine(r.selected)}.` : r.message);
   }
 
   async function save() {
@@ -258,7 +260,7 @@ export function DemoView({ o, opening, agentNotice = null, agentName = null, acc
                     Your walker
                   </h2>
                   <p className={styles.sheetMeta}>
-                    {selected.length} {selected.length === 1 ? "module" : "modules"}
+                    {selected.length} {selected.length === 1 ? "module" : "modules"} · {demoPriceLine(selected)}
                   </p>
                 </div>
                 {saved ? (
