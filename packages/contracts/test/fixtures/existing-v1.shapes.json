@@ -6811,7 +6811,10 @@
           "properties": {
             "name": {
               "type": "string",
-              "const": "get_location"
+              "enum": [
+                "get_location",
+                "get_weather"
+              ]
             }
           },
           "required": [
