@@ -216,9 +216,11 @@ export const WalkerTurnViewSchema = z
     heard_by: z.enum(["typed", "gemini"]).nullable(),
     reply: z.string().min(1).max(600),
     /**
-     * `model` when the model read the person's words and chose the answer, even where the server words part of
-     * it (an offer's summary and "Press Confirm", a rule's fixed line); `fixed` when the server answered because
-     * the model didn't (an error, a refusal, a bad reply twice, the deadline, or no key).
+     * `model` when the model's reply is what the person gets: its own words, or an offer it chose, worded by the
+     * server ("I can switch… Press Confirm to do it."), with any line the server appends. `fixed` when the
+     * server's own fixed reply replaced it: the model didn't answer (an error, a refusal, a bad reply twice, the
+     * deadline, no key), or a rule overrode it (robot arms, a change the walker can't make, a change while
+     * offline).
      */
     answered_by: z.enum(["model", "fixed"]),
     /**
