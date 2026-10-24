@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -10,7 +10,7 @@ import { Bus } from "../src/bus";
 import { GpioButtons } from "../src/buttons";
 import { CuePolicy } from "../src/cues";
 import { LINES } from "../src/notices";
-import { sttyArgs } from "../src/serial/port";
+import { listSerialPorts, sttyArgs } from "../src/serial/port";
 import { SimulatedPort } from "../src/sim/fakeModules";
 import { StateStore } from "../src/store";
 import { SERVICE_VERSION } from "../src/version";
@@ -149,6 +149,20 @@ it("B20: a hung listening cue delays the mic by at most 1 s", async () => {
 });
 
 describe("S12: serial writes", () => {
+  it("finds both identical USB bridges by path without opening duplicate aliases", () => {
+    const root = mkdtempSync(join(tmpdir(), "walker-ports-"));
+    const dir = join(root, "by-path");
+    mkdirSync(dir);
+    const left = join(root, "ttyUSB0");
+    const right = join(root, "ttyUSB1");
+    writeFileSync(left, "");
+    writeFileSync(right, "");
+    symlinkSync(left, join(dir, "path-left"));
+    symlinkSync(left, join(dir, "path-left-usbv2"));
+    symlinkSync(right, join(dir, "path-right"));
+    expect(listSerialPorts(dir)).toEqual([join(dir, "path-left"), join(dir, "path-right")]);
+  });
+
   it("a busy port drops the haptic instead of queueing it, and the seq doesn't skip", async () => {
     const h = makeHarness({ withHand: true });
     await boot(h);

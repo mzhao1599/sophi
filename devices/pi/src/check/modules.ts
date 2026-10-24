@@ -5,7 +5,7 @@ import { TALK_PRESS_HAPTIC_MS } from "../constants";
 import { silentLogger } from "../log";
 import { LineReader } from "../serial/lineReader";
 import { ModuleManager, canBuzz, type ModuleView, type SerialConnection } from "../serial/modules";
-import { SERIAL_BY_ID_DIR, listSerialPorts, openSerialPort } from "../serial/port";
+import { SERIAL_BY_PATH_DIR, listSerialPorts, openSerialPort } from "../serial/port";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "../sim/fakeModules";
 import { NOT_A_PI, commandProblem, fail, isLinux, pass, skip, text, warn, type Check, type CheckContext, type CheckLine } from "./core";
 import { SERVICE_UNIT } from "./system";
@@ -33,7 +33,7 @@ export interface SerialSource {
 
 export const realSerial: SerialSource = {
   simulated: false,
-  ports: (ctx) => ctx.options.ports ?? listSerialPorts(ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_ID_DIR),
+  ports: (ctx) => ctx.options.ports ?? listSerialPorts(ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR),
   open: (path) => openSerialPort(path, silentLogger),
 };
 
@@ -141,7 +141,7 @@ export async function moduleLines(ctx: CheckContext, source: SerialSource): Prom
   }
   const paths = source.ports(ctx);
   if (paths.length === 0) {
-    return [fail("serial", "modules", `no serial ports under ${ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_ID_DIR}: plug the boards in with data cables (check lsusb)`)];
+    return [fail("serial", "modules", `no serial ports under ${ctx.env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR}: plug the boards in with data cables (check lsusb)`)];
   }
   const sim = source.simulated ? " (simulated)" : "";
   const bus = new Bus();

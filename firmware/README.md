@@ -1,6 +1,6 @@
 # Sophi ESP32 firmware
 
-**Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. The left hand board was flashed and answered USB serial commands on a Mac; its connected control reported a press and triggered a haptic cue felt by the owner. See the bench record below. The right hand board and obstacle firmware have not run in this Mac bench check. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
+**Status, 2026-10-24.** The firmware for the two hand controls and the obstacle sensor board is written and tested on a computer. The first hand board was flashed and answered USB serial commands on a Mac; its connected control reported a press and triggered a haptic cue felt by the owner. It was later identified as the physical right board, reflashed as `hand-right-01`, and verified on the Pi. Both hand boards now announce distinct IDs to the Pi. The obstacle firmware has not run on hardware. CI compiles both boards against the pinned libraries; that proves the code builds, not that it works on the bench.
 
 Nothing in this firmware can move the arms or the lift. The hand board's only output is the haptic buzz, and the obstacle board has no output at all.
 
@@ -48,7 +48,7 @@ Example lines, printed by the firmware's own code in the scripted session on a c
 
 ### Physical side assignment
 
-The ESP32 tested on the Mac is the **left** board and is provisioned as `hand-left-01`. The other ESP32 is for the **right** handle and should be provisioned as `hand-right-01` when flashed. The physical **Talk** control is on the **right** handle. Shared ESP32 firmware reports a GPIO32 press as `button: "talk"` on either board; the Pi maps that wire event from `hand-left-*` to **Confirm** while keeping the right side as Talk. This Pi change still needs a physical two-handle check. Keep each board labeled with its provisioned ID rather than identifying it by USB port order.
+The ESP32 tested on the Mac was provisioned as `hand-left-01`, but the owner later confirmed that board is physically mounted on the **right** handle. On 2026-10-24 it was reflashed as `hand-right-01`; the app image was verified on the board. The other physical board reports `hand-left-01`. The physical **Talk** control is on the **right** handle. Shared ESP32 firmware reports a GPIO32 press as `button: "talk"` on either board; the Pi maps that wire event from `hand-left-*` to **Confirm** while keeping the right side as Talk. Both boards announced distinct IDs to the Pi after deployment, but the physical two-button role check is still pending. Keep each board labeled with its provisioned ID rather than identifying it by USB port order.
 
 ### Parts (from [hardware/current-build.md](../hardware/current-build.md))
 

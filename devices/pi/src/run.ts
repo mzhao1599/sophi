@@ -10,7 +10,7 @@ import { HttpCloudClient } from "./cloud/client";
 import { createLogger } from "./log";
 import { attachLogging } from "./logging";
 import { ModuleManager } from "./serial/modules";
-import { SERIAL_BY_ID_DIR, SerialScanner } from "./serial/port";
+import { SERIAL_BY_PATH_DIR, SerialScanner } from "./serial/port";
 import { localWallTime } from "./screen/machine";
 import { defaultScreenAssets, readScreenPort, startWalkerScreen } from "./screen";
 import { WalkerService } from "./service";
@@ -70,7 +70,7 @@ export function readPiConfig(env: NodeJS.ProcessEnv): PiConfig {
     confirmPin: pin(env.WALKER_GPIO_CONFIRM, 27, "WALKER_GPIO_CONFIRM"),
     gpiomon,
     gpioWired: gpioButtons === "wired",
-    serialDir: env.WALKER_SERIAL_DIR || SERIAL_BY_ID_DIR,
+    serialDir: env.WALKER_SERIAL_DIR || SERIAL_BY_PATH_DIR,
   };
 }
 

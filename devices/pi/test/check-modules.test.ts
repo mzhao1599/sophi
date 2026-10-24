@@ -92,7 +92,7 @@ describe("walker check: serial modules", () => {
     expect(items.port).toBe(`FAIL no hello within ${HELLO_WAIT_MS / 1000} s on usb-unknown-board (0 lines read, 0 unreadable): not our firmware, or the board is stuck in its bootloader`);
     expect(items["tof-front-01"]).toBe("FAIL not seen on any port");
     const none = await check(clock, ctxFor(clock), sourceOf([]));
-    expect(none).toEqual([expect.objectContaining({ status: "FAIL", detail: expect.stringContaining("no serial ports under /dev/serial/by-id") })]);
+    expect(none).toEqual([expect.objectContaining({ status: "FAIL", detail: expect.stringContaining("no serial ports under /dev/serial/by-path") })]);
   });
 
   it("K16: two boards flashed with the same id fail, naming both ports", async () => {

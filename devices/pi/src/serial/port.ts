@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { closeSync, constants, createReadStream, openSync, readdirSync, write } from "node:fs";
+import { closeSync, constants, createReadStream, openSync, readdirSync, realpathSync, write } from "node:fs";
 import { basename, join } from "node:path";
 import type { Cancel, Clock } from "../clock";
 import { SERIAL_BAUD, SERIAL_RESCAN_MS } from "../constants";
@@ -8,20 +8,30 @@ import type { ModuleManager, SerialConnection } from "./modules";
 
 /**
  * Real serial ports: the tty device file, set up with `stty` and read with plain file reads, so the Pi needs
- * no native serialport addon. Not yet run on a Pi.
+ * no native serialport addon. Run with two hand modules on a Pi 5 on 2026-10-24.
  *
- * Ports are found by stable USB identity under /dev/serial/by-id (udev names each link after the adapter's
- * vendor, model and serial number), never by /dev/ttyUSB0, whose number changes with plug order. Which module
- * is on a port comes from its hello, not from the path.
+ * Ports are found by physical USB path: both hand boards' CP2102 bridges advertise the same serial number,
+ * so /dev/serial/by-id exposes only one of them. Which module is on a port comes from its hello.
  */
-export const SERIAL_BY_ID_DIR = "/dev/serial/by-id";
+export const SERIAL_BY_PATH_DIR = "/dev/serial/by-path";
 
-export function listSerialPorts(dir = SERIAL_BY_ID_DIR): string[] {
+export function listSerialPorts(dir = SERIAL_BY_PATH_DIR): string[] {
   try {
+    const seen = new Set<string>();
     return readdirSync(dir)
       .filter((name) => !name.startsWith("."))
       .sort()
-      .map((name) => join(dir, name));
+      .map((name) => join(dir, name))
+      .filter((path) => {
+        try {
+          const target = realpathSync(path);
+          if (seen.has(target)) return false;
+          seen.add(target);
+          return true;
+        } catch {
+          return false; // Device was unplugged during the scan.
+        }
+      });
   } catch {
     return [];
   }
@@ -79,7 +89,7 @@ export function openSerialPort(path: string, log: Logger): SerialConnection {
   };
 }
 
-/** Opens every port that appears under /dev/serial/by-id, and retries ports that closed, every SERIAL_RESCAN_MS. */
+/** Opens every physical serial port and retries ports that closed, every SERIAL_RESCAN_MS. */
 export class SerialScanner {
   private readonly open = new Set<string>();
   private cancel: Cancel | null = null;
