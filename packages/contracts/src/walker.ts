@@ -42,7 +42,8 @@ export const WALKER_HISTORY_RETENTION_MS = 60 * 60_000;
 export const MAX_WALKERS_PER_OWNER = 8;
 /** Voice clip bounds: 16 kHz mono 16-bit WAV. */
 export const VOICE_CLIP_MAX_MS = 15_000;
-export const VOICE_CLIP_MAX_BYTES = 1_000_000;
+/** 15 s of 16 kHz mono 16-bit audio is 480,000 bytes plus a 44-byte header. */
+export const VOICE_CLIP_MAX_BYTES = 500_000;
 /** A spoken reply from the server's voice (Cartesia): 16 kHz mono 16-bit WAV, about a minute at most. */
 export const SPEECH_MAX_BYTES = 2_000_000;
 /** The walker keeps at most this many unsent lines, dropping the oldest; one heartbeat carries them all. */
@@ -150,7 +151,8 @@ export const ProposalViewSchema = z
     from_cues: CueListSchema,
     cues: CueListSchema,
     base_configuration_version: z.int().positive(),
-    summary: z.string().min(1).max(200),
+    /** Short enough that "Still waiting for you: <summary> Press Confirm to do it." fits in a reply. */
+    summary: z.string().min(1).max(120),
     state: ProposalStateSchema,
     created_at: time,
     expires_at: time,
@@ -213,7 +215,11 @@ export const WalkerTurnViewSchema = z
     /** `typed`, or who transcribed the clip, so the page can say "as heard by Gemini". */
     heard_by: z.enum(["typed", "gemini"]).nullable(),
     reply: z.string().min(1).max(600),
-    /** `model` when the model wrote the reply, `fixed` when the server answered because the model didn't. */
+    /**
+     * `model` when the model read the person's words and chose the answer, even where the server words part of
+     * it (an offer's summary and "Press Confirm", a rule's fixed line); `fixed` when the server answered because
+     * the model didn't (an error, a refusal, a bad reply twice, the deadline, or no key).
+     */
     answered_by: z.enum(["model", "fixed"]),
     /**
      * The voice the server offered for the reply: Cartesia's when it sent speech, otherwise the walker's own.
@@ -420,6 +426,7 @@ export const ConfigurationResponseSchema = z.strictObject({ configuration: Walke
 export const WalkerTurnResponseSchema = z
   .strictObject({
     turn: WalkerTurnViewSchema,
+    /** The proposal this turn opened, as it stands now: a replay may find it confirmed, declined or expired. */
     proposal: ProposalViewSchema.nullable(),
     speech: SpeechSchema.nullable(),
     status: WalkerStatusViewSchema,
@@ -429,7 +436,11 @@ export const WalkerTurnResponseSchema = z
     message: "Speech is Cartesia's voice.",
     path: ["turn", "voiced_by"],
   })
-  .refine((r) => r.turn.source === "walker" || r.speech === null, { message: "Page turns aren't spoken.", path: ["speech"] });
+  .refine((r) => r.turn.source === "walker" || r.speech === null, { message: "Page turns aren't spoken.", path: ["speech"] })
+  .refine((r) => r.proposal === null || r.proposal.client_turn_id === r.turn.client_turn_id, {
+    message: "A turn's proposal is the one that turn opened.",
+    path: ["proposal", "client_turn_id"],
+  });
 export type WalkerTurnResponse = z.infer<typeof WalkerTurnResponseSchema>;
 
 /** POST /api/v1/devices/{id}/proposals/{proposal_id} (the Confirm button) and /api/v1/walkers/{id}/proposals/{proposal_id}. */

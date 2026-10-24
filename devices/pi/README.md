@@ -62,7 +62,7 @@ Two decisions for review: before the Pi has fetched any configuration it gives b
 ### The voice clip (AGENTS.md rule 9)
 
 - **Consent:** only the presenter speaks to the walker in the demo; a card on the walker says so. Recording starts only on a Talk press and the "listening" sound.
-- **What is captured:** at most 15 s of 16 kHz mono 16-bit audio, so under 1 MB.
+- **What is captured:** at most 15 s of 16 kHz mono 16-bit audio, so at most 480,044 bytes (the contract caps clips at 500,000).
 - **Where it goes:** only to the paired cloud server, over HTTPS (plain HTTP is refused except to this machine: `127.0.0.1`, `localhost` or `[::1]`), with the device credential. Nowhere else.
 - **Retention on the Pi:** in memory only. `arecord` writes to a pipe, never a file. The raw buffer is zeroed as soon as it is encoded into the request, the rest is dropped when the turn ends, and a cancelled or too-short recording is thrown away. Clips are never logged, never queued for later and never retried offline. The cloud's own handling (in memory, deleted after the turn) is pieces 2 and 3.
 - **A lost release:** a recording whose button can't report its release is discarded, never sent (see Talk above).
@@ -181,7 +181,7 @@ A `401 unauthenticated` from any of them means "pair me again". The real server 
 ## Assumptions and open questions
 
 - **Placeholders, not measured:** module heartbeat timeout 3 s; zone freshness 500 ms; near under 500 mm, clear over 650 mm; cue repeat 3 s and minimum gap 1 s; haptic 400 ms; GPIO debounce 30 ms; shortest clip 0.3 s; heartbeat deadline 5 s; retry delays 5, 10, 15 s. All in `src/constants.ts`.
-- **From the design:** heartbeat every 5 s; offline after 2 failed heartbeats or a 10 s turn; clips at most 15 s, 16 kHz mono 16-bit, under 1 MB.
+- **From the design:** heartbeat every 5 s; offline after 2 failed heartbeats or a 10 s turn; clips at most 15 s, 16 kHz mono 16-bit, at most 500,000 bytes.
 - **Serial:** 115200 baud (to confirm with the firmware). One module per port. A module is known only after its hello. The Pi asks for one with `hello.request` when it opens a port, again (at most every 2 s, *placeholder*) while an unknown module keeps talking, and when a module that went silent comes back. A hello whose `seq` kept running is an answer. Any line whose `seq` went back (a hello or not, since a boot hello can be lost) is a reboot, which drops any recording that module's button started and asks for a fresh hello. Two boards flashed with the same id: whichever said hello last keeps the id (each board's reboot takes it again); the Pi ignores the other port, logs it once, and never asks it for a hello, so the two don't trade the id back and forth. The Pi's reply to a hello beyond that (protocol version, report rate) is still unspecified, so it sends none. Assumed, to confirm with the firmware: a module's `seq` starts at 0 on boot, strictly increases on the wire (two tasks must never send the same number), and never wraps during a demo.
 - **Reads:** serial ports are read with blocking file reads on libuv's thread pool, so the unit sets `UV_THREADPOOL_SIZE=8`. Checked only through a macOS pseudo-terminal, not on a Pi.
 - **GPIO:** buttons wire to ground with the internal pull-up (so pressed reads low). Pin and chip defaults are assumptions to check with `gpioinfo`.

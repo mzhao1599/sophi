@@ -20,7 +20,7 @@ const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
 /** Every walker route except the walker's turns takes a small JSON body; a heartbeat at its largest is about 30 KB. */
 export const MAX_BODY_BYTES = 64_000;
 /** A walker's turn: a voice clip of up to 1 MB is about 1.34 MB in base64, plus its snapshot. */
-export const MAX_TURN_BODY_BYTES = 1_500_000;
+export const MAX_TURN_BODY_BYTES = 800_000;
 
 /** The service for one request. It's only a few references; the store and its connection pool are shared. */
 export function walkerService(): WalkerService {

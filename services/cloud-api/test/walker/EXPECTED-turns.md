@@ -62,7 +62,7 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 
 | Case | Expected |
 | --- | --- |
-| `POST /devices/{id}/turns` with a voice clip of up to 1 MB | Accepted (body limit 1.5 MB, which refuses a larger body before parsing); the clip isn't stored or logged |
+| `POST /devices/{id}/turns` with a voice clip of up to 500,000 bytes (15 s is 480,044) | Accepted (body limit 800 KB, which refuses a larger body before parsing; a longer clip is refused by the contract); the clip isn't stored or logged |
 | A clip that isn't a RIFF/WAVE file | `400 invalid_request` |
 | `POST /walkers/{id}/turns` | Text only, with the owner cookie; device and page proofs stay separate |
 | Every turn response | Parses with `WalkerTurnResponseSchema` |

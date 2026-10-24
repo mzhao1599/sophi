@@ -289,6 +289,16 @@ describe("turn responses", () => {
     expect(WalkerTurnResponseSchema.safeParse({ turn: { ...turn, voiced_by: "walker" }, proposal: null, speech, status }).success).toBe(false);
   });
 
+  it("returns only the proposal this turn opened", () => {
+    const proposal = {
+      proposal_id: uuid(2), client_turn_id: uuid(1), kind: "cues_change", from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"],
+      base_configuration_version: 1, summary: "Switch your alerts to short sounds and spoken messages.", state: "open",
+      created_at: T0, expires_at: "2026-10-24T09:01:00.000Z", configuration_version: null,
+    };
+    expect(WalkerTurnResponseSchema.safeParse({ turn, proposal, speech: null, status }).success).toBe(true);
+    expect(WalkerTurnResponseSchema.safeParse({ turn, proposal: { ...proposal, client_turn_id: uuid(9) }, speech: null, status }).success).toBe(false);
+  });
+
   it("never speaks a page turn", () => {
     const pageTurn = { ...turn, source: "page", heard_by: "typed", voiced_by: null };
     expect(WalkerTurnResponseSchema.safeParse({ turn: pageTurn, proposal: null, speech: null, status }).success).toBe(true);

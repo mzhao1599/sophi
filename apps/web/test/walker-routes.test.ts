@@ -209,11 +209,14 @@ describe("walker routes", () => {
     await expectError(await pageTurns.POST(request(`/api/v1/walkers/${w.deviceId}/turns`, { bearer: w.credential, body: typed }), params), "unauthenticated");
     // The page sends text only.
     await expectError(await pageTurns.POST(request(`/api/v1/walkers/${w.deviceId}/turns`, { cookie: w.cookie, body: voice }), params), "invalid_request");
-    // A full 1 MB clip (about 31 s of audio) is within the body limit; a body past 1.5 MB is refused before parsing.
-    const full = { ...voice, client_turn_id: crypto.randomUUID(), input: { ...voice.input, data_base64: wav(31_248).toString("base64") } };
-    expect(full.input.data_base64.length).toBeGreaterThan(1_330_000);
+    // A full 15 s clip (480,044 bytes) is within the contract's 500,000-byte cap and the body limit; a longer
+    // clip is refused by the contract, and a body past 800 KB is refused before parsing.
+    const full = { ...voice, client_turn_id: crypto.randomUUID(), input: { ...voice.input, data_base64: wav(15_000).toString("base64"), duration_ms: 15_000 } };
+    expect(full.input.data_base64.length).toBeGreaterThan(640_000);
     expect((await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: full }), params)).status).toBe(200);
-    const huge = { ...voice, client_turn_id: crypto.randomUUID(), padding: "A".repeat(1_500_000) };
+    const tooLong = { ...voice, client_turn_id: crypto.randomUUID(), input: { ...voice.input, data_base64: wav(16_000).toString("base64"), duration_ms: 15_000 } };
+    await expectError(await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: tooLong }), params), "invalid_request");
+    const huge = { ...voice, client_turn_id: crypto.randomUUID(), padding: "A".repeat(800_000) };
     const refused = await expectError(await deviceTurns.POST(request(`/api/v1/devices/${w.deviceId}/turns`, { bearer: w.credential, body: huge }), params), "invalid_request");
     expect(refused.error.message).toBe("That request is too large.");
   });

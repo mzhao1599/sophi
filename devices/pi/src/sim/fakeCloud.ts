@@ -192,7 +192,7 @@ export class FakeCloud {
     let seconds = 0;
     if (body.input.type === "audio") {
       const wav = Buffer.from(body.input.data_base64, "base64");
-      if (wav.length > VOICE_CLIP_MAX_BYTES) throw new FakeCloudError("invalid_request", "Clip over 1 MB.");
+      if (wav.length > VOICE_CLIP_MAX_BYTES) throw new FakeCloudError("invalid_request", "Clip too large.");
       const info = readWav(wav);
       if (info.sampleRate !== 16000 || info.channels !== 1 || info.bitsPerSample !== 16) {
         throw new FakeCloudError("invalid_request", "Clip must be 16 kHz mono 16-bit.");
