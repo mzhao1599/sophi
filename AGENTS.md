@@ -2,6 +2,18 @@
 
 This repository describes an assistive walker prototype. Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs/interfaces.md](docs/interfaces.md), and the guide for your subsystem before editing. The repo starts as documentation; do not imply a planned component already works.
 
+## The goal right now: the best demo
+
+This is a CalHacks project. The goal is the best demo in human history, not a complete platform. Product design comes first: how the demo looks, moves and reads, and a flawless demo path. A working platform comes last.
+
+- Rank work by what the demo shows. The demo's scripted path must work every time, rehearsed three times in a row. Work off that path, such as accounts, hosted databases, rate limits and rare edge cases, gets the minimum or waits.
+- Proof follows the same order: prove what the demo shows, and keep everything else light.
+- The demo never lies:
+  - Never present something unbuilt as working.
+  - Never pass a scripted or recorded stand-in for the agent off as live.
+  - Keep hardware claims to what was measured.
+- Consent for real people's words, secrets, and accessibility (keyboard, screen reader, large text, reduced motion) still apply in full. This is an assistive product, so accessibility is part of the demo.
+
 ## How to work here
 
 1. Inspect nearby files and established patterns before editing. Make the smallest change that satisfies the task.
