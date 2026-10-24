@@ -16,6 +16,10 @@ Two SO-101 arms are mounted on/near the walker and move in a bounded work area. 
 
 Start with a fixed, repeatable tabletop pickup on a bench rig before mounting arms to a walker. A moving walker base changes the geometry; manipulation should be disabled unless the base is stationary/braked and this is detected or explicitly enforced. Document every supported object, payload, reach, and surface after testing.
 
+## Servo bus driver (built 2026-10-23, not yet run on hardware)
+
+Each SO-101 arm is six Feetech STS3215 servos on one half-duplex serial bus behind a USB adapter. The Pi's low-level driver for that bus is in [`devices/pi/src/motion/feetech/`](../../devices/pi/src/motion/feetech/README.md): packet encoding checked byte for byte against Feetech's Python SDK, the STS3215 control table, a bus class (one transaction at a time, deadlines, limited and counted retries, reply checks, echo handling) and a simulated servo bus for tests. It holds no motion policy: limits, faults and who may move an arm belong to the motion contract and coordinator. Its README lists what only real servos can confirm.
+
 ## Planning versus control
 
 The cloud planner can decide *what* object or goal to try and use camera frames for scene understanding. It cannot set raw servo targets, skip homing, change limits, or disable stops. The Pi holds calibration, kinematics, workspace boundaries, lift travel limits, speed/acceleration limits, current/force thresholds where measurable, and a watchdog. Inverse kinematics, collision checks, and trajectory generation belong in deterministic robotics code. The planner receives success/failure observations and may ask for another bounded attempt within an explicit retry budget.

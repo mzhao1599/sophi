@@ -135,7 +135,7 @@ pnpm --filter @walker/pi test
 pnpm --filter @walker/pi typecheck
 ```
 
-The expected results were written first, in [test/EXPECTED.md](test/EXPECTED.md); each test names the row it checks. All time comes from an injected fake clock, so no test sleeps, records the room or makes a sound. The serial tests run the shared fixtures in `packages/contracts/test/fixtures/`.
+The expected results were written first, in [test/EXPECTED.md](test/EXPECTED.md); each test names the row it checks. All time comes from an injected fake clock, so no test sleeps, records the room or makes a sound. The serial tests run the shared fixtures in `packages/contracts/test/fixtures/`. The Feetech servo-bus tests (`test/feetech*.test.ts`) run golden vectors made by Feetech's Python SDK; see [src/motion/feetech/README.md](src/motion/feetech/README.md) to regenerate them.
 
 ## Set up the Pi
 
