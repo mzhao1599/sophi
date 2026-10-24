@@ -5,6 +5,7 @@ import { DEFAULT_STATE_DIR, runOnPi } from "./run";
 import { simulate } from "./sim/simulate";
 import { pairWalker } from "./pair";
 import { StateStore } from "./store";
+import { realCheckDeps, walkerCheck } from "./check";
 
 const USAGE = `walker: Sophi's always-on walker service
 
@@ -13,12 +14,20 @@ const USAGE = `walker: Sophi's always-on walker service
   walker run
       Runs the service on the Pi (GPIO buttons, serial modules, ALSA mic and speaker). Settings come from
       environment variables; see devices/pi/README.md.
+  walker check [--sound] [--buzz] [--press] [--server <url>] [--state <dir>] [--port <tty,...>]
+               [--expect <module id,...>] [--env <file>] [--sim]
+      Read-only bring-up checks: one PASS / WARN / FAIL / SKIP line per item, then a summary; exits 1 if
+      anything failed. --sound plays one short tone, --buzz sends one short buzz to each hand, --press waits
+      for a press on each hand. Run it with sudo on the Pi (the settings file and the credential are readable
+      only by root and the service). --sim checks simulated serial boards instead of real ports.
   walker simulate [--script <file>] [--mic-file <16 kHz mono WAV>] [--mic mac] [--loud]
                   [--server <url>] [--state <dir>] [--out <dir>]
       Runs the whole walker on this computer with simulated parts and, unless --server is given, a FAKE
       cloud on 127.0.0.1. Silent by default: speech is written to audio files. --loud plays it.
 
 State folder: --state, else WALKER_STATE_DIR, else ${DEFAULT_STATE_DIR} (run and pair) or a new temp folder (simulate).`;
+
+const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim"]);
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];
@@ -31,7 +40,7 @@ function parseFlags(args: string[]): { positional: string[]; flags: Map<string, 
     }
     const name = arg.slice(2);
     const next = args[i + 1];
-    if (name === "loud") flags.set(name, true);
+    if (BOOLEAN_FLAGS.has(name)) flags.set(name, true);
     else if (next !== undefined && !next.startsWith("--")) {
       flags.set(name, next);
       i += 1;
@@ -72,6 +81,26 @@ async function main(argv: string[]): Promise<number> {
     }
     case "run":
       return runOnPi(process.env);
+    case "check": {
+      // Each open serial port holds one libuv thread-pool thread for its blocking reads, as in the service's unit.
+      process.env.UV_THREADPOOL_SIZE ??= "8";
+      const list = (value: string | true | undefined) => text(value)?.split(",").map((part) => part.trim()).filter(Boolean);
+      const sim = flags.get("sim") === true;
+      return walkerCheck(
+        {
+          server: text(flags.get("server")),
+          state: text(flags.get("state")),
+          envFile: text(flags.get("env")),
+          sound: flags.get("sound") === true,
+          buzz: flags.get("buzz") === true,
+          press: flags.get("press") === true,
+          sim,
+          ports: list(flags.get("port")) ?? null,
+          expect: list(flags.get("expect")) ?? [],
+        },
+        realCheckDeps(sim),
+      );
+    }
     case "simulate": {
       const mic = text(flags.get("mic"));
       if (mic !== undefined && mic !== "mac") throw new Error("--mic only takes mac.");

@@ -169,3 +169,46 @@ Run with bash on a temporary `wifi.txt`, with a fake `nmcli` first on `PATH` tha
 | W4 | A block already `password: (saved)` | Skipped: no `nmcli` call for it. |
 | W5 | Comment lines (including the example's `# name:` and `# password:`), blank lines and other text; a file saved with Windows line endings | Comments and other lines stay byte for byte and are never read as a network. A `password:` line with no `name:` line since the last block (for example under a commented-out name) adds nothing and is left as it is. A block with Windows line endings parses the same (the carriage return is not part of the name or password). |
 | W6 | A second run over the rewritten file | No `nmcli` call and the file is unchanged. A missing `wifi.txt` exits 0 with no call. |
+
+## Bring-up check (`walker check`, added 2026-10-23)
+
+Each check is a small function run against an injected command runner and file reader, so these rows run on a Mac with fake command output (`test/check.test.ts`) and with simulated serial modules on a fake clock (`test/check-modules.test.ts`). The tests never saw what real `ip`, `nmcli`, `arecord`, `piper`, `/sys/class/drm` and ESP32 boards print on the Pi; the parsers follow those tools' documented formats. Thresholds marked *placeholder* are not measured.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| K1 | Any run | One plain line per item: `PASS`, `WARN`, `FAIL` or `SKIP`, the group, the item and its evidence (names, numbers). Then a summary with the counts and the failed items. Exit 1 if any line is `FAIL`, else 0. `WARN` and `SKIP` never fail the run. No colour or symbols, so a screen reader and a log read it the same. |
+| K2 | Read-only | Nothing in the check moves, changes a setting or writes outside a private temp folder it deletes. No haptic unless `--buzz`; no sound unless `--sound`. |
+| K3 | The credential | Never printed, in any line, even when the server refuses it. |
+| K4 | A check that hangs | Each command has a time limit, and each check as a whole too: past it, the line is `FAIL` "no answer within N s" and the run carries on. |
+| K5 | Not on Linux (a Mac) | System, route, Wi-Fi, audio, voice, screen and GPIO lines are `SKIP` "not a Pi". DNS, health and pairing still run when a server and state folder are known. |
+| K6 | System | OS line from `/etc/os-release` and the architecture: trixie on arm64 passes, anything else warns. Clock: `timedatectl` NTPSynchronized `yes` passes, `no` fails (HTTPS needs the date). `vcgencmd get_throttled`: `0x0` passes; a current under-voltage, cap or throttle (bits 0 to 3) fails; only past ones (bits 16 to 19) warn; each set bit is named. Memory available under 200 MB fails, under 500 MB warns; free disk on `/` under 500 MB fails, under 2 GB warns (*placeholders*). |
+| K7 | The walker service | `systemctl is-active` and `is-enabled` for `steady-walker`: active and enabled passes; inactive warns (it may be stopped on purpose for this check); failed, not enabled, or not installed fails. |
+| K8 | Default route | From `ip route show default`, the lowest metric wins. On `eth*`/`en*` it passes; on `wlan*` it warns (the venue plan is Ethernet); none fails. |
+| K9 | Wi-Fi autoconnect | From `nmcli -t` connections: any Wi-Fi connection with autoconnect on warns, naming each (unplugging Ethernet would fail over to it, which defeats the offline beat), with the command to turn it off; the check doesn't run it. None passes. `nmcli` missing skips. A name containing `:` (escaped `\:` by nmcli) is read whole. |
+| K10 | DNS and health | The server is `--server`, else the credential's. Its host resolves (addresses shown) or fails. `GET /api/v1/health` passes on `{"status":"ok"}` with the time it took; `walker_store: "off"`, any other answer, a refused connection or no answer within 20 s (*placeholder*) fails. With no server known, both skip. |
+| K11 | Pairing | `credential.json` in the state folder: missing fails ("not paired"); unreadable fails (run with sudo); malformed fails; a file readable by others warns. A valid one shows the device id and server, then `GET /api/v1/devices/{id}/configuration` (read-only on the server): 200 passes with the configuration version and cues; 401 fails ("pair again"); unreachable fails. |
+| K12 | Microphone | `arecord` on `WALKER_ALSA_CAPTURE` in the service's own format for 1 s, kept in memory, then zeroed: some nonzero sample passes with the peak and RMS; all zero fails; an error (device busy, no such card) fails with its message; no setting fails. |
+| K13 | Speaker | `aplay -L` lists `WALKER_ALSA_PLAYBACK` exactly: pass; else fail, naming the cards it does list. `--sound` plays one short generated tone there (piped in, no file); without it, a `SKIP` line says how. |
+| K14 | Voice | With `WALKER_PIPER_MODEL`: the `.onnx` and `.onnx.json` are present and Piper turns a short line into a WAV within 15 s (*placeholder*; 3.3 to 3.8 s measured per line on the Pi 5): pass with the time. Piper failing or slow, with espeak-ng present, warns (the walker falls back to it); with neither, fails. Without a model: espeak-ng's version passes. The WAV goes to a private temp folder that is deleted. |
+| K15 | Serial, service running | The service holds the ports, so the live module check skips, saying how to stop the service, and lists the modules the service's log says hello from since boot. |
+| K16 | Serial, live | Every port under `WALKER_SERIAL_DIR` (or `--port`) is opened with the service's own code (`openSerialPort`, `ModuleManager`, so the same `hello.request`). Per module: id, type, firmware, protocol, capabilities, health and faults. `ok` passes, `degraded` warns, `fault` fails. A port with no hello within 3 s (*placeholder*) fails. Two ports saying the same id fail, naming both ports. Each expected id (`hand-left-01`, `hand-right-01`, `tof-front-01`, or `--expect`) not seen fails. No ports at all fails on Linux. |
+| K17 | ToF zones | For each perception module, about 1 s of `perception.zones` reports: each zone's mm and quality, and how many reports came. Some valid zone passes; every zone invalid warns (nothing in range, or sensors missing); no report fails. |
+| K18 | Hand buttons (`--press`) | For each hand, "Press a button on the <side> hand (<id>) now", then the first pressed edge within 10 s (*placeholder*) passes with the time and the button as the Pi maps it (GPIO32 on `hand-left-*` is Confirm). None fails. Without `--press`, a `SKIP` line says how. |
+| K19 | Haptic (`--buzz`) | One `haptic.play` `recording` 300 ms (the Talk-press buzz) to each hand that can buzz: an accepted `ack` within 1 s passes ("feel for it"); rejected or no ack fails; a hand that can't buzz (no `haptic`, a haptic fault, not ok) fails without sending. Without `--buzz`: no haptic at all. |
+| K20 | Screen | `/sys/class/drm/*-HDMI-*/status`: a connected HDMI connector with `800x480` in its `modes` passes; connected without it warns, listing the modes; none connected fails. Touch: an input device in `/proc/bus/input/devices` reporting an absolute X and Y (`ABS_X`/`ABS_Y`, or the multitouch pair) passes, by name; none fails (a volume knob's absolute axis doesn't count). |
+| K21 | GPIO buttons | Only with `WALKER_GPIO_BUTTONS=wired`: `gpioinfo` on the chip lists both lines (with their names and consumer): pass; a missing chip or line fails. Not declared: skip. |
+| K22 | `walker check --sim` | Simulated hand and ToF modules go through the same serial check, and every such line says `simulated`. |
+
+## Flashing a board from the Pi (`scripts/flash-esp32.sh`, added 2026-10-23)
+
+Run with bash against fake `systemctl`, `fuser` and `esptool` first on `PATH`, so no test touches a board.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| F1 | `steady-walker` is active | Refuses ("stop it first"), exit 1; esptool never runs. |
+| F2 | The port is held by another process (`fuser` prints its id) | Refuses, exit 1; esptool never runs. A `fuser` that exits 0 but prints no id (macOS) doesn't count as held. |
+| F3 | No image folder for the id, or one of its four files missing | Refuses, naming the missing file. |
+| F4 | `firmware.bin` doesn't contain the id it is being flashed as | Refuses (a wrong image for this board). |
+| F5 | More than one serial port and no `--port` | Refuses, listing the ports. Exactly one: it is used and named. |
+| F6 | Everything in place | `esptool version`, then one flash: `--chip esp32 --port <port> --baud 460800 write-flash 0x1000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin` (in the image folder), and exit 0. esptool 4 (which knows only `write_flash`) gets that spelling. |
+| F7 | A bad id (not lowercase letters, digits and dashes, or `any`) or no id | Usage, exit 2. |

@@ -96,14 +96,14 @@ export class CommandCapture implements AudioCapture {
   }
 }
 
+/** arecord's arguments for the walker's clip format (raw 16 kHz mono 16-bit PCM to stdout); `walker check` uses them too. */
+export function arecordArgs(device: string): string[] {
+  return ["-q", "-D", device, "-f", "S16_LE", "-r", String(CLIP_SAMPLE_RATE), "-c", "1", "-t", "raw"];
+}
+
 /** The Pi's microphone through ALSA, by device name (for example `plughw:CARD=Device,DEV=0`). */
 export function arecordCapture(device: string, log: Logger): AudioCapture {
-  return new CommandCapture(
-    `arecord on ${device}`,
-    "arecord",
-    ["-q", "-D", device, "-f", "S16_LE", "-r", String(CLIP_SAMPLE_RATE), "-c", "1", "-t", "raw"],
-    log,
-  );
+  return new CommandCapture(`arecord on ${device}`, "arecord", arecordArgs(device), log);
 }
 
 /**

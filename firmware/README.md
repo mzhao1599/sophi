@@ -179,6 +179,42 @@ The build stops if a name isn't snake_case, is over 24 characters, or repeats an
 
 When an ESP32 resets, its built-in boot code prints a few lines of text on the same port before the firmware starts. The Pi logs them as unreadable lines; that is expected.
 
+### Build an image on a Mac, flash it from the Pi
+
+When a board is already wired into the walker, build its image on a computer with PlatformIO and flash it from the Pi with [`devices/pi/scripts/flash-esp32.sh`](../devices/pi/README.md#flash-a-board-from-the-pi), which uses the esptool already on the Pi.
+
+The module id is not a PlatformIO environment: `platformio.ini` reads it from the `WALKER_MODULE_ID` variable at build time (`${sysenv.WALKER_MODULE_ID}`), so the one `hand` environment builds either hand and no new environment is needed for `hand-right-01`. **Built on this Mac on 2026-10-23** (PlatformIO Core 6.1.19, the pinned `espressif32` 6.12.0, about 10 s each with the toolchain already downloaded) for `hand-right-01` and for `tof-front-01`; in each, `firmware.bin` contains its own id and not the other hand's. Neither image has been flashed onto a board yet. From `firmware/`:
+
+```bash
+WALKER_MODULE_ID=hand-right-01 pio run -e hand
+mkdir -p ~/firmware-images/hand-right-01
+cp .pio/build/hand/bootloader.bin .pio/build/hand/partitions.bin .pio/build/hand/firmware.bin ~/firmware-images/hand-right-01/
+cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin ~/firmware-images/hand-right-01/
+```
+
+```bash
+WALKER_MODULE_ID=tof-front-01 pio run -e tof
+mkdir -p ~/firmware-images/tof-front-01
+cp .pio/build/tof/bootloader.bin .pio/build/tof/partitions.bin .pio/build/tof/firmware.bin ~/firmware-images/tof-front-01/
+cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin ~/firmware-images/tof-front-01/
+```
+
+**Copy each image out before building the next one.** Changing `WALKER_MODULE_ID` changes the project's checksum, and PlatformIO then empties `.pio/build` for every environment: on 2026-10-23 building `tof-front-01` deleted the `hand` build. `boot_app0.bin` comes with the Arduino core, not the build.
+
+Then copy the folders to the Pi (one folder per id; `<pi>` is the Pi's SSH address) and flash there from the copied `devices/pi` folder (Pi README step 7), with the walker service stopped:
+
+```bash
+ssh <pi> mkdir -p firmware
+scp -r ~/firmware-images/hand-right-01 ~/firmware-images/tof-front-01 <pi>:firmware/
+```
+
+```bash
+sudo systemctl stop steady-walker
+sudo ./scripts/flash-esp32.sh hand-right-01 --images ~/firmware --port /dev/serial/by-id/<the right board>
+```
+
+Label the board with its id, then check it with `sudo node /opt/steady-walker/walker.mjs check --press` before starting the service again.
+
 ### Command the flashed hand board from a computer
 
 Open a serial monitor at **115200 baud** on the board's USB serial port. On the Mac used for the first flash, the working port was `/dev/cu.SLAB_USBtoUART` (the other port, `/dev/cu.usbserial-0001`, did not flash reliably). With `arduino-cli` installed, run:

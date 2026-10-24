@@ -10,6 +10,8 @@ Nothing in this service can move the arms or the lift. It has no motion command 
 | --- | --- | --- |
 | Pi, always (systemd) | `walker run` | One Node 22 process: buttons, serial modules, mic, speaker, obstacle cues, cloud link. Starts at boot and restarts if it stops. |
 | Pi, once | `walker pair <code> --server <url>` | Trades the walker page's 6-digit code for a device credential, saved with mode 0600. |
+| Pi, at bring-up | `walker check` | Read-only checks of everything the demo uses, one PASS / WARN / FAIL / SKIP line each ([Check the walker first](#check-the-walker-first-walker-check)). |
+| Pi, when a board needs firmware | `scripts/flash-esp32.sh <module id>` | Flashes a prebuilt ESP32 image with esptool ([Flash a board from the Pi](#flash-a-board-from-the-pi)). |
 | Mac | `walker simulate` | The same service with every part simulated, and a fake cloud unless `--server` is given. |
 | Cloud (pieces 2 and 3) | Render web service | Pairing, heartbeats, the assistant turn, proposals. Not in this package. |
 | ESP32s (piece 7) | Hand controls, ToF | Serial v1 JSON Lines over USB, spoken by the firmware in [`firmware/`](../../firmware/README.md). One hand board ran with this service on the Pi on 2026-10-24 (step 12); no obstacle board yet, and the simulator stands in for what isn't connected. |
@@ -33,6 +35,7 @@ heartbeat every 5 s ◄─► cloud: manifest + snapshot + status events out; co
 - `src/cues.ts`: the local obstacle cue policy. `src/notices.ts`: every fixed line the Pi says on its own.
 - `src/cloud/client.ts`: the cloud client interface and its HTTP version, on the walker contract's device routes.
 - `src/sim/`: the fake cloud, simulated modules, and the simulator itself.
+- `src/check/`: `walker check`. Each check is a small function over an injected command runner and file reader (`core.ts`); `system.ts` (OS, clock, power, memory, disk, the service, network, pairing), `devices.ts` (mic, speaker, voice, screen, GPIO), `modules.ts` (the serial boards, through the service's own `openSerialPort` and `ModuleManager`).
 - `src/constants.ts`: every timing and threshold, each labelled measured or placeholder.
 
 ## How it behaves
@@ -135,6 +138,94 @@ The expected results were written first, in [test/EXPECTED.md](test/EXPECTED.md)
 
 ## Set up the Pi
 
+### Check the walker first (`walker check`)
+
+**Run this first, every time the walker is assembled or moved.** One command tells you in well under a minute what works: one plain line per item with `PASS`, `WARN`, `FAIL` or `SKIP` and the evidence (device names, numbers), then a summary. It exits 1 if anything failed, else 0. **Written 2026-10-23 and tested only on a Mac** (fake command output, simulated boards, and a fake board on a macOS pseudo-terminal); it hasn't run on the Pi yet, so its first Pi run is itself a check of the check.
+
+It only reads. It never moves anything, never changes a setting, never stops or starts the service, sends no haptic unless you pass `--buzz` and plays no sound unless you pass `--sound`. It does record **1 s from the mic** to see a level: the audio stays in memory, is never saved or sent, and is zeroed straight away. The credential is never printed.
+
+After copying a new bundle to the Pi (step 7; the bundle installed on 2026-10-24 predates `check`):
+
+```bash
+sudo node /opt/steady-walker/walker.mjs check
+```
+
+It needs `sudo` because the settings file (`/etc/steady-walker.env`, mode 0640) and the credential (`/var/lib/steady-walker`, mode 0700) are readable only by root and the service. It reads the same settings file the service does.
+
+**The serial boards need the service stopped.** The running service holds every serial port, and two programs on one port corrupt each other's reads, so with the service running the module line is `SKIP` and lists the boards the service's log says hello from since boot. For the live check, with the button and buzz tests:
+
+```bash
+sudo systemctl stop steady-walker
+sudo node /opt/steady-walker/walker.mjs check --press --buzz
+sudo systemctl start steady-walker
+```
+
+| Flag | What it adds |
+| --- | --- |
+| `--press` | For each hand board: "Press a button on the left hand (hand-left-01) now", then waits 10 s for a press and says which button the Pi reads it as (the left hand's GPIO32 is Confirm). |
+| `--buzz` | One 300 ms `recording` buzz (the Talk-press buzz) to each hand that can buzz, and its `ack`. Feel for it: an `ack` proves the board accepted it, not that the motor moved. |
+| `--sound` | One short tone (the 0.2 s "listening" sound) on the speaker. |
+| `--expect <ids>` | The boards the walker should have (default `hand-left-01,hand-right-01,tof-front-01`); each one missing fails. |
+| `--port <tty,...>` | Check these ports instead of everything under `/dev/serial/by-id`. |
+| `--server <url>` | Check this server's DNS and health instead of the paired one. |
+| `--state <dir>`, `--env <file>` | Another state folder or settings file. |
+| `--sim` | Simulated boards instead of real ports (on a Mac). |
+
+What each group checks, and the only commands it runs:
+
+| Group | Checks | Reads with |
+| --- | --- | --- |
+| settings | The settings file parses as the service would read it | `/etc/steady-walker.env` |
+| system | Trixie on aarch64; clock synchronized (HTTPS needs the date); no under-voltage or throttling now (fail) or since boot (warn); memory and disk (fail under 200 MB / 500 MB, warn under 500 MB / 2 GB, *placeholders*); `steady-walker` enabled and running (inactive only warns) | `/etc/os-release`, `timedatectl show`, `vcgencmd get_throttled` and `measure_temp`, `/proc/meminfo`, `df -Pk /`, `systemctl is-active` and `is-enabled` |
+| network | The default route is on Ethernet (Wi-Fi warns: the venue plan is the hardline); no saved Wi-Fi connection autoconnects (one that does warns, because unplugging Ethernet for the offline beat would fail over to it; the line gives the `nmcli` command to turn it off, which the check doesn't run); DNS for the server; `GET /api/v1/health` and its time (20 s limit, *placeholder*) | `ip route show default`, `nmcli -t -f NAME,TYPE,AUTOCONNECT connection show`, DNS, HTTPS |
+| pairing | The credential exists and parses (never printed); the server accepts it, through `GET /api/v1/devices/{id}/configuration`, the one device route that changes nothing on the server (it only reads the current configuration) | the state folder, HTTPS |
+| audio | 1 s from `WALKER_ALSA_CAPTURE` with a nonzero level; `WALKER_ALSA_PLAYBACK` is listed; `--sound` plays the tone | `arecord` (the service's own format), `aplay -L`, `aplay` with the tone piped in |
+| voice | With `WALKER_PIPER_MODEL`: the voice files exist and Piper speaks "Sophi check." into a private temp file (deleted) within 15 s (*placeholder*; 3.3 to 3.8 s measured). Piper failing with espeak-ng present only warns, since the walker falls back to it | `piper`, `espeak-ng --version` |
+| serial | Each port's board: id, type, firmware, protocol, capabilities, health and faults; two boards with one id; each expected id; for the ToF board, each zone's mm and quality over 1.2 s; `--press`, `--buzz` | the service's own `openSerialPort` and `ModuleManager` (so the same `hello.request`); `journalctl -u steady-walker -b` while the service runs |
+| screen | An HDMI connector reports connected, with 800x480 among its modes (other modes warn); an input device reports an absolute X and Y (a touch screen; the ELECROW's touch is expected over USB) | `/sys/class/drm/*-HDMI-*/status` and `modes`, `/proc/bus/input/devices` |
+| gpio | Only with `WALKER_GPIO_BUTTONS=wired`: the chip has both lines. The press test is step 3 | `gpioinfo` |
+
+Every command has a time limit (5 s unless the table says otherwise), and so does each group as a whole: past it, the line is `FAIL` "no answer within N s" and the run carries on. `WARN` and `SKIP` never fail the run.
+
+Example output, **illustrative**: written by hand to show the format, from what the checks print in the tests, not captured on the Pi. It shows a Pi with the service stopped, run with `--press --buzz`, before `hand-right-01` and `tof-front-01` have been flashed:
+
+```text
+walker check (walker-pi 0.1.0) on walker, 2026-10-24T15:02:11.204Z. Read-only; --buzz sends one short buzz per hand.
+PASS  settings walker settings      from /etc/steady-walker.env: mic plughw:CARD=SF558,DEV=0, speaker default:CARD=Speaker, voice piper, GPIO buttons not declared
+PASS  system   OS                   Debian GNU/Linux 13 (trixie), aarch64, Node 22.23.4
+PASS  system   clock                synchronized, 2026-10-24T15:02:11Z
+PASS  system   power                get_throttled 0x0 (no under-voltage or throttling since boot), 52.1 °C
+PASS  system   memory               3301 MB available of 4049 MB
+PASS  system   disk                 49.1 GB free of 56.8 GB on /
+WARN  system   service              steady-walker is inactive, starts at boot. Start it after this check: sudo systemctl start steady-walker
+PASS  network  default route        eth0 10.0.40.23 via 10.0.40.1, metric 100
+WARN  network  wifi autoconnect     autoconnect on for "walker: Home": unplugging Ethernet would fail over to Wi-Fi instead of going offline (beat 6). To turn one off: sudo nmcli connection modify "<name>" connection.autoconnect no
+PASS  network  dns                  steady-walker.onrender.com → 216.24.57.4, 216.24.57.252
+PASS  network  server health        https://steady-walker.onrender.com/api/v1/health ok in 212 ms
+PASS  pairing  credential           device 11111111-2222-4333-8444-555555555555 on https://steady-walker.onrender.com, mode 600
+PASS  pairing  server accepts       configuration version 4, cues: vibration, spoken
+PASS  audio    microphone           plughw:CARD=SF558,DEV=0: 1.0 s recorded, peak 431 of 32767, RMS 37
+PASS  audio    speaker              default:CARD=Speaker is listed by aplay -L
+SKIP  audio    test tone            pass --sound to play one short tone
+PASS  voice    piper                "Sophi check." synthesized in 3.5 s with en_US-lessac-medium.onnx; espeak-ng 1.52.0 is the fallback
+PASS  serial   hand-left-01         hand, firmware 0.1.0, protocol v1, health ok, can button.talk button.confirm haptic, port usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+FAIL  serial   hand-right-01        not seen on any port (not flashed yet? scripts/flash-esp32.sh hand-right-01)
+FAIL  serial   tof-front-01         not seen on any port
+      Press a button on the left hand (hand-left-01) now. Waiting 10 s...
+PASS  serial   hand-left-01 press   pressed after 2.3 s: the board said "talk", the Pi reads it as Confirm
+PASS  serial   hand-left-01 buzz    recording 300 ms accepted: feel for one buzz on that hand
+PASS  screen   hdmi                 HDMI-A-1 connected, modes 800x480
+PASS  screen   touch                "ELECROW Touch" (event4, USB)
+SKIP  gpio     buttons              WALKER_GPIO_BUTTONS isn't wired, so the walker doesn't use the Pi's GPIO buttons
+Summary: 19 pass, 2 warn, 2 fail, 2 skip, in 21.4 s.
+Failed: serial hand-right-01, serial tof-front-01.
+Warnings: system service, network wifi autoconnect.
+```
+
+**On a Mac:** `node devices/pi/dist/walker.mjs check --sim` runs the serial check against simulated boards (every such line says `simulated`), and the Pi-only lines `SKIP`. `--state ./walker-state` (after `walker pair ... --state ./walker-state` against a local server, see [Against the real server on this Mac](#against-the-real-server-on-this-mac)) adds the DNS, health and pairing lines. `--port /dev/cu.SLAB_USBtoUART` checks a real board plugged into the Mac (not tried with a real board; checked with a fake board on a pseudo-terminal).
+
+### The setup steps
+
 The real Pi came up for the first time on the evening of 2026-10-24. Steps marked **Run 2026-10-24** were done then, and each says what it showed. Steps marked **Not yet run** are unverified: each says what to check, so a step that doesn't match can be fixed before the next one. Write what you find (device names, chip name) into `hardware/current-build.md`.
 
 What it ran on (2026-10-24): a Raspberry Pi 5, 4 GB, on the official 27 W USB-C supply (`vcgencmd get_throttled` read `0x0`, so no undervoltage or throttling had happened), with Raspberry Pi OS Lite image "2026-10-06": Debian 13 "trixie", aarch64, NetworkManager 1.52.1, cloud-init 25.2.
@@ -163,7 +254,7 @@ What it ran on (2026-10-24): a Raspberry Pi 5, 4 GB, on the official 27 W USB-C 
 9. **Pair.** *Run 2026-10-24.* On the walker page, start pairing to get a 6-digit code (valid 10 minutes). On the Pi: `sudo -u steady WALKER_STATE_DIR=/var/lib/steady-walker node /opt/steady-walker/walker.mjs pair <code> --server https://steady-walker.onrender.com`. It first prints "Waking the server…" and can wait up to 90 s for a sleeping server. Check: it prints `Paired as device ...`, and `sudo ls -l /var/lib/steady-walker/credential.json` shows `-rw-------` owned by `steady`. Seen: "Waking the server…", then "Paired as device …".
 10. **Start it.** *Run 2026-10-24, with no mic or speaker plugged in.* `sudo systemctl start steady-walker`, then `journalctl -u steady-walker -f` to watch. Check: you hear "Sophi is on.", the log shows `link state state="online"`, and the walker page shows the walker online with its parts. Seen: the log showed `link state state="online"` and Max's walker page showed the walker Online. With no speaker, every spoken line logs `warn speaker failed ... cannot find card 'Soundbar'` and the service keeps running (`systemctl show -p NRestarts steady-walker` stayed 0). Hearing "Sophi is on." is still to check. Later that night, with the mic, the soundbar and the settings from step 5 in place, the soundbar's volume read 100% after a restart (later set to 75%).
 11. **Try the demo path.** *Not yet run, apart from offline and back.* Hold Talk, ask "What can you help me with?", release: a reply. Press Confirm with nothing open: the short low double beep. Unplug the Ethernet cable at the Pi's end, with any Wi-Fi backup off (see [The network](#the-network-ethernet-first-wi-fi-as-a-backup)): within about 10 s it says it's offline, and Talk gets the local line. Plug it back in: "I'm back online." Reboot the Pi: the service comes back by itself and says "Sophi is on." Seen so far: when the Pi was moved from the phone hotspot to home Wi-Fi, the service logged "I'm offline right now." and then "I'm back online." about 10 s later, by itself. After `sudo systemctl reboot` the Pi rejoined home Wi-Fi, `walker-wifi.service` ran, and the service logged `link state state="online"` by itself (no speaker was plugged in, so "Sophi is on." wasn't heard). Later that night, with Talk on the ESP32 hand board (step 12): held about 3 s asking "What can you help me with?", the log said `turn answered ms=3957 answered_by="model" voice="server"` (3.96 s from letting go to the answer arriving, from Gemini on Render with Cartesia's voice), and Max heard the reply. Not yet tried on the Pi: Confirm, the obstacle cues, the offline beat with the mic and speaker in, a reboot with them in, and the beats in order.
-12. **ESP32 modules (after firmware, piece 7).** *Run 2026-10-24 with one hand board; no obstacle board.* Plug each board in and check `ls -l /dev/serial/by-id/`: each board appears under a name with its USB serial number, and the service log shows `module said hello`. The service only listens to a module after its hello, and asks for one (`hello.request`) whenever it opens a port, so a board that kept running while the service restarted still announces itself. If a board's buttons do nothing, check the log for `hasn't said hello`: the board isn't answering `hello.request` (a firmware question for piece 7). Seen: the first hand board (`hand-left-01`, CP2102 USB bridge `10c4:ea60`): the log showed `serial port opened … simulated=false`, then `module said hello module="hand-left-01" type="hand" firmware="0.1.0" simulated=false`, and its health `ok`. Its Talk button is for now a wire from P32 touched to ground. Brushed briefly, it gave press-and-release bursts of 80 to 110 ms, each under the 0.3 s minimum, so each got "I didn't catch that. Hold Talk while you speak."; held firmly for 3 s it gave the spoken turn in step 11. Not yet checked through the Pi: the board's Confirm, and a haptic cue sent by the service (the buzz was felt only in the firmware's own bench test; see `hardware/current-build.md`).
+12. **ESP32 modules (after firmware, piece 7).** *Run 2026-10-24 with one hand board; no obstacle board.* Plug each board in and check `ls -l /dev/serial/by-id/`: each board appears under a name with its USB serial number, and the service log shows `module said hello`. The service only listens to a module after its hello, and asks for one (`hello.request`) whenever it opens a port, so a board that kept running while the service restarted still announces itself. If a board's buttons do nothing, check the log for `hasn't said hello`: the board isn't answering `hello.request` (a firmware question for piece 7). Seen: the first hand board (`hand-left-01`, CP2102 USB bridge `10c4:ea60`): the log showed `serial port opened … simulated=false`, then `module said hello module="hand-left-01" type="hand" firmware="0.1.0" simulated=false`, and its health `ok`. Its Talk button is for now a wire from P32 touched to ground. Brushed briefly, it gave press-and-release bursts of 80 to 110 ms, each under the 0.3 s minimum, so each got "I didn't catch that. Hold Talk while you speak."; held firmly for 3 s it gave the spoken turn in step 11. Not yet checked through the Pi: the board's Confirm, and a haptic cue sent by the service (the buzz was felt only in the firmware's own bench test; see `hardware/current-build.md`). To put firmware on `hand-right-01` or `tof-front-01` from the Pi, see [Flash a board from the Pi](#flash-a-board-from-the-pi); then [`walker check --press --buzz`](#check-the-walker-first-walker-check) with the service stopped shows every board, its health, the ToF zones, a press on each hand and a buzz.
 
 To stop it: `sudo systemctl stop steady-walker`. To keep it from starting at boot: `sudo systemctl disable steady-walker`.
 
@@ -185,6 +276,27 @@ cd /opt/steady-walker/voices && sudo /opt/piper/bin/python -m piper.download_voi
 ```
 
 Set `WALKER_PIPER_MODEL=/opt/steady-walker/voices/en_US-lessac-medium.onnx` in `/etc/steady-walker.env` and restart the service. The service's existing call, `piper --model <voice> --output_file <file>` with the text on its input, works with this version. Check: `echo "Sophi is on." | piper --model /opt/steady-walker/voices/en_US-lessac-medium.onnx --output_file /tmp/p.wav && aplay -D default:CARD=Speaker /tmp/p.wav`, then delete `/tmp/p.wav`. Measured: 3.3 to 3.8 s per line on the Pi 5, because Piper loads the voice again for each line. A reply in the server's voice doesn't go through Piper.
+
+### Flash a board from the Pi
+
+`scripts/flash-esp32.sh <module id>` writes a prebuilt image onto one ESP32 plugged into the Pi, with the esptool already on the Pi in `/opt/esptool` (the one that reflashed `hand-left-01` on 2026-10-24, esptool 5.6.0). **Not yet run on the Pi**; checked on a Mac against fake `systemctl`, `fuser` and `esptool` (`test/flash-esp32.test.ts`), and dry-run against the real `hand-right-01` and `tof-front-01` images with `echo` standing in for esptool. Build the image on the Mac first ([firmware/README.md, "Build an image on a Mac, flash it from the Pi"](../../firmware/README.md#build-an-image-on-a-mac-flash-it-from-the-pi)) and copy its folder to the Pi, then, from the copied `devices/pi` folder (step 7):
+
+```bash
+sudo systemctl stop steady-walker
+sudo ./scripts/flash-esp32.sh hand-right-01 --images ~/firmware
+sudo node /opt/steady-walker/walker.mjs check --expect hand-left-01,hand-right-01 --press
+sudo systemctl start steady-walker
+```
+
+It writes the same four files at the same addresses as the 2026-10-24 reflash (bootloader `0x1000`, partitions `0x8000`, boot_app0 `0xe000`, app `0x10000`) at 460800 baud. It refuses, without touching the board, when:
+
+- `steady-walker` is running (it holds the ports; the script never stops it for you);
+- another program has the port open (`fuser`);
+- one of the four files is missing from `<images>/<module id>/`;
+- `firmware.bin` doesn't contain the id (the build bakes the id in as text, so this catches a `hand-left-01` image about to go onto the right board);
+- more than one board is plugged in and `--port` isn't given (it lists them; with exactly one it uses that one and says so).
+
+It looks for esptool as `ESPTOOL`, then `/opt/esptool/bin/esptool` or `esptool.py`, then the `PATH` (the exact file name inside `/opt/esptool` isn't recorded, so this is a guess to check), and uses `write-flash` for esptool 5 or `write_flash` for esptool 4. With more than one board plugged in, `ls -l /dev/serial/by-id/` names each port by its USB serial number; `walker check` shows which id is on which port. If it can't connect, hold the board's BOOT button while it says "Connecting...".
 
 ### The network: Ethernet first, Wi-Fi as a backup
 
