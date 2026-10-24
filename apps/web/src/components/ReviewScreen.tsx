@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   MODULE_CATALOG,
   checkSelection,
@@ -57,6 +57,24 @@ export function ReviewScreen({ account = null, signIn = false, resumeId = null }
 
 export function ReviewView({ o, account = null, signIn = false }: { o: Onboarding } & Omit<ScreenAccess, "resumeId">) {
   const s = o.session;
+  const noneRef = useRef<HTMLHeadingElement>(null);
+  const reviewRef = useRef<HTMLHeadingElement>(null);
+  const prevPhase = useRef(o.phase);
+  const prevState = useRef(s?.state);
+
+  // When the session ends here (deleted, or expired during a save), the control that had focus is
+  // gone; move focus to the heading that replaces it, in the same commit. Not on first load.
+  useLayoutEffect(() => {
+    if (prevPhase.current === "ready" && o.phase === "none") noneRef.current?.focus();
+    prevPhase.current = o.phase;
+  }, [o.phase]);
+
+  // "Skip them and review" swaps the still-collecting view (and the pressed button) for the review;
+  // its heading takes focus in the same commit. Not on first load.
+  useLayoutEffect(() => {
+    if (prevState.current === "collecting" && s?.state === "review") reviewRef.current?.focus();
+    prevState.current = s?.state;
+  }, [s?.state]);
 
   return (
     <>
@@ -66,9 +84,9 @@ export function ReviewView({ o, account = null, signIn = false }: { o: Onboardin
           {o.status}
         </p>
         {o.phase === "loading" ? <p className={screen.loading}>Loading your setup…</p> : null}
-        {o.phase === "none" ? <NoSession signedIn={Boolean(account)} /> : null}
-        {s && s.state === "collecting" ? <StillCollecting session={s} onSkipRest={o.skipRest} busy={o.busy} /> : null}
-        {s && s.state === "review" ? <Review key={s.session_id} session={s} o={o} /> : null}
+        {o.phase === "none" ? <NoSession signedIn={Boolean(account)} headingRef={noneRef} /> : null}
+        {s && s.state === "collecting" ? <StillCollecting session={s} onSkipRest={o.skipRest} busy={o.busy} error={o.error} /> : null}
+        {s && s.state === "review" ? <Review key={s.session_id} session={s} o={o} headingRef={reviewRef} /> : null}
         {s && s.state === "confirmed" && s.configuration ? (
           <SavedConfiguration session={s} configuration={s.configuration} busy={o.busy} onStartOver={o.reset} />
         ) : null}
@@ -77,10 +95,10 @@ export function ReviewView({ o, account = null, signIn = false }: { o: Onboardin
   );
 }
 
-function NoSession({ signedIn }: { signedIn: boolean }) {
+function NoSession({ signedIn, headingRef }: { signedIn: boolean; headingRef: RefObject<HTMLHeadingElement | null> }) {
   return (
     <section aria-labelledby="none-heading">
-      <h1 id="none-heading" className={screen.doneTitle}>
+      <h1 id="none-heading" ref={headingRef} tabIndex={-1} className={screen.doneTitle}>
         No setup in progress
       </h1>
       <p className={screen.lead}>
@@ -102,7 +120,18 @@ function NoSession({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-function StillCollecting({ session, onSkipRest, busy }: { session: SessionView; onSkipRest(): void; busy: boolean }) {
+function StillCollecting({
+  session,
+  onSkipRest,
+  busy,
+  error,
+}: {
+  session: SessionView;
+  onSkipRest(): Promise<void>;
+  busy: boolean;
+  error: string | null;
+}) {
+  const [skipping, setSkipping] = useState(false);
   const left = session.progress.total - session.progress.answered;
   return (
     <section aria-labelledby="collecting-heading">
@@ -113,19 +142,39 @@ function StillCollecting({ session, onSkipRest, busy }: { session: SessionView; 
         {left === 1 ? "There's 1 question" : `There are ${left} questions`} left. You can answer them, or skip them and review
         what you have.
       </p>
+      {error ? (
+        <p role="alert" className={styles.collectingError}>
+          {error}
+        </p>
+      ) : null}
       <div className={screen.actions}>
         <Link href="/onboarding" className="button button-primary">
           Back to the questions
         </Link>
-        <button type="button" className="button-text" onClick={onSkipRest} disabled={busy}>
-          Skip them and review
+        {/* aria-disabled while busy, so focus stays here until the review's heading takes it. If skipping
+            fails, focus stays here and the error above is announced. */}
+        <button
+          type="button"
+          className="button-text"
+          onClick={async () => {
+            if (busy) return;
+            setSkipping(true);
+            try {
+              await onSkipRest();
+            } finally {
+              setSkipping(false);
+            }
+          }}
+          aria-disabled={busy || undefined}
+        >
+          {skipping ? "Skipping…" : "Skip them and review"}
         </button>
       </div>
     </section>
   );
 }
 
-function Review({ session, o }: { session: SessionView; o: Onboarding }) {
+function Review({ session, o, headingRef }: { session: SessionView; o: Onboarding; headingRef: RefObject<HTMLHeadingElement | null> }) {
   const [choices, setChoices] = useState<Partial<Record<ModuleId, boolean>>>({});
   const [highlight, setHighlight] = useState<ModuleId | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -163,7 +212,11 @@ function Review({ session, o }: { session: SessionView; o: Onboarding }) {
   });
   const otherGroup = MODULE_CATALOG.modules.filter((m) => !suggestedGroup.includes(m));
 
+  // Both Save buttons use aria-disabled while busy, so they keep focus and a press then is ignored.
+  // Success replaces this view with SavedConfiguration, whose heading takes focus; on failure focus
+  // stays on the pressed button and the error below is announced.
   async function save() {
+    if (o.busy) return;
     setSubmitted(true);
     if (problems.length > 0) return;
     await o.confirm(selected);
@@ -186,7 +239,9 @@ function Review({ session, o }: { session: SessionView; o: Onboarding }) {
   return (
     <div className={screen.grid}>
       <header className={`${screen.span12} ${styles.header}`}>
-        <h1 className={screen.doneTitle}>Choose your modules</h1>
+        <h1 ref={headingRef} tabIndex={-1} className={screen.doneTitle}>
+          Choose your modules
+        </h1>
         <p className={screen.lead}>
           Each suggestion comes from your answers and says why. Choosing a module records what you want; nothing is
           installed yet.
@@ -209,7 +264,7 @@ function Review({ session, o }: { session: SessionView; o: Onboarding }) {
         </section>
         <FactsPanel facts={session.facts} editable busy={o.busy} onUpdate={o.updateFact} onRemove={o.removeFact} />
         <div className={styles.bottomSave}>
-          <button type="button" className="button button-primary" onClick={save} disabled={o.busy}>
+          <button type="button" className="button button-primary" onClick={save} aria-disabled={o.busy || undefined}>
             {o.busy ? "Saving…" : `Save this setup (${selected.length} modules)`}
           </button>
         </div>
@@ -240,7 +295,7 @@ function Review({ session, o }: { session: SessionView; o: Onboarding }) {
             </p>
           ) : null}
           <div className={styles.saveRow}>
-            <button type="button" className="button button-primary" onClick={save} disabled={o.busy}>
+            <button type="button" className="button button-primary" onClick={save} aria-disabled={o.busy || undefined}>
               {o.busy ? "Saving…" : "Save this setup"}
             </button>
             <Link href="/onboarding" className="button-text">

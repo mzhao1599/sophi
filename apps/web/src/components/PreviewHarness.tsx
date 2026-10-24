@@ -15,6 +15,7 @@ export function PreviewHarness({ screen, session }: { screen: "onboarding" | "re
     status: "",
     error: null,
     questionKey: 0,
+    arrivedAfterReset: false,
     start: noop,
     answer: async () => false,
     skip: noop,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { MODULE_CATALOG, type DeviceConfiguration, type SessionView } from "@walker/contracts";
 import { CheckoutButton } from "./CheckoutButton";
 import screen from "./Screen.module.css";
@@ -38,12 +38,14 @@ export function SavedConfiguration({
   session: SessionView;
   configuration: DeviceConfiguration;
   busy: boolean;
-  onStartOver(): Promise<boolean>;
+  onStartOver(navigate: () => void): Promise<boolean>;
 }) {
   const router = useRouter();
+  const [leaving, setLeaving] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => headingRef.current?.focus(), []);
+  // A layout effect, so focus moves in the same commit that removes the review and its Save button.
+  useLayoutEffect(() => headingRef.current?.focus(), []);
   const modules = configuration.selected_module_ids.map((id) => MODULE_CATALOG.modules.find((m) => m.id === id)!);
   const saved = new Date(configuration.confirmed_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -128,17 +130,26 @@ export function SavedConfiguration({
         </div>
       ) : (
         <div className={`${screen.span12} ${screen.actions}`}>
+          {/* aria-disabled while busy, so focus stays here. Once the answers are deleted, clearing them and
+              opening /onboarding happen in one transition: this page stays until the start screen replaces
+              it, and that screen focuses its heading. If deleting fails, focus stays here and the error
+              below is announced. */}
           <button
             type="button"
             className="button button-secondary"
-            disabled={busy}
+            aria-disabled={busy || leaving || undefined}
             onClick={async () => {
-              const deleted = await onStartOver();
-              setDeleteFailed(!deleted);
-              if (deleted) router.push("/onboarding");
+              if (busy || leaving) return;
+              setLeaving(true);
+              setDeleteFailed(false);
+              const deleted = await onStartOver(() => router.push("/onboarding"));
+              if (!deleted) {
+                setLeaving(false);
+                setDeleteFailed(true);
+              }
             }}
           >
-            Delete and start over
+            {leaving ? "Deleting…" : "Delete and start over"}
           </button>
           {deleteFailed ? (
             <p role="alert" className={styles.meta}>

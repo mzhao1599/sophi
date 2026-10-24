@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import type { SessionView } from "@walker/contracts";
 import { WalkerMark } from "./WalkerMark";
 import styles from "./TopBar.module.css";
@@ -18,7 +19,8 @@ export interface AccountSummary {
 /**
  * The shell's one bar: the product, the session's scope (demo or account), a way to delete
  * everything now, and the way to sign in or to your saved setups. `signIn` is false when the server
- * has no Supabase, so there is nothing to sign in to.
+ * has no Supabase, so there is nothing to sign in to. Deleting removes the delete button; the screen
+ * then moves focus to the heading of what replaces the session.
  */
 export function TopBar({
   session,
@@ -28,12 +30,13 @@ export function TopBar({
   signIn = false,
 }: {
   session: SessionView | null;
-  onReset?: () => void;
+  onReset?: () => Promise<unknown>;
   busy?: boolean;
   account?: AccountSummary | null;
   signIn?: boolean;
 }) {
   const path = usePathname();
+  const [deleting, setDeleting] = useState(false);
   // A confirmed account setup is deleted from Your setups, behind a confirmation, not with one click here.
   const canReset = onReset && !(session?.kind === "account" && session.state === "confirmed");
   const accountLink = account ? (
@@ -66,8 +69,28 @@ export function TopBar({
                 )}
               </span>
               {canReset ? (
-                <button type="button" className="button-text" onClick={onReset} disabled={busy}>
-                  Delete <span className={styles.wide}>my </span>answers
+                // aria-disabled while busy, so focus stays here until the screen moves it.
+                <button
+                  type="button"
+                  className="button-text"
+                  onClick={async () => {
+                    if (busy || deleting) return;
+                    setDeleting(true);
+                    try {
+                      await onReset?.();
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                  aria-disabled={busy || deleting || undefined}
+                >
+                  {deleting ? (
+                    "Deleting…"
+                  ) : (
+                    <>
+                      Delete <span className={styles.wide}>my </span>answers
+                    </>
+                  )}
                 </button>
               ) : null}
             </>

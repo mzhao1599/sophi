@@ -89,12 +89,27 @@ export function OnboardingView({
 }: { o: Onboarding; agent?: boolean } & Omit<ScreenAccess, "resumeId">) {
   const s = o.session;
   const doneRef = useRef<HTMLHeadingElement>(null);
+  const startRef = useRef<HTMLHeadingElement>(null);
+  const prevPhase = useRef(o.phase);
   const reviewReady = s && (s.state === "review" || s.state === "confirmed");
 
   // A layout effect, so focus moves in the same commit that removes the last question.
   useLayoutEffect(() => {
     if (reviewReady && o.questionKey > 1) doneRef.current?.focus();
   }, [reviewReady, o.questionKey]);
+
+  // When the session ends (deleted from the top bar, or expired during a save), the control that had
+  // focus is gone and the start panel replaces it; its heading takes focus. Not on first load.
+  useLayoutEffect(() => {
+    if (prevPhase.current === "ready" && o.phase === "none") startRef.current?.focus();
+    prevPhase.current = o.phase;
+  }, [o.phase]);
+
+  // Arriving from "Delete and start over" on the review page: the button that had focus left with that
+  // page, so the start panel's heading takes focus in this screen's first commit.
+  useLayoutEffect(() => {
+    if (o.arrivedAfterReset) startRef.current?.focus();
+  }, [o.arrivedAfterReset]);
 
   return (
     <>
@@ -107,7 +122,7 @@ export function OnboardingView({
         {o.phase === "loading" ? <p className={styles.loading}>Loading your setup…</p> : null}
 
         {o.phase === "none" ? (
-          <StartPanel busy={o.busy} error={o.error} onStart={o.start} agent={agent} account={account} signIn={signIn} />
+          <StartPanel busy={o.busy} error={o.error} onStart={o.start} agent={agent} account={account} signIn={signIn} headingRef={startRef} />
         ) : null}
 
         {s && s.current_question ? (

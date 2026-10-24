@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { RefObject } from "react";
 import type { AccountSummary } from "./TopBar";
 import styles from "./StartPanel.module.css";
 
@@ -16,6 +17,7 @@ const TOPICS = [
 /**
  * The first screen of onboarding: what this is, how your answers are kept, and one way in. Signed
  * in, the notice is the account one and Start creates an account session; signed out, it is the demo.
+ * `headingRef`: the screen focuses the heading when this panel replaces a session that was deleted.
  */
 export function StartPanel({
   busy,
@@ -24,6 +26,7 @@ export function StartPanel({
   agent = false,
   account = null,
   signIn = false,
+  headingRef,
 }: {
   busy: boolean;
   error: string | null;
@@ -31,11 +34,12 @@ export function StartPanel({
   agent?: boolean;
   account?: AccountSummary | null;
   signIn?: boolean;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 }) {
   return (
     <div className={styles.grid}>
       <section className={styles.main} aria-labelledby="start-heading">
-        <h1 id="start-heading" className={styles.title}>
+        <h1 id="start-heading" ref={headingRef} tabIndex={-1} className={styles.title}>
           Set up your walker
         </h1>
         <p className={styles.lead}>

@@ -199,6 +199,12 @@
   font-weight: 500;
 }
 
+.collectingError {
+  margin-top: 16px;
+  color: var(--negative);
+  font-weight: 500;
+}
+
 .problems ul {
   margin-top: 4px;
   padding-left: 18px;
