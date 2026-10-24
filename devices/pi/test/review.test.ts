@@ -545,3 +545,48 @@ it("S20: once the GPIO buttons count as watched, the walker reports it at once, 
   await h.clock.advance(0);
   expect(h.client.calls.filter((c) => c === "heartbeat").length).toBe(before + 1);
 });
+
+describe("C14: a hand board that can't buzz (the firmware's haptic faults)", () => {
+  async function nearWith(setup: (h: Harness) => void) {
+    const h = makeHarness({ withHand: true, withTof: true }); // configuration 1: vibration
+    setup(h);
+    await boot(h);
+    await h.clock.advance(1500); // a heartbeat from the hand carries its health and faults
+    h.tof!.readings.front_left = { mm: 300 };
+    await h.clock.advance(200);
+    return h;
+  }
+
+  it("a healthy hand with haptics buzzes, and no sound plays", async () => {
+    const h = await nearWith(() => {});
+    expect(h.named("haptic")).toHaveLength(1);
+    expect(h.speaker.cues).not.toContain("obstacle");
+  });
+
+  it.each([
+    ["haptic_error (the driver stopped answering)", { health: "degraded" as const, faults: ["haptic_error"] }],
+    ["haptic_error even with ok health", { health: "ok" as const, faults: ["haptic_error"] }],
+    ["haptic_missing", { health: "degraded" as const, faults: ["haptic_missing"], noHaptic: true }],
+    ["any other degraded state (tx_dropped)", { health: "degraded" as const, faults: ["tx_dropped"] }],
+    ["fault health", { health: "fault" as const, faults: ["line_not_built"] }],
+  ])("%s: no buzz is sent; the short sound plays instead", async (_name, state) => {
+    const h = await nearWith((harness) => {
+      harness.hand!.health = state.health;
+      harness.hand!.faults = state.faults;
+      if ("noHaptic" in state) harness.hand!.hasHaptic = false;
+    });
+    expect(h.named("haptic")).toEqual([]);
+    expect(h.hand!.port.received.filter((line) => line.includes("haptic.play"))).toEqual([]);
+    expect(h.speaker.cues).toContain("obstacle");
+  });
+
+  it("the offline line follows the same rule: no promise of vibration from a hand that can't buzz", async () => {
+    const h = await nearWith((harness) => {
+      harness.hand!.health = "degraded";
+      harness.hand!.faults = ["haptic_error"];
+    });
+    h.client.network = "down";
+    await h.clock.advance(10_000);
+    expect(h.spoken("notice").at(-1)).toBe("I'm offline right now. Your short-sound alerts still work. The obstacle sensor is simulated.");
+  });
+});

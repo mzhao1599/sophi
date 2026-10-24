@@ -1,5 +1,5 @@
 import { effectiveObstacleCues, type ConfiguredCue } from "./cues";
-import type { ModuleView } from "./serial/modules";
+import { canBuzz, type ModuleView } from "./serial/modules";
 
 /**
  * Every line the Pi speaks on its own. These are fixed and built from local state only; the model never
@@ -37,9 +37,8 @@ export function offlineLine(cues: readonly ConfiguredCue[] | null, modules: read
     if (working.length === 0) {
       parts.push("The obstacle sensor isn't responding, so obstacle alerts are off.");
     } else {
-      const hasHaptic = modules.some(
-        (module) => module.type === "hand" && module.capabilities.includes("haptic") && isWorking(module),
-      );
+      // The same rule the cue policy uses, so this never promises a buzz that would fall back to sound.
+      const hasHaptic = modules.some(canBuzz);
       const kinds = effectiveObstacleCues(cues, hasHaptic).map((cue) => (cue === "vibration" ? "vibration" : "short-sound"));
       parts.push(`Your ${list(kinds)} alerts still work.`);
       if (working.every((module) => module.simulated)) parts.push("The obstacle sensor is simulated.");

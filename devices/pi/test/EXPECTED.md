@@ -95,6 +95,7 @@ Near is entered under 500 mm and left over 650 mm (*placeholder*, hysteresis). A
 | C10 | Zones from a module that is `unavailable` | Unknown: no cue. |
 | C12 | A zone that flickers between near and invalid *(review)* | Coming back from unknown within 3 s of its last cue counts as staying near: cues at most every 3 s, not every second. Only if it was near before it went unknown: near, clear, invalid, near is a new entry and cues after the 1 s gap *(review 2)*. |
 | C13 | Vibration chosen, but no haptic actually went out (every hand's port busy) *(review 2)* | The obstacle sound plays instead, so the cue is never silently lost. |
+| C14 | A hand board that can't buzz *(haptic faults, from the firmware's codes)* | A buzz goes only to a hand whose health is `ok`, that declared `haptic`, and whose faults include neither `haptic_missing` nor `haptic_error`. Any other hand is skipped; when none can buzz, the obstacle sound plays instead (C9, C13). The offline line follows the same rule, so it never says "Your vibration alerts still work" when they don't. |
 | C11 | Anything from the cloud | Never causes a cue. Only the confirmed configuration's `cues` list chooses the kind. |
 
 ## Offline and online

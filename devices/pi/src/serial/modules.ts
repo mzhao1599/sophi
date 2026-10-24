@@ -49,6 +49,22 @@ export interface ZoneView {
   receivedWall: number;
 }
 
+/** Fault codes a hand board reports when its haptic driver can't buzz (firmware/lib/module/module_core.cpp). */
+export const HAPTIC_FAULTS = ["haptic_missing", "haptic_error"] as const;
+
+/**
+ * Whether a buzz sent to this module would be felt: a hand board, healthy (`ok`), that declared `haptic`,
+ * with no haptic fault. Anything less and the cue goes to sound instead, so a loose wire never means silence.
+ */
+export function canBuzz(module: Pick<ModuleView, "type" | "health" | "capabilities" | "faults">): boolean {
+  return (
+    module.type === "hand" &&
+    module.health === "ok" &&
+    module.capabilities.includes("haptic") &&
+    !module.faults.some((fault) => (HAPTIC_FAULTS as readonly string[]).includes(fault))
+  );
+}
+
 const CATALOG_ID: Record<SerialModuleType, ModuleId> = {
   hand: "controls.hand",
   perception: "perception.tof",
@@ -170,20 +186,15 @@ export class ModuleManager {
     });
   }
 
-  /** Healthy hand modules that declared haptics. */
+  /** Hand modules a buzz would reach and be felt on (see `canBuzz`). */
   hapticTargets(): ModuleView[] {
-    return this.modules().filter(
-      (module) =>
-        module.type === "hand" &&
-        module.capabilities.includes("haptic") &&
-        (module.health === "ok" || module.health === "degraded"),
-    );
+    return this.modules().filter(canBuzz);
   }
 
   /** Sends one `haptic.play`, validated against the shared schema first. Returns false if nothing was sent. */
   sendHaptic(instanceId: string, pattern: "confirmation" | "recording" | "near_obstacle" | "error", durationMs: number): boolean {
     const record = this.records.get(instanceId);
-    if (!record || record.health === "unavailable") return false;
+    if (!record || !canBuzz(record)) return false;
     const port = record.port;
     this.requestCounter += 1;
     const parsed = SerialHapticPlaySchema.safeParse({

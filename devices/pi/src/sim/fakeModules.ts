@@ -58,6 +58,9 @@ export class SimulatedPort implements SerialConnection {
 }
 
 abstract class SimulatedModule {
+  /** What its heartbeats report, as real firmware would (for example `degraded` with `haptic_error`). */
+  health: "ok" | "degraded" | "fault" = "ok";
+  faults: string[] = [];
   protected seq = 0;
   private cancels: Cancel[] = [];
   private running = false;
@@ -111,7 +114,7 @@ abstract class SimulatedModule {
     this.sendHello();
     const heartbeat = () => {
       if (!this.running) return;
-      this.send({ type: "heartbeat", uptime_ms: this.uptime(), health: "ok" });
+      this.send({ type: "heartbeat", uptime_ms: this.uptime(), health: this.health, ...(this.faults.length ? { faults: this.faults } : {}) });
       this.cancels.push(this.clock.setTimeout(heartbeat, 1000));
     };
     this.cancels.push(this.clock.setTimeout(heartbeat, 1000));
@@ -153,8 +156,11 @@ export class SimulatedHand extends SimulatedModule {
     }
   }
 
+  /** False models a board whose haptic driver didn't answer at boot: its hello leaves out `haptic`. */
+  hasHaptic = true;
+
   protected hello() {
-    return { module_type: "hand", capabilities: ["button.talk", "button.confirm", "trigger", "haptic"] };
+    return { module_type: "hand", capabilities: ["button.talk", "button.confirm", "trigger", ...(this.hasHaptic ? ["haptic"] : [])] };
   }
 
   press(button: "talk" | "confirm", edge: "pressed" | "released"): void {
