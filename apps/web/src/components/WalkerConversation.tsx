@@ -74,6 +74,7 @@ export function WalkerConversation({ page, walker }: { page: WalkerPage; walker:
               <div>
                 <p className={styles.heardLabel}>{e.label}</p>
                 <p className={styles.walkerText}>{e.event.text}</p>
+                {e.event.text.startsWith("Your GPS puts you near ") ? <p className={styles.mapCredit}>Map data © OpenStreetMap contributors</p> : null}
               </div>
             </div>
           ) : (

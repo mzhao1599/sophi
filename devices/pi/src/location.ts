@@ -42,9 +42,9 @@ function line(result: ReverseResult, latitude: number, longitude: number): strin
   const isVenue = ["amenity", "tourism", "leisure", "shop", "office", "historic"].includes(String(result.category));
   const venue = nearby && isVenue && place !== street ? place : null;
   const area = [streetLine, city, state].filter(Boolean).join(", ");
-  if (venue && area) return `Your GPS puts you near ${venue}, around ${area}. Map data from OpenStreetMap.`;
-  if (venue) return `Your GPS puts you near ${venue}. Map data from OpenStreetMap.`;
-  if (area) return `Your GPS puts you near ${area}. Map data from OpenStreetMap.`;
+  if (venue && area) return `Your GPS puts you near ${venue}, around ${area}.`;
+  if (venue) return `Your GPS puts you near ${venue}.`;
+  if (area) return `Your GPS puts you near ${area}.`;
   return "I have a GPS fix, but the map could not identify an address nearby.";
 }
 

@@ -427,6 +427,12 @@
   overflow-wrap: anywhere;
 }
 
+.mapCredit {
+  margin-top: 4px;
+  color: var(--text-meta);
+  font-size: 13px;
+}
+
 .emptyLog {
   margin: auto 0;
   color: var(--text-meta);

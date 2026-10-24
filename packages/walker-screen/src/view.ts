@@ -318,7 +318,8 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
     case "answering": {
       // The same names as the /walker page (apps/web/src/lib/walkerView.ts). The walker's model is Gemini.
       const source = content.source === "model" ? "Answered by Gemini" : content.source === "fixed" ? "Answered by the fixed replies" : "On the walker, offline reply";
-      if (!settings.captions) return { key: "answering", main: { text: "Sophi is answering", size: "main" }, lines: [detail(source)] };
+      const mapCredit = content.reply.startsWith("Your GPS puts you near ") ? detail("Map data © OpenStreetMap contributors") : null;
+      if (!settings.captions) return { key: "answering", main: { text: "Sophi is answering", size: "main" }, lines: [detail(source)], center: { lines: mapCredit ? [mapCredit] : [] } };
       const pages = captionPages(content.reply, textSize);
       const page = Math.min(content.page, pages.length - 1);
       const lines: ViewLine[] = [];
@@ -328,7 +329,7 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         key: `answering:${page}`,
         main: { text: pages[page] ?? "", size: "body" },
         lines,
-        center: { lines: pages.length > 1 ? [detail(`${page + 1} of ${pages.length}`)] : [] },
+        center: { lines: [pages.length > 1 ? detail(`${page + 1} of ${pages.length}`) : null, mapCredit].filter((line): line is ViewLine => line !== null) },
         announce: content.reply,
       };
     }

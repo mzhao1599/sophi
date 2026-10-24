@@ -502,7 +502,8 @@ export class WalkerService {
     if (this.turn !== turn) return;
     this.endTurn(turn);
     this.deps.bus.emit("turn", { outcome: "answered" });
-    this.sayAnswer(heard, answer, "walker", "reply");
+    // This is the Pi's own tool result, so include it in heartbeat lines for the web conversation.
+    this.sayAnswer(heard, answer, "walker", "notice");
   }
 
   /** The server's voiced reply, if it is a readable 16-bit PCM WAV; otherwise the walker speaks the text itself. */
