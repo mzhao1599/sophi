@@ -447,6 +447,8 @@ export const WalkerTurnResponseSchema = z
     proposal: ProposalViewSchema.nullable(),
     speech: SpeechSchema.nullable(),
     status: WalkerStatusViewSchema,
+    /** A user-initiated device tool request. No coordinates cross this route. */
+    tool_call: z.strictObject({ name: z.literal("get_location") }).optional(),
   })
   // A replayed turn may come back without its audio, so only speech implies Cartesia, not the reverse.
   .refine((r) => r.speech === null || r.turn.voiced_by === "cartesia", {

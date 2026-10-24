@@ -44,11 +44,14 @@ import {
   cuesSummary,
   fallbackLine,
   offerLine,
+  distanceLine,
   stillWaiting,
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
 import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./store";
+
+const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
 
 export class WalkerError extends Error {
   override readonly name = "WalkerError";
@@ -325,7 +328,8 @@ export class WalkerService {
     await this.store.expireProposals(device.device_id, this.now());
     const prior = await this.store.findTurn(device.device_id, request.client_turn_id);
     if (prior) {
-      const response = WalkerTurnResponseSchema.parse({ ...prior, speech: null, status: await this.status(device) });
+      const locationLookup = source === "walker" && prior.turn.reply === LOCATION_LOOKUP_LINE;
+      const response = WalkerTurnResponseSchema.parse({ ...prior, speech: null, status: await this.status(device), ...(locationLookup ? { tool_call: { name: "get_location" } } : {}) });
       this.onTurn({ ...turnEvent(device.device_id, source, input.type, prior.turn), replayed: true, ms: Date.now() - started });
       return response;
     }
@@ -362,7 +366,14 @@ export class WalkerService {
     const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
     const result = this.assistant ? await this.assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left())) : null;
 
-    const decided = applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
+    const tool = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call?.name : null;
+    const locationLookup = source === "walker" && tool === "get_location";
+    const distanceLookup = tool === "get_distance" || (result?.ok === true && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change);
+    const decided = locationLookup
+      ? { reply: LOCATION_LOOKUP_LINE, answered_by: "fixed" as const, reason: "tool_get_location", proposal: null }
+      : distanceLookup
+        ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: tool === "get_distance" ? "tool_get_distance" : "distance_guard", proposal: null }
+        : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
     const transcript = input.type === "audio" && result?.ok ? result.reply.transcript.trim() : "";
     const heard = input.type === "text" ? { heard: input.text, heard_by: "typed" as const } : transcript ? { heard: transcript, heard_by: "gemini" as const } : { heard: null, heard_by: null };
 
@@ -400,6 +411,7 @@ export class WalkerService {
       proposal: stored?.proposal ?? saved.proposal,
       speech: saved.created && speech ? { mime: "audio/wav", data_base64: speech } : null,
       status: after,
+      ...(saved.turn.reply === LOCATION_LOOKUP_LINE && source === "walker" ? { tool_call: { name: "get_location" } } : {}),
     });
     const event: TurnEvent = {
       ...turnEvent(device.device_id, source, input.type, saved.turn),

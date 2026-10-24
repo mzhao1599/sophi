@@ -31,6 +31,7 @@ import {
   ZONE_VALIDITY_MS,
 } from "./constants";
 import { CuePolicy } from "./cues";
+import { describeGpsLocation } from "./location";
 import type { Logger } from "./log";
 import { LINES, appliedLine, moduleDownLine, offlineLine } from "./notices";
 import type { ModuleManager } from "./serial/modules";
@@ -54,8 +55,8 @@ export interface ServiceDeps {
   coordinatorInstanceId: string;
   /** The Pi's own GPIO Talk and Confirm buttons, only when the installer declared them wired (never in the simulator). */
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
-  /** Optional GPS reader. The server's per-heartbeat opt-in is its only enable signal. */
-  location?: { connected(): boolean; setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; stop(): void };
+  /** Optional GPS reader. Sharing consent enables heartbeat sampling; a location question reads once. */
+  location?: { connected(): boolean; setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; onDemand(signal: AbortSignal): Promise<{ status: "fix"; latitude: number; longitude: number } | { status: "no_fix" | "no_rmc" }>; stop(): void };
   /**
    * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
    * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
@@ -451,6 +452,11 @@ export class WalkerService {
     try {
       const reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(body, signal), turn.abort.signal);
       if (this.turn !== turn) return;
+      if (reply.tool_call?.name === "get_location") {
+        this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
+        await this.answerLocation(turn, reply.turn.heard);
+        return;
+      }
       this.endTurn(turn);
       if (reply.proposal?.state === "open") {
         // A motion Confirm target shown first owns Confirm: this proposal is declined, never answered by that press.
@@ -474,6 +480,29 @@ export class WalkerService {
       this.rememberUnheard(body.client_turn_id);
       this.turnFailed(classifyError(error));
     }
+  }
+
+  private async answerLocation(turn: PendingTurn, heard: string | null): Promise<void> {
+    let answer: string;
+    try {
+      const gps = this.deps.location;
+      if (!gps?.connected()) answer = "I can't check your location because the GPS receiver is not connected.";
+      else {
+        const reading = await gps.onDemand(turn.abort.signal);
+        if (this.turn !== turn) return;
+        answer = reading.status === "fix"
+          ? await describeGpsLocation(reading.latitude, reading.longitude, turn.abort.signal)
+          : "The GPS receiver has no satellite fix yet. Try again outdoors with a view of the sky.";
+      }
+    } catch (error) {
+      if (this.turn !== turn) return;
+      this.deps.log.warn("location lookup failed", { error: (error as Error).message });
+      answer = "I found the GPS receiver, but couldn't look up an address right now.";
+    }
+    if (this.turn !== turn) return;
+    this.endTurn(turn);
+    this.deps.bus.emit("turn", { outcome: "answered" });
+    this.sayAnswer(heard, answer, "walker", "reply");
   }
 
   /** The server's voiced reply, if it is a readable 16-bit PCM WAV; otherwise the walker speaks the text itself. */

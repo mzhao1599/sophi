@@ -79,7 +79,7 @@ export async function readGps(port: string, baud: number, waitMs: number, signal
   });
 }
 
-/** Keeps only one fresh fix in memory, and opens the USB GPS only after sharing is enabled by the server. */
+/** Keeps only one fresh fix in memory. User-initiated location questions can read once without enabling sharing. */
 export class GpsSampler {
   private enabled = false;
   private epoch = 0;
@@ -110,6 +110,28 @@ export class GpsSampler {
     if (!this.enabled || !this.fix) return null;
     const age = Math.max(0, Math.floor(performance.now() - this.fix.at));
     return age <= 30_000 ? { latitude: this.fix.latitude, longitude: this.fix.longitude, age_ms: age } : null;
+  }
+
+  /** Never uploads or retains an on-demand fix; the caller decides whether to describe it aloud. */
+  async onDemand(signal: AbortSignal): Promise<GpsResult> {
+    const fresh = this.current();
+    if (fresh) return { status: "fix", latitude: fresh.latitude, longitude: fresh.longitude };
+    // The sharing sampler already owns the serial stream; wait for it instead of stealing its sentences.
+    if (this.enabled) {
+      const until = performance.now() + 20_000;
+      while (this.enabled && performance.now() < until) {
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+          const timer = setTimeout(() => { signal.removeEventListener("abort", onAbort); resolve(); }, 500);
+          signal.addEventListener("abort", onAbort, { once: true });
+          if (signal.aborted) onAbort();
+        });
+        const reading = this.current();
+        if (reading) return { status: "fix", latitude: reading.latitude, longitude: reading.longitude };
+      }
+      return { status: "no_fix" };
+    }
+    return readGps(this.port, this.baud, 20_000, signal);
   }
 
   stop(): void { this.setEnabled(false); }

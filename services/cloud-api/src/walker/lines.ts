@@ -86,3 +86,17 @@ export function fallbackLine(status: WalkerStatusView): string {
   const alerts = `Your alerts are set to ${cueList(status.configuration.cues)}.`;
   return status.online ? `I can't answer that right now. ${alerts}` : `I can't answer that right now, and your walker is offline. ${alerts}`;
 }
+
+/** get_distance: only fresh, validated zone views, never a model-authored number or a claim of safe passage. */
+export function distanceLine(status: WalkerStatusView): string {
+  if (status.zones.length === 0) return "I don't have any obstacle sensor readings right now.";
+  const zones = status.zones.slice(0, 8).map(({ zone, reading }) => {
+    const name = zone.replaceAll("_", " ");
+    return reading.status === "measured"
+      ? `${name}: ${Math.round(reading.mm / 10)} centimetres, ${readingAge(reading.age_ms)}`
+      : `${name}: no current reading`;
+  });
+  const extra = status.zones.length - zones.length;
+  const prefix = `The obstacle sensors read ${zones.join("; ")}${extra ? `; ${extra} more readings` : ""}.`;
+  return status.zones.some((zone) => zone.simulated) ? `${prefix} ${SIMULATED_READINGS}` : prefix;
+}
