@@ -21,6 +21,8 @@ The demonstration should show a complete path: accessible onboarding → explain
 
 Two SO-101 arms, overhead/gripper cameras, and a lift are the target hardware. Stage 4 can demonstrate one arm first while the second arm and lift are integrated; the architecture and contracts should support both from the start. Do not represent a simulated arm as a working assistive feature.
 
+The owner reported purchasing the arms, three USB 2.0 UVC cameras, walker, lift components, Pi, ESP32 boards, sensors, audio, and power converters on 2026-10-23. See the [current hardware inventory](../hardware/current-build.md) for exact items and unresolved assembly details. Purchase is not proof of integration or validation.
+
 ## Initial technology choices
 
 | Area | Initial choice | Why / decision point |
@@ -62,9 +64,9 @@ Catalog metadata should also carry cost/weight/power estimates, compatibility, a
 ## Open decisions to settle with measurements
 
 1. Exact ESP32 boards and whether each USB port is native CDC or a USB-to-UART bridge; stable device IDs and power behavior.
-2. Exact SO-101 arm controller, servo driver, camera models, and Linux support; measured USB bandwidth with all cameras active.
-3. Lift motor, stepper driver, mechanical end stops, encoder/homing sensor, emergency-stop wiring, and payload/workspace limits.
-4. Battery chemistry, protection, fuse values, 12 V load budget, 5 V Pi regulator, motor rail isolation, charging approach, and runtime.
+2. Exact SO-101 arm controller and servo driver, included cables, camera Linux enumeration, and measured USB bandwidth with all three purchased cameras active.
+3. Purchased lift motor/driver configuration, mechanical end stops, homing sensor wiring, emergency-stop wiring, and payload/workspace limits.
+4. Battery purchase and charger, branch protection and fuse values, 12 V load budget, validation of the purchased 5 V Pi converter and USB leads, motor rail isolation, and runtime.
 5. ToF sensor model/count/mounting, interference/crosstalk, effective range under daylight, and haptic mapping with user feedback.
 6. Whether voice hardware uses an ESP32 audio path or a Pi USB microphone/speaker for the first demo. Both fit the same app-level contract.
 7. Model, speech providers, data retention durations, and costs. Pick only after measuring latency and accessibility of the full voice turn.

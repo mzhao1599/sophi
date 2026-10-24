@@ -27,7 +27,7 @@ The intended modules are two SO-101 arms with overhead and gripper cameras on a 
 | Pi developers | [Pi runtime](docs/subsystems/pi-runtime.md), [interfaces](docs/interfaces.md) |
 | ESP32 developers | [ESP32 firmware](docs/subsystems/esp32-firmware.md), [interfaces](docs/interfaces.md) |
 | Robot developers | [Arms and lift](docs/subsystems/manipulation.md) |
-| Electrical/mechanical developers | [Hardware and power](docs/subsystems/hardware-and-power.md) |
+| Electrical/mechanical developers | [Current hardware inventory](hardware/current-build.md), [hardware and power](docs/subsystems/hardware-and-power.md) |
 
 ## Proposed repository layout
 

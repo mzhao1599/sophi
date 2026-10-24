@@ -2,6 +2,8 @@
 
 **For:** electrical and mechanical builders. Proposed home: `hardware/` for schematics, CAD, BOM, and bench records.
 
+The [current build inventory](../../hardware/current-build.md) records the parts the owner reports purchasing on 2026-10-23, the proposed USB and power wiring, and parts that are still missing. Treat the inventory as a purchase record, not evidence of an assembled or tested circuit.
+
 ## Proposed power tree
 
 ```text
