@@ -16,16 +16,16 @@ host="$(python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.argv[1]).
 port="$(python3 -c 'import sys,urllib.parse as u; p=u.urlparse(sys.argv[1]); print(p.port or (443 if p.scheme=="https" else 80))' "$BASE")"
 case "$host" in localhost|127.0.0.1) ;; *) echo "Only a server on this Mac (localhost or 127.0.0.1): it pauses that server's process."; exit 2 ;; esac
 [ -f "$HERE/dist/walker.mjs" ] || { echo "No bundle: run pnpm --filter @walker/pi bundle first."; exit 2; }
-sim=""; server=""
+sim=""; sim_running=""; server=""
 # However the run ends (done, failed, Ctrl-C), never leave the server paused or the simulator running.
-cleanup() { [ -n "$server" ] && kill -CONT "$server" 2>/dev/null; [ -n "$sim" ] && kill "$sim" 2>/dev/null; true; }
+cleanup() { [ -n "$server" ] && kill -CONT "$server" 2>/dev/null; [ -n "$sim_running" ] && kill "$sim" 2>/dev/null; true; }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
 count() { grep -c "$1" "$LOG" 2>/dev/null || true; }
 wait_for() { # pattern, how many times, seconds; gives up at once if the simulator has ended
   for _ in $(seq 1 $(( $3 * 2 ))); do
     [ "$(count "$1")" -ge "$2" ] && return 0
-    kill -0 "$sim" 2>/dev/null || { sim=""; echo "the simulator ended early; see $LOG"; return 1; }
+    kill -0 "$sim" 2>/dev/null || { sim_running=""; echo "the simulator ended early; see $LOG"; return 1; }
     sleep 0.5
   done
   echo "timed out waiting for: $1"; return 1
@@ -40,7 +40,7 @@ path = sys.argv[1]; config = json.load(open(path)); config["version"] = 2; confi
 json.dump(config, open(path, "w"))
 PY
 node "$HERE/dist/walker.mjs" simulate --server "$BASE" --state "$ST" --out "$OUT/audio" --script "$HERE/test/sim/real-server.walk" > "$LOG" 2>&1 &
-sim=$!
+sim=$!; sim_running=1
 if wait_for 'saw cue nothing_to_confirm' 1 60; then
   curl -s -b "$JAR" "$BASE/api/v1/walkers" > "$OUT/status-before.json"
   # Exactly one process listens on the port, and it is the Next server: anything else, and nothing is paused.
@@ -59,6 +59,6 @@ if wait_for 'saw cue nothing_to_confirm' 1 60; then
 fi
 device="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["device_id"])' "$ST/credential.json")"
 curl -s -o /dev/null -w "forget: HTTP %{http_code}\n" -b "$JAR" -X DELETE "$BASE/api/v1/walkers/$device"
-wait "$sim"; result=$?; sim=""
+wait "$sim"; result=$?; sim_running=""
 echo "simulate exit=$result; log and status views in $OUT"
 exit "$result"

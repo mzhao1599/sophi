@@ -15,13 +15,13 @@ expect haptic near_obstacle
 key f
 wait 300
 
-# 3. A Talk turn: the server has no turns route yet, so the walker says its fixed server-trouble line.
+# 3. A Talk turn. Without a model key the server answers with a fixed line, marked as such.
 key t
 expect talk recording
+expect mic open
 wait 1200
 key t
-expect turn failed
-expect spoke Something went wrong on the server.
+expect turn answered
 # Confirm with nothing open: the short sound, no request.
 key c
 expect cue nothing_to_confirm

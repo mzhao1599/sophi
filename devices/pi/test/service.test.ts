@@ -380,7 +380,9 @@ describe("offline", () => {
     expect(h.spoken("notice").at(-1)).toBe(LINES.backOnline);
     const delivered = h.device()!.events.map((e) => `${e.kind}: ${e.text}`);
     expect(delivered).toContain("notice: I'm offline right now.");
-    expect(delivered.filter((e) => e.startsWith("local_reply"))).toHaveLength(1);
+    // The Talk press's offline reply repeats the notice word for word within 30 s: spoken, sent once (O11).
+    expect(delivered.filter((e) => e.endsWith("I'm offline right now."))).toHaveLength(1);
+    expect(h.spoken().filter((t) => t === "I'm offline right now.")).toHaveLength(2);
     // The 15 s window holds two more heartbeats, so "back online" has gone out too and nothing waits.
     expect(delivered).toContain(`notice: ${LINES.backOnline}`);
     expect(h.store.pendingEvents(h.clock.monotonic())).toEqual([]);

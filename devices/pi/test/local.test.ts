@@ -73,12 +73,12 @@ describe("audio files", () => {
     const dir = mkdtempSync(join(tmpdir(), "walker-wav-"));
     const long = join(dir, "long.wav");
     writeFileSync(long, wavFromPcm(Buffer.alloc(20 * 32_000, 1), 16000));
-    const clip = await new FileCapture(long).start().stop();
+    const clip = await new FileCapture([long]).start().stop();
     expect(clip.durationMs).toBe(15_000);
     expect(clip.wav.length).toBe(480_044);
     const wrong = join(dir, "wrong.wav");
     writeFileSync(wrong, wavFromPcm(Buffer.alloc(100), 44100));
-    expect(() => new FileCapture(wrong)).toThrow(/ffmpeg -i <input> -ar 16000 -ac 1/);
+    expect(() => new FileCapture([wrong])).toThrow(/ffmpeg -i <input> -ar 16000 -ac 1/);
   });
 
   it("the command mic (arecord's shape) keeps raw PCM from stdout, capped at 15 s, and stops it with SIGINT", async () => {
@@ -194,6 +194,7 @@ describe("misc", () => {
     ]);
     expect(() => parseScript("expect 0 link offline")).toThrow(/1 to 600000/);
     expect(() => parseScript("expect 9999999999 link offline")).toThrow(/1 to 600000/);
+    expect(parseScript("expect mic open")).toEqual([{ kind: "expect", event: "mic", match: "open", timeoutMs: 20_000, line: 1 }]);
     expect(parseScript("expect spoke 5 steps")).toEqual([{ kind: "expect", event: "spoke", match: "5 steps", timeoutMs: 20_000, line: 1 }]);
     expect(() => parseScript("expect nonsense")).toThrow(/unknown event/);
     expect(() => parseScript("press t")).toThrow(/can't read/);

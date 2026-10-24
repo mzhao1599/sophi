@@ -81,7 +81,7 @@ pnpm --filter @walker/pi bundle
 node devices/pi/dist/walker.mjs simulate
 ```
 
-Keys: `t` Talk, `c` Confirm, `n` hand in front of the ToF, `f` nothing in front, `i` invalid readings, `x` the ToF stops responding (and `x` again brings it back), `o` fake network down and up, `g` fake network hangs (no answers) and back, `r` the fake cloud forgets the walker (401), `p` pair again, `?` help, `q` quit.
+Keys: `t` Talk, `c` Confirm, `n` hand in front of the ToF, `f` nothing in front, `i` invalid readings, `x` the ToF stops responding (and `x` again brings it back), `o` network down and up, `g` network hangs (no answers) and back, `r` the fake cloud forgets the walker (401), `p` pair again, `?` help, `q` quit. The `o` and `g` keys act on the walker's own requests, so they work against a real server too (`--server`): that is how the offline beat can be shown on a Mac.
 
 - **Silent by default.** Speech is written by `say -o` into numbered `.aiff` files and cues into `.wav` files in the run's folder (printed at start). `--loud` plays them through the Mac's speakers instead.
 - **The microphone is a file.** By default each recording is a generated 2-second tone. To send a spoken question, make a clip and pass it:
@@ -93,6 +93,8 @@ Keys: `t` Talk, `c` Confirm, `n` hand in front of the ToF, `f` nothing in front,
   ```bash
   node devices/pi/dist/walker.mjs simulate --mic-file ask.wav
   ```
+
+  `--mic-file` also takes a comma-separated list or a folder of clips (its `.wav` files in name order): each Talk press plays the next one, starting again after the last, so a whole beat sequence runs from one command. Each clip is read again at its press.
 
   `--mic mac` records the Mac's real microphone through ffmpeg instead. It records whoever is nearby and makes macOS ask for microphone permission, so no test or default run uses it.
 - **The fake cloud is not the assistant.** It understands no speech; its replies are scripted lines that start "Fake cloud", and every answer is marked `answered_by: "fixed"`. It speaks the walker contract and checks what the Pi sends against it, so it exercises the Pi's pairing, heartbeats, turns, proposals and offline handling. `--server <url>` points the simulator at a real cloud instead (pair first with `walker pair <code> --server <url> --state <dir>` and pass the same `--state`); replies are then logged by length only.

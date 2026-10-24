@@ -55,6 +55,9 @@ export const SPEECH_LINE_MAX_MS = 90_000;
 /** Placeholder: a cue sound's player still running after this is killed. */
 export const CUE_PLAYER_MAX_MS = 2000;
 
+/** Placeholder: the same local line said again within this long is spoken but not sent to the page again. */
+export const LOCAL_LINE_REPEAT_MS = 30_000;
+
 // ---- Cloud (the interval is the walker contract's; the timeouts are placeholders) ----
 
 export const HEARTBEAT_INTERVAL_MS = CONTRACT_HEARTBEAT_INTERVAL_MS;

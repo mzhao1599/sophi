@@ -11,6 +11,7 @@ expect heartbeat ok
 key t
 expect talk recording
 expect cue listening
+expect mic open
 wait 1200
 key t
 expect talk waiting
@@ -27,6 +28,7 @@ wait 300
 # 4. Change a setting: the fake cloud proposes short sounds; Confirm applies configuration 2.
 key t
 expect talk recording
+expect mic open
 wait 1200
 key t
 expect spoke Press Confirm to do it.
@@ -44,6 +46,7 @@ wait 300
 # 5b. Arms: the fake cloud's fixed line.
 key t
 expect talk recording
+expect mic open
 wait 1200
 key t
 expect spoke robot arms aren't on this walker
@@ -67,6 +70,7 @@ expect link online
 expect spoke I'm back online.
 key t
 expect talk recording
+expect mic open
 wait 1200
 key t
 expect turn answered

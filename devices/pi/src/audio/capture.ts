@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { CLIP_BYTES_PER_MS, CLIP_MAX_PCM_BYTES, CLIP_SAMPLE_RATE } from "../constants";
 import type { Logger } from "../log";
 import { signalChild } from "../process";
@@ -119,24 +120,65 @@ export function macMicCapture(log: Logger, device = "0"): AudioCapture {
   );
 }
 
-/** The simulator's microphone: every recording is the same prepared WAV file (capped at 15 s). */
+/** One `--mic-file` value as a list of clips: a WAV, a comma-separated list, or a folder (its .wav files by name). */
+export function resolveMicFiles(value: string): string[] {
+  const paths: string[] = [];
+  for (const part of value.split(",").map((p) => p.trim()).filter(Boolean)) {
+    if (statSync(part).isDirectory()) {
+      // Natural order (2- before 10-), and no hidden files (macOS writes ._name.wav next to copied clips).
+      const wavs = readdirSync(part)
+        .filter((name) => !name.startsWith(".") && name.toLowerCase().endsWith(".wav"))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      if (wavs.length === 0) throw new Error(`${part} has no .wav files.`);
+      paths.push(...wavs.map((name) => join(part, name)));
+    } else {
+      paths.push(part);
+    }
+  }
+  if (paths.length === 0) throw new Error("--mic-file needs at least one WAV file.");
+  return paths;
+}
+
+function readClipFile(path: string): Buffer {
+  let info: ReturnType<typeof readWav>;
+  try {
+    info = readWav(readFileSync(path));
+  } catch (error) {
+    throw new Error(`${path}: ${(error as Error).message}`);
+  }
+  if (info.format !== 1 || info.sampleRate !== CLIP_SAMPLE_RATE || info.channels !== 1 || info.bitsPerSample !== 16) {
+    throw new Error(
+      `${path} must be a 16 kHz mono 16-bit WAV. Convert it with: ffmpeg -i <input> -ar 16000 -ac 1 -sample_fmt s16 <output>.wav`,
+    );
+  }
+  return info.pcm;
+}
+
+/**
+ * The simulator's microphone: each turn sent plays the next prepared WAV file (capped at 15 s), starting
+ * again after the last, so a whole beat sequence runs from one command. A press that ends without a clip
+ * (too short, cancelled) doesn't use one up. Each file is read again at its press, so an edit is picked up.
+ */
 export class FileCapture implements AudioCapture {
   readonly simulated = true;
   readonly label: string;
-  private readonly pcm: Buffer;
+  private next = 0;
 
-  constructor(path: string) {
-    const info = readWav(readFileSync(path));
-    if (info.format !== 1 || info.sampleRate !== CLIP_SAMPLE_RATE || info.channels !== 1 || info.bitsPerSample !== 16) {
-      throw new Error(
-        `${path} must be a 16 kHz mono 16-bit WAV. Convert it with: ffmpeg -i <input> -ar 16000 -ac 1 -sample_fmt s16 <output>.wav`,
-      );
-    }
-    this.pcm = Buffer.from(info.pcm);
-    this.label = `file ${path}`;
+  constructor(private readonly paths: readonly string[]) {
+    if (paths.length === 0) throw new Error("The file mic needs at least one WAV file.");
+    for (const path of paths) readClipFile(path); // refuse a bad clip now, not at the third press
+    this.label = paths.length === 1 ? `file ${paths[0]}` : `${paths.length} files, in order (${paths[0]} first)`;
   }
 
   start(): CaptureSession {
-    return { stop: async () => clipFromPcm(this.pcm), abort: () => {} };
+    const path = this.paths[this.next % this.paths.length]!;
+    const pcm = readClipFile(path);
+    return {
+      stop: async () => {
+        this.next += 1;
+        return clipFromPcm(pcm);
+      },
+      abort: () => pcm.fill(0),
+    };
   }
 }

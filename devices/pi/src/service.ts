@@ -19,6 +19,7 @@ import {
   HEARTBEAT_BACKOFF_MS,
   HEARTBEAT_DEADLINE_MS,
   HEARTBEAT_INTERVAL_MS,
+  LOCAL_LINE_REPEAT_MS,
   OFFLINE_AFTER_FAILED_HEARTBEATS,
   SPEECH_LINE_MAX_MS,
   TURN_DEADLINE_MS,
@@ -188,6 +189,10 @@ export class WalkerService {
   private readonly declining = new Set<string>();
   private confirmInFlight = false;
   private heartbeatInFlight = false;
+  /** A part changed while a heartbeat was in flight: send the next one right after it. */
+  private reportAfterFlight = false;
+  /** The last local line sent to the page, to skip an identical one said again moments later. */
+  private lastRecorded: { text: string; mono: number } | null = null;
   private cancelHeartbeat: Cancel | null = null;
   private stopped = false;
   private readonly audioFaults = new Set<string>();
@@ -281,6 +286,7 @@ export class WalkerService {
   }
 
   private async startRecording(event: ButtonEvent): Promise<void> {
+    this.lastRecorded = null; // something happened: the next local line is news, even if it's the same words
     const recording: Recording = { session: null, openedAt: 0, cancelMax: null, source: event.source, detail: event.detail };
     this.recording = recording;
     this.setTalk("recording");
@@ -301,6 +307,8 @@ export class WalkerService {
       return;
     }
     recording.openedAt = this.deps.clock.monotonic();
+    this.deps.log.info("mic open", { mic: this.deps.capture.label.slice(0, 80) });
+    this.deps.bus.emit("mic", { state: "open" });
     recording.cancelMax = this.deps.clock.setTimeout(() => void this.finishRecording(), CLIP_MAX_MS);
   }
 
@@ -327,6 +335,7 @@ export class WalkerService {
     recording.cancelMax?.();
     const heldMs = this.deps.clock.monotonic() - recording.openedAt;
     if (!recording.session || heldMs < CLIP_MIN_MS) {
+      this.deps.log.info("press too short", { held_ms: recording.session ? Math.round(heldMs) : null });
       recording.session?.abort();
       this.setTalk("idle");
       this.deps.bus.emit("turn", { outcome: "too_short" });
@@ -533,9 +542,13 @@ export class WalkerService {
 
   // ---- Cloud link ----
 
-  /** Sends a heartbeat now rather than at the next tick, when a part's state changed (the GPIO buttons settled). */
+  /**
+   * Sends a heartbeat now rather than at the next tick, when the page should see a change at once (a new
+   * configuration applied, the GPIO buttons settled). During a heartbeat, the next one goes right after it.
+   */
   reportSoon(): void {
-    if (!this.heartbeatInFlight) this.scheduleHeartbeat(0);
+    if (this.heartbeatInFlight) this.reportAfterFlight = true;
+    else this.scheduleHeartbeat(0);
   }
 
   private scheduleHeartbeat(delayMs: number): void {
@@ -551,6 +564,7 @@ export class WalkerService {
     if (this.stopped || this.heartbeatInFlight) return;
     this.heartbeatInFlight = true;
     let nextDelay = HEARTBEAT_INTERVAL_MS;
+    let failed = false;
     try {
       this.refreshCredential();
       const cloud = this.cloud;
@@ -585,6 +599,7 @@ export class WalkerService {
         if (response.configuration_version !== this.configuration?.version) await this.fetchConfiguration();
       } catch (error) {
         if (cloud !== this.cloud || this.stopped) return;
+        failed = true;
         this.deps.bus.emit("heartbeat", { ok: false });
         const kind = classifyError(error);
         if (kind === "unauthorized") {
@@ -598,7 +613,10 @@ export class WalkerService {
       }
     } finally {
       this.heartbeatInFlight = false;
-      this.scheduleHeartbeat(nextDelay);
+      // A change learned during this heartbeat goes out at once, unless it failed (then the backoff holds).
+      const soon = this.reportAfterFlight && !failed;
+      this.reportAfterFlight = false;
+      this.scheduleHeartbeat(soon ? 0 : nextDelay);
     }
   }
 
@@ -608,6 +626,7 @@ export class WalkerService {
     try {
       const configuration = await withDeadline(this.deps.clock, HEARTBEAT_DEADLINE_MS, (signal) => cloud.configuration(signal));
       if (cloud !== this.cloud) return false;
+      const changed = configuration.version !== this.configuration?.version;
       // Applied in memory first, so a failed save (a read-only SD card) can't block the person's change.
       this.configuration = configuration;
       try {
@@ -617,6 +636,9 @@ export class WalkerService {
       }
       this.deps.log.info("configuration applied", { version: configuration.version, cues: configuration.cues.join(",") });
       this.deps.bus.emit("config", { version: configuration.version });
+      // Tell the server now, so the page shows "Applied" within about a second, not at the next tick. Only
+      // on a real change, so a server whose heartbeat and configuration answers disagree can't make a loop.
+      if (changed) this.reportSoon();
       return true;
     } catch (error) {
       const kind = classifyError(error);
@@ -778,12 +800,18 @@ export class WalkerService {
    */
   private say(text: string, kind: SpeechKind, wav?: Buffer): Promise<void> {
     if (kind === "notice" || kind === "local_reply") this.record(text, kind);
+    else this.lastRecorded = null; // a reply or a Confirm result in between makes the next local line new
     this.deps.bus.emit("spoke", { text, kind });
     return this.voice.say(text, wav);
   }
 
+  /** Queues a local line for the page; the same line again within LOCAL_LINE_REPEAT_MS is spoken but sent once. */
   private record(text: string, kind: "notice" | "local_reply"): void {
-    this.deps.store.pushEvent({ event_id: this.newId(), kind, text: text.slice(0, 200), saidMono: this.deps.clock.monotonic() });
+    const now = this.deps.clock.monotonic();
+    const last = this.lastRecorded;
+    if (last && last.text === text && now - last.mono < LOCAL_LINE_REPEAT_MS) return;
+    this.lastRecorded = { text, mono: now };
+    this.deps.store.pushEvent({ event_id: this.newId(), kind, text: text.slice(0, 200), saidMono: now });
   }
 
   private async playCue(name: CueName): Promise<void> {

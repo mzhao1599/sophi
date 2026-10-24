@@ -1,0 +1,35 @@
+# Beats against the REAL server with the simulator alone: two Talk turns from a list of clips, and the
+# offline beat shown with the simulator's own network switch (o), no server pause needed.
+# Run: walker simulate --server <url> --state <dir> --mic-file ask.wav,front.wav --script test/sim/real-server-beats.walk
+
+expect spoke Steady is on.
+expect link online
+expect heartbeat ok
+
+# Turn 1 (first clip). Without a model key the server answers with a fixed line, marked as such.
+key t
+expect talk recording
+expect mic open
+wait 1200
+key t
+expect turn answered
+
+# Offline with the switch: down, the walker says so; a Talk press gets the same line (sent to the page once).
+key o
+expect 30000 link offline
+expect spoke I'm offline right now.
+key t
+expect spoke I'm offline right now.
+absent 1000 talk recording
+
+# Back up: the walker says so, and turn 2 uses the second clip.
+key o
+expect 30000 link online
+expect spoke I'm back online.
+key t
+expect talk recording
+expect mic open
+wait 1200
+key t
+expect turn answered
+key q

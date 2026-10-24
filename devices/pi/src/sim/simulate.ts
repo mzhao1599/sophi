@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emitKeypressEvents } from "node:readline";
-import { FileCapture, macMicCapture, type AudioCapture } from "../audio/capture";
+import { FileCapture, macMicCapture, resolveMicFiles, type AudioCapture } from "../audio/capture";
 import { MacFileSpeaker, MacLoudSpeaker, writeCueSounds, type Speaker } from "../audio/speech";
 import { toneWav } from "../audio/wav";
 import { Bus } from "../bus";
@@ -13,7 +13,8 @@ import { attachLogging } from "../logging";
 import { ModuleManager } from "../serial/modules";
 import { WalkerService } from "../service";
 import { StateStore } from "../store";
-import { FakeCloud, startFakeCloudServer, type FakeCloudServer, type FakeNetwork } from "./fakeCloud";
+import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "./fakeCloud";
+import { NetworkSwitch, SwitchableCloudClient, type NetworkMode } from "./networkSwitch";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
 import { ScriptRunner, parseScript } from "./script";
@@ -42,7 +43,7 @@ export const FAKE_DEMO_TURNS = [
 
 const HELP = `Keys: t Talk (press to start, press again to send; a terminal can't see key release)
       c Confirm   n hand in front of the ToF   f nothing in front   i invalid reading
-      x ToF stops responding / comes back   o fake network down / up   g fake network hangs / up
+      x ToF stops responding / comes back   o network down / up   g network hangs / up (the walker's own requests)
       r fake cloud forgets this walker (401)   p pair again   ? help   q quit`;
 
 class SilentSpeaker implements Speaker {
@@ -71,7 +72,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   // ---- Cloud: the fake one, unless a real server is named ----
   let fake: FakeCloud | null = null;
   let fakeServer: FakeCloudServer | null = null;
-  let network: FakeNetwork = "up";
+  // The o and g keys act on the walker's own requests, whichever server it talks to.
+  const network = new NetworkSwitch();
   const pairFake = async () => {
     if (!fake || !fakeServer) return;
     const code = fake.issueCode();
@@ -102,11 +104,11 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     log.warn("recording from the Mac microphone: it hears whoever is nearby");
     capture = macMicCapture(log);
   } else if (options.micFile) {
-    capture = new FileCapture(options.micFile);
+    capture = new FileCapture(resolveMicFiles(options.micFile));
   } else {
     const clip = join(outDir, "sim-clip.wav");
     writeFileSync(clip, toneWav([{ hz: 440, ms: 2000 }]));
-    capture = new FileCapture(clip);
+    capture = new FileCapture([clip]);
   }
   const speaker: Speaker =
     process.platform !== "darwin" ? new SilentSpeaker() : options.loud ? new MacLoudSpeaker(cues) : new MacFileSpeaker(join(outDir, "speech"));
@@ -140,7 +142,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     simulator: true,
     audioInstanceId: "sim-audio",
     coordinatorInstanceId: "sim-coordinator",
-    makeCloud: (credential) => new HttpCloudClient(credential.server_url, credential.device_id, credential.credential),
+    makeCloud: (credential) =>
+      new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
   });
   service.start();
 
@@ -168,11 +171,9 @@ export async function simulate(options: SimulateOptions): Promise<number> {
         return log.info(`SIMULATED ToF ${tof.isRunning ? "back" : "stopped responding"}`);
       case "o":
       case "g": {
-        if (!fakeServer) return log.warn("network switches only work with the fake cloud");
-        const target: FakeNetwork = key === "o" ? "down" : "hang";
-        network = network === "up" ? target : "up";
-        fakeServer.setNetwork(network);
-        return log.info("FAKE network", { mode: network });
+        const target: NetworkMode = key === "o" ? "down" : "hang";
+        network.mode = network.mode === "up" ? target : "up";
+        return log.info("SIMULATED network for the walker's requests", { mode: network.mode });
       }
       case "r": {
         const credential = store.readCredential();

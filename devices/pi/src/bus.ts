@@ -28,6 +28,8 @@ export interface BusEvents {
   cue: { name: CueName };
   haptic: { instanceId: string; pattern: string; durationMs: number };
   talk: { state: TalkState };
+  /** The mic opened (after the listening sound): what a script, like a person, holds Talk from. */
+  mic: { state: "open" };
   link: { state: LinkState };
   config: { version: number };
   heartbeat: { ok: boolean };
