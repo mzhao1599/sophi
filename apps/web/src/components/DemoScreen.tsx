@@ -75,9 +75,8 @@ function chatCaption(states: Record<ModuleId, PartState>): string {
 
 /** The one line under the text box that says where answers go. Sending the first answer starts on it. */
 function noticeLine(agentNotice: string | null, account: AccountSummary | null): string {
-  const where = account ? "Signed in: your answers are saved to your account" : "Demo: your answers are deleted here after an hour";
-  const model = agentNotice ? `, and ${agentNotice}` : "";
-  return `${where}${model}. Please leave out names and medical details.`;
+  const where = account ? "Your answers are saved to your account." : "Your answers are kept temporarily for this setup.";
+  return agentNotice ? `${where} ${agentNotice}.` : where;
 }
 
 /**
@@ -207,7 +206,7 @@ export function DemoView({ o, opening, agentNotice = null, agentName = null, acc
           <span className={styles.line}>{PRODUCT_LINE}</span>
         </span>
         <div className={styles.barRight}>
-          <span className={styles.scope}>{account ? "Signed In" : "Demo"}</span>
+          {account ? <span className={styles.scope}>Signed In</span> : null}
           {canReset ? (
             // aria-disabled while busy, so focus stays here until the text box takes it.
             <button type="button" className={styles.barButton} onClick={() => void startOver()} aria-disabled={o.busy || resetting || undefined}>

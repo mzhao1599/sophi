@@ -418,6 +418,31 @@ export function applyInput(input: EngineSession, turn: TurnInput, now: Date): Tr
   const answer = prepareAnswer(input, turn);
   const reading = answer.text ? matchNeeds(answer.text) : null;
   const recorded = recordAnswer(input, answer, reading, now);
+  // A broad statement such as "I'm blind" tells us about the person, not which task they want
+  // help with. Ask once for a concrete goal instead of moving on to where they use the walker.
+  if (
+    answer.question.id === "tasks" &&
+    answer.options.length === 0 &&
+    answer.text &&
+    reading &&
+    reading.tags.length === 0 &&
+    reading.declined_tags.length === 0 &&
+    !isFollowUp(input, "tasks")
+  ) {
+    return advance(
+      {
+        ...recorded,
+        pending: {
+          id: "tasks",
+          prompt: "What part of getting around is hardest?",
+          detail: "Tell me about a task so I can suggest only useful parts.",
+          option_ids: getQuestion("tasks").options.map((option) => option.id),
+        },
+      },
+      now,
+      null,
+    );
+  }
   return advance(coverTopics(recorded, answer, topicsAfter(answer.question.id)), now, answerAck(answer, reading));
 }
 

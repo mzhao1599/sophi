@@ -62,7 +62,7 @@ export function CheckoutResult({ order }: { order: DemoOrder | { kind: "off" } |
                 </ul>
                 <p className={styles.total}>
                   Demo total {money(order.total, order.currency)}{" "}
-                  <span className={styles.price}>(demo prices, not a real quote; nothing was charged)</span>
+                  <span className={styles.price}>(sample prices; nothing was charged)</span>
                 </p>
                 <p className={styles.endLead}>{lead}</p>
                 <div className={styles.endActions}>

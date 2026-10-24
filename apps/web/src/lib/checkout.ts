@@ -9,12 +9,12 @@ import { z } from "zod";
  */
 
 /** Shown next to every price: the catalog's real cost for each module is "not measured". */
-export const DEMO_PRICE_LABEL = "demo price, not a real quote";
+export const DEMO_PRICE_LABEL = "sample price";
 
 /**
  * Placeholder prices for the mock purchase, in US cents. They are NOT real quotes: the catalog's
  * cost for every module is "not_measured". This is the only place a price is defined; every page
- * that shows one labels it "demo price, not a real quote".
+ * that shows one labels it as a sample amount.
  */
 export const DEMO_PLACEHOLDER_PRICES_USD_CENTS: Record<ModuleId, number> = {
   "base.walker": 40_000,
@@ -40,9 +40,9 @@ export function formatUsd(cents: number): string {
   }).format(cents / 100);
 }
 
-/** The walker sheet's price line, for example "$1,675 at demo prices, not a real quote". */
+/** The walker sheet's price line, clearly marked as a sample amount. */
 export function demoPriceLine(selected: readonly ModuleId[]): string {
-  return `${formatUsd(demoTotalCents(selected))} at demo prices, not a real quote`;
+  return `${formatUsd(demoTotalCents(selected))} sample total`;
 }
 
 export const CheckoutStatusSchema = z.object({
