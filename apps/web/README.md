@@ -63,6 +63,9 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 | `/setups` | **Your setups**: a signed-in user's saved setups, newest first, with delete; carry on with an unfinished setup; sign out; delete the account. Not linked from the demo |
 | `/api/v1/onboarding/sessions/…` | The onboarding API; see [interfaces](../../docs/interfaces.md#cloud-api-surface). `POST …/{id}/checkout` starts the mock purchase |
 | `/api/v1/checkout/status` | Whether the mock purchase button is on, and why not |
+| `/api/v1/walkers/…` | The walker API for the owner's page (`walker_owner` cookie): pairing codes, the owner's walkers and their status, Confirm or Decline, Forget; see [interfaces](../../docs/interfaces.md#cloud-api-surface). The assistant turn isn't built yet |
+| `/api/v1/devices/…` | The walker API for the Pi (`Authorization: Bearer` credential): pair, heartbeat, configuration, the Confirm button |
+| `/api/v1/health` | Render's health check: `200` once the walker store is ready, `503` while its database can't be reached |
 | `/checkout/success` | Where Stripe returns after a test payment: the ordered walker drawn again, "Demo order: no money moved", the modules read from the Checkout Session on the server, and **Set up another walker** (deletes this tab's demo answers and opens a fresh first frame) |
 | `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
 | `/dev/preview/{start,chat,walker,saved,order}` | **Development only** (404 in production): the demo page in each state, from a session the deterministic engine produced from the demo persona's lines ([script](../../docs/demo/script.md)), for design review and the taste-skill inspector; `order` is the success page's design with that session's modules at their placeholder prices (a real order is only ever read from Stripe) |
@@ -184,6 +187,34 @@ That makes a preview deployment; `npx vercel@62.2.0 --prod` makes a production o
 
 Before sharing a public link, add a rate limit for `POST /api/v1/onboarding/sessions` and `/login` (for example a Vercel Firewall rule); the app caps demo sessions and turns but doesn't limit by address.
 
+## Deploy on Render
+
+The walker server runs on Render: one web service running this app (it serves the walker API and the onboarding page from one HTTPS address) and one Postgres database, both described in [`render.yaml`](../../render.yaml) at the repository root (a Render "Blueprint"). Vercel keeps serving the public onboarding site, unchanged; there the walker routes answer `503`, because it has no database.
+
+Both are on Render's free plan. The web service spins down after 15 minutes without requests and takes about a minute to wake; a walker's heartbeat every 5 seconds keeps it awake while the walker is on. The free database expires 30 days after it's created, with 14 days' grace to upgrade.
+
+### Max's clicks (once)
+
+1. Open [dashboard.render.com](https://dashboard.render.com) and sign in with GitHub.
+2. Click **New** (top right), then **Blueprint**.
+3. Under the repository list, pick **mzhao1599/calhacks26**. If it isn't listed, click **Configure account** (or **Connect GitHub**), give Render access to that repository, and come back.
+4. Name the Blueprint `steady`, keep the branch **main**, and leave the Blueprint path as `render.yaml`. Render then lists what it will create: a web service **steady-walker** and a database **steady-walker-db**, both Free.
+5. Render asks for two values it won't take from the file:
+   - **GEMINI_API_KEY**: paste your Gemini key (from Google AI Studio).
+   - **CARTESIA_API_KEY**: paste your Cartesia key if you have one. If you don't yet, leave it empty. If Render won't continue with it empty, type `none`; the voice part isn't built yet, and once it is, a key Cartesia refuses only means the walker speaks with its own voice. Put the real key in later under **steady-walker → Environment**.
+   These two go only into Render. Never paste them into chat, a file in the repository, or a commit.
+6. Click **Deploy Blueprint**. The database takes a minute or two, then the web service builds (pnpm install and `next build`, several minutes on the free plan).
+7. When **steady-walker** shows **Live**, copy its address from the top of its page (something like `https://steady-walker.onrender.com`; Render adds a suffix if the name is taken) and open `/api/v1/health` on it. It should say `{"status":"ok","walker_store":"postgres"}`.
+8. Send that address to the lead, who checks pairing, a heartbeat and the walker routes over HTTPS.
+
+If this Mac's network filter blocks the `onrender.com` address (it blocked the new `vercel.app` one), open it on a phone instead.
+
+### After that
+
+- Every push to `main` deploys again on its own. The new version takes traffic only after `/api/v1/health` answers `200` on it, so a deploy whose database isn't ready keeps the old one running.
+- Render reads `sync: false` values only when the Blueprint is first created. To change a key later, edit it under **steady-walker → Environment**, then **Save, rebuild, and deploy**.
+- The service's logs (**steady-walker → Logs**) carry one line per walker request: the route, the walker id, the status and the milliseconds. Never words, credentials or cookies.
+
 ## Mock purchase (Stripe test mode only)
 
 After **Save**, the walker sheet offers **Order (Demo)** so the demo can show buying the walker. **Nothing can really be bought:** the walker is an experimental prototype, not a certified mobility aid, so checkout runs in Stripe test mode only and no real money can move.
@@ -207,6 +238,8 @@ After **Save**, the walker sheet offers **Order (Demo)** so the demo can show bu
 app/                     routes (pages and API route handlers)
 src/server/onboarding.ts store and engine choice, who is calling, cookie handling, request parsing, error envelope
 src/server/supabase.ts   Supabase client per request (cookies), the verified signed-in user
+src/server/walker.ts     walker routes: the owner cookie and the Pi's Bearer, the lockout's client address, body limits, error envelope, logs
+instrumentation.ts       at server start: the walker store's migrations and history sweep
 src/server/auth-actions.ts server actions: sign in, sign out, delete a setup, delete the account
 proxy.ts                 refreshes the Supabase session before each page
 src/server/checkout/     mock purchase: test-key guard, Stripe client, placeholder prices, line items, success lookup

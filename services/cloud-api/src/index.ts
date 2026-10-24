@@ -28,3 +28,17 @@ export {
   type AgentProvider,
   type StoreBackend,
 } from "./onboarding/config";
+export {
+  WalkerError,
+  WalkerService,
+  isWalkerError,
+  type DeviceCaller,
+  type OwnerCaller,
+  type WalkerCaller,
+  type WalkerServiceOptions,
+} from "./walker/service";
+export { MemoryWalkerStore, newSecret, sha256, type DeviceRecord, type WalkerStore } from "./walker/store";
+export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
+export { WALKER_MIGRATIONS } from "./walker/migrations";
+export { buildStatusView } from "./walker/status";
+export { sharedWalkerBackend, walkerBackendFromEnv, type WalkerBackend } from "./walker/config";

@@ -2,7 +2,7 @@
 
 Owns onboarding sessions, the onboarding conversation and its recommendations, and (later) assistant runs, typed tools and the device API. For now it is a TypeScript package that the Next.js route handlers in `apps/web` call; it has no HTTP server of its own. Read [cloud agents](../../docs/subsystems/cloud-agents.md) and the [runtime blueprint](../../docs/agent-runtime.md).
 
-**Status:** the onboarding service works with a **deterministic engine** and two stores: **in memory** (local demos, the default) and **Supabase Postgres** with row-level security, tested against a local Supabase stack but **not yet against a hosted project**. An **LLM onboarding agent** (Claude through the Anthropic TypeScript SDK, or Google's Gemini over its REST API) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, and live on Gemini (`gemini-3.7-flash`, 2026-10-23); **not yet live on Claude**. There is no device API yet.
+**Status:** the onboarding service works with a **deterministic engine** and two stores: **in memory** (local demos, the default) and **Supabase Postgres** with row-level security, tested against a local Supabase stack but **not yet against a hosted project**. An **LLM onboarding agent** (Claude through the Anthropic TypeScript SDK, or Google's Gemini over its REST API) can read text and answer turns when it is turned on; it is off by default. It has been checked with stub models and a local mock of the API, and live on Gemini (`gemini-3.7-flash`, 2026-10-23); **not yet live on Claude**. The **walker API** (pairing, device credentials, heartbeats, the status view and answering proposals, for the always-on assistant) works with an in-memory store and **Postgres** through node-postgres, tested against a local Postgres 17 cluster; it is **not deployed yet**, and the assistant turn isn't built yet (see [Walker store](#walker-store)).
 
 ## What's here
 
@@ -20,6 +20,12 @@ Owns onboarding sessions, the onboarding conversation and its recommendations, a
 | `src/onboarding/supabase-store.ts` | `SupabaseSessionStore`: the same interface over Postgres ([`supabase/migrations/`](../../supabase/migrations)). |
 | `src/onboarding/setups.ts` | Account reads through the user's own client: their saved setups (checked against the contract) and their latest unfinished session. |
 | `src/onboarding/config.ts` | `engineFromEnv` and `storeBackendFromEnv`: pick the engine (and the agent's model provider) and the store from environment variables. `agentProviderFromEnv` names the provider for the first screen's notice. |
+| `src/walker/service.ts` | The walker API's behaviour: pairing codes and the lockout, the owner's and the Pi's proofs, heartbeats, the status view, answering proposals, Forget, and `WalkerError` with the contract's codes. |
+| `src/walker/rules.ts` | The proposal rules both stores call inside their atomic step: online, when an open proposal expires, and what a Confirm or Decline does. |
+| `src/walker/status.ts` | `buildStatusView`: the status view from stored data, with the contract's `zoneViews`, parsed with `WalkerStatusViewSchema`. |
+| `src/walker/store.ts` | `WalkerStore` interface, the in-memory store, secrets and hashing. |
+| `src/walker/postgres-store.ts`, `src/walker/migrations.ts` | `PostgresWalkerStore` and its SQL migrations. |
+| `src/walker/config.ts` | `walkerBackendFromEnv`: Postgres when `DATABASE_URL` is set, memory otherwise, off in production without a database. |
 
 ```bash
 pnpm --filter @walker/cloud-api test
@@ -123,6 +129,44 @@ Chosen options, recommendations (`recommend.ts`), the robot arms' "consider only
 **Logs.** One line per agent turn: `[onboarding-agent] outcome=agent|fallback attempts=N reason=… ms=…`. No user words, ids or keys.
 
 **Request settings.** In `anthropic.ts`: effort `low`, since a turn is a short conversational step and has to finish in a few seconds; adaptive thinking is the model's default; `max_tokens` 4096; one SDK retry. In `gemini.ts`: `responseMimeType: "application/json"` with `responseJsonSchema` set to the reply schema; `maxOutputTokens` 4096; thinking kept low (`thinkingLevel: "low"` on Gemini 3 and later, `thinkingBudget: 0` on 2.5 Flash, see `thinkingFor`); one retry on a `5xx`, and none on `429`, because a used-up quota fails again at once; a model name may be given as `models/gemini-…`. A model override that doesn't start with the chosen provider's prefix (`claude-`, `gemini-`) logs a warning at startup. Measured on 2026-10-23 over full conversations with new wording: `gemini-3.7-flash` (the default) took about 2.5 s a turn with no fallbacks, and read "at home" out of "my hallway" and "the kitchen shelf" to skip that question; with its default thinking it took about 5 s and hit the deadline on 2 of 7 turns. `gemini-3.5-flash-lite` and `gemini-2.5-flash` answered in about 1 s with no fallbacks but asked more of the questions. Errors are reported by status code only, because Google's error text can echo the request. These are starting values to tune from a live run.
+
+## Walker store
+
+The always-on walker assistant's server side ([walker assistant guide](../../docs/subsystems/walker-assistant.md), contract in [`walker.ts`](../../packages/contracts/src/walker.ts)). The routes are in `apps/web/app/api/v1/{devices,walkers}/` with their glue in `apps/web/src/server/walker.ts`; this package does the work.
+
+**Choosing it** (`walkerBackendFromEnv`):
+
+| `DATABASE_URL` | Store | Walker routes |
+| --- | --- | --- |
+| Set (on Render, from the Blueprint's database) | Postgres | Work |
+| Not set, outside production | Memory: lost on restart | Work, for local runs |
+| Not set, in production (such as the Vercel onboarding site) | None | `503 unavailable`; onboarding is unaffected |
+
+**Tables** ([`src/walker/migrations.ts`](src/walker/migrations.ts)): `walker_devices` (owner hash, credential hash, name, last heartbeat, last manifest, last snapshot and when the server received it), `walker_configurations` (immutable versions per walker; a trigger rejects any `UPDATE`), `walker_proposals` (at most one open per walker, by a partial unique index), `walker_turns`, `walker_lines` (what the walker said on its own, from heartbeats), `walker_pairing_codes` and `walker_pairing_tries` (wrong codes by a hash of the client address keyed with a secret held only in server memory, so a stored hash can't be reversed by trying every address). The migrations run at server start (`apps/web/instrumentation.ts`) in one transaction holding a Postgres advisory lock, so two instances starting at once never race; each runs once, recorded in `walker_schema_migrations`.
+
+**Who reaches what.** The server is the only database client: there's no Data API, so Supabase-style row-level security doesn't apply. Ownership is enforced in every query instead. The Pi's walker is found only by the SHA-256 of its credential, and the page's only by its id together with the SHA-256 of the `walker_owner` cookie; everything else is read and written by the device id found that way. An unknown id and someone else's both answer `404`.
+
+**Consistency.** Each step that must be atomic is one transaction that first locks the walker's row: answering a proposal (so of two Confirms at once the second sees the first's result and gets `409 proposal_closed`), saving a turn with the proposal it opens, and claiming a pairing code. A claim first locks its client address (a second claim from that address at the same moment gets `429 rate_limited` at once, rather than hold a connection while it waits), then counts that address's wrong tries, checks the code and records a wrong one, all in one transaction, so tries sent at once can't get past the lockout; it also locks the owner, so two claims can't both pass the 8-walker limit. The lockout window slides: it lifts 10 minutes after the oldest of the 5 wrong tries. The in-memory store makes each of those steps with no `await` inside it. Both stores call the same rules ([`rules.ts`](src/walker/rules.ts)), and both run the same tests.
+
+**Data handling** (AGENTS.md rule 9):
+
+| | |
+| --- | --- |
+| Stored | The walker's name, its configurations, its last manifest and sensor snapshot, proposals, turns (what she said as typed or transcribed, and the reply) and the walker's own lines. Only the SHA-256 of the owner cookie and the device credential, and a keyed hash of a wrong-code client address. Never a voice clip. A NUL character or half a surrogate pair in any text becomes U+FFFD, since Postgres can't store them |
+| Kept | Turns, walker lines and answered proposals: an hour after they happen, deleted on every heartbeat, every page read and at server start. Pairing codes: 10 minutes. Wrong-code tries: 10 minutes. The walker itself, its configurations and its last manifest and snapshot: until Forget |
+| Deleted by | **Forget this walker** on the page (`DELETE /walkers/{id}`): one statement, so one transaction, removes the walker and, by cascade, everything about it, and its credential stops working. The sweep above |
+| Access | The server only, by device id found through a credential or an owner, as above |
+
+**Testing against Postgres.** Docker isn't needed: any local Postgres works. With Homebrew's `postgresql@17`, from the repository root:
+
+```bash
+/opt/homebrew/opt/postgresql@17/bin/initdb -D /tmp/walker-pg -U walker --auth=trust
+/opt/homebrew/opt/postgresql@17/bin/pg_ctl -D /tmp/walker-pg -l /tmp/walker-pg.log -o "-p 55432 -k '' -c listen_addresses=127.0.0.1 -c fsync=off" start
+WALKER_TEST_DATABASE_URL=postgres://walker@127.0.0.1:55432/postgres pnpm --filter @walker/cloud-api test
+/opt/homebrew/opt/postgresql@17/bin/pg_ctl -D /tmp/walker-pg stop
+```
+
+Each test run makes its own database and drops it afterwards; a URL that isn't on this machine is refused. `fsync=off` is for a throwaway cluster only: on a slow disk, each file sync otherwise takes seconds. Without `WALKER_TEST_DATABASE_URL` the Postgres cases skip with a message saying so. The expected results are in [`test/walker/EXPECTED.md`](test/walker/EXPECTED.md).
 
 ## Next steps
 

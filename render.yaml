@@ -1,0 +1,44 @@
+# Render Blueprint: the walker server (apps/web, which also serves the onboarding page) and its
+# Postgres database. Field reference: https://render.com/docs/blueprint-spec (checked 2026-10-24).
+# Setup steps: apps/web/README.md, "Deploy on Render". Secrets are never written here: the two keys
+# below are `sync: false`, so Render asks for them in the dashboard when the Blueprint is created.
+services:
+  - type: web
+    name: steady-walker
+    runtime: node
+    # Free: 512 MB, and it spins down after 15 minutes with no requests. The Pi's heartbeat every 5 s
+    # keeps it up while a walker is on; the first request after a spin-down waits about a minute.
+    plan: free
+    region: oregon
+    # pnpm 11.20.0 comes from the root package.json's packageManager field, through corepack.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @walker/web build
+    startCommand: cd apps/web && ./node_modules/.bin/next start --hostname 0.0.0.0 --port $PORT
+    # 200 once the walker store is ready (its migrations have run), so a deploy whose database isn't
+    # reachable never takes traffic.
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: steady-walker-db
+          property: connectionString
+      # The walker assistant's model (Gemini) and voice (Cartesia). Entered by Max in the dashboard.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CARTESIA_API_KEY
+        sync: false
+      # One instance, so the onboarding page's in-memory sessions work here too.
+      - key: ONBOARDING_ALLOW_MEMORY_STORE
+        value: "true"
+
+databases:
+  - name: steady-walker-db
+    # Free: 1 GB, and it expires 30 days after creation (then a 14-day grace period to upgrade).
+    plan: free
+    region: oregon
+    databaseName: steady
+    user: steady
+    postgresMajorVersion: "17"
+    # No external connections: only the web service, over Render's private network, reaches it.
+    ipAllowList: []
