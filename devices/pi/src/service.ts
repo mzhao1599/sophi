@@ -32,6 +32,7 @@ import {
 } from "./constants";
 import { CuePolicy } from "./cues";
 import { describeGpsLocation } from "./location";
+import { describeCurrentWeather } from "./weather";
 import type { Logger } from "./log";
 import { LINES, appliedLine, moduleDownLine, offlineLine } from "./notices";
 import type { ModuleManager } from "./serial/modules";
@@ -452,9 +453,9 @@ export class WalkerService {
     try {
       const reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(body, signal), turn.abort.signal);
       if (this.turn !== turn) return;
-      if (reply.tool_call?.name === "get_location") {
+      if (reply.tool_call?.name === "get_location" || reply.tool_call?.name === "get_weather") {
         this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
-        await this.answerLocation(turn, reply.turn.heard);
+        await this.answerLocationTool(turn, reply.turn.heard, reply.tool_call.name);
         return;
       }
       this.endTurn(turn);
@@ -482,22 +483,22 @@ export class WalkerService {
     }
   }
 
-  private async answerLocation(turn: PendingTurn, heard: string | null): Promise<void> {
+  private async answerLocationTool(turn: PendingTurn, heard: string | null, tool: "get_location" | "get_weather"): Promise<void> {
     let answer: string;
     try {
       const gps = this.deps.location;
-      if (!gps?.connected()) answer = "I can't check your location because the GPS receiver is not connected.";
+      if (!gps?.connected()) answer = `I can't check ${tool === "get_weather" ? "weather near you" : "your location"} because the GPS receiver is not connected.`;
       else {
         const reading = await gps.onDemand(turn.abort.signal);
         if (this.turn !== turn) return;
         answer = reading.status === "fix"
-          ? await describeGpsLocation(reading.latitude, reading.longitude, turn.abort.signal)
+          ? await (tool === "get_weather" ? describeCurrentWeather : describeGpsLocation)(reading.latitude, reading.longitude, turn.abort.signal)
           : "The GPS receiver has no satellite fix yet. Try again outdoors with a view of the sky.";
       }
     } catch (error) {
       if (this.turn !== turn) return;
-      this.deps.log.warn("location lookup failed", { error: (error as Error).message });
-      answer = "I found the GPS receiver, but couldn't look up an address right now.";
+      this.deps.log.warn(`${tool} lookup failed`, { error: (error as Error).message });
+      answer = tool === "get_weather" ? "I couldn't check the weather right now." : "I found the GPS receiver, but couldn't look up an address right now.";
     }
     if (this.turn !== turn) return;
     this.endTurn(turn);
