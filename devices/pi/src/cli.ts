@@ -38,7 +38,7 @@ ${ARMS_USAGE}
 
 State folder: --state, else WALKER_STATE_DIR, else ${DEFAULT_STATE_DIR} (run and pair) or a new temp folder (simulate).`;
 
-const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen", "lift", "arms", "leader"]);
+const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen", "lift", "arms", "leader", "replace"]);
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];

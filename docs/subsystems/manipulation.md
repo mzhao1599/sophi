@@ -6,10 +6,11 @@
 
 - the lift ESP32 firmware, written and tested on a computer ([firmware/README.md](../../firmware/README.md#lift-board));
 - the Pi's Feetech servo driver;
-- the Pi's motion coordinator for the arms ([`devices/pi/src/motion/`](../../devices/pi/README.md#the-arms-motion-coordinator-part-a)): Confirm targets, guards, calibration, poses, teleop and a simulator;
+- the Pi's motion coordinator for the arms ([`devices/pi/src/motion/`](../../devices/pi/README.md#the-arms-motion-coordinator)): Confirm targets, guards, calibration, poses, teleop and a simulator;
+- taught skills on that coordinator ([below](#taught-skills-built-2026-10-24-simulated-servos-only)): recording a teleop session, replay, and "Let go?". `tray_pick_handover` itself isn't taught yet: that needs the real arms ([the steps](../../devices/pi/README.md#teach-the-tray-task-tray_pick_handover-after-the-bench-bring-up-2026-10-25-plan-not-done-yet));
 - the walker screen's motion screens and the lift's hold control ([`devices/pi/src/screen/`](../../devices/pi/README.md#the-walker-screens-page)): the pending Confirm target, what moves and how to stop it, faults, bench mode, and the hold reports on the bus as `screenHold`.
 
-None of these has run on real arms or a real lift. Not built: the lift's side of the coordinator (including the one line that takes `screenHold` to the lift client), taught skills, and a touch Stop on the screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
+None of these has run on real arms or a real lift. Not built: the lift's side of the coordinator (including the one line that takes `screenHold` to the lift client), and a touch Stop on the screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
 
 ## The rule
 
@@ -83,7 +84,7 @@ The coordinator builds every command itself from the channel an input arrived on
 | The cloud | ask for an offer of a taught skill or pose, by id; never anything else |
 | The Pi's own guard | stop (`motion_guard`) |
 
-A Feetech servo keeps driving towards its last goal when nothing more arrives. So each joint's goal is clamped to within `MAX_GOAL_LEAD_DEG` (5°) of its measured position: if the Pi dies mid-motion, a joint goes at most 5° further and holds. A skill's timeline keeps its own clock and never pauses for a lagging joint.
+A Feetech servo keeps driving towards its last goal when nothing more arrives. So each joint's goal is clamped to within `MAX_GOAL_LEAD_DEG` (5°) of its measured position: if the Pi dies mid-motion, a joint goes at most 5° further and holds. A skill's timeline moves on with each control tick and doesn't wait for a lagging joint, except where it starts and at gripper events ([Taught skills](#taught-skills-built-2026-10-24-simulated-servos-only)). Each tick advances it by the time since the last tick, capped at two control periods (40 ms). So a late control loop slows the timeline while the deadline counts real time: a loop that keeps running late could end a skill with `motion_timeout`. The bench's `BENCH loop` lines show the slowest tick.
 
 ## The stop circuit (decided)
 
@@ -128,10 +129,10 @@ Each row comes from `MOTION_COMMAND_POLICY` in `motion.ts`, which the coordinato
 | `lift.disable` | screen, terminal; also while a fault is latched | busy, the carriage could drop (`lift_may_drop`: no passed drop test, no brake, not on the bottom switch) | Sends `lift.enable(false)`. Nothing else ever disables the lift driver; no fault reaction does | Immediate | None | driver off, **lift unhomed** (firmware and Pi) |
 | `arm.torque` | screen, terminal; turning off also while a fault is latched | turning on: stop, fault, busy, part missing, stale, not calibrated | On: goals set to the measured position first, so nothing moves; torque limit 60% (gripper 50%), bench 40% (35%). Off: the arm goes limp and may sag. Leaders never get torque | Immediate | None | ready (on) or disabled for that arm (off) |
 | `arm.go_to_pose` | screen, terminal, an offer | not calibrated, torque off, unknown pose, pose out of range | 45°/s (bench 20°/s); goals at most 2° a step and within 5° of the measured position; arrived within 3° | Stops | Control loop at 50 Hz. Readings older than 100 ms freeze and latch. Goal and position more than 10° apart for 300 ms goes compliant and latches. Deadline from the longest joint move | ready at the pose |
-| `skill.run` | screen, terminal, an offer | not calibrated, torque off, unknown skill, skill fails its checks (also latches `skill_invalid`), not within the start tolerance, lift not homed or not at the skill's height | The skill's own speeds (at most 60°/s; its timeline stretched to 30°/s in bench mode, never paused). After a `grasp` event, that gripper's grasp is active: 30% torque, exempt from divergence. Never moves the lift | Stops; never resumes | As `arm.go_to_pose`; deadline from the last waypoint | ready, **holding** the last waypoint; for each arm still grasping, the Pi prepares "Let go?" |
-| `gripper.release` | the Pi's own follow-up, screen, terminal | no active grasp, torque off, open angle out of range | Only the gripper moves, to the skill's `let_go` angle, at the pose speed and 30% torque | Stops | As `arm.go_to_pose` | ready, holding, grasp no longer active |
-| `teleop.start` | screen, terminal | not calibrated, torque off, a follower more than 10° from its leader | Followers track leaders at most 90°/s (bench 45°/s); **60°/s while recording**, which also ends at 60 s. Beyond the clamp the follower just lags | `teleop.stop`; stops | As `arm.go_to_pose`. Only far beyond the clamp does it latch: a leader joint over 2× the limit for 200 ms (`teleop_overspeed`), or a gap over 20° for 1 s (`teleop_gap`). A stale leader freezes its follower. Ends after 5 minutes | teleop until stopped; a recording is saved only if it passes the skill checks |
-| `fault.clear` | screen, terminal | a cause is still present | Clears all latched faults or none | n/a | n/a | ready or disabled; see the faults below |
+| `skill.run` | screen, terminal, an offer | not calibrated, torque off, unknown skill, skill fails its checks (also latches `skill_invalid`), not within the start tolerance, lift not homed or not at the skill's height | The skill's own speeds (at most 60°/s; its timeline stretched to 30°/s in bench mode). The timeline starts once the arm is within 3° of the first waypoint, and waits only at a gripper event until that arm is within 3° of the event's point; otherwise it doesn't wait for a lagging joint. After a `grasp` event, that gripper's grasp is active: 30% torque, exempt from divergence (and from the coordinator's stall and load rules). Never moves the lift | Stops; never resumes | As `arm.go_to_pose`; deadline from the last waypoint | ready, **holding** the last waypoint; for each arm still grasping, the Pi prepares "Let go?" |
+| `gripper.release` | the Pi's own follow-up, screen, terminal; **also while a fault is latched and on a soft (compliant) arm: letting go is always possible** | no active grasp, the gripper's servo not reading torque on, an angle out of range or on the closing side | Only the gripper moves, **only opening**, to the skill's `let_go` angle, at the pose speed and 30% torque. Offered by the Pi at once whenever a motion ends with a grasp active, and after a fault clears | Stops | As `arm.go_to_pose` | ready (or fault), holding, grasp no longer active |
+| `teleop.start` | screen, terminal | not calibrated, torque off, a follower more than 10° from its leader | Followers track leaders at most 90°/s (bench 45°/s); **60°/s while recording**, which also ends at 55 s (the contract's 60 s less a margin). Beyond the clamp the follower just lags | `teleop.stop`; stops | As `arm.go_to_pose`. Only far beyond the clamp does it latch: a leader joint over 2× the limit for 200 ms (`teleop_overspeed`), or a gap over 20° for 1 s (`teleop_gap`). A stale leader freezes its follower. Ends after 5 minutes | teleop until stopped; a recording is saved only if it passes the skill checks |
+| `fault.clear` | screen, terminal | something is running (letting go may, with a fault latched); a cause is still present | Clears all latched faults or none | n/a | n/a | ready or disabled; see the faults below |
 | `teleop.stop` | sent directly by any handle press, the screen, the terminal or the guard | never | None | n/a | n/a | ready, holding |
 | `motion.stop` | sent directly by any handle press, the screen, the terminal or the guard | never, in any mode, with or without a fault | Arm goals to measured positions; lift ramps down at 200 mm/s² and holds | n/a | n/a | ready, holding (or fault); nothing resumes |
 
@@ -145,6 +146,42 @@ More rules behind the table:
 - **Lost hand controls:** motion stops and holds, and `hand_controls_lost` latches. Outside bench mode, nothing starts without a hand control.
 - **Pi restart:** the coordinator starts `disabled` and reads every arm before writing any goal. On each servo that reads torque on, it sets the goal to the measured position. A servo that reads torque off gets no goal, because a Feetech goal may turn torque on. It needs a torque on before it moves. Its first line to the lift is a `hello.request`, which stops any lift motion.
 - **Two skill checks,** at load and before every run: `SkillSchema` (time order, gaps, duration, speeds, start pose, gripper events, `let_go` for exactly the arms still grasping), then `checkSkillAgainstSetup` (calibration, the let-go angle, the lift).
+
+## Taught skills (built 2026-10-24, simulated servos only)
+
+The Pi's coordinator records, saves, replays and lets go as the contract says, tested against simulated servos only ([devices/pi/README.md, "Taught skills"](../../devices/pi/README.md#taught-skills-record-and-replay); rows T1 to T35 in `devices/pi/test/EXPECTED.md`). It has not run on a real arm, and `tray_pick_handover` hasn't been taught.
+
+- **Files.** One `SkillSchema` file per skill in the Pi's state folder (`motion/skills/<skill_id>.json`, 0600), written atomically. Never written over without `--replace`; an old one is renamed aside, never deleted. Both checks run when it is saved, when it is asked for, and again at the press, where the file must also be exactly the one the walker asked about.
+- **Recording** is `teleop.start` with `record_skill_id`, prepared at the terminal and Confirmed at the walker. It samples the follower's own readings at the 50 Hz control rate, never the leader's. The terminal marks grasps and releases.
+- **Replay** is `skill.run`, prepared at the terminal or by an id-only offer, worded from the file's own title. The timeline starts once the arm is at the first waypoint and waits at each gripper event until that arm reaches the event's point, so a grasp never closes somewhere else; otherwise it doesn't wait. Every goal keeps the step and lead limits, at the skill's speeds capped at the mode's replay speed.
+- **"Let go?"** is `gripper.release`, prepared by the Pi (`walker_local`). The terminal can ask it again.
+
+**LETTING GO IS ALWAYS POSSIBLE.** Releasing a grasp is a safety action:
+
+- It is allowed in every mode where the gripper can move: with a fault latched (`allowedWhileFaulted`), and on an arm gone soft after a push. It is refused only when it physically can't run: the stop pressed, no fresh reading, or the gripper's servo not reading torque on.
+- Only the gripper moves, and **only opening**.
+  - Which way a grasp closed is fixed once, the first tick the gripper is 1° or more from where the grasp began; opening is the other way.
+  - The let-go angle may not be more closed than where the grasp began (`out_of_range`). The goal never goes to the closing side of where the gripper is.
+  - A gripper already open at least to the let-go angle ends at once, moving nothing.
+  - While the direction is unknown, an angle typed at the terminal is refused; the taught one still works.
+- It also works on a **frozen** arm (after `feedback_stale` or `servo_bus_lost`) once its reading is fresh again: only the gripper is written, from that fresh reading. A freeze lets off a grasping gripper's squeeze at its first fresh read, the rest of the arm staying frozen.
+- While it runs with a fault latched, the screen shows "Letting go" rather than the fault, a clear is refused (`busy`), and a fault already latched that comes again (its deadline) still ends it.
+- The Pi offers it at once whenever anything ends a motion with a grasp active: a replay completing, a stop, or a fault. It offers it again after a fault clears.
+- A stop or a fault sets the gripper's goal to where it is: no more squeeze.
+- **Not holding what was taught** (`grasp_mismatch`): while a grasp is active, the gripper more than 10° short of where the skill has it, for 300 ms (placeholders), means something else is in its hand, such as a finger. That is 5° past the lead, since a taught grasp already sits up to 5° short of its squeezing goal. The Pi latches `grasp_mismatch` (hold), sets that gripper's goal to where it is and its torque limit to 25% (`ARM_COMPLIANT_TORQUE_PCT`), says why, and offers "Let go?". Opening it needs that Confirm press, since motors start only when a person acts.
+
+Decisions the contract leaves open (each is the coordinator's, and can change):
+
+1. **Away from the start: refuse, don't move.** A replay is refused `not_at_start` when the arm is outside the skill's start tolerance. The reason names a taught pose at the start, if there is one. Going there is its own Confirmed `arm.go_to_pose`; the contract's actions have no "go to a skill's start".
+2. **A recording ends at 55 s, as a stop, not a fault** (`RECORD_MAX_MS` in `coordinator.ts`, placeholder: `SKILL_MAX_DURATION_MS` less 5 s). The margin leaves room for slowing a fast stretch (decision 3) without passing the contract's 60 s. It ends as `motion.stop` would (the arm holds) and can be saved. A recording that ends with a fault, or whose terminal goes away, is never saved.
+3. **Recorded speed.** A recording declares its own teleop limit as each joint's `max_speed_deg_s` (60°/s, or 45°/s in bench mode). A stretch where the measured follower went faster (servo overshoot, reading noise) is slowed to that limit, keeping the path. Samples are clamped into the calibrated range less 2°, as teleop's goals already are, and rounded toward the inside of it. The start tolerance is 8° (placeholder; the contract allows 10°).
+4. **A grasping gripper records its goal.** While its grasp is active, the gripper's waypoint is the goal the Pi wrote (at most 5° past where the object stopped it), not its reading. Otherwise a replay would close exactly to the object's surface and barely grip it. Only a completed replay holds that squeeze; a stop or a fault lets it off (above).
+5. **A grasping gripper is exempt from the teleop gap,** as from divergence and the coordinator's stall and load rules: an object stops it short of its leader.
+6. **"Let go?" after a recording too.** A recording that ends holding is offered "Let go?" at once, to where the gripper was when the grasp was marked. The `let_go` angle for the file is asked at the terminal, and must be on the opening side.
+7. **Removing a skill needs no Confirm.** `walker arms skill rm` renames the file aside. It moves nothing and can only take a movement away, like saving a pose. It withdraws a pending target to run that skill, and is refused while the skill runs.
+8. **A torque or torque limit that changes under a moving arm latches `torque_lost`** (hold), so a power dip mid-move needs a helper to clear it. Before, it ended `limitsWritten` and the move ran on with no goals until its deadline.
+9. **An offer of a skill that fails its checks is dropped**, with a log line, and latches nothing. The cloud can't make the walker go into a fault. From the terminal, the same skill is refused `skill_invalid` and latches it.
+10. **A grasp mark from the terminal names its recording** (the request id), so a stale terminal can't mark someone else's recording.
 
 ## Faults
 
@@ -172,6 +209,8 @@ All faults latch. The screen shows the fault's sentence, then "Ask a helper to c
 | `motion_timeout` | A movement took much longer than it should, so it stopped. | hold |
 | `teleop_overspeed` | The teaching arm moved far too fast to follow, so the walker's arm stopped. | hold |
 | `teleop_gap` | The walker's arm fell too far behind the teaching arm, so it stopped. | hold |
+| `grasp_mismatch` | The hand met something it wasn't taught to hold, so it loosened and stopped. | hold; that gripper's goal goes to where it is and its torque limit to 25%, and "Let go?" is offered at once |
+| `torque_lost` | An arm's motors reset by themselves, as after a power dip, so it stopped. | hold (that arm needs torque on again) |
 
 What each reaction does (`FAULT_REACTION`). In every case all other motion stops, and the lift holds with its driver enabled.
 
@@ -221,6 +260,9 @@ A pending target is allowed only while nothing moves. During a fault, the only p
 ## Compatibility and deployment order
 
 Today's Pi, server and firmware parse `device.ts`, `walker.ts` and `serial.ts` strictly, so this contract changes none of their shapes (pinned by `test/existing-shapes.test.ts`).
+
+- **Version 2** (`MOTION_CONTRACT_VERSION`, 2026-10-24). The fault enum widened (`grasp_mismatch`, `torque_lost`), `gripper.release` is allowed with a fault latched, and a running `gripper.release` is allowed in `fault` mode. Every motion file and state carries the version, so version 1 files don't parse. None exists on a walker yet. Nothing outside the Pi reads these shapes.
+- **The Pi's operator socket:** `record.mark` needs the recording's request `id`.
 
 - **Manifest.** A lift entry parses on today's server. The arms are different: listing `manipulation.arm` changes the server's fixed arms reply, which demo beat 5 expects word for word. `MANIFEST_MAY_LIST_ARMS` is `false`, and a contracts test ties it to the walker script. **Pi requirement:** the manifest builder must test that it omits `manipulation.arm` while that constant is false.
 - **Serial.** Every lift line's type starts with `lift.`, so today's `parseSerialLine` answers `unknown_type` to all of them.

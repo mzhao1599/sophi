@@ -10,6 +10,7 @@ import {
   BENCH_MODE_LABEL,
   CHECKS_WHILE_HOLDING,
   CONFIRMED_KINDS,
+  MOTION_CONTRACT_VERSION,
   CONFIRM_ARM_DELAY_MS,
   CONFIRM_ONLY_PROMPT,
   SCREEN_HOLD_RELEASE_EVENTS,
@@ -115,7 +116,7 @@ const joint = (servo_id: number, extra: Partial<Record<string, number>> = {}) =>
 });
 const calibration = (arm: "left" | "right", role: "follower" | "leader" = "follower") => ({
   format: "sophi.arm_calibration",
-  version: 1,
+  version: 2,
   arm,
   role,
   bus_id: `usb-1a86_USB_Single_Serial_${arm}_${role}-if00`,
@@ -152,7 +153,7 @@ const installation = {
 const setup = (): MotionSetup =>
   MotionSetupSchema.parse({
     format: "sophi.motion_setup",
-    version: 1,
+    version: 2,
     stop_sense: "wired",
     arms: [calibration("left"), calibration("left", "leader")],
     poses: [pose("stowed"), pose("ready", "left", 10), pose("handover", "left", 20)],
@@ -162,7 +163,7 @@ const setup = (): MotionSetup =>
 /** A one-arm skill: shoulder_pan 0° → 30° → 60° at 30°/s, grasp at 1 s. */
 const skill = () => ({
   format: "sophi.skill",
-  version: 1,
+  version: 2,
   skill_id: "tray_pick_handover",
   title: "Hand over the cup",
   source: "recorded",
@@ -650,11 +651,13 @@ describe("command policy (AGENTS.md rule 8)", () => {
     expect(by("walker_local")).toEqual(["gripper.release"]);
   });
 
-  it("refuses every moving command without a ready stop or a hand control, with a fault, while busy or on stale feedback", () => {
+  it("refuses every moving command without a ready stop or a hand control, with a fault (except letting go), while busy or on stale feedback", () => {
     for (const kind of moving) {
       expect(MOTION_COMMAND_POLICY[kind].refuses_when).toEqual(
-        expect.arrayContaining(["stop_pressed", "no_hardware_stop", "fault_latched", "busy", "part_missing", "no_hand_control", "feedback_stale"]),
+        expect.arrayContaining(["stop_pressed", "no_hardware_stop", "busy", "part_missing", "no_hand_control", "feedback_stale"]),
       );
+      // LETTING GO IS ALWAYS POSSIBLE: only gripper.release may run with a fault latched.
+      expect(MOTION_COMMAND_POLICY[kind].refuses_when.includes("fault_latched")).toBe(kind !== "gripper.release");
       expect(MOTION_COMMAND_POLICY[kind].on_lost).toEqual({ cloud: "continue", servo_bus: "stop_hold", lift_module: "stop_hold", hand_controls: "stop_hold" });
       expect(MOTION_COMMAND_POLICY[kind].needs_park).toBe(true);
     }
@@ -683,6 +686,24 @@ describe("command policy (AGENTS.md rule 8)", () => {
     expect(allowedWhileFaulted({ kind: "arm.torque", enabled: true })).toBe(false);
     expect(allowedWhileFaulted({ kind: "skill.run" })).toBe(false);
     expect(MOTION_COMMAND_POLICY["lift.disable"].refuses_when).not.toContain("fault_latched");
+  });
+
+  it("LETTING GO IS ALWAYS POSSIBLE: gripper.release with a fault latched, opening only; every other move still refused", () => {
+    expect(allowedWhileFaulted({ kind: "gripper.release" })).toBe(true);
+    expect(MOTION_COMMAND_POLICY["gripper.release"].refuses_when).not.toContain("fault_latched");
+    expect(MOTION_COMMAND_POLICY["gripper.release"].refuses_when).toEqual(expect.arrayContaining(["stop_pressed", "feedback_stale", "torque_off", "no_grasp", "out_of_range"]));
+    expect(MOTION_COMMAND_POLICY["gripper.release"].limits).toMatch(/only opening/);
+    for (const kind of ["lift.home", "lift.move", "arm.go_to_pose", "skill.run", "teleop.start"] as const) {
+      expect(MOTION_COMMAND_POLICY[kind].refuses_when).toContain("fault_latched");
+      expect(allowedWhileFaulted({ kind })).toBe(false);
+    }
+    expect(FAULT_REACTION.grasp_mismatch).toBe("hold");
+    expect(FAULT_REACTION.torque_lost).toBe("hold");
+    // A clear never cuts across a running motion (letting go may run with a fault latched).
+    expect(MOTION_COMMAND_POLICY["fault.clear"].refuses_when).toContain("busy");
+    // The widened fault enum is version 2: a version 1 state no longer parses.
+    expect(MOTION_CONTRACT_VERSION).toBe(2);
+    expect(MotionStateSchema.safeParse(state({ version: 1 })).success).toBe(false);
   });
 
   it("disables the lift driver only when it can't drop, and unhomes it", () => {
@@ -884,7 +905,7 @@ const liftState = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const state = (over: Record<string, unknown> = {}) => ({
-  version: 1,
+  version: 2,
   generated_at: T,
   mode: "ready",
   bench_mode: false,
@@ -921,6 +942,8 @@ describe("motion state", () => {
     ["the stop pressed, latched", state({ mode: "fault", stop_circuit: "pressed", faults: [fault], arms: [disconnectedArm], lift: disconnectedLift })],
     ["a fault with its clear target pending", state({ mode: "fault", faults: [fault], lift: liftState({ homed: false, position_mm: null }), confirm_target: clearTarget })],
     ["a fault with a torque-off target pending", state({ mode: "fault", faults: [fault], lift: liftState({ homed: false, position_mm: null }), confirm_target: target({ prepared_by: "walker_screen", action: { kind: "arm.torque", arms: ["left"], enabled: false }, title: "Turn the arm off", prompt: confirmPrompt("Turn the arm off", true) }) })],
+    ["a fault with Let go? pending (letting go is always possible)", state({ mode: "fault", faults: [fault], lift: liftState({ homed: false, position_mm: null }), arms: [armState({ grasp_active: true, pose: { status: "between" } })], confirm_target: target({ prepared_by: "walker_local", action: { kind: "gripper.release", arm: "left", gripper_open_deg: 40 }, title: "Let go?", prompt: confirmPrompt("Let go?", true) }) })],
+    ["a fault while letting go", state({ mode: "fault", faults: [fault], lift: liftState({ homed: false, position_mm: null }), arms: [armState({ grasp_active: true, pose: { status: "moving" } })], active: { ...activeBase, kind: "gripper.release", arm: "left" } })],
     ["a leader with torque off", state({ arms: [armState(), armState({ role: "leader", torque: "off", pose: { status: "between" } })] })],
     ["no lift fitted", state({ lift: null })],
     ["a refused command", state({ last_command: { command_id: UUID, kind: "lift.move", outcome: "refused", refusal: "not_held", at: T } })],
@@ -947,6 +970,7 @@ describe("motion state", () => {
     ["a lift stopping that still names a hold", state({ mode: "moving", active: { ...liftActive, phase: "stopping" } })],
     ["a Confirm target pending while moving", state({ mode: "moving", active: skillActive, confirm_target: target() })],
     ["a motion target pending during a fault", state({ mode: "fault", faults: [fault], lift: liftState({ homed: false, position_mm: null }), confirm_target: target() })],
+    ["a skill running during a fault (only letting go may)", state({ mode: "fault", faults: [fault], lift: liftState({ homed: false, position_mm: null }), active: skillActive })],
     ["an accepted target still shown as pending", state({ confirm_target: target({ state: "accepted" }) })],
     ["a skill past 100%", state({ mode: "moving", active: { ...skillActive, progress: 1.01 } })],
     ["a refused command with no reason", state({ last_command: { command_id: UUID, kind: "lift.move", outcome: "refused", at: T } })],

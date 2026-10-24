@@ -1,0 +1,36 @@
+# T7. A recording ends by itself at 55 s (RECORD_MAX_MS: the contract's 60 s less a margin): a stop, the arm holds, and the
+# terminal saves it. It ends with nothing grasped, so no "Let go?" follows. A recording that ends with a fault is
+# never saved.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key leader-match-left
+wait 100
+key record-left
+wait 2100
+key c
+expect motion recording started sim_taught
+key leader-sweep-left
+expect 56000 motion recording limit sim_taught
+expect motion command teleop.start stopped operator_cli
+key record-finish
+expect motion skill-saved sim_taught
+absent 2500 motion target gripper.release
+key skills-list
+expect sim skills sim_sample_handover:ok sim_taught:ok
+# A fault mid-recording: not saved.
+key leader-match-left
+wait 100
+key record-left
+wait 2100
+key c
+expect motion recording started sim_taught
+wait 500
+key stale-left
+expect motion fault feedback_stale arm_left
+expect motion recording discarded sim_taught
+key record-finish
+expect sim record-finish not saved: the recording ended with a fault
+key q

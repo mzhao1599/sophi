@@ -1,0 +1,21 @@
+# T4. The arm isn't where the skill starts (it is at its power-on angles; the sample starts at the `ready` pose, 30°
+# away at the elbow): refused not_at_start at once, before anyone is asked to press Confirm, and an offer of it is
+# dropped. The terminal's reason names the pose to go to first (test/motion.test.ts checks the words). Once the
+# arm is at `ready`, the same skill is asked about.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key skill-run-sample
+expect motion command skill.run refused:not_at_start operator_cli
+absent 2500 motion target skill.run
+key offer-skill-sample
+expect sim offer dropped
+key pose-ready-left
+wait 2100
+key c
+expect 5000 motion command arm.go_to_pose completed operator_cli
+key skill-run-sample
+expect motion target skill.run operator_cli: SIMULATED sample: hold it out
+key q

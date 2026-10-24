@@ -1,13 +1,16 @@
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ArmCalibrationSchema,
   MOTION_CONTRACT_VERSION,
   NamedPoseSchema,
+  SkillIdSchema,
+  SkillSchema,
   type ArmCalibration,
   type ArmRole,
   type ArmSide,
   type NamedPose,
+  type Skill,
 } from "@walker/contracts";
 import { z } from "zod";
 import type { Logger } from "../log";
@@ -16,6 +19,9 @@ import type { Logger } from "../log";
  * The arm files the Pi keeps in its state folder (`<state>/motion/`, 0700; files 0600):
  * - `calibration-<side>-<role>.json`: one `ArmCalibrationSchema` file per arm, as the contract defines it.
  * - `poses.json`: the named follower poses, each a `NamedPoseSchema`.
+ * - `skills/<skill_id>.json` (folder 0700): one taught movement per file, each a contract `SkillSchema` whose
+ *   `skill_id` is the file's name. Written atomically. An old one is renamed aside (`.replaced-<time>`,
+ *   `.removed-<time>`), never deleted.
  *
  * Why not one `MotionSetupSchema` file: that schema needs every calibrated follower to have a `stowed` pose,
  * and a pose can only be taught after calibration, so a fresh walker could never save its first calibration.
@@ -30,8 +36,12 @@ export const PosesFileSchema = z.strictObject({
   poses: z.array(NamedPoseSchema).max(64),
 });
 
+/** What reading one skill file found: none, one that fails the contract's schema (and why), or a valid skill. */
+export type SkillLoad = { kind: "missing" } | { kind: "invalid"; reason: string } | { kind: "ok"; skill: Skill };
+
 export class MotionFiles {
   readonly dir: string;
+  readonly skillsDir: string;
 
   constructor(
     stateDir: string,
@@ -40,6 +50,87 @@ export class MotionFiles {
     this.dir = join(stateDir, "motion");
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     chmodSync(this.dir, 0o700);
+    this.skillsDir = join(this.dir, "skills");
+    mkdirSync(this.skillsDir, { recursive: true, mode: 0o700 });
+    chmodSync(this.skillsDir, 0o700);
+  }
+
+  skillPath(skillId: string): string {
+    if (!SkillIdSchema.safeParse(skillId).success) throw new Error("not a skill id");
+    return join(this.skillsDir, `${skillId}.json`);
+  }
+
+  /** One skill file, checked with the contract's SkillSchema; its `skill_id` must be its file name. */
+  readSkill(skillId: string): SkillLoad {
+    if (!SkillIdSchema.safeParse(skillId).success) return { kind: "missing" };
+    const raw = this.readJson(this.skillPath(skillId));
+    if (raw === undefined) return { kind: "missing" };
+    if (raw === null) return { kind: "invalid", reason: "the file isn't JSON" };
+    const parsed = SkillSchema.safeParse(raw);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return { kind: "invalid", reason: `${issue?.path.join(".") || "file"}: ${issue?.message ?? "invalid"}` };
+    }
+    if (parsed.data.skill_id !== skillId) return { kind: "invalid", reason: `its skill_id is ${parsed.data.skill_id}, not its file name` };
+    return { kind: "ok", skill: parsed.data };
+  }
+
+  /** The ids of every skill file (`<id>.json` with a valid id), sorted. */
+  listSkillIds(): string[] {
+    return readdirSync(this.skillsDir)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => name.slice(0, -".json".length))
+      .filter((id) => SkillIdSchema.safeParse(id).success)
+      .sort();
+  }
+
+  skillExists(skillId: string): boolean {
+    return this.readSkill(skillId).kind !== "missing";
+  }
+
+  /**
+   * Saves a skill (checked with SkillSchema first), atomically: written to a temporary file, then put in
+   * place. Without `replace` an existing file is never overwritten: the new one is hard-linked into place,
+   * which fails (EEXIST) if a file is there. With `replace` the old one is renamed aside first. Returns where
+   * the old file went, or null.
+   */
+  writeSkill(skill: Skill, options: { replace: boolean; stamp: string }): string | null {
+    const valid = SkillSchema.parse(skill);
+    const path = this.skillPath(valid.skill_id);
+    const temp = `${path}.${process.pid}.tmp`;
+    writeFileSync(temp, `${skillJson(valid)}\n`, { mode: 0o600 });
+    chmodSync(temp, 0o600);
+    try {
+      if (!options.replace) {
+        linkSync(temp, path);
+        return null;
+      }
+      const aside = this.setAside(path, "replaced", options.stamp);
+      renameSync(temp, path);
+      return aside;
+    } finally {
+      try {
+        unlinkSync(temp);
+      } catch {
+        // Already renamed into place.
+      }
+    }
+  }
+
+  /** Renames a skill file aside (`.removed-<time>`, kept). Where it went, or null when there was none. */
+  removeSkill(skillId: string, stamp: string): string | null {
+    return this.setAside(this.skillPath(skillId), "removed", stamp);
+  }
+
+  private setAside(path: string, why: "replaced" | "removed", stamp: string): string | null {
+    const aside = `${path}.${why}-${stamp.replace(/[^0-9A-Za-z]/g, "")}`;
+    try {
+      renameSync(path, aside);
+      return aside;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return null;
+    }
   }
 
   calibrationPath(side: ArmSide, role: ArmRole): string {
@@ -134,4 +225,12 @@ export class MotionFiles {
     chmodSync(temp, 0o600);
     renameSync(temp, path);
   }
+}
+
+/** A skill as JSON for people to read: one field per line, and each of its (thousands of) waypoints on one line. */
+export function skillJson(skill: Skill): string {
+  const marker = "waypoints go here";
+  const text = JSON.stringify({ ...skill, waypoints: marker }, null, 2);
+  const waypoints = `[\n${skill.waypoints.map((wp) => `    ${JSON.stringify(wp)}`).join(",\n")}\n  ]`;
+  return text.replace(JSON.stringify(marker), () => waypoints);
 }

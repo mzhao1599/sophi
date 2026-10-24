@@ -1,0 +1,50 @@
+# T5. A skill file edited by hand to break the limits is refused skill_invalid and latches skill_invalid, both
+# when it is asked for and when it was edited after the walker asked (it is read again at the press):
+# - one waypoint 40° from the last (over its 30°/s): fails SkillSchema;
+# - the wrist turned to 95° throughout: passes SkillSchema, fails checkSkillAgainstSetup (outside the calibrated
+#   range less the margin).
+# Put back, it is asked about again.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key pose-ready-left
+wait 2100
+key c
+expect 5000 motion command arm.go_to_pose completed operator_cli
+key skill-edit-too-fast
+key skill-run-sample
+expect motion command skill.run refused:skill_invalid operator_cli
+expect motion fault skill_invalid system
+expect motion mode fault
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+key skill-edit-out-of-range
+key skill-run-sample
+expect motion command skill.run refused:skill_invalid operator_cli
+expect motion fault skill_invalid system
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+# Asked about while valid, edited before the press: refused at the press, and nothing moves.
+key skill-restore-sample
+key skill-run-sample
+expect motion target skill.run operator_cli: SIMULATED sample: hold it out
+key skill-edit-too-fast
+wait 2100
+key c
+expect motion command skill.run refused:skill_invalid operator_cli
+expect motion fault skill_invalid system
+absent 1000 motion skill.run started
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+key skill-restore-sample
+key skill-run-sample
+expect motion target skill.run operator_cli: SIMULATED sample: hold it out
+key q

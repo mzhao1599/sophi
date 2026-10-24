@@ -1,0 +1,30 @@
+# T3. A blocked gripper doesn't stall the timeline. The skill closes its gripper to 4°, but the object stops it at
+# 12°. After the skill's grasp event the gripper is exempt from divergence and the stall and load rules (the
+# contract's), at 30% torque, and the skill's clock runs on: it ends on time (4.5 s, well before its 7.6 s
+# deadline), holding, and the Pi asks "Let go?". It is offered by id only (the SIMULATED offer source), worded
+# from the skill file's own title.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key pose-ready-left
+wait 2100
+key c
+expect 5000 motion command arm.go_to_pose completed operator_cli
+key object-left
+key offer-skill-sample
+expect motion target skill.run offer: SIMULATED sample: hold it out
+expect spoke SIMULATED sample: hold it out. Park the walker and lock the brakes, then press Confirm.
+wait 2100
+key c
+expect 6000 motion command skill.run completed offer
+absent 10 motion fault
+expect motion target gripper.release walker_local: Let go?
+key inspect-grip-left
+expect sim left gripper goal-present=-5
+key inspect-left
+expect sim limit=600,600,600,600,600,300
+# Still holding while the walker asks: no fault in the next 2 s.
+absent 2000 motion fault
+key q

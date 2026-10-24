@@ -1,0 +1,33 @@
+# T6. The arm's 12 V drops for 300 ms while it holds at the skill's start (no stop-sense edge). Its servos reboot
+# with torque off and their limits reset; after the clear the re-read shows torque off. A replay is then refused
+# torque_off before anyone is asked to press Confirm, and no torque comes on, until torque is turned on again
+# from the terminal with Confirm.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key pose-ready-left
+wait 2100
+key c
+expect 5000 motion command arm.go_to_pose completed operator_cli
+key power-cycle-left
+expect motion fault feedback_stale arm_left
+expect sim left follower power back
+wait 300
+key operator-clear
+wait 2100
+key c
+expect motion cleared all faults
+expect motion torque left follower off (re-read)
+key skill-run-sample
+expect motion command skill.run refused:torque_off operator_cli
+absent 1000 sim torque-on
+absent 10 motion target skill.run
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key skill-run-sample
+expect motion target skill.run operator_cli: SIMULATED sample: hold it out
+key q

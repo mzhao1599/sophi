@@ -72,6 +72,11 @@ function directionOf(motion: ScreenMotion, targetId: string, action: { kind: str
  */
 export function motionContent(motion: ScreenMotion): { safety: ScreenContent | null; pending: ScreenContent | null } {
   const s = motion.state;
+  // Letting go may run with a fault latched (letting go is always possible): while it runs, the screen says what
+  // moves ("Letting go") and how to stop it, as for any motion; the fault shows again once it ends.
+  if (s.active?.kind === "gripper.release") {
+    return { safety: { state: "motion_running", what: movingWords(s.active, "move"), lift: null }, pending: null };
+  }
   if (s.mode === "fault" && s.faults.length > 0) {
     const faults = [...new Set(s.faults.map((f) => f.code))];
     return { safety: { state: "motion_fault", faults, confirm: s.confirm_target ? targetView(s.confirm_target) : null }, pending: null };

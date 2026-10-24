@@ -53,7 +53,7 @@ function target(n: number, title: string, action: ConfirmAction, needsPark = tru
 /** A motion state as the coordinator publishes it: every one is checked against MotionStateSchema. */
 function motion(over: Partial<MotionState> = {}): MotionState {
   return MotionStateSchema.parse({
-    version: 1,
+    version: 2,
     generated_at: AT,
     mode: "ready",
     bench_mode: true,
@@ -217,6 +217,13 @@ describe("D20: the coordinator's motion state as screens", () => {
       faults: ["stop_circuit_opened", "lift_unhomed"],
       confirm: { target_id: clear.target_id, title: "Clear it?", prompt: clear.prompt },
     });
+  });
+
+  it("letting go while a fault is latched shows \"Letting go\" (what moves and how to stop it), then the fault again", () => {
+    const releasing: ActiveMotion = { kind: "gripper.release", command_id: uuid(74), target_id: uuid(75), started_at: AT, arm: "left" };
+    const faulted = { mode: "fault" as const, faults: [fault("overload", "arm_left")] };
+    expect(motionContent(screenMotion(motion({ ...faulted, active: releasing }))).safety).toEqual({ state: "motion_running", what: "Letting go", lift: null });
+    expect(motionContent(screenMotion(motion(faulted))).safety).toMatchObject({ state: "motion_fault", faults: ["overload"] });
   });
 
   it("a motion state older than 1 s shows nothing about motion, so the hold control goes", async () => {

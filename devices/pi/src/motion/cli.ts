@@ -15,6 +15,11 @@ export const ARMS_USAGE = `  walker arms status
   walker arms pose go <name> [--arm left|right]
   walker arms pose list
   walker arms teleop <left|right>
+  walker arms record <skill-id> --title "<words the walker says>" --arm left|right [--replace] [--let-go <degrees>]
+  walker arms skills
+  walker arms skill run <skill-id>
+  walker arms skill rm <skill-id>
+  walker arms let-go [--arm left|right] [--deg <degrees>]
   walker motion stop
   walker motion clear --reason "<why it is safe>"
   walker motion status
@@ -82,13 +87,24 @@ function printState(state: MotionState): void {
       );
     }
   }
-  if (state.active) out(`Active: ${state.active.kind}`);
+  const active = state.active;
+  if (active) {
+    const more =
+      active.kind === "skill.run"
+        ? ` ${active.skill_id} ("${active.title}"), ${Math.round(active.progress * 100)}%`
+        : active.kind === "teleop" && active.recording_skill_id
+          ? `, recording ${active.recording_skill_id}`
+          : "";
+    out(`Active: ${active.kind}${more}`);
+  }
+  const grasping = state.arms.filter((a) => a.grasp_active).map((a) => a.arm);
+  if (grasping.length > 0) out(`Grasping: ${grasping.join(", ")} (walker arms let-go)`);
   if (state.confirm_target) out(`Waiting for Confirm (prepared by ${state.confirm_target.prepared_by}): "${state.confirm_target.prompt}"`);
   if (state.last_command) out(`Last command: ${state.last_command.kind} ${state.last_command.outcome}${state.last_command.refusal ? ` (${state.last_command.refusal})` : ""}`);
   for (const fault of state.faults) out(`FAULT ${fault.code} (${fault.part}${fault.joint ? ` ${fault.joint}` : ""}): ${fault.sentence}`);
 }
 
-function lines(): { next(prompt: string): Promise<string>; close(): void } {
+function lines(): { next(prompt?: string): Promise<string>; close(): void } {
   const rl: Interface = createInterface({ input: process.stdin });
   const queue: string[] = [];
   const waiters: Array<(line: string) => void> = [];
@@ -99,7 +115,7 @@ function lines(): { next(prompt: string): Promise<string>; close(): void } {
   });
   return {
     next(prompt) {
-      out(prompt);
+      if (prompt !== undefined) out(prompt);
       const line = queue.shift();
       return line !== undefined ? Promise.resolve(line) : new Promise((resolve) => waiters.push(resolve));
     },
@@ -107,15 +123,13 @@ function lines(): { next(prompt: string): Promise<string>; close(): void } {
   };
 }
 
-/** Runs one request that waits for Confirm; returns the exit code. Ctrl-C sends a stop. */
-async function confirmed(client: OperatorClient, message: OperatorRequestMessage, untilDone: boolean, stoppedIsOk = false): Promise<number> {
-  const reply = await client.send(message);
-  if (reply.ok !== true) return fail(reply);
+/** Ctrl-C (or a dropped SSH session's SIGHUP) sends a stop and ends this command, for as long as `body` runs. */
+async function stopOnInterrupt<T>(client: OperatorClient, body: () => Promise<T>, said = "Stopped from the terminal."): Promise<T> {
   const onInterrupt = () => {
     interrupted = true;
     // A stop (it also withdraws a target still waiting for Confirm); whatever its answer, this command ends.
     void client.send({ op: "stop" }).finally(() => {
-      out("Stopped from the terminal.");
+      out(said);
       process.exit(130);
     });
   };
@@ -123,13 +137,109 @@ async function confirmed(client: OperatorClient, message: OperatorRequestMessage
   // A dropped SSH session sends SIGHUP: the same as Ctrl-C (the service also stops what this terminal started).
   process.once("SIGHUP", onInterrupt);
   try {
-    const request = await follow(client, reply.request as OperatorRequest, untilDone);
-    out(describeRequest(request));
-    return request.state === "completed" || (stoppedIsOk && request.state === "stopped") ? 0 : 1;
+    return await body();
   } finally {
     process.off("SIGINT", onInterrupt);
     process.off("SIGHUP", onInterrupt);
   }
+}
+
+/** Runs one request that waits for Confirm; returns the exit code. Ctrl-C sends a stop. */
+async function confirmed(client: OperatorClient, message: OperatorRequestMessage, untilDone: boolean, stoppedIsOk = false): Promise<number> {
+  const reply = await client.send(message);
+  if (reply.ok !== true) return fail(reply);
+  return stopOnInterrupt(client, async () => {
+    const request = await follow(client, reply.request as OperatorRequest, untilDone);
+    out(describeRequest(request));
+    return request.state === "completed" || (stoppedIsOk && request.state === "stopped") ? 0 : 1;
+  });
+}
+
+/** After a skill or a recording ends holding: what the walker asks now. */
+async function sayLetGo(client: OperatorClient): Promise<void> {
+  const status = await client.send({ op: "status" });
+  const target = (status.state as MotionState | undefined)?.confirm_target;
+  if (target?.action.kind === "gripper.release") {
+    out(`It ends holding. The walker says: "${target.prompt}" Press Confirm there once you have hold of it (within 30 s; walker arms let-go asks again).`);
+  }
+}
+
+interface SkillListingLine {
+  skill_id: string;
+  skill: { title: string; arms: string[]; duration_ms: number; waypoints: number; grasps: number; ends_holding: string[]; created_at: string; source: string } | null;
+  valid: boolean;
+  problem: string | null;
+}
+
+/**
+ * `walker arms record`: teleop recorded as a skill. The walker asks (Confirm there); then the person teaches by
+ * moving the teaching arm while this terminal marks the gripper: `g` + Enter just before it closes on the
+ * object, `r` + Enter when it lets go, Enter alone to finish (any handle press finishes too; it ends by itself
+ * at 60 s). Then it is checked and saved. Ctrl-C stops and saves nothing.
+ */
+async function record(client: OperatorClient, skillId: string, title: string, side: ArmSide, replace: boolean, letGo: number | null): Promise<number> {
+  const begin = await client.send({ op: "record", skill_id: skillId, title, arm: side, replace });
+  if (begin.ok !== true) return fail(begin);
+  return stopOnInterrupt(
+    client,
+    async () => {
+      let request = await follow(client, begin.request as OperatorRequest, false);
+      if (request.state !== "running") {
+        out(describeRequest(request));
+        return 1;
+      }
+      out("Recording. Move the teaching arm slowly; the walker's arm copies it.");
+      out("  g then Enter: just before the gripper closes on the object (a grasp).");
+      out("  r then Enter: when the gripper lets go of it (a release).");
+      out("  Enter alone: finish. Any handle press also finishes, and it ends by itself at 60 s. Ctrl-C cancels, saving nothing.");
+      const input = lines();
+      try {
+        let line = input.next();
+        while (request.state === "running") {
+          const typed = await Promise.race([line.then((text) => ({ text })), sleep(250).then(() => null)]);
+          if (typed) {
+            line = input.next();
+            const word = typed.text.trim().toLowerCase();
+            if (word === "g" || word === "r") {
+              const kind = word === "g" ? "grasp" : "release";
+              const mark = await client.send({ op: "record.mark", id: request.id, kind });
+              out(mark.ok === true ? `Marked a ${kind} at ${String(mark.t_ms)} ms.` : `Not marked: ${String(mark.error)}`);
+            } else if (word === "") {
+              await client.send({ op: "stop" });
+            } else out("g grasp, r release, Enter alone to finish.");
+          }
+          const reply = await client.send({ op: "request", id: request.id });
+          if (interrupted) return new Promise<never>(() => {});
+          if (reply.ok !== true) throw new Error(String(reply.error));
+          request = reply.request as OperatorRequest;
+        }
+        out(request.state === "stopped" ? "Recording ended; the arm holds where it is." : describeRequest(request));
+        let deg = letGo;
+        for (;;) {
+          const finish = await client.send({ op: "record.finish", id: request.id, ...(deg !== null ? { let_go_deg: deg } : {}) });
+          if (finish.ok === true) {
+            const skill = finish.skill as { skill_id: string; duration_ms: number; waypoints: number; grasps: number };
+            out(`Saved ${skill.skill_id}: ${(skill.duration_ms / 1000).toFixed(1)} s, ${skill.waypoints} waypoints, ${skill.grasps} grasp(s).`);
+            if (finish.asked_let_go === true) await sayLetGo(client);
+            return 0;
+          }
+          const need = finish.needs_let_go as { arm: string; suggest_deg: number } | undefined;
+          if (!need) return fail(finish);
+          if (deg !== null) out(`${String(finish.error)}.`);
+          const answer = await (out(`It ends holding with the ${need.arm} gripper. Type the gripper angle in degrees where it lets go, or Enter for ${need.suggest_deg}° (where it was when recording began).`), line);
+          line = input.next();
+          deg = answer.trim() === "" ? need.suggest_deg : Number(answer.trim());
+          if (!Number.isFinite(deg)) {
+            out("That isn't a number.");
+            deg = null;
+          }
+        }
+      } finally {
+        input.close();
+      }
+    },
+    "Stopped from the terminal. The recording isn't saved.",
+  );
 }
 
 async function calibrate(client: OperatorClient, side: ArmSide, leader: boolean): Promise<number> {
@@ -211,6 +321,60 @@ export async function armsCommand(positional: string[], flags: Flags): Promise<n
         if (!side) break;
         // Teleop runs until a handle press, Ctrl-C here, or a guard ends it; a stop is its normal end.
         return await confirmed(client, { op: "teleop", arm: side }, true, true);
+      }
+      case "record": {
+        const skillId = rest[0];
+        const title = text(flags.get("title"));
+        if (!skillId || !title || !armSide) {
+          out('walker arms record <skill-id> --title "<words the walker says>" --arm left|right [--replace] [--let-go <degrees>]');
+          return 2;
+        }
+        const letGoText = text(flags.get("let-go"));
+        const letGo = letGoText === undefined ? null : Number(letGoText);
+        if (letGo !== null && !Number.isFinite(letGo)) {
+          out("--let-go takes the gripper angle in degrees.");
+          return 2;
+        }
+        return await record(client, skillId, title, armSide, flags.get("replace") === true, letGo);
+      }
+      case "skills": {
+        const reply = await client.send({ op: "skill.list" });
+        if (reply.ok !== true) return fail(reply);
+        const skills = reply.skills as SkillListingLine[];
+        if (skills.length === 0) out("No skills are taught yet (walker arms record).");
+        for (const s of skills) {
+          const k = s.skill;
+          const about = k
+            ? `"${k.title}", ${k.source} ${k.created_at}, ${k.arms.join(" and ")} arm, ${(k.duration_ms / 1000).toFixed(1)} s, ${k.waypoints} waypoints, ${k.grasps} grasp(s), ${k.ends_holding.length ? `ends holding (${k.ends_holding.join(", ")}): "Let go?" follows` : "ends with nothing held"}`
+            : "can't be read";
+          out(`${s.skill_id}: ${about}${s.valid ? "" : `. WON'T RUN: ${s.problem ?? "invalid"}`}`);
+        }
+        return 0;
+      }
+      case "skill": {
+        const [action, skillId] = rest;
+        if (!skillId) break;
+        if (action === "run") {
+          const code = await confirmed(client, { op: "skill.run", skill_id: skillId }, true);
+          if (code === 0) await sayLetGo(client);
+          return code;
+        }
+        if (action === "rm") {
+          const reply = await client.send({ op: "skill.rm", skill_id: skillId });
+          if (reply.ok !== true) return fail(reply);
+          out(`Removed ${skillId}: it can't run any more. The file was kept as ${String(reply.removed)}; rename it back to restore it.`);
+          return 0;
+        }
+        break;
+      }
+      case "let-go": {
+        const degText = text(flags.get("deg"));
+        const deg = degText === undefined ? undefined : Number(degText);
+        if (deg !== undefined && !Number.isFinite(deg)) {
+          out("--deg takes the gripper angle in degrees.");
+          return 2;
+        }
+        return await confirmed(client, { op: "let_go", ...(armSide ? { arm: armSide } : {}), ...(deg !== undefined ? { deg } : {}) }, true);
       }
       case "pose": {
         const [action, name] = rest;

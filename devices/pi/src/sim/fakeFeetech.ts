@@ -95,6 +95,12 @@ export class FakeSts3215 {
   /** Simulator: a hand or an object holds the joint at this present-position reading; null lets go. */
   heldAt: number | null = null;
   /**
+   * Simulator: an object between a gripper's fingers. The reading can't go below this (closing is toward lower
+   * readings in the simulator's made-up calibration), and a goal below it pushes at the torque limit. Opening
+   * is free. null: nothing there.
+   */
+  objectAt: number | null = null;
+  /**
    * Whether a goal written while torque is off turns torque on. Not known for the STS3215; true (the dangerous
    * direction) by default, so a coordinator that writes a goal to a limp arm stiffens it in the tests.
    */
@@ -187,8 +193,15 @@ export class FakeSts3215 {
       this.encoder = this.heldAt + offset;
       this.velocity = 0;
     }
+    // An object between the gripper's fingers: it can't close past it, and closing onto it pushes at the limit.
+    let pressing = false;
+    if (this.objectAt !== null && this.encoder <= this.objectAt + offset) {
+      this.encoder = this.objectAt + offset;
+      this.velocity = Math.max(0, this.velocity);
+      pressing = this.torqueOn && this.get("goalPosition") < this.objectAt;
+    }
     const motionLoad = this.torqueOn ? Math.sign(this.velocity) * Math.min(200, (Math.abs(this.velocity) / FAKE_MAX_SPEED) * 200) : 0;
-    const load = this.torqueOn ? Math.max(-limit, Math.min(limit, this.externalLoad + motionLoad)) : 0;
+    const load = pressing ? -limit : this.torqueOn ? Math.max(-limit, Math.min(limit, this.externalLoad + motionLoad)) : 0;
     // Heating with load, cooling toward ambient (fake rates).
     this.temperatureC += ((Math.abs(load) / 1000) * 2 - (this.temperatureC - this.ambientC) * 0.02) * dt;
     // Overload: above Overload Torque (%) for longer than Protection Time (10 ms units).

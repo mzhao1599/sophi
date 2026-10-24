@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Motion contract, version 1: Sophi's two SO-101 arms (followers and their leaders) and the vertical lift.
+ * Motion contract, version 2 (MOTION_CONTRACT_VERSION): Sophi's two SO-101 arms (followers and their leaders) and the vertical lift.
  * PROPOSED, NOT BUILT. Nothing on the Pi, the ESP32s or the cloud reads these schemas yet, and no value here
  * has been measured: every limit below is a placeholder until a bench record in hardware/ replaces it.
  * docs/subsystems/manipulation.md explains the rules in plain words.
@@ -41,7 +41,13 @@ import { z } from "zod";
  * bottom limit switch, times in milliseconds. `*_mono_ms` fields are the Pi's monotonic clock. Objects are strict.
  */
 
-export const MOTION_CONTRACT_VERSION = 1;
+/**
+ * 2 (2026-10-24): the fault enum widened (`grasp_mismatch`, `torque_lost`), letting go allowed with a fault
+ * latched, and a running `gripper.release` allowed in `fault` mode. Nothing outside the Pi parses these yet,
+ * and every file the Pi keeps carries this version, so files written under 1 must be made again (none exist
+ * on a walker yet: the arms haven't been calibrated).
+ */
+export const MOTION_CONTRACT_VERSION = 2;
 
 const snakeName = (max: number) => z.string().regex(/^[a-z][a-z0-9_]*$/).max(max);
 const time = z.iso.datetime();
@@ -365,7 +371,10 @@ export const MAX_GOAL_STEP_DEG = 2;
  * Placeholder, not measured: the most a goal may lead the joint's measured position. A Feetech servo keeps
  * driving to its last goal when nothing more arrives, so if the Pi stops mid-motion (crash, unplugged bus)
  * each joint travels at most this much further and then holds. Each joint's goal is clamped to its measured
- * position ± this; a skill's timeline keeps its own clock and never pauses for a lagging joint.
+ * position ± this. A skill's timeline moves on with each control tick (by the time since the last one, capped
+ * at two periods, so a late loop slows it while its deadline counts real time) and doesn't wait for a lagging
+ * joint between gripper events; it starts only once the arm is at its first waypoint, and waits at each gripper event until
+ * that arm reaches the event's point (bounded by the deadline), so a grasp never closes somewhere else.
  */
 export const MAX_GOAL_LEAD_DEG = 5;
 /**
@@ -575,6 +584,10 @@ export const MotionFaultCodeSchema = z.enum([
   "motion_timeout",
   "teleop_overspeed",
   "teleop_gap",
+  /** A grasping gripper stopped well short of where the skill had it (something else in its hand, such as a finger). */
+  "grasp_mismatch",
+  /** A moving arm's servos read torque off, or a torque limit other than the one written (a power dip resets both). */
+  "torque_lost",
 ]);
 export type MotionFaultCode = z.infer<typeof MotionFaultCodeSchema>;
 
@@ -600,6 +613,8 @@ export const FAULT_SENTENCES: Readonly<Record<MotionFaultCode, string>> = {
   motion_timeout: "A movement took much longer than it should, so it stopped.",
   teleop_overspeed: "The teaching arm moved far too fast to follow, so the walker's arm stopped.",
   teleop_gap: "The walker's arm fell too far behind the teaching arm, so it stopped.",
+  grasp_mismatch: "The hand met something it wasn't taught to hold, so it loosened and stopped.",
+  torque_lost: "An arm's motors reset by themselves, as after a power dip, so it stopped.",
 };
 /** Added to every fault on screen: faults clear only on the walker. */
 export const FAULT_CLEAR_SENTENCE = "Ask a helper to clear it at the walker.";
@@ -639,6 +654,10 @@ export const FAULT_REACTION: Readonly<Record<MotionFaultCode, FaultReaction>> = 
   motion_timeout: "hold",
   teleop_overspeed: "hold",
   teleop_gap: "hold",
+  // Also: that gripper's goal goes to where it is and its torque limit to ARM_COMPLIANT_TORQUE_PCT, and the Pi
+  // offers "Let go?" at once (LETTING GO IS ALWAYS POSSIBLE, at gripper.release).
+  grasp_mismatch: "hold",
+  torque_lost: "hold",
 };
 
 /**
@@ -1245,7 +1264,7 @@ export const MOTION_COMMAND_POLICY: Readonly<Record<MotionCommandKind, MotionCom
       "lift_not_at_height",
     ],
     limits:
-      "The skill's own max_speed_deg_s, its timeline stretched to MOTION_LIMITS' replay speed in bench mode; the timeline runs on its own clock and never pauses, each joint's goal clamped to MAX_GOAL_LEAD_DEG from its measured position; a grasp event makes that gripper's grasp active (GRIPPER_HOLD_TORQUE_PCT, exempt from divergence) until a release event or gripper.release. Never moves the lift; with a lift fitted, the lift must be homed and within LIFT_AT_HEIGHT_TOLERANCE_MM of lift_mm.",
+      "The skill's own max_speed_deg_s, its timeline stretched to MOTION_LIMITS' replay speed in bench mode; the timeline starts once the arm is within AT_POSE_TOLERANCE_DEG of the first waypoint, runs on its own clock, and waits only at a gripper event until that arm is within AT_POSE_TOLERANCE_DEG of the event's point (bounded by the deadline), each joint's goal clamped to MAX_GOAL_LEAD_DEG from its measured position; a grasp event makes that gripper's grasp active (GRIPPER_HOLD_TORQUE_PCT, exempt from divergence) until a release event or gripper.release. Never moves the lift; with a lift fitted, the lift must be homed and within LIFT_AT_HEIGHT_TOLERANCE_MM of lift_mm.",
     cancelled_by: `${STOP_ANYTHING}; never resumes`,
     watchdog: `${ARM_WATCHDOG} Expected time: the last waypoint's t_ms, stretched.`,
     on_lost: STOP_ALL,
@@ -1258,13 +1277,20 @@ export const MOTION_COMMAND_POLICY: Readonly<Record<MotionCommandKind, MotionCom
     moves: true,
     needs_park: true,
     hold_to_run: false,
-    refuses_when: [...MOVING_PRECONDITIONS, "not_calibrated", "torque_off", "no_grasp", "out_of_range"],
+    // LETTING GO IS ALWAYS POSSIBLE: not refused for a latched fault (allowedWhileFaulted) or a compliant arm.
+    refuses_when: [
+      ...MOVING_PRECONDITIONS.filter((r) => r !== "fault_latched"),
+      "not_calibrated",
+      "torque_off",
+      "no_grasp",
+      "out_of_range",
+    ],
     limits:
-      "Only the gripper moves, to gripper_open_deg inside its calibrated range, at MOTION_LIMITS' pose speed and GRIPPER_HOLD_TORQUE_PCT, with the same step and lead limits.",
+      "LETTING GO IS ALWAYS POSSIBLE: allowed with a fault latched and on a compliant arm (torque_off means the gripper's own servo doesn't read torque on). Only the gripper moves, and only opening: toward gripper_open_deg, which must be inside its calibrated range and on the opening side of where it holds (refused out_of_range otherwise), at MOTION_LIMITS' pose speed and GRIPPER_HOLD_TORQUE_PCT, with the same step and lead limits, never past where it is on the closing side. The Pi offers it (walker_local) at once whenever a motion ends with a grasp active (completed, stopped or faulted) and after a fault clears.",
     cancelled_by: STOP_ANYTHING,
     watchdog: ARM_WATCHDOG,
     on_lost: STOP_ALL,
-    ends_in: "ready, holding, with that arm's grasp no longer active.",
+    ends_in: "ready (or fault, if one is still latched), holding, with that arm's grasp no longer active.",
   },
   "teleop.start": {
     prepared_by: LOCAL,
@@ -1286,7 +1312,8 @@ export const MOTION_COMMAND_POLICY: Readonly<Record<MotionCommandKind, MotionCom
     moves: false,
     needs_park: false,
     hold_to_run: false,
-    refuses_when: [...CONFIRM_CHECKS, "cause_present"],
+    // Not while something runs (letting go may run with a fault latched): clearing never cuts across a motion.
+    refuses_when: ["busy", ...CONFIRM_CHECKS, "cause_present"],
     limits: "Clears every latched fault only when none of their causes remains; otherwise clears nothing.",
     cancelled_by: "Not applicable.",
     watchdog: "Not applicable.",
@@ -1338,11 +1365,17 @@ export function confirmPrompt(localTitle: string, needsPark: boolean): string {
 }
 
 /**
- * Actions a Confirm target may offer while a fault is latched: clearing it, and the two that only make the
- * hardware safer (arm torque off, lift driver off).
+ * Actions a Confirm target may offer while a fault is latched: clearing it, the two that only make the
+ * hardware safer (arm torque off, lift driver off), and letting go (`gripper.release`: LETTING GO IS ALWAYS
+ * POSSIBLE, gripper only and opening only).
  */
 export function allowedWhileFaulted(action: { kind: string; enabled?: boolean }): boolean {
-  return action.kind === "fault.clear" || action.kind === "lift.disable" || (action.kind === "arm.torque" && action.enabled === false);
+  return (
+    action.kind === "fault.clear" ||
+    action.kind === "lift.disable" ||
+    action.kind === "gripper.release" ||
+    (action.kind === "arm.torque" && action.enabled === false)
+  );
 }
 
 /**
@@ -1708,8 +1741,8 @@ export const MotionStateSchema = z
     message: "The mode is fault exactly when a fault is latched.",
     path: ["mode"],
   })
-  .refine((s) => (s.mode === "moving") === (s.active !== null && s.active.kind !== "teleop"), {
-    message: "The mode is moving exactly when a command other than teleop is active.",
+  .refine((s) => (s.mode === "fault" ? s.active === null || s.active.kind === "gripper.release" : (s.mode === "moving") === (s.active !== null && s.active.kind !== "teleop")), {
+    message: "The mode is moving exactly when a command other than teleop is active; with a fault latched, only letting go runs.",
     path: ["mode"],
   })
   .refine((s) => (s.mode === "teleop") === (s.active?.kind === "teleop"), {

@@ -34,6 +34,13 @@ export const OperatorRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("calibrate.status") }),
   z.object({ op: z.literal("calibrate.finish") }),
   z.object({ op: z.literal("calibrate.cancel") }),
+  z.object({ op: z.literal("record"), skill_id: z.string().max(64), title: z.string().max(200), arm: side, replace: z.boolean().optional() }),
+  z.object({ op: z.literal("record.mark"), id: z.string().max(64), kind: z.enum(["grasp", "release"]) }),
+  z.object({ op: z.literal("record.finish"), id: z.string().max(64), let_go_deg: z.number().min(-180).max(180).optional() }),
+  z.object({ op: z.literal("skill.list") }),
+  z.object({ op: z.literal("skill.run"), skill_id: z.string().max(64) }),
+  z.object({ op: z.literal("skill.rm"), skill_id: z.string().max(64) }),
+  z.object({ op: z.literal("let_go"), arm: side.optional(), deg: z.number().min(-180).max(180).optional() }),
 ]);
 export type OperatorRequestMessage = z.infer<typeof OperatorRequestSchema>;
 
@@ -73,6 +80,20 @@ export async function answerOperator(coordinator: MotionCoordinator, raw: unknow
       return coordinator.operatorCalibrateFinish();
     case "calibrate.cancel":
       return coordinator.operatorCalibrateCancel();
+    case "record":
+      return coordinator.operatorRecord(request.skill_id, request.title, request.arm, request.replace === true);
+    case "record.mark":
+      return coordinator.operatorRecordMark(request.id, request.kind);
+    case "record.finish":
+      return coordinator.operatorRecordFinish(request.id, request.let_go_deg ?? null);
+    case "skill.list":
+      return { ok: true, skills: coordinator.operatorSkills() };
+    case "skill.run":
+      return coordinator.operatorSkillRun(request.skill_id);
+    case "skill.rm":
+      return coordinator.operatorSkillRemove(request.skill_id);
+    case "let_go":
+      return coordinator.operatorLetGo(request.arm ?? null, request.deg ?? null);
   }
 }
 
@@ -160,8 +181,9 @@ export class OperatorSocket {
     socket.on("close", () => {
       this.sockets.delete(socket);
       for (const id of mine) {
-        this.coordinator.operatorWithdraw(id);
+        // Stopped first, so a recording it was making ends now, and is then thrown away, not left to save.
         this.coordinator.operatorStopIfRunning(id);
+        this.coordinator.operatorWithdraw(id);
       }
       if (calibrating) this.coordinator.operatorCalibrateCancel();
     });

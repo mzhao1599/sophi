@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import {
   ARM_JOINTS,
   MOTION_CONTRACT_VERSION,
@@ -14,9 +14,15 @@ import type { Cancel, Clock } from "../clock";
 import type { Logger } from "../log";
 import { MotionCoordinator } from "../motion/coordinator";
 import type { FeetechPort } from "../motion/feetech/port";
-import { MotionFiles } from "../motion/files";
+import { MotionFiles, skillJson } from "../motion/files";
 import { ManualStopSense } from "../motion/stopSense";
 import { FakeStsBus } from "./fakeFeetech";
+import { SIM_SAMPLE_SKILL_ID, simSampleSkill } from "./sampleSkill";
+
+/** The skill the simulator's own teaching (`record-left`) records. SIMULATED. */
+export const SIM_TAUGHT_SKILL_ID = "sim_taught";
+/** Where the simulator's object sits between the left gripper's fingers: its made-up 12°. */
+const SIM_OBJECT_DEG = 12;
 
 /**
  * SIMULATED arms for `walker simulate --arms` and the tests: four fake STS3215 buses (two followers, two
@@ -94,6 +100,9 @@ export class MotionSim {
   private readonly unplugged = new Set<string>();
   private readonly timers: Cancel[] = [];
   private powered = true;
+  private readonly files: MotionFiles;
+  /** The terminal request the last simulated recording was prepared under (to save it). */
+  private recordId: string | null = null;
   /** Where each left follower servo was at the last handle press or handle unplug (for inspect-hold-tight-left). */
   private readonly marked = new Map<number, number>();
 
@@ -118,6 +127,7 @@ export class MotionSim {
     },
   ) {
     const files = new MotionFiles(deps.stateDir, deps.log);
+    this.files = files;
     const at = new Date(deps.clock.now()).toISOString();
     const arms: Array<{ side: ArmSide; role: ArmRole }> = [
       { side: "left", role: "follower" },
@@ -143,6 +153,8 @@ export class MotionSim {
       }
       files.writePoses(poses);
     }
+    // The SIMULATED sample skill, made up (sampleSkill.ts): only ever written into a simulator's state folder.
+    if (!files.skillExists(SIM_SAMPLE_SKILL_ID)) files.writeSkill(simSampleSkill(at), { replace: false, stamp: at });
     // Where the arm was at each handle press: the moment a stop happens (registered before the coordinator's).
     deps.bus.on("button", (event) => {
       if (event.edge === "pressed") this.mark();
@@ -275,9 +287,10 @@ export class MotionSim {
       "inspect-hold-tight-left": () => {
         // A hold that read first sets each torqued servo's goal to where it was at the stop (the last handle press
         // or handle unplug), within 0.5°; one made from the tick before would lag by up to a tick of motion.
+        // A grasping gripper too: a stop lets off its squeeze.
         const servos = [...this.fake("left", "follower").servos.values()].filter((s) => s.get("torqueEnable") === 1);
         const gap = Math.max(0, ...servos.map((s) => Math.abs(s.get("goalPosition") - (this.marked.get(s.id) ?? Infinity))));
-        this.sim(gap <= degToTicks(0.5) ? "left follower hold tight ok" : `left follower hold tight BAD gap=${gap}`);
+        this.sim(gap <= degToTicks(0.5) ? `left follower hold tight ok (${servos.length} servos)` : `left follower hold tight BAD gap=${gap}`);
       },
       "inspect-goals-right": () => {
         const servos = [...this.fake("right", "follower").servos.values()];
@@ -319,8 +332,87 @@ export class MotionSim {
         const state = c.state();
         this.deps.log.info("SIMULATED arms", { mode: state.mode, faults: state.faults.map((f) => f.code).join(","), active: state.active?.kind ?? "none" });
       },
+      // ---- Skills (SIMULATED teaching; the terminal's commands, called directly) ----
+      "record-left": () => {
+        const result = c.operatorRecord(SIM_TAUGHT_SKILL_ID, "Hand it over (SIMULATED teaching)", "left", true);
+        operator(result);
+        if (result.ok) this.recordId = result.request.id;
+      },
+      "leader-teach-left": () => this.teachLeft(),
+      "grasp-left": () => operator(c.operatorRecordMark(this.recordId ?? "", "grasp")),
+      "release-left": () => operator(c.operatorRecordMark(this.recordId ?? "", "release")),
+      "record-finish": () => {
+        // As the terminal does: save; if it ends holding, with the suggested let-go angle (where it began).
+        const id = this.recordId ?? "";
+        const first = c.operatorRecordFinish(id, null);
+        const result = !first.ok && "needs_let_go" in first ? c.operatorRecordFinish(id, first.needs_let_go.suggest_deg) : first;
+        if (!result.ok) this.sim(`record-finish not saved: ${result.error}`);
+      },
+      "skill-run-taught": () => operator(c.operatorSkillRun(SIM_TAUGHT_SKILL_ID)),
+      "skill-run-sample": () => operator(c.operatorSkillRun(SIM_SAMPLE_SKILL_ID)),
+      "offer-skill-sample": () => {
+        // SIMULATED offer source: stands in for a later request by id (MotionOfferRequestSchema).
+        if (!c.requestOffer({ target: { kind: "skill.run", skill_id: SIM_SAMPLE_SKILL_ID } })) this.sim("offer dropped");
+      },
+      "let-go-left": () => operator(c.operatorLetGo("left", null)),
+      "skill-rm-taught": () => operator(c.operatorSkillRemove(SIM_TAUGHT_SKILL_ID)),
+      "skills-list": () => this.sim(`skills ${c.operatorSkills().map((s) => `${s.skill_id}:${s.valid ? "ok" : "invalid"}`).join(" ")}`),
+      "object-left": () => {
+        // An object between the left gripper's fingers (or taken away): the gripper can't close past it.
+        const servo = this.fake("left", "follower").servo(6);
+        servo.objectAt = servo.objectAt === null ? 2048 + degToTicks(SIM_OBJECT_DEG) : null;
+        this.sim(`left gripper ${servo.objectAt === null ? "empty" : `holds an object at ${SIM_OBJECT_DEG}°`}`);
+      },
+      "finger-left": () => {
+        // Something bigger than the object in the left gripper (a finger, SIMULATED): it stops closing at 18°.
+        const servo = this.fake("left", "follower").servo(6);
+        servo.objectAt = servo.objectAt === null ? 2048 + degToTicks(18) : null;
+        this.sim(`left gripper ${servo.objectAt === null ? "empty" : "has a finger in it at 18°"}`);
+      },
+      "inspect-grip-left": () => {
+        const servo = this.fake("left", "follower").servo(6);
+        this.sim(`left gripper goal-present=${servo.get("goalPosition") - servo.get("presentPosition")} limit=${servo.get("torqueLimit")}`);
+      },
+      "skill-edit-too-fast": () => {
+        // Someone edits the sample skill's file by hand: one waypoint jumps 40° (far over its 30°/s).
+        const skill = simSampleSkill(new Date(this.deps.clock.now()).toISOString());
+        skill.waypoints[60]!.joints.left!.shoulder_pan += 40;
+        writeFileSync(this.files.skillPath(SIM_SAMPLE_SKILL_ID), skillJson(skill));
+        this.sim("sample skill edited: too fast");
+      },
+      "skill-edit-out-of-range": () => {
+        // The same, with the wrist turned to 95° throughout: past this arm's calibrated range less the margin.
+        const skill = simSampleSkill(new Date(this.deps.clock.now()).toISOString());
+        skill.start.joints.left!.wrist_roll = 95;
+        for (const wp of skill.waypoints) wp.joints.left!.wrist_roll = 95;
+        writeFileSync(this.files.skillPath(SIM_SAMPLE_SKILL_ID), skillJson(skill));
+        this.sim("sample skill edited: out of range");
+      },
+      "skill-restore-sample": () => {
+        const at = new Date(this.deps.clock.now()).toISOString();
+        this.files.writeSkill(simSampleSkill(at), { replace: true, stamp: at });
+        this.sim("sample skill restored");
+      },
     };
     return out;
+  }
+
+  /**
+   * SIMULATED teaching: moves the left leader by hand through a made-up tray pick and hand-out, about 3.7 s:
+   * out and down (pan +15°, elbow −10°), the gripper closing 35° from 1.2 s (on an object at 12° the follower
+   * stops more than 20° short of its leader, as a real grasp does), then up and across from 2.4 s. Every joint
+   * under 30°/s, well within the 60°/s a recording follows at.
+   */
+  private teachLeft(): void {
+    const later = (ms: number, fn: () => void) => this.timers.push(this.deps.clock.setTimeout(fn, ms));
+    this.sweepLeader("left", "shoulder_pan", 15, 15);
+    this.sweepLeader("left", "elbow_flex", -10, 10);
+    later(1200, () => this.sweepLeader("left", "gripper", -35, 28));
+    later(2400, () => {
+      this.sweepLeader("left", "shoulder_lift", 15, 15);
+      this.sweepLeader("left", "shoulder_pan", -25, 20);
+    });
+    later(3700, () => this.sim("leader teaching done"));
   }
 
   async stop(): Promise<void> {
@@ -354,10 +446,28 @@ export const MOTION_KEYS: Record<string, string> = {
   G: "stray-goal-left",
   I: "inspect-left",
   A: "motion-status",
+  R: "record-left",
+  T: "leader-teach-left",
+  "3": "grasp-left",
+  "4": "release-left",
+  E: "record-finish",
+  "5": "skill-run-taught",
+  N: "skill-run-sample",
+  Q: "offer-skill-sample",
+  "6": "let-go-left",
+  X: "object-left",
+  "7": "skill-edit-too-fast",
+  "8": "skill-restore-sample",
+  "9": "skills-list",
+  b: "finger-left",
 };
 
 export const MOTION_HELP = `Arms (SIMULATED): s stop switch press/release   h unplug/replug the handle   1/2 torque on left/right (then c)
       0 torque off left   P left arm to "ready" (then c)   H left to "handover"   O an offer: left to "ready" (then c)
       L teleop left (then c)   M match the left leader to its arm   V move the left leader slowly   J jerk it fast
       S terminal stop   C terminal clear (then c)   F left servo 3 stops answering   B push the left elbow
-      W block the left elbow   Y make it stiff   Z lean on it   U unplug the left arm   G move the left goals away   I inspect   A status`;
+      W block the left elbow   Y make it stiff   Z lean on it   U unplug the left arm   G move the left goals away   I inspect   A status
+Skills (SIMULATED): R record the left arm as "sim_taught" (then M first, and c)   T teach: move the left leader through a pick
+      3 mark a grasp   4 mark a release   S end the recording   E save it   X an object in the left gripper / taken away
+      5 run "sim_taught" (then c)   N run the made-up sample skill (then c)   Q offer the sample (then c)   6 "Let go?" again
+      7 edit the sample file to be too fast   8 put the sample back   9 list the skills   b a finger in the left gripper / out`;

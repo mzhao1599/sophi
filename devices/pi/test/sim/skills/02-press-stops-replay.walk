@@ -1,0 +1,44 @@
+# T2. Any handle press stops a replay mid-way, and the arm holds where it is; the press does nothing else. A
+# stopped replay never resumes. Letting go is always possible: the stop lets off the gripper's squeeze (its goal
+# is where it is: it may be on a finger), the 30% hold torque stays, and the Pi offers "Let go?" at once.
+# The skill is the simulator's made-up sample (src/sim/sampleSkill.ts), SIMULATED, never a taught one.
+expect motion mode ready
+key torque-on-left
+wait 2100
+key c
+expect motion torque left on
+key pose-ready-left
+wait 2100
+key c
+expect 5000 motion command arm.go_to_pose completed operator_cli
+key object-left
+key skill-run-sample
+expect motion target skill.run operator_cli: SIMULATED sample: hold it out
+wait 2100
+key c
+expect motion command skill.run started operator_cli
+expect 3000 motion skill grasp left
+wait 1500
+key t
+expect motion command skill.run stopped operator_cli
+expect motion stop handle_press
+expect motion target gripper.release walker_local: Let go?
+expect spoke Let go? Park the walker and lock the brakes, then press Confirm.
+absent 500 talk recording
+# On the servos: every torqued one holds where it was at the press, within 0.5°, the gripper too (no squeeze), and
+# no goal is written in the next second.
+wait 200
+key inspect-hold-left
+expect sim left follower hold ok
+absent 1000 sim goal-write left follower
+key inspect-hold-tight-left
+expect sim left follower hold tight ok (6 servos)
+key inspect-grip-left
+expect sim left gripper goal-present=0 limit=300
+# The person takes it and presses Confirm: only the gripper opens, to the sample's taught angle.
+key object-left
+wait 2100
+key c
+expect 3000 motion command gripper.release completed walker_local
+expect motion grasp left ended
+key q

@@ -17,6 +17,8 @@ import {
   FEEDBACK_DIVERGENCE_DEG,
   FEEDBACK_DIVERGENCE_MS,
   FEEDBACK_STALE_MS,
+  GRIPPER_HOLD_TORQUE_PCT,
+  MAX_GOAL_LEAD_DEG,
   MOTION_COMMAND_POLICY,
   MOTION_CONTRACT_VERSION,
   MOTION_CONTROL_PERIOD_MS,
@@ -27,6 +29,12 @@ import {
   PoseNameSchema,
   REFUSAL_SENTENCES,
   SERVO_TICKS_PER_TURN,
+  SKILL_MAX_DURATION_MS,
+  SKILL_MAX_GRIPPER_EVENTS,
+  SKILL_MAX_WAYPOINTS,
+  SKILL_MIN_WAYPOINT_GAP_MS,
+  SkillIdSchema,
+  SkillSchema,
   TELEOP_ENGAGE_TOLERANCE_DEG,
   TELEOP_GAP_DEG,
   TELEOP_GAP_MS,
@@ -35,10 +43,13 @@ import {
   TELEOP_OVERSPEED_MS,
   WALKER_CONFIRM_WAIT_MS,
   allowedWhileFaulted,
+  armsHoldingAtEnd,
+  checkSkillAgainstSetup,
   commandMatchesTarget,
   confirmPressVerdict,
   confirmPrompt,
   degreesToTicks,
+  gripperWithinCalibration,
   isPreparerAllowed,
   jointsOutsideCalibration,
   mayReplaceConfirmTarget,
@@ -61,9 +72,12 @@ import {
   type MotionMode,
   type MotionPart,
   type MotionRefusal,
+  type MotionSetup,
   type MotionState,
   type NamedPose,
   type Preparer,
+  type Skill,
+  type SkillSetupProblem,
   type StopSource,
 } from "@walker/contracts";
 import type { Bus, ButtonEvent } from "../bus";
@@ -73,10 +87,11 @@ import { ArmLink, openArmLink, type ServoState } from "./arm";
 import { FeetechError, type ReadResult } from "./feetech/bus";
 import { SERVO_ERROR_BITS } from "./feetech/protocol";
 import type { FeetechPort } from "./feetech/port";
-import type { MotionFiles } from "./files";
+import type { MotionFiles, SkillLoad } from "./files";
 import {
   SERVO_ACCELERATION_REGISTER,
   clampToFollower,
+  commandRange,
   jointTorquePct,
   largestGap,
   lineSpeeds,
@@ -87,12 +102,32 @@ import {
   teleopSpeedDegS,
   torqueRegister,
 } from "./limits";
+import { recordedSkill, replayCaps, replayStretch, skillPoint, startGap, type RecordedEvent, type RecordedSample } from "./skills";
 import type { StopReading, StopSense } from "./stopSense";
 
 /**
- * The Pi's motion coordinator for the two SO-101 arms (part A: arms, safety, calibration, poses, teleop),
- * following the motion contract (packages/contracts/src/motion.ts, docs/subsystems/manipulation.md). The lift
- * and recorded skills are part B: their commands are refused here (`part_missing`, `unknown_skill`).
+ * The Pi's motion coordinator for the two SO-101 arms (arms, safety, calibration, poses, teleop, and taught
+ * skills: recording a teleop session, replaying it, and "Let go?"), following the motion contract
+ * (packages/contracts/src/motion.ts, docs/subsystems/manipulation.md). The lift is wired separately
+ * (src/motion/lift/): its commands are refused here (`part_missing`).
+ *
+ * Skills. Recording is teleop with `record_skill_id`, prepared and Confirmed like any teleop: it samples the
+ * follower's own readings (never the leader's) each control tick, and the terminal marks grasp and release.
+ * It ends on any stop or at RECORD_MAX_MS, and the terminal then saves it, once it passes SkillSchema and
+ * checkSkillAgainstSetup. Replay (`skill.run`) is prepared from the terminal or an id-only offer, worded from
+ * the skill file's own title, and Confirmed at the walker; at the press the file is read again and must be
+ * exactly the one prepared. Its timeline starts once the arm is at the first waypoint, waits only at a gripper
+ * event for that arm to reach the event's point, and otherwise doesn't wait; goals keep the step and lead
+ * limits. It ends HOLDING. A gripper's grasp (after a `grasp` event) is exempt from divergence, the stall and
+ * load rules and the teleop gap, at GRIPPER_HOLD_TORQUE_PCT.
+ *
+ * LETTING GO IS ALWAYS POSSIBLE. Releasing a grasp (`gripper.release`) is a safety action: allowed in every
+ * mode where the gripper can move, with a fault latched and on a compliant arm; gripper only and opening only
+ * (toward the let-go angle, on the side the grasp began from, never back toward closing); and offered by the
+ * Pi itself ("Let go?", walker_local) at once whenever anything ends a motion with a grasp active (completed,
+ * stopped, faulted) and after a fault clears. A stop or a fault sets the gripper's goal to where it is (no
+ * more squeeze: it may be on a finger). A grasping gripper more than GRASP_SHORT_DEG from its taught goal for
+ * GRASP_SHORT_MS isn't holding what was taught: `grasp_mismatch` (hold), that gripper soft, "Let go?" offered.
  *
  * The rule: motors move only while a person at the walker is acting.
  * - Preparing: the terminal (`operator*`), the cloud's id-only offers (`requestOffer`) and, later, the screen
@@ -174,6 +209,18 @@ export const STALL_SPEED_DEG_S = 3;
 export const STALL_LOAD_FRACTION = 0.8;
 /** Placeholder: the stall rule's speed needs two tick readings at least this far apart. */
 export const STALL_MIN_DT_MS = 10;
+/**
+ * Placeholders, not measured: a grasping gripper more than GRASP_SHORT_DEG from where the skill has it (its
+ * taught goal) for GRASP_SHORT_MS isn't holding what was taught (a finger, something bigger): `grasp_mismatch`.
+ * A taught grasp already sits up to MAX_GOAL_LEAD_DEG short of its squeezing goal, so this is 5° beyond that.
+ */
+export const GRASP_SHORT_DEG = MAX_GOAL_LEAD_DEG + 5;
+export const GRASP_SHORT_MS = 300;
+/**
+ * Placeholder: a recording ends here, SKILL_MAX_DURATION_MS less a margin, so slowing a stretch the servo
+ * overshot (skills.ts `retime`) can't push the saved skill past the contract's limit.
+ */
+export const RECORD_MAX_MS = SKILL_MAX_DURATION_MS - 5000;
 
 const HALF_TURN = SERVO_TICKS_PER_TURN / 2;
 const DIVERGENCE_TICKS = (FEEDBACK_DIVERGENCE_DEG * SERVO_TICKS_PER_TURN) / 360;
@@ -229,6 +276,51 @@ interface Slot {
    */
   torqueOffSeq: number;
   lastReadError: number;
+  /**
+   * Followers: a `grasp` event closed this gripper on an object and nothing has let go since. Its torque limit
+   * is GRIPPER_HOLD_TORQUE_PCT, and it is exempt from divergence, the stall and load rules and the teleop gap.
+   * It ends with a release (event or gripper.release) or when the arm's torque goes off.
+   */
+  graspActive: boolean;
+  /** Where this gripper lets go: the skill's taught `let_go`, else where it was when the grasp began. */
+  letGoDeg: number | null;
+  /** The gripper's angle when the grasp began (open, just before closing). */
+  graspOpenDeg: number | null;
+  /**
+   * Which way this grasp closed: sign(angle − graspOpenDeg), fixed once per grasp, on the first tick the
+   * gripper is 1° or more from where the grasp began. Opening is the other way. null until then (unknown).
+   */
+  graspCloseSign: number | null;
+  /** A frozen arm's grasping gripper still has its squeeze goal: set it to where it is at the next fresh read. */
+  unsqueezePending: boolean;
+  /** Where the running or completed skill has this grasping gripper now; null after a stop, fault or teaching. */
+  graspTaughtDeg: number | null;
+  /** Since when a grasping gripper has been more than GRASP_SHORT_DEG from its taught goal. */
+  graspShortSince: number | null;
+}
+
+/** A teleop session being recorded as a skill: the follower's samples and the terminal's gripper marks. */
+interface Recording {
+  skillId: string;
+  title: string;
+  replace: boolean;
+  /** The reading time (monotonic ms) the first sample was taken at: t = 0. */
+  origin: number;
+  lastSampleAt: number;
+  samples: RecordedSample[];
+  events: RecordedEvent[];
+  /** The gripper's angle at the last grasp mark (open, just before it closed): the side its let-go must be on. */
+  graspOpenDeg: number | null;
+}
+
+/** A finished recording waiting for the terminal to save it (or the reason it can't be). */
+interface Draft {
+  requestId: string;
+  side: ArmSide;
+  recording: Recording;
+  /** It ended with a fault: it is never saved. */
+  faulted: boolean;
+  speedDegS: number;
 }
 
 type ConfirmedCommand = Exclude<MotionCommand, { kind: "motion.stop" } | { kind: "teleop.stop" }>;
@@ -256,6 +348,43 @@ type Active =
         gapSince: number | null;
       }>;
       speedDegS: number;
+      /** Recording a skill (`record_skill_id`), or null for plain teleop. */
+      recording: Recording | null;
+      startedMono: number;
+      deadlineMono: number;
+      lastStepMono: number;
+      lastBenchLog: number;
+    }
+  | {
+      kind: "skill.run";
+      command: ConfirmedCommand & { kind: "skill.run" };
+      /** The skill as prepared and checked again at the press: the run uses exactly this. */
+      skill: Skill;
+      arms: Array<{ side: ArmSide; slot: Slot; cursor: number }>;
+      /** The timeline runs this much slower than taught (bench mode); 1 otherwise. */
+      stretch: number;
+      caps: Record<ArmJoint, number>;
+      endMs: number;
+      nextEvent: number;
+      progress: number;
+      /** `approach`: going to the first waypoint, the timeline not started; `run`: the timeline runs. */
+      phase: "approach" | "run";
+      /** Where the skill's own timeline is, in its ms (it waits only at a gripper event, for that arm to arrive). */
+      skillMs: number;
+      startedMono: number;
+      deadlineMono: number;
+      lastStepMono: number;
+      lastBenchLog: number;
+    }
+  | {
+      kind: "gripper.release";
+      command: ConfirmedCommand & { kind: "gripper.release" };
+      slot: Slot;
+      /** The gripper's let-go angle, on the opening side; nothing else moves. */
+      targetDeg: number;
+      speedDegS: number;
+      /** +1 or −1: the gripper's goal only ever moves this way from where it is (opening only). */
+      openSign: number;
       startedMono: number;
       deadlineMono: number;
       lastStepMono: number;
@@ -282,8 +411,21 @@ interface Pending {
   request: OperatorRequest | null;
   /** A calibration that starts once this torque-off target runs. */
   thenCalibrate: Slot | null;
+  /** A skill.run target's skill as it was prepared: at the press the file must still be exactly this. */
+  skill: Skill | null;
+  /** A recording teleop's title and whether it may replace an existing skill file (not in the contract's action). */
+  recording: { title: string; replace: boolean } | null;
   /** The mode it was prepared in: if the mode changes, the target is withdrawn. */
   preparedMode: MotionMode;
+}
+
+/** What some targets carry besides the contract's action. */
+interface PrepareExtra {
+  /** skill.run: the skill file as read when it was asked for. */
+  skillLoad?: SkillLoad;
+  recording?: { title: string; replace: boolean };
+  /** The Pi's own offer ("Let go?"): a refusal is logged but isn't recorded as the last command. */
+  quiet?: boolean;
 }
 
 /** What the coordinator has seen of one handle button: down now, or released since when (monotonic ms). */
@@ -309,6 +451,78 @@ interface CalibrationRun {
 }
 
 export type OperatorResult<T = Record<string, unknown>> = ({ ok: true } & T) | { ok: false; error: string };
+
+/** A skill file as the terminal lists it. */
+export interface SkillSummary {
+  skill_id: string;
+  title: string;
+  source: Skill["source"];
+  arms: ArmSide[];
+  duration_ms: number;
+  waypoints: number;
+  grasps: number;
+  /** Arms that end grasping: "Let go?" follows a replay for each. */
+  ends_holding: ArmSide[];
+  created_at: string;
+}
+
+export interface SkillListing {
+  skill_id: string;
+  /** null when the file fails the contract's SkillSchema. */
+  skill: SkillSummary | null;
+  /** Passes SkillSchema and checkSkillAgainstSetup against this walker now. */
+  valid: boolean;
+  problem: string | null;
+}
+
+export function skillSummary(skill: Skill): SkillSummary {
+  return {
+    skill_id: skill.skill_id,
+    title: skill.title,
+    source: skill.source,
+    arms: [...skill.arms],
+    duration_ms: skill.waypoints.at(-1)!.t_ms,
+    waypoints: skill.waypoints.length,
+    grasps: skill.gripper_events.filter((e) => e.kind === "grasp").length,
+    ends_holding: armsHoldingAtEnd(skill),
+    created_at: skill.created_at,
+  };
+}
+
+/**
+ * Whether moving a gripper from `at` to `toDeg` closes it, given the way its grasp closed (`closeSign`, fixed
+ * once per grasp). Unknown (null) counts as not closing here; callers refuse a terminal-given angle then.
+ */
+export function closes(at: number, closeSign: number | null, toDeg: number): boolean {
+  if (closeSign === null) return false;
+  return Math.sign(toDeg - at) === closeSign && Math.abs(toDeg - at) > 0.5;
+}
+
+/** The way a gripper closed from `openDeg` to `at`, once they are 1° or more apart; else null (unknown). */
+export function closeSignOf(openDeg: number | null, at: number): number | null {
+  return openDeg === null || Math.abs(at - openDeg) < 1 ? null : Math.sign(at - openDeg);
+}
+
+/** One of checkSkillAgainstSetup's problems in plain words. */
+export function describeSkillProblem(problem: SkillSetupProblem): string {
+  switch (problem.code) {
+    case "arm_not_calibrated":
+      return `the ${problem.arm} arm isn't calibrated`;
+    case "out_of_range": {
+      const p = problem.problem;
+      const where = problem.waypoint === "start" ? "its start" : `waypoint ${problem.waypoint}`;
+      return `${problem.arm} ${p.joint} at ${round1(p.degrees)}° in ${where} is outside ${round1(p.min)}° to ${round1(p.max)}° (the calibrated range less the margin)`;
+    }
+    case "let_go_out_of_range":
+      return `the ${problem.arm} let-go angle ${problem.gripper_open_deg}° is outside the gripper's calibrated range less the margin`;
+    case "lift_missing":
+      return "it names a lift height, and this walker has no lift";
+    case "lift_height_missing":
+      return "it names no lift height, and this walker has a lift";
+    case "lift_out_of_range":
+      return `its lift height ${problem.lift_mm} mm is outside the lift's soft limits`;
+  }
+}
 
 /** Placeholder: terminal requests kept for the CLI to poll. */
 const REQUESTS_KEPT = 50;
@@ -352,6 +566,10 @@ export class MotionCoordinator {
   private lastPublish = -Infinity;
   private lastMode: MotionMode | null = null;
   private readonly unsubscribe: Array<() => void> = [];
+  /** The last recording, until the terminal that made it saves it or goes away. */
+  private draft: Draft | null = null;
+  /** "Let go?" targets still to prepare after a skill ended holding with more than one arm (one at a time). */
+  private letGoQueue: Array<{ arm: ArmSide; deg: number }> = [];
 
   constructor(private readonly deps: CoordinatorDeps) {
     this.newId = deps.newId ?? randomUUID;
@@ -381,6 +599,13 @@ export class MotionCoordinator {
       reading_in_flight: false,
       torqueOffSeq: 0,
       lastReadError: -Infinity,
+      graspActive: false,
+      letGoDeg: null,
+      graspOpenDeg: null,
+      graspCloseSign: null,
+      unsqueezePending: false,
+      graspTaughtDeg: null,
+      graspShortSince: null,
     }));
   }
 
@@ -529,6 +754,8 @@ export class MotionCoordinator {
   /** The terminal that prepared this request went away (Ctrl-C, a dropped SSH): its target is withdrawn. */
   operatorWithdraw(id: string): void {
     if (this.pending?.request?.id === id) this.endPending("withdrawn", "the terminal went away");
+    // A recording that terminal never saved (Ctrl-C, a dropped SSH) is thrown away, not saved.
+    if (this.draft?.requestId === id) this.discardDraft("the terminal went away");
   }
 
   /** The terminal that started this request went away while it runs (a teleop, a move): it is stopped. */
@@ -538,7 +765,10 @@ export class MotionCoordinator {
 
   // ---- Preparing (terminal, offers): each becomes the one pending Confirm target ----
 
-  /** An offer from the cloud, by ids only. Dropped (null) unless this walker has that pose and can prepare it now. */
+  /**
+   * An offer from the cloud, by ids only. Dropped (null) unless this walker has that pose or skill and can
+   * prepare it now. The words come from the Pi's own pose or skill file, never from the offer.
+   */
   requestOffer(raw: unknown): ConfirmTarget | null {
     const parsed = MotionOfferRequestSchema.safeParse(raw);
     if (!parsed.success) {
@@ -546,9 +776,25 @@ export class MotionCoordinator {
       return null;
     }
     const target = parsed.data.target;
-    if (target.kind !== "arm.go_to_pose") {
-      this.deps.log.info("motion offer request dropped: skills aren't built yet");
-      return null;
+    if (target.kind === "skill.run") {
+      const load = this.deps.files.readSkill(target.skill_id);
+      if (load.kind === "missing") {
+        this.deps.log.info("motion offer request dropped: this walker has no such skill", { skill: target.skill_id });
+        return null;
+      }
+      // A skill that fails its checks is dropped here, with a log line: an offer never latches a fault (the
+      // terminal's own request for it is refused and latches skill_invalid).
+      const invalid = load.kind === "invalid" ? load.reason : checkSkillAgainstSetup(load.skill, this.setup()).map(describeSkillProblem)[0];
+      if (invalid) {
+        this.deps.log.warn("motion offer request dropped: that skill fails its checks", { skill: target.skill_id, problem: invalid });
+        return null;
+      }
+      const result = this.prepareSkillRun(target.skill_id, "offer", load);
+      if (!result.ok || result.request.state !== "waiting_confirm") {
+        this.deps.log.info("motion offer request dropped", { reason: result.ok ? (result.request.refusal ?? "refused") : result.error });
+        return null;
+      }
+      return this.pending?.target ?? null;
     }
     const pose = this.findPose(target.arm, target.pose);
     if (!pose) {
@@ -589,6 +835,184 @@ export class MotionCoordinator {
 
   operatorTeleop(side: ArmSide): OperatorResult<{ request: OperatorRequest }> {
     return this.prepareRequest({ kind: "teleop.start", pairs: [{ leader: side, follower: side }] }, `The ${side} arm will copy its teaching arm`);
+  }
+
+  // ---- Skills: recording, replay, listing, removal, "Let go?" ----
+
+  /**
+   * `walker arms record <id> --title "..." --arm <side>`: prepares teleop for that arm, recorded as the skill
+   * `skillId` (the contract's `record_skill_id`), Confirmed at the walker like any teleop. Refused at once when
+   * the id or title isn't the contract's, or a skill by that id exists and `replace` wasn't asked for.
+   */
+  operatorRecord(skillId: string, title: string, side: ArmSide, replace: boolean): OperatorResult<{ request: OperatorRequest }> {
+    if (!SkillIdSchema.safeParse(skillId).success) return { ok: false, error: "a skill id is lowercase letters, digits and _ (at most 40), starting with a letter" };
+    const words = title.replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, " ").trim();
+    if (words.length < 1 || words.length > 60) return { ok: false, error: "a skill's title is 1 to 60 characters: the words the walker says to start it" };
+    if (!this.follower(side) || !this.slot(side, "leader")) return { ok: false, error: `the ${side} arm and its teaching arm must both be configured` };
+    if (!replace && this.deps.files.skillExists(skillId)) {
+      return { ok: false, error: `a skill called ${skillId} exists; add --replace to record over it (the old file is kept aside)` };
+    }
+    return this.prepareRequest(
+      { kind: "teleop.start", pairs: [{ leader: side, follower: side }], record_skill_id: skillId },
+      `Record a movement: the ${side} arm copies its teaching arm`,
+      null,
+      null,
+      { recording: { title: words, replace } },
+    );
+  }
+
+  /**
+   * The terminal that started recording `id` marks a gripper event: a grasp (just before the gripper closes on
+   * the object) or a release. Another terminal's id, or an old one, marks nothing.
+   */
+  operatorRecordMark(id: string, kind: "grasp" | "release"): OperatorResult<{ t_ms: number }> {
+    const active = this.active;
+    if (active?.kind !== "teleop" || !active.recording) return { ok: false, error: "nothing is being recorded" };
+    if (active.command.target_id !== id) return { ok: false, error: "that isn't the recording running now" };
+    const recording = active.recording;
+    const follower = active.pairs[0]!.follower;
+    if (recording.events.length >= SKILL_MAX_GRIPPER_EVENTS) return { ok: false, error: `a skill has at most ${SKILL_MAX_GRIPPER_EVENTS} grasps and releases` };
+    if ((kind === "grasp") === follower.graspActive) return { ok: false, error: kind === "grasp" ? "it is already grasping" : "it isn't grasping" };
+    const t = Math.max(0, Math.round(this.deps.clock.monotonic() - recording.origin));
+    recording.events.push({ t, kind });
+    this.setGrasp(follower, kind === "grasp");
+    if (kind === "grasp") recording.graspOpenDeg = follower.graspOpenDeg;
+    this.event("recording", `${kind} ${follower.side} at ${t} ms`);
+    return { ok: true, t_ms: t };
+  }
+
+  /**
+   * Saves the recording the terminal's request `id` made, once it has ended: built from the follower's samples
+   * (clamped into its commandable range, any stretch faster than the recording's speed limit slowed to it),
+   * then checked with SkillSchema and checkSkillAgainstSetup, then written atomically. A recording that ends
+   * grasping needs `letGoDeg` (the reply says so, with a suggestion). Never overwrites a skill unless the
+   * recording was begun with `replace`. If the arm still grasps, the Pi then asks "Let go?".
+   */
+  operatorRecordFinish(id: string, letGoDeg: number | null): OperatorResult<{ skill: SkillSummary; asked_let_go: boolean }> | { ok: false; error: string; needs_let_go: { arm: ArmSide; suggest_deg: number } } {
+    if (this.active?.command.target_id === id) return { ok: false, error: "it is still recording: stop it first" };
+    const draft = this.draft;
+    if (!draft || draft.requestId !== id) return { ok: false, error: "there is no recording to save" };
+    if (draft.faulted) {
+      this.discardDraft("it ended with a fault");
+      return { ok: false, error: "the recording ended with a fault, so it isn't saved (walker motion status shows which)" };
+    }
+    const slot = this.follower(draft.side);
+    if (!slot?.calibration) return { ok: false, error: `the ${draft.side} arm isn't calibrated any more` };
+    const { recording } = draft;
+    const holding = recording.events.at(-1)?.kind === "grasp";
+    // The suggestion: where the gripper was when the grasp was marked (open, just before it closed).
+    const openDeg = recording.graspOpenDeg ?? recording.samples[0]!.joints.gripper;
+    const suggest = { arm: draft.side, suggest_deg: round1(openDeg) };
+    if (holding && letGoDeg === null) return { ok: false, error: "it ends holding: say where its gripper lets go", needs_let_go: suggest };
+    if (holding && letGoDeg !== null && !gripperWithinCalibration(letGoDeg, slot.calibration)) {
+      const range = commandRange(slot.calibration, "gripper");
+      return { ok: false, error: `${letGoDeg}° is outside the gripper's range (${round1(range.min)}° to ${round1(range.max)}°)`, needs_let_go: suggest };
+    }
+    const end = recording.samples.at(-1)!.joints.gripper;
+    const closeSign = (slot.graspActive ? slot.graspCloseSign : null) ?? closeSignOf(openDeg, end);
+    // More closed than where the grasp began: it wouldn't open the hand.
+    if (holding && letGoDeg !== null && closes(openDeg, closeSign, letGoDeg)) {
+      return { ok: false, error: `${letGoDeg}° would close the gripper further; letting go opens it, toward ${round1(openDeg)}°`, needs_let_go: suggest };
+    }
+    const built = recordedSkill({
+      skillId: recording.skillId,
+      title: recording.title,
+      arm: draft.side,
+      createdAt: iso(this.deps.clock.now()),
+      samples: recording.samples,
+      events: recording.events,
+      calibration: slot.calibration,
+      speedDegS: draft.speedDegS,
+      letGoDeg: holding ? letGoDeg : null,
+    });
+    if (!built.ok) return { ok: false, error: `not saved: ${built.error}` };
+    const parsed = SkillSchema.safeParse(built.skill);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return { ok: false, error: `not saved: it fails the skill checks (${issue?.path.join(".") ?? ""}: ${issue?.message ?? "invalid"})` };
+    }
+    const problems = checkSkillAgainstSetup(parsed.data, this.setup());
+    if (problems.length > 0) return { ok: false, error: `not saved: ${describeSkillProblem(problems[0]!)}` };
+    const skill = parsed.data;
+    try {
+      const aside = this.deps.files.writeSkill(skill, { replace: recording.replace, stamp: iso(this.deps.clock.now()) });
+      if (aside) this.deps.log.info("the old skill file was set aside", { skill: skill.skill_id, file: aside });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return { ok: false, error: `a skill called ${skill.skill_id} exists; record again with --replace` };
+      return { ok: false, error: `couldn't save the skill file: ${(error as Error).message}` };
+    }
+    this.draft = null;
+    const summary = skillSummary(skill);
+    this.event("skill-saved", `${skill.skill_id} ${summary.waypoints} waypoints ${summary.duration_ms} ms`);
+    this.deps.log.info("skill saved", { skill: skill.skill_id, waypoints: summary.waypoints, ms: summary.duration_ms, ends_holding: summary.ends_holding.join(",") });
+    let asked = false;
+    if (holding && slot.graspActive) {
+      // It still holds what it grasped while teaching. "Let go?" was offered when the recording ended; it now
+      // opens to the saved angle, asked again when that target can be replaced (or if none is pending).
+      slot.letGoDeg = skill.let_go[0]!.gripper_open_deg;
+      const pending = this.pending?.target;
+      if (!pending || (pending.action.kind === "gripper.release" && mayReplaceConfirmTarget(pending, this.mono()))) {
+        this.letGoQueue = [{ arm: draft.side, deg: slot.letGoDeg }];
+        asked = this.askLetGo();
+      }
+    }
+    return { ok: true, skill: summary, asked_let_go: asked };
+  }
+
+  /** `walker arms skills`: every skill file, and whether it passes both checks against this walker now. */
+  operatorSkills(): Array<SkillListing> {
+    return this.deps.files.listSkillIds().map((id): SkillListing => {
+      const load = this.deps.files.readSkill(id);
+      if (load.kind !== "ok") return { skill_id: id, skill: null, valid: false, problem: load.kind === "invalid" ? load.reason : "missing" };
+      const problems = checkSkillAgainstSetup(load.skill, this.setup());
+      return { skill_id: id, skill: skillSummary(load.skill), valid: problems.length === 0, problem: problems[0] ? describeSkillProblem(problems[0]) : null };
+    });
+  }
+
+  /** `walker arms skill run <id>`: prepares the skill, worded from its file's own title. */
+  operatorSkillRun(skillId: string): OperatorResult<{ request: OperatorRequest }> {
+    const load = this.deps.files.readSkill(skillId);
+    if (load.kind === "missing") return { ok: false, error: REFUSAL_SENTENCES.unknown_skill };
+    return this.prepareSkillRun(skillId, "operator_cli", load);
+  }
+
+  /**
+   * `walker arms skill rm <id>`: sets the file aside (renamed `.removed-<time>`, never deleted). No Confirm: it
+   * moves nothing and can only take a movement away (like `pose save`, it changes files, not motors). A pending
+   * target to run it is withdrawn; it is refused while that skill runs.
+   */
+  operatorSkillRemove(skillId: string): OperatorResult<{ removed: string }> {
+    if (!SkillIdSchema.safeParse(skillId).success) return { ok: false, error: "that isn't a skill id" };
+    if (this.active?.kind === "skill.run" && this.active.skill.skill_id === skillId) return { ok: false, error: "it is running: stop it first (walker motion stop)" };
+    let aside: string | null;
+    try {
+      aside = this.deps.files.removeSkill(skillId, iso(this.deps.clock.now()));
+    } catch (error) {
+      return { ok: false, error: `couldn't set the file aside: ${(error as Error).message}` };
+    }
+    if (!aside) return { ok: false, error: REFUSAL_SENTENCES.unknown_skill };
+    const action = this.pending?.target.action;
+    if (action?.kind === "skill.run" && action.skill_id === skillId) this.endPending("withdrawn", "the skill was removed");
+    this.event("skill-removed", skillId);
+    this.deps.log.info("skill set aside", { skill: skillId, file: aside });
+    return { ok: true, removed: aside };
+  }
+
+  /**
+   * `walker arms let-go [--arm] [--deg]`: prepares "Let go?" again from the terminal (the walker's own one
+   * expired, or a replay was stopped while grasping). The angle is the last skill's taught one unless given.
+   */
+  operatorLetGo(arm: ArmSide | null, deg: number | null): OperatorResult<{ request: OperatorRequest }> {
+    const grasping = this.slots.filter((s) => s.role === "follower" && s.graspActive);
+    const slot = arm ? this.follower(arm) : grasping.length === 1 ? grasping[0] : undefined;
+    if (!slot) return { ok: false, error: arm ? `no ${arm} arm is configured` : grasping.length === 0 ? REFUSAL_SENTENCES.no_grasp : "both hands are holding: name one with --arm" };
+    // A typed angle can only be checked for "opening" once the grasp's closing direction is known.
+    if (deg !== null && slot.graspActive && slot.graspCloseSign === null) {
+      return { ok: false, error: "which way that hand closed isn't known yet, so a typed angle can't be checked; use its taught angle (walker arms let-go without --deg)" };
+    }
+    const open = deg ?? slot.letGoDeg ?? slot.graspOpenDeg;
+    if (open === null) return { ok: false, error: "no let-go angle is known for that hand: give one with --deg" };
+    return this.prepareRequest({ kind: "gripper.release", arm: slot.side, gripper_open_deg: open }, this.letGoTitle(slot.side));
   }
 
   operatorClear(reason: string): OperatorResult<{ request: OperatorRequest }> {
@@ -864,30 +1288,39 @@ export class MotionCoordinator {
       hand_controls_connected: this.deps.handControls(),
       arms: this.slots.map((slot) => this.armState(slot)),
       lift: null,
-      active:
-        active === null
-          ? null
-          : active.kind === "arm.go_to_pose"
-            ? {
-                kind: "arm.go_to_pose",
-                command_id: active.command.command_id,
-                target_id: active.command.target_id,
-                started_at: active.command.confirm.pressed_at,
-                arm: active.command.arm,
-                pose: active.command.pose,
-              }
-            : {
-                kind: "teleop",
-                command_id: active.command.command_id,
-                target_id: active.command.target_id,
-                started_at: active.command.confirm.pressed_at,
-                pairs: active.command.pairs,
-                recording_skill_id: null,
-              },
+      active: active === null ? null : this.activeState(active),
       confirm_target: this.pending ? { ...this.pending.target } : null,
       last_command: this.lastCommand,
       faults: [...this.faults],
     };
+  }
+
+  private activeState(active: Active): NonNullable<MotionState["active"]> {
+    const base = { command_id: active.command.command_id, target_id: active.command.target_id, started_at: active.command.confirm.pressed_at };
+    switch (active.kind) {
+      case "arm.go_to_pose":
+        return { ...base, kind: "arm.go_to_pose", arm: active.command.arm, pose: active.command.pose };
+      case "teleop":
+        return { ...base, kind: "teleop", pairs: active.command.pairs, recording_skill_id: active.recording?.skillId ?? null };
+      case "skill.run":
+        return { ...base, kind: "skill.run", skill_id: active.skill.skill_id, title: active.skill.title, progress: Math.max(0, Math.min(1, active.progress)) };
+      case "gripper.release":
+        return { ...base, kind: "gripper.release", arm: active.command.arm };
+    }
+  }
+
+  /** The followers the running command moves (and, for teleop, its leaders when `leaders`). */
+  private movedSlots(active: Active | null, leaders = false): Slot[] {
+    if (!active) return [];
+    switch (active.kind) {
+      case "arm.go_to_pose":
+      case "gripper.release":
+        return [active.slot];
+      case "teleop":
+        return active.pairs.flatMap((p) => (leaders ? [p.follower, p.leader] : [p.follower]));
+      case "skill.run":
+        return active.arms.map((a) => a.slot);
+    }
   }
 
   private armState(slot: Slot): ArmState {
@@ -914,16 +1347,14 @@ export class MotionCoordinator {
         : null;
     let pose: ArmState["pose"] = { status: "unknown" };
     if (joints && degrees) {
-      const moving =
-        (this.active?.kind === "arm.go_to_pose" && this.active.slot === slot) ||
-        (this.active?.kind === "teleop" && this.active.pairs.some((p) => p.follower === slot || p.leader === slot));
+      const moving = this.movedSlots(this.active, true).includes(slot);
       const at = slot.role === "follower" ? this.poses.find((p) => p.arm === slot.side && largestGap(p.joints, degrees).deg <= AT_POSE_TOLERANCE_DEG) : undefined;
       pose = moving ? { status: "moving" } : at ? { status: "at", name: at.name } : { status: "between" };
     }
     const read = connected ? this.torqueOf(slot) : "unknown";
     const torque = slot.role === "leader" && read === "on" ? "unknown" : read;
-    // Grasps come with skills (part B): no arm grasps yet.
-    return { arm: slot.side, role: slot.role, connected, calibrated: slot.calibration !== null, torque, pose, joints, grasp_active: false, faults };
+    const grasp_active = slot.role === "follower" && slot.graspActive;
+    return { arm: slot.side, role: slot.role, connected, calibrated: slot.calibration !== null, torque, pose, joints, grasp_active, faults };
   }
 
   // ---- The control loop ----
@@ -1017,6 +1448,14 @@ export class MotionCoordinator {
       slot.limitsWritten = false;
       this.deps.log.warn("an arm's torque or torque limit isn't what torque on wrote (a power loss?); it must be turned on again", { arm: slot.label });
       this.event("limits-lost", slot.label);
+      // Anything moving that arm stops and latches torque_lost (hold): a power dip mid-move needs a helper. No
+      // goal goes to it until torque is turned on again.
+      if (this.movedSlots(this.active).includes(slot)) this.latch("torque_lost", slot.part, null, "torque or a torque limit changed under a moving arm");
+    }
+    // A gripper that reads torque off holds nothing any more.
+    if (slot.graspActive && read.get(slot.ids[ARM_JOINTS.indexOf("gripper")]!)!.torqueEnable === 0) {
+      slot.graspActive = false;
+      this.event("grasp", `${slot.side} ended: its torque is off`);
     }
     if (slot.role === "leader" && slot.link && slot.ids.some((id) => read.get(id)!.torqueEnable !== 0)) {
       this.deps.log.warn("a teaching arm reads torque on; turning it off", { arm: slot.label });
@@ -1036,14 +1475,39 @@ export class MotionCoordinator {
     this.checkHandControls();
     // CHECKS_WHILE_HOLDING: the servo limits, stale feedback and divergence run whether or not anything moves.
     for (const slot of this.slots) if (slot.role === "follower") this.servoGuards(slot, now);
+    for (const slot of this.slots) if (slot.role === "follower") this.graspTick(slot);
     const active = this.active;
     if (active) {
-      if (now >= active.deadlineMono) this.latch("motion_timeout", active.kind === "teleop" ? "system" : active.slot.part, null, "past its deadline");
+      const moved = this.movedSlots(active);
+      if (now >= active.deadlineMono) this.latch("motion_timeout", moved.length === 1 ? moved[0]!.part : "system", null, "past its deadline");
       else if (active.kind === "arm.go_to_pose") this.stepPose(active, now);
-      else this.stepTeleop(active, now);
+      else if (active.kind === "teleop") this.stepTeleop(active, now);
+      else if (active.kind === "skill.run") this.stepSkill(active, now);
+      else this.stepRelease(active, now);
     }
     if (this.pending && this.mono() >= this.pending.target.expires_mono_ms) this.endPending("expired", "no Confirm press in time");
     this.publish(false);
+  }
+
+  /**
+   * Each tick, for a grasping follower with a fresh reading: fixes the grasp's closing direction once (the first
+   * tick it is 1° or more from where the grasp began), and, if the arm is frozen with its squeeze goal still
+   * there, sets only the gripper's goal to where it is (read before act: it reads torque on, freshly).
+   */
+  private graspTick(slot: Slot): void {
+    if (!slot.graspActive || !this.fresh(slot) || !slot.calibration) return;
+    const at = this.degrees(slot)!.gripper;
+    if (slot.graspCloseSign === null) {
+      slot.graspCloseSign = closeSignOf(slot.graspOpenDeg, at);
+      if (slot.graspCloseSign !== null) this.event("grasp", `${slot.side} closes ${slot.graspCloseSign > 0 ? "up" : "down"}`);
+    }
+    if (slot.unsqueezePending && !slot.reading_in_flight) {
+      const id = slot.ids[ARM_JOINTS.indexOf("gripper")]!;
+      if (slot.reading!.values.get(id)!.torqueEnable !== 1) return;
+      slot.unsqueezePending = false;
+      this.writeGripperGoal(slot, at, modeLimits(this.deps.bench).arm_speed_deg_s.pose);
+      this.event("grasp", `${slot.side} squeeze let off (arm frozen)`);
+    }
   }
 
   /**
@@ -1089,8 +1553,28 @@ export class MotionCoordinator {
         }
       } else slot.overloadSince.delete(id);
       // Divergence, in ticks so it works whatever the calibration: goal and measured too far apart for too long.
+      // Not holding what was taught: a grasping gripper far from where the skill has it, for a while (a finger,
+      // something bigger than the object). It lets off its squeeze, goes soft and offers "Let go?".
+      if (joint === "gripper" && slot.graspActive && slot.graspTaughtDeg !== null && slot.calibration) {
+        const off = Math.abs(slot.graspTaughtDeg - ticksToDegrees(slot.calibration.joints.gripper, f.presentPosition));
+        if (off > GRASP_SHORT_DEG) {
+          slot.graspShortSince ??= now;
+          if (now - slot.graspShortSince > GRASP_SHORT_MS) {
+            this.latch("grasp_mismatch", slot.part, "gripper", `${round1(off)}° from where the skill has it, over ${GRASP_SHORT_DEG}° for ${GRASP_SHORT_MS} ms`);
+            return;
+          }
+        } else slot.graspShortSince = null;
+      }
       const goal = slot.goalTicks.get(id);
       if (goal === undefined || slot.compliant) continue;
+      // A gripper with an active grasp is meant to be blocked by what it holds: exempt from divergence and the
+      // stall and load rules (the contract's), at GRIPPER_HOLD_TORQUE_PCT, its goal still within the lead limit.
+      if (joint === "gripper" && slot.graspActive) {
+        slot.divergeSince.delete(id);
+        slot.stallSince.delete(id);
+        slot.loadSince.delete(id);
+        continue;
+      }
       if (Math.abs(goal - f.presentPosition) > DIVERGENCE_TICKS) {
         const since = slot.divergeSince.get(id) ?? now;
         slot.divergeSince.set(id, since);
@@ -1105,7 +1589,7 @@ export class MotionCoordinator {
 
   /** The stall and load rules for one joint (see STALL_WINDOW_MS). True when it latched. */
   private stallOrLoad(slot: Slot, id: number, joint: ArmJoint, goal: number, f: ServoState, now: number): boolean {
-    // A gripper with an active grasp is meant to be blocked (part B brings grasps; none is active yet).
+    // (A gripper with an active grasp never reaches here: servoGuards exempts it.)
     const limits = modeLimits(this.deps.bench);
     const loadPct = Math.abs(f.presentLoad) / 10;
     const loadLimit = STALL_LOAD_FRACTION * jointTorquePct(limits, joint);
@@ -1117,9 +1601,7 @@ export class MotionCoordinator {
         return true;
       }
     } else slot.loadSince.delete(id);
-    const moving =
-      (this.active?.kind === "arm.go_to_pose" && this.active.slot === slot) ||
-      (this.active?.kind === "teleop" && this.active.pairs.some((p) => p.follower === slot));
+    const moving = this.movedSlots(this.active).includes(slot);
     const previous = slot.previous?.values.get(id);
     // The speed comes from the control loop's own consecutive readings, at least STALL_MIN_DT_MS apart.
     const reading = slot.tickReading;
@@ -1160,6 +1642,13 @@ export class MotionCoordinator {
   }
 
   private stepTeleop(active: Extract<Active, { kind: "teleop" }>, now: number): void {
+    const recording = active.recording;
+    if (recording && (now - recording.origin >= RECORD_MAX_MS || recording.samples.length >= SKILL_MAX_WAYPOINTS)) {
+      // A recording ends at RECORD_MAX_MS, inside the contract's length: a stop (the arm holds), then saved.
+      this.event("recording", `limit ${recording.skillId} ${recording.samples.length} samples`);
+      this.stopMotion("motion_guard", "the recording reached its limit");
+      return;
+    }
     const dt = stepSeconds(now - active.lastStepMono);
     active.lastStepMono = now;
     for (const pair of active.pairs) {
@@ -1191,7 +1680,8 @@ export class MotionCoordinator {
       if (!pair.lastLeader || at > pair.lastLeader.at) pair.lastLeader = { joints: lead, at };
       const target = clampToFollower(lead, follower.calibration!);
       const measured = this.degrees(follower)!;
-      const gap = largestGap(target, measured);
+      // A gripper closed on an object (an active grasp) is meant to stay behind its leader: not a gap.
+      const gap = largestGap(follower.graspActive ? { ...target, gripper: measured.gripper } : target, measured);
       if (gap.deg > TELEOP_GAP_DEG) {
         pair.gapSince ??= now;
         if (now - pair.gapSince > TELEOP_GAP_MS) {
@@ -1208,7 +1698,147 @@ export class MotionCoordinator {
       }
       this.writeGoalDegrees(follower, goal, speeds);
       this.benchLog(active, follower, measured, now);
+      if (active.recording) this.sample(active.recording, follower, measured);
     }
+  }
+
+  /**
+   * One recording sample from the follower's own fresh reading (never the leader's), at most every
+   * SKILL_MIN_WAYPOINT_GAP_MS. A gripper with an active grasp records its goal instead (at most
+   * MAX_GOAL_LEAD_DEG past where the object stops it), so a replay squeezes as the teaching did.
+   */
+  private sample(recording: Recording, follower: Slot, measured: ArmJoints): void {
+    const at = follower.reading!.at;
+    if (recording.samples.length > 0 && at - recording.lastSampleAt < SKILL_MIN_WAYPOINT_GAP_MS) return;
+    const t = Math.round(at - recording.origin);
+    if (t > SKILL_MAX_DURATION_MS || recording.samples.length >= SKILL_MAX_WAYPOINTS) return;
+    const gripper = follower.graspActive && follower.goalDeg ? follower.goalDeg.gripper : measured.gripper;
+    recording.samples.push({ t, joints: { ...measured, gripper } });
+    recording.lastSampleAt = at;
+  }
+
+  /**
+   * One replay step. First the arm goes to the skill's first waypoint (`approach`); the timeline starts once
+   * every joint is within AT_POSE_TOLERANCE_DEG of it. Then the skill's own timeline (stretched in bench mode)
+   * runs on the clock and doesn't wait for a lagging joint, except at a gripper event: there it waits until
+   * that arm is within AT_POSE_TOLERANCE_DEG of the event's point, so a grasp never closes somewhere else (all
+   * bounded by the deadline). Each arm's goal moves toward where the timeline says, at most its cap a step and
+   * within MAX_GOAL_LEAD_DEG of where it is (nextGoal). Done once the timeline has ended and every joint is
+   * within AT_POSE_TOLERANCE_DEG of the last waypoint, except a gripper whose grasp is active (an object stops
+   * it short): it ends HOLDING there.
+   */
+  private stepSkill(active: Extract<Active, { kind: "skill.run" }>, now: number): void {
+    for (const { slot } of active.arms) {
+      if (!this.fresh(slot)) {
+        this.latch("feedback_stale", slot.part, null, "no fresh reading while replaying");
+        return;
+      }
+    }
+    const dtMs = stepSeconds(now - active.lastStepMono) * 1000;
+    active.lastStepMono = now;
+    const near = (slot: Slot, side: ArmSide, t: number) => {
+      const point = skillPoint(active.skill, side, t).joints;
+      const measured = this.degrees(slot)!;
+      return ARM_JOINTS.every((j) => (j === "gripper" && slot.graspActive) || Math.abs(point[j] - measured[j]) <= AT_POSE_TOLERANCE_DEG);
+    };
+    if (active.phase === "approach") {
+      if (active.arms.every((a) => near(a.slot, a.side, 0))) {
+        active.phase = "run";
+        this.event("skill", "at its start: the timeline starts");
+      }
+    } else {
+      let next = Math.min(active.endMs, active.skillMs + dtMs / active.stretch);
+      const events = active.skill.gripper_events;
+      while (active.nextEvent < events.length && events[active.nextEvent]!.t_ms <= next) {
+        const event = events[active.nextEvent]!;
+        const slot = active.arms.find((a) => a.side === event.arm)!.slot;
+        // The timeline waits at the event until that arm is at the event's point.
+        if (!near(slot, event.arm, event.t_ms)) {
+          next = event.t_ms;
+          break;
+        }
+        active.nextEvent += 1;
+        if (event.kind === "grasp") this.setGrasp(slot, true, active.skill.let_go.find((l) => l.arm === event.arm)?.gripper_open_deg ?? null);
+        else this.setGrasp(slot, false);
+        this.event("skill", `${event.kind} ${event.arm} at ${event.t_ms} ms`);
+      }
+      active.skillMs = next;
+    }
+    const t = active.phase === "approach" ? 0 : active.skillMs;
+    active.progress = active.endMs > 0 ? t / active.endMs : 1;
+    let arrived = active.phase === "run" && t >= active.endMs;
+    for (const arm of active.arms) {
+      const { slot } = arm;
+      const point = skillPoint(active.skill, arm.side, t, arm.cursor);
+      arm.cursor = point.index;
+      const target = point.joints;
+      const measured = this.degrees(slot)!;
+      const previous = slot.goalDeg ?? measured;
+      const goal = {} as ArmJoints;
+      for (const joint of ARM_JOINTS) goal[joint] = nextGoal(previous[joint], target[joint], measured[joint], active.caps[joint] * (dtMs / 1000));
+      this.writeGoalDegrees(slot, goal, active.caps);
+      // Where the skill has a grasping gripper now: the grasp_mismatch rule compares against it.
+      slot.graspTaughtDeg = slot.graspActive ? target.gripper : null;
+      this.benchLog(active, slot, measured, now);
+      const there = ARM_JOINTS.every(
+        (j) => (j === "gripper" && slot.graspActive) || (Math.abs(target[j] - measured[j]) <= AT_POSE_TOLERANCE_DEG && Math.abs(goal[j] - target[j]) < 1e-9),
+      );
+      arrived &&= there;
+    }
+    if (!arrived) return;
+    this.endActive("completed");
+    // Ends HOLDING; for each arm still grasping, the Pi asks "Let go?" (one target at a time).
+    this.offerLetGo();
+  }
+
+  /**
+   * "Let go?": only the gripper moves, and only opening: toward the let-go angle at the pose speed, with the
+   * same step and lead limits, and never to the closing side of where it is. Nothing else is written, so it
+   * also runs on an arm gone soft (compliant) or with a fault latched (LETTING GO IS ALWAYS POSSIBLE).
+   */
+  private stepRelease(active: Extract<Active, { kind: "gripper.release" }>, now: number): void {
+    const slot = active.slot;
+    if (!this.fresh(slot)) {
+      this.latch("feedback_stale", slot.part, null, "no fresh reading while letting go");
+      return;
+    }
+    const at = this.degrees(slot)!.gripper;
+    const dt = stepSeconds(now - active.lastStepMono);
+    active.lastStepMono = now;
+    const previous = slot.goalDeg?.gripper ?? at;
+    let goal = nextGoal(previous, active.targetDeg, at, active.speedDegS * dt);
+    // Opening only: a goal on the closing side of where it is becomes where it is.
+    if ((goal - at) * active.openSign < 0) goal = at;
+    this.writeGripperGoal(slot, goal, active.speedDegS);
+    this.benchLog(active, slot, this.degrees(slot)!, now);
+    // Done once it has opened at least to the target, or is within AT_POSE_TOLERANCE_DEG of it with its goal there.
+    const openedPast = (at - active.targetDeg) * active.openSign >= 0;
+    if (openedPast || (Math.abs(active.targetDeg - at) <= AT_POSE_TOLERANCE_DEG && Math.abs(goal - active.targetDeg) < 1e-9)) this.finishRelease(slot);
+  }
+
+  private finishRelease(slot: Slot): void {
+    this.endActive("completed");
+    this.setGrasp(slot, false);
+    this.event("let-go", `${slot.side} done`);
+    this.askLetGo();
+  }
+
+  /**
+   * The gripper's goal alone (letting go, or letting off a squeeze): to an arm with a fresh reading whose gripper
+   * servo reads torque on, compliant or not, and frozen or not. A frozen arm's other servos stay frozen: only
+   * the gripper is written, and only from this fresh reading (its goal is where it is, or opening from there).
+   */
+  private writeGripperGoal(slot: Slot, deg: number, speedDegS: number): void {
+    const link = slot.link;
+    const calibration = slot.calibration;
+    const id = slot.ids[ARM_JOINTS.indexOf("gripper")]!;
+    if (!link || !calibration || !this.fresh(slot) || slot.reading!.values.get(id)!.torqueEnable !== 1 || slot.reading_in_flight) return;
+    const position = Math.max(0, Math.min(SERVO_TICKS_PER_TURN - 1, degreesToTicks(calibration.joints.gripper, deg)));
+    slot.goalDeg = { ...(slot.goalDeg ?? this.degrees(slot)!), gripper: deg };
+    slot.goalTicks.set(id, position);
+    link
+      .writeGoals([{ id, position, speed: servoSpeedRegister(speedDegS), acceleration: SERVO_ACCELERATION_REGISTER }])
+      .catch((error: unknown) => this.writeFailed(slot, error));
   }
 
   private benchLog(active: Active, slot: Slot, measured: ArmJoints, now: number): void {
@@ -1276,9 +1906,13 @@ export class MotionCoordinator {
       slot.goalDeg = null;
       return null;
     }
+    // Every goal is where the servo is, a grasping gripper's too: a stop or a fault lets off its squeeze (it may
+    // be on a finger), and "Let go?" is offered. No taught goal applies to it any more.
     const goals = on.map((id) => ({ id, position: reading.values.get(id)!.presentPosition, speed, acceleration: SERVO_ACCELERATION_REGISTER }));
     for (const g of goals) slot.goalTicks.set(g.id, g.position);
     slot.goalDeg = this.degrees(slot);
+    slot.graspTaughtDeg = null;
+    slot.graspShortSince = null;
     return link.writeGoals(goals).catch((error: unknown) => this.writeFailed(slot, error));
   }
 
@@ -1306,13 +1940,15 @@ export class MotionCoordinator {
     slot.limitsWritten = false;
     slot.goalTicks.clear();
     slot.goalDeg = null;
+    // A limp gripper holds nothing.
+    slot.graspActive = false;
     this.publish(true);
   }
 
   /**
    * Comply: hold at the measured position and drop every joint's torque limit to ARM_COMPLIANT_TORQUE_PCT, so
-   * the arm yields to whatever pushes it. (A gripper with an active grasp would keep GRIPPER_HOLD_TORQUE_PCT;
-   * grasps arrive with skills, part B.)
+   * the arm yields to whatever pushes it. A gripper with an active grasp keeps GRIPPER_HOLD_TORQUE_PCT, so the
+   * object isn't dropped (the contract's).
    */
   private async complySlot(slot: Slot): Promise<void> {
     const link = slot.link;
@@ -1320,9 +1956,10 @@ export class MotionCoordinator {
     void this.holdSlot(slot);
     if (!link) return;
     try {
-      const value = torqueRegister(ARM_COMPLIANT_TORQUE_PCT);
-      await link.writeTorqueLimits(slot.ids.map((id) => ({ id, value })));
-      for (const id of slot.ids) slot.writtenLimits.set(id, value);
+      const gripperId = slot.ids[ARM_JOINTS.indexOf("gripper")]!;
+      const limits = slot.ids.map((id) => ({ id, value: torqueRegister(id === gripperId && slot.graspActive ? GRIPPER_HOLD_TORQUE_PCT : ARM_COMPLIANT_TORQUE_PCT) }));
+      await link.writeTorqueLimits(limits);
+      for (const { id, value } of limits) slot.writtenLimits.set(id, value);
       this.event("comply", slot.part);
     } catch (error) {
       this.deps.log.error("couldn't make the arm compliant; turning its torque off", { arm: slot.label, error: (error as Error).message });
@@ -1338,7 +1975,18 @@ export class MotionCoordinator {
    * softens one arm, `release` turns torque off; every other follower holds at its fresh measured position.
    */
   private latch(code: MotionFaultCode, part: MotionPart, joint: ArmJoint | null, detail: string, affected?: Slot[]): void {
-    if (this.faults.some((f) => f.code === code && f.part === part)) return;
+    if (this.faults.some((f) => f.code === code && f.part === part)) {
+      // Already latched (once per code and part), but whatever is running now (letting go, with the fault
+      // latched) still ends and holds: a deadline passed again must never leave a motion running for ever.
+      if (this.active) {
+        this.deps.log.error("motion fault again", { code, part, joint: joint ?? undefined, detail });
+        this.endActive("faulted");
+        this.holdAll();
+        this.offerLetGo(FAULT_REACTION[code] === "release" ? this.slots : []);
+        this.publish(true);
+      }
+      return;
+    }
     const fault: MotionFault = { code, part, raised_at: iso(this.deps.clock.now()), sentence: FAULT_SENTENCES[code], ...(joint ? { joint } : {}) };
     // The state carries at most 32; past that a new fault still reacts, and the oldest stay listed.
     if (this.faults.length < 32) this.faults.push(fault);
@@ -1354,6 +2002,8 @@ export class MotionCoordinator {
         slot.frozen = true;
         // No fresh reading or no bus: what torque on wrote can't be known to hold any more.
         slot.limitsWritten = false;
+        // A grasping gripper keeps squeezing on its last goal: let it off at the next fresh read (graspTick).
+        if (slot.graspActive) slot.unsqueezePending = true;
         this.event("goals-stopped", slot.part);
       }
       this.holdAll(targets);
@@ -1364,8 +2014,30 @@ export class MotionCoordinator {
       this.holdAll(targets);
       for (const slot of targets) if (slot.role === "follower") void this.releaseSlot(slot);
     } else this.holdAll();
+    // Not holding what was taught (perhaps a finger): its gripper goes soft too (the hold above let off the
+    // squeeze), and "Let go?" is offered below.
+    if (code === "grasp_mismatch" && owner) void this.loosenGripper(owner);
     this.deps.say(fault.sentence);
+    // LETTING GO IS ALWAYS POSSIBLE: a grasp still held is offered "Let go?" at once, fault or not (not for an
+    // arm whose torque this fault turns off: it holds nothing).
+    this.offerLetGo(reaction === "release" ? targets : []);
     this.publish(true);
+  }
+
+  /** A grasping gripper's torque limit down to ARM_COMPLIANT_TORQUE_PCT (acknowledged), so it yields. */
+  private async loosenGripper(slot: Slot): Promise<void> {
+    const link = slot.link;
+    if (!link) return;
+    const id = slot.ids[ARM_JOINTS.indexOf("gripper")]!;
+    const value = torqueRegister(ARM_COMPLIANT_TORQUE_PCT);
+    const seq = slot.torqueOffSeq;
+    try {
+      await link.writeTorqueLimits([{ id, value }]);
+      if (slot.link === link && slot.torqueOffSeq === seq) slot.writtenLimits.set(id, value);
+      this.event("grasp", `${slot.side} loosened`);
+    } catch (error) {
+      this.writeFailed(slot, error);
+    }
   }
 
   /** Whether a latched fault's cause is still there (fault.clear refuses `cause_present`). */
@@ -1419,6 +2091,8 @@ export class MotionCoordinator {
     this.holdAll();
     if (!had) this.lastCommand = { command_id: command.command_id, kind: "motion.stop", outcome: "completed", at: raw.issued_at };
     this.event("stop", source);
+    // A motion that ended with a grasp still held: "Let go?" at once (the hold above let off the squeeze).
+    if (had) this.offerLetGo();
     this.publish(true);
   }
 
@@ -1431,11 +2105,95 @@ export class MotionCoordinator {
     this.deps.log.info("motion ended", { kind: active.command.kind, outcome, ms: Math.round(this.deps.clock.monotonic() - active.startedMono) });
     this.finishRequest(active.command.target_id, outcome);
     if (outcome === "stopped") {
-      // Hold where it is now (read first): a stopped pose or teleop leaves the goal a little ahead. A completed
-      // pose keeps its goal at the target, within AT_POSE_TOLERANCE_DEG of where it is.
-      if (active.kind === "arm.go_to_pose") void this.holdSlot(active.slot);
-      else for (const pair of active.pairs) void this.holdSlot(pair.follower);
+      // Hold where it is now (read first): a stopped move leaves the goal a little ahead. A completed pose,
+      // skill or let-go keeps its goal at the target, within AT_POSE_TOLERANCE_DEG of where it is.
+      for (const slot of this.movedSlots(active)) void this.holdSlot(slot);
     }
+    if (active.kind === "teleop" && active.recording) {
+      // A recording that ended with a stop (a handle press, the terminal, its length limit) waits for the
+      // terminal to save it; one that ended with a fault is never saved.
+      const recording = active.recording;
+      this.draft = { requestId: active.command.target_id, side: active.pairs[0]!.follower.side, recording, faulted: outcome === "faulted", speedDegS: active.speedDegS };
+      this.event("recording", `${outcome === "faulted" ? "discarded" : "ended"} ${recording.skillId} ${recording.samples.length} samples`);
+    }
+  }
+
+  private discardDraft(why: string): void {
+    const draft = this.draft;
+    if (!draft) return;
+    this.draft = null;
+    this.event("recording", `not saved ${draft.recording.skillId}: ${why}`);
+    this.deps.log.info("recording not saved", { skill: draft.recording.skillId, why });
+  }
+
+  /**
+   * Marks a follower's gripper as grasping (or not) and writes its torque limit to match: GRIPPER_HOLD_TORQUE_PCT
+   * while grasping, the mode's gripper limit otherwise (acknowledged; the limit read back on later ticks must
+   * be this). A grasp remembers where the gripper was as it began (the opening side) and where it lets go
+   * (`letGoDeg`, else that angle). A write that fails stops motion, and a grasp that couldn't get its limit
+   * isn't active (no exemption without the hold torque).
+   */
+  private setGrasp(slot: Slot, active: boolean, letGoDeg: number | null = null): void {
+    if (slot.graspActive === active) return;
+    slot.graspActive = active;
+    slot.graspShortSince = null;
+    slot.graspCloseSign = null;
+    slot.unsqueezePending = false;
+    if (active) {
+      slot.graspOpenDeg = this.degrees(slot)?.gripper ?? null;
+      slot.letGoDeg = letGoDeg ?? slot.graspOpenDeg;
+    } else slot.graspTaughtDeg = null;
+    const link = slot.link;
+    this.event("grasp", `${slot.side} ${active ? "active" : "ended"}`);
+    if (!link || !slot.limitsWritten) return;
+    const id = slot.ids[ARM_JOINTS.indexOf("gripper")]!;
+    const value = torqueRegister(active ? GRIPPER_HOLD_TORQUE_PCT : slot.compliant ? ARM_COMPLIANT_TORQUE_PCT : modeLimits(this.deps.bench).gripper_torque_pct);
+    const seq = slot.torqueOffSeq;
+    link
+      .writeTorqueLimits([{ id, value }])
+      .then(() => {
+        if (slot.link === link && slot.torqueOffSeq === seq) slot.writtenLimits.set(id, value);
+      })
+      .catch((error: unknown) => {
+        this.writeFailed(slot, error);
+        if (active && slot.graspActive) {
+          slot.graspActive = false;
+          slot.graspTaughtDeg = null;
+          this.event("grasp", `${slot.side} not active: its hold torque couldn't be written`);
+        }
+        if (this.movedSlots(this.active).includes(slot)) this.stopMotion("motion_guard", "the gripper's torque limit couldn't be written");
+      });
+  }
+
+  /**
+   * LETTING GO IS ALWAYS POSSIBLE: queues "Let go?" for every follower still grasping (not those in `except`),
+   * to its taught let-go angle (else where the grasp began), and asks the first now. Called whenever a motion
+   * ends with a grasp active (completed, stopped, faulted) and after a fault clears.
+   */
+  private offerLetGo(except: Slot[] = []): void {
+    this.letGoQueue = this.slots
+      .filter((s) => s.role === "follower" && s.graspActive && !except.includes(s))
+      .flatMap((s) => {
+        const deg = s.letGoDeg ?? s.graspOpenDeg;
+        return deg === null ? [] : [{ arm: s.side, deg }];
+      });
+    this.askLetGo();
+  }
+
+  /** The words for "Let go?": the arm is named only when both hands hold something. */
+  private letGoTitle(side: ArmSide): string {
+    return this.slots.filter((s) => s.role === "follower" && s.graspActive).length > 1 ? `Let go with the ${side} arm?` : "Let go?";
+  }
+
+  /** Prepares the next queued "Let go?" as the Pi's own (walker_local) Confirm target. True if it is now pending. */
+  private askLetGo(): boolean {
+    const next = this.letGoQueue.shift();
+    if (!next) return false;
+    const result = this.prepare({ kind: "gripper.release", arm: next.arm, gripper_open_deg: next.deg }, "walker_local", this.letGoTitle(next.arm), null, null, { quiet: true });
+    const asked = result.ok && result.request.state === "waiting_confirm";
+    // If it couldn't be asked now (the walker is asking something else), the terminal can ask it: walker arms let-go.
+    if (!asked) this.event("let-go-not-asked", `${next.arm}: ${result.ok ? (result.request.refusal ?? "") : result.error}`);
+    return asked;
   }
 
   // ---- Hand controls and the stop ----
@@ -1574,10 +2332,18 @@ export class MotionCoordinator {
 
   // ---- The one pending Confirm target ----
 
-  private prepareRequest(action: ConfirmAction, title: string, snapshot: ArmJoints | null = null, thenCalibrate: Slot | null = null) {
-    const result = this.prepare(action, "operator_cli", title, snapshot, thenCalibrate);
+  private prepareRequest(action: ConfirmAction, title: string, snapshot: ArmJoints | null = null, thenCalibrate: Slot | null = null, extra: PrepareExtra = {}) {
+    const result = this.prepare(action, "operator_cli", title, snapshot, thenCalibrate, extra);
     if (!result.ok) return result;
     return { ok: true as const, request: { ...result.request } };
+  }
+
+  /** Prepares a skill.run, worded from the skill file's own title (a file failing its schema gets fixed words, and is refused). */
+  private prepareSkillRun(skillId: string, preparer: Preparer, load: SkillLoad): OperatorResult<{ request: OperatorRequest }> {
+    const title = load.kind === "ok" ? load.skill.title : "Run a taught movement";
+    const result = this.prepare({ kind: "skill.run", skill_id: skillId }, preparer, title, null, null, { skillLoad: load });
+    if (!result.ok) return result;
+    return { ok: true, request: { ...result.request } };
   }
 
   /**
@@ -1591,6 +2357,7 @@ export class MotionCoordinator {
     title: string,
     snapshot: ArmJoints | null,
     thenCalibrate: Slot | null = null,
+    extra: PrepareExtra = {},
   ): OperatorResult<{ request: OperatorRequest }> {
     const parsedAction = ConfirmActionSchema.safeParse(action);
     if (!parsedAction.success || !isPreparerAllowed(action.kind, preparer)) return { ok: false, error: `${preparer} may not prepare ${action.kind}` };
@@ -1607,12 +2374,15 @@ export class MotionCoordinator {
     const modeOk = mode === "ready" || (mode === "fault" && allowedWhileFaulted(action));
     const early = busy
       ? { refusal: busy, detail: null }
-      : (this.refusalFor(action, snapshot, "prepare") ?? (modeOk ? null : { refusal: "busy" as const, detail: `the arms are ${mode}` }));
+      : (this.refusalFor(action, snapshot, "prepare", extra.skillLoad ?? null) ?? (modeOk ? null : { refusal: "busy" as const, detail: `the arms are ${mode}` }));
     if (early) {
       this.refuseRequest(request, early.refusal, early.detail);
-      this.lastCommand = { command_id: this.newId(), kind: action.kind, outcome: "refused", refusal: early.refusal, at: iso(this.deps.clock.now()) };
+      // The Pi's own offer that can't be made now isn't a command anyone asked for: the last command stays.
+      if (!extra.quiet) this.lastCommand = { command_id: this.newId(), kind: action.kind, outcome: "refused", refusal: early.refusal, at: iso(this.deps.clock.now()) };
       this.event("command", `${action.kind} refused:${early.refusal} ${preparer}`);
       this.deps.log.info("motion command not prepared", { kind: action.kind, prepared_by: preparer, refusal: early.refusal, detail: early.detail ?? undefined });
+      // A skill that fails its checks is refused and latches skill_invalid (the contract's), wherever it was asked for.
+      if (early.refusal === "skill_invalid") this.latch("skill_invalid", "system", null, early.detail ?? "a skill failed its checks");
       this.publish(true);
       return { ok: true, request: { ...request } };
     }
@@ -1633,7 +2403,15 @@ export class MotionCoordinator {
     }
     const target = parsedTarget.data;
     if (this.pending) this.endPending("replaced", "a newer target");
-    this.pending = { target, snapshot, request: preparer === "operator_cli" ? request : null, thenCalibrate, preparedMode: this.mode() };
+    this.pending = {
+      target,
+      snapshot,
+      request: preparer === "operator_cli" ? request : null,
+      thenCalibrate,
+      skill: extra.skillLoad?.kind === "ok" ? extra.skillLoad.skill : null,
+      recording: extra.recording ?? null,
+      preparedMode: this.mode(),
+    };
     this.keepRequest(request);
     this.event("target", `${action.kind} ${preparer}: ${title}`);
     this.deps.log.info("Confirm target prepared", { kind: action.kind, prepared_by: preparer });
@@ -1707,15 +2485,33 @@ export class MotionCoordinator {
 
   private run(command: ConfirmedCommand, pending: Pending): void {
     const request = pending.request;
-    const refusal = this.refusalFor(command, pending.snapshot, "press");
-    if (refusal) return this.refuseCommand(command, refusal.refusal, refusal.detail, request);
+    // A skill is read again at the press, and must be exactly the file the walker asked about.
+    let skillLoad: SkillLoad | null = null;
+    if (command.kind === "skill.run") {
+      skillLoad = this.deps.files.readSkill(command.skill_id);
+      if (skillLoad.kind === "ok" && pending.skill && JSON.stringify(skillLoad.skill) !== JSON.stringify(pending.skill)) {
+        return this.refuseCommand(command, "confirm_target_mismatch", "the skill file changed after the walker asked", request);
+      }
+    }
+    const refusal = this.refusalFor(command, pending.snapshot, "press", skillLoad);
+    if (refusal) {
+      this.refuseCommand(command, refusal.refusal, refusal.detail, request);
+      if (refusal.refusal === "skill_invalid") this.latch("skill_invalid", "system", null, refusal.detail ?? "a skill failed its checks");
+      return;
+    }
     if (request) request.state = "running";
     this.deps.log.info("motion command", { kind: command.kind, prepared_by: command.prepared_by, bench: this.deps.bench });
+    // Any earlier "Let go?" still queued is dropped: a new motion was asked for (the terminal can ask again).
+    this.letGoQueue = [];
     switch (command.kind) {
       case "arm.go_to_pose":
         return this.startPose(command, pending.snapshot!);
       case "teleop.start":
-        return this.startTeleop(command);
+        return this.startTeleop(command, pending.recording);
+      case "skill.run":
+        return this.startSkill(command, (skillLoad as Extract<SkillLoad, { kind: "ok" }>).skill);
+      case "gripper.release":
+        return this.startRelease(command);
       case "arm.torque":
         void this.runTorque(command, request, pending.thenCalibrate);
         return;
@@ -1723,11 +2519,13 @@ export class MotionCoordinator {
         this.clearFaults();
         this.recordLast(command, "completed");
         this.finishRequest(command.target_id, "completed");
+        // Still holding something: "Let go?" again (the one offered during the fault went with it).
+        this.offerLetGo();
         this.publish(true);
         return;
       default:
-        // Part B: lift motion, skills and gripper.release aren't built yet.
-        this.refuseCommand(command, command.kind === "skill.run" ? "unknown_skill" : "part_missing", "not built yet", request);
+        // The lift isn't wired into this coordinator.
+        this.refuseCommand(command, "part_missing", "no lift on this walker yet", request);
     }
   }
 
@@ -1735,25 +2533,65 @@ export class MotionCoordinator {
    * The first refusal that applies, in the order of the command's `refuses_when`. At `prepare` the Confirm
    * checks are skipped (the press checks them); at `press` they were already checked by commandMatchesTarget.
    */
-  private refusalFor(action: ConfirmAction, snapshot: ArmJoints | null, when: "prepare" | "press"): { refusal: MotionRefusal; detail: string | null } | null {
+  private refusalFor(
+    action: ConfirmAction,
+    snapshot: ArmJoints | null,
+    when: "prepare" | "press",
+    skillLoad: SkillLoad | null = null,
+  ): { refusal: MotionRefusal; detail: string | null } | null {
     let reasons: readonly MotionRefusal[] = MOTION_COMMAND_POLICY[action.kind].refuses_when;
     // Turning torque off is refused only while busy (or for the Confirm checks); part_missing because a
     // disconnected arm can't be written to at all.
     if (action.kind === "arm.torque" && !action.enabled) reasons = ["busy", "part_missing"];
+    const skill = skillLoad?.kind === "ok" ? skillLoad.skill : null;
     const followers =
-      action.kind === "arm.go_to_pose" ? [this.follower(action.arm)] : action.kind === "arm.torque" ? action.arms.map((a) => this.follower(a)) : action.kind === "teleop.start" ? action.pairs.map((p) => this.follower(p.follower)) : [];
+      action.kind === "arm.go_to_pose" || action.kind === "gripper.release"
+        ? [this.follower(action.arm)]
+        : action.kind === "arm.torque"
+          ? action.arms.map((a) => this.follower(a))
+          : action.kind === "teleop.start"
+            ? action.pairs.map((p) => this.follower(p.follower))
+            : action.kind === "skill.run"
+              ? (skill?.arms ?? []).map((a) => this.follower(a))
+              : [];
     const parts: Array<Slot | undefined> = action.kind === "teleop.start" ? [...followers, ...action.pairs.map((p) => this.slot(p.leader, "leader"))] : followers;
     for (const reason of reasons) {
       if (reason === "confirm_busy" || reason === "confirm_target_expired" || reason === "confirm_target_mismatch") continue;
-      const detail = this.refusalApplies(reason, action, parts, snapshot);
+      const detail = this.refusalApplies(reason, action, parts, snapshot, skillLoad);
       if (detail !== false) return { refusal: reason, detail };
     }
     void when;
     return null;
   }
 
+  /** The walker's setup as checkSkillAgainstSetup reads it: the calibrated arms, and no lift (it isn't wired here). */
+  private setup(): MotionSetup {
+    return {
+      format: "sophi.motion_setup",
+      version: MOTION_CONTRACT_VERSION,
+      stop_sense: this.deps.stopSense.reading() === "not_wired" ? "not_wired" : "wired",
+      arms: this.slots.flatMap((s) => (s.calibration ? [s.calibration] : [])),
+      poses: this.poses,
+      lift: null,
+    };
+  }
+
+  /** Why a skill can't run from where the arms are: its worst joint, and a named pose at its start if one is. */
+  private notAtStart(skill: Skill): string | false {
+    for (const side of skill.arms) {
+      const measured = this.follower(side) ? this.degrees(this.follower(side)!) : null;
+      if (!measured) continue;
+      const gap = startGap(skill, side, measured);
+      if (gap.deg <= skill.start.tolerance_deg) continue;
+      const pose = this.poses.find((p) => p.arm === side && startGap(skill, side, p.joints).deg + AT_POSE_TOLERANCE_DEG <= skill.start.tolerance_deg);
+      const hint = pose ? `; its start is the ${pose.name} pose: walker arms pose go ${pose.name} --arm ${side}` : "; move it to where the skill starts first";
+      return `${side} ${gap.joint} is ${round1(gap.deg)}° from where it starts (within ${skill.start.tolerance_deg}° needed)${hint}`;
+    }
+    return false;
+  }
+
   /** false when the precondition holds; otherwise a detail (or null) for the log and the terminal. */
-  private refusalApplies(reason: MotionRefusal, action: ConfirmAction, parts: Array<Slot | undefined>, snapshot: ArmJoints | null): string | null | false {
+  private refusalApplies(reason: MotionRefusal, action: ConfirmAction, parts: Array<Slot | undefined>, snapshot: ArmJoints | null, skillLoad: SkillLoad | null): string | null | false {
     const stop = this.deps.stopSense.reading();
     switch (reason) {
       case "stop_pressed":
@@ -1773,16 +2611,43 @@ export class MotionCoordinator {
         return parts.some((s) => s && !this.fresh(s)) ? null : false;
       case "not_calibrated":
         return parts.some((s) => !s?.calibration) ? null : false;
-      case "torque_off":
+      case "torque_off": {
+        if (action.kind === "gripper.release") {
+          // Letting go needs only the gripper's own servo reading torque on (fresh): a compliant arm, or one
+          // whose limits changed, can still open its hand (LETTING GO IS ALWAYS POSSIBLE).
+          const slot = this.follower(action.arm);
+          const id = slot?.ids[ARM_JOINTS.indexOf("gripper")];
+          return slot && id !== undefined && this.fresh(slot) && slot.reading!.values.get(id)!.torqueEnable === 1 ? false : null;
+        }
         // Read before act: torque on as read now, its limits written and read back by torque on, not compliant.
         return parts.some((s) => s?.role === "follower" && (this.torqueOf(s) !== "on" || !s.limitsWritten || s.compliant)) ? null : false;
+      }
       case "unknown_pose":
         return action.kind === "arm.go_to_pose" && !this.findPose(action.arm, action.pose) ? null : false;
       case "unknown_skill":
-        return action.kind === "skill.run" ? "skills aren't built yet" : false;
+        return action.kind === "skill.run" && (skillLoad === null || skillLoad.kind === "missing") ? `no skill file ${action.skill_id}` : false;
+      case "skill_invalid": {
+        if (action.kind !== "skill.run" || !skillLoad || skillLoad.kind === "missing") return false;
+        if (skillLoad.kind === "invalid") return `${action.skill_id}: ${skillLoad.reason}`;
+        const problems = checkSkillAgainstSetup(skillLoad.skill, this.setup());
+        return problems.length > 0 ? `${action.skill_id}: ${describeSkillProblem(problems[0]!)}` : false;
+      }
+      case "not_at_start":
+        return action.kind === "skill.run" && skillLoad?.kind === "ok" ? this.notAtStart(skillLoad.skill) : false;
       case "no_grasp":
-        return action.kind === "gripper.release" ? null : false;
+        return action.kind === "gripper.release" && !this.follower(action.arm)?.graspActive ? null : false;
       case "out_of_range": {
+        if (action.kind === "gripper.release") {
+          const slot = this.follower(action.arm);
+          const calibration = slot?.calibration;
+          if (calibration && !gripperWithinCalibration(action.gripper_open_deg, calibration)) return `${action.gripper_open_deg}° is outside the gripper's range`;
+          // A let-go angle more closed than where the grasp began wouldn't open the hand: refused. (One between
+          // there and where it is now opens it; one it is already open past ends at once, moving nothing.)
+          if (slot?.graspOpenDeg != null && closes(slot.graspOpenDeg, slot.graspCloseSign, action.gripper_open_deg)) {
+            return `${action.gripper_open_deg}° would close it (the grasp began at ${round1(slot.graspOpenDeg)}°)`;
+          }
+          return false;
+        }
         if (action.kind !== "arm.go_to_pose") return false;
         const slot = this.follower(action.arm);
         if (!slot?.calibration || !snapshot) return false;
@@ -1849,24 +2714,113 @@ export class MotionCoordinator {
     this.publish(true);
   }
 
-  private startTeleop(command: ConfirmedCommand & { kind: "teleop.start" }): void {
+  private startTeleop(command: ConfirmedCommand & { kind: "teleop.start" }, meta: Pending["recording"]): void {
     const now = this.deps.clock.monotonic();
     const pairs = command.pairs.map((p) => {
       const follower = this.follower(p.follower)!;
       follower.goalDeg = this.degrees(follower);
       return { leader: this.slot(p.leader, "leader")!, follower, lastLeader: null, overspeedSince: null, gapSince: null };
     });
+    let recording: Recording | null = null;
+    if (command.record_skill_id !== undefined) {
+      // The first sample, t = 0, is where the follower is at the press (its fresh reading: checked by the press).
+      this.discardDraft("a new recording began");
+      const follower = pairs[0]!.follower;
+      const at = follower.reading!.at;
+      // A grasp from before (an earlier skill still holding) carries on: the recording starts grasping.
+      recording = {
+        skillId: command.record_skill_id,
+        title: meta?.title ?? command.record_skill_id,
+        replace: meta?.replace ?? false,
+        origin: at,
+        lastSampleAt: at,
+        samples: [{ t: 0, joints: this.degrees(follower)! }],
+        events: follower.graspActive ? [{ t: 0, kind: "grasp" }] : [],
+        graspOpenDeg: follower.graspActive ? follower.graspOpenDeg : null,
+      };
+    }
     this.active = {
       kind: "teleop",
       command,
       pairs,
       speedDegS: teleopSpeedDegS(modeLimits(this.deps.bench), command.record_skill_id !== undefined),
+      recording,
       startedMono: now,
       deadlineMono: now + TELEOP_MAX_SESSION_MS,
       lastStepMono: now,
       lastBenchLog: -Infinity,
     };
     this.event("command", `teleop.start started ${command.prepared_by}`);
+    if (recording) this.event("recording", `started ${recording.skillId}`);
+    this.publish(true);
+  }
+
+  private startSkill(command: ConfirmedCommand & { kind: "skill.run" }, skill: Skill): void {
+    const now = this.deps.clock.monotonic();
+    const replay = modeLimits(this.deps.bench).arm_speed_deg_s.replay;
+    const stretch = replayStretch(skill, replay);
+    const endMs = skill.waypoints.at(-1)!.t_ms;
+    const caps = replayCaps(skill, replay);
+    let approachMs = 0;
+    const arms = skill.arms.map((side) => {
+      const slot = this.follower(side)!;
+      // The goal starts from where the arm is now, never from an older goal.
+      slot.goalDeg = this.degrees(slot);
+      const first = skill.waypoints[0]!.joints[side]!;
+      for (const joint of ARM_JOINTS) approachMs = Math.max(approachMs, (Math.abs(first[joint] - slot.goalDeg![joint]) / caps[joint]) * 1000);
+      return { side, slot, cursor: 0 };
+    });
+    this.active = {
+      kind: "skill.run",
+      command,
+      skill,
+      arms,
+      stretch,
+      caps,
+      endMs,
+      nextEvent: 0,
+      progress: 0,
+      phase: "approach",
+      skillMs: 0,
+      startedMono: now,
+      // The approach to the first waypoint, then the stretched timeline; waits at gripper events come out of it.
+      deadlineMono: now + motionTimeoutMs(approachMs + endMs * stretch),
+      lastStepMono: now,
+      lastBenchLog: -Infinity,
+    };
+    this.event("command", `skill.run started ${command.prepared_by}`);
+    this.deps.log.info("skill replay", { skill: skill.skill_id, ms: endMs, stretch: round1(stretch), bench: this.deps.bench });
+    this.publish(true);
+  }
+
+  private startRelease(command: ConfirmedCommand & { kind: "gripper.release" }): void {
+    const slot = this.follower(command.arm)!;
+    const measured = this.degrees(slot)!;
+    const speed = modeLimits(this.deps.bench).arm_speed_deg_s.pose;
+    const now = this.deps.clock.monotonic();
+    // The gripper's goal starts from where it is (no squeeze); no other servo is written.
+    slot.goalDeg = { ...(slot.goalDeg ?? measured), gripper: measured.gripper };
+    // Opening is the other way from how this grasp closed (fixed once per grasp); unknown, toward the target.
+    const openSign = slot.graspCloseSign !== null ? -slot.graspCloseSign : Math.sign(command.gripper_open_deg - measured.gripper) || 1;
+    this.active = {
+      kind: "gripper.release",
+      command,
+      slot,
+      targetDeg: command.gripper_open_deg,
+      speedDegS: speed,
+      openSign,
+      startedMono: now,
+      deadlineMono: now + motionTimeoutMs((Math.abs(command.gripper_open_deg - measured.gripper) / speed) * 1000),
+      lastStepMono: now,
+      lastBenchLog: -Infinity,
+    };
+    this.event("command", `gripper.release started ${command.prepared_by}`);
+    // Already opened at least to the target (someone pulled the jaws open): done at once, nothing moves.
+    if ((command.gripper_open_deg - measured.gripper) * openSign <= 0) {
+      this.event("let-go", `${slot.side} already open past ${round1(command.gripper_open_deg)}°: nothing moves`);
+      this.finishRelease(slot);
+      return;
+    }
     this.publish(true);
   }
 
@@ -1907,6 +2861,7 @@ export class MotionCoordinator {
           await link.setTorque(slot.ids, false);
           await readBack(slot, link, "torque off", (_id, s) => s.torqueEnable === 0);
           slot.compliant = false;
+          slot.graspActive = false;
           slot.goalTicks.clear();
           slot.goalDeg = null;
           this.event("torque", `${side} off`);
@@ -1916,7 +2871,9 @@ export class MotionCoordinator {
         slot.limitsWritten = false;
         stillAllowed();
         // 1. Torque limits first: a RAM write that can't make anything move, acknowledged, then read back.
-        const wanted = new Map(slot.ids.map((id, i) => [id, torqueRegister(jointTorquePct(limits, ARM_JOINTS[i]!))]));
+        // A gripper still grasping (torque on again after it went soft) keeps GRIPPER_HOLD_TORQUE_PCT.
+        const pct = (i: number) => (ARM_JOINTS[i] === "gripper" && slot.graspActive ? GRIPPER_HOLD_TORQUE_PCT : jointTorquePct(limits, ARM_JOINTS[i]!));
+        const wanted = new Map(slot.ids.map((id, i) => [id, torqueRegister(pct(i))]));
         await link.writeTorqueLimits([...wanted].map(([id, value]) => ({ id, value })));
         const before = await readBack(slot, link, "torque limit", (id, s) => s.torqueLimit === wanted.get(id));
         stillAllowed();

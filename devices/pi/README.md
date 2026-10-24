@@ -4,7 +4,7 @@
 
 On 2026-10-24, the Pi's `/dev/serial/by-id` showed only one CP2102 symlink because both bridges reported serial `0001`. The deployed service now scans `/dev/serial/by-path`, removes duplicate aliases for the same tty, and saw `hand-right-01` and `hand-left-01` simultaneously, both healthy. The right board was reflashed and its app image verified before deployment. After the service restarted it logged the new fixed boot notice, "Sophi is on." Its systemd unit was active and its cloud link online. The owner's physical press check for right Talk and left Confirm is still pending.
 
-With no arm ports configured (the default), nothing in this service can move the arms or the lift, and the only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second. With arm ports set in its settings file, it also runs the **motion coordinator for the two SO-101 arms** ([The arms](#the-arms-motion-coordinator-part-a)), built 2026-10-24 and tested only against simulated servos: **not yet run on a real servo, adapter or Pi.** A lift client exists in `src/motion/lift/`, but only `walker simulate --lift` uses it, against a simulated lift; the coordinator doesn't drive the lift, and taught skills aren't built.
+With no arm ports configured (the default), nothing in this service can move the arms or the lift, and the only thing it can make a module do is play one of the four fixed haptic patterns from serial v1, for at most a second. With arm ports set in its settings file, it also runs the **motion coordinator for the two SO-101 arms** ([The arms](#the-arms-motion-coordinator)), built 2026-10-24 and tested only against simulated servos: **not yet run on a real servo, adapter or Pi.** It includes taught skills (record a movement with the teaching arm, replay it, "Let go?"), also tested only against simulated servos. A lift client exists in `src/motion/lift/`, but only `walker simulate --lift` uses it, against a simulated lift; the coordinator doesn't drive the lift.
 
 ## What runs where
 
@@ -448,13 +448,13 @@ bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdR
 
 **The page.** On the Mac it drew each new state within about 100 ms of the key that caused it, usually 10 to 40 ms (D14). If the walker service stops, it shows "Waiting for the walker service." after 5 s rather than a state that may no longer be true. Every 2 s it then asks `/screen/check` whether its token is still good: if the service restarted (a new token) it reloads itself; if the stream was only refused (too many screens) or dropped, it connects again without reloading. Captions appear when the reply starts playing, and "Done" only once the new configuration is in force on the walker; if it can't be fetched, the offer simply closes.
 
-## The arms (motion coordinator, part A)
+## The arms (motion coordinator)
 
-**Status, 2026-10-24: built and tested on a Mac against simulated STS3215 servos only. Not yet run on a real servo, adapter, Pi, stop switch or person.** The coordinator follows the motion contract ([`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts), [manipulation guide](../../docs/subsystems/manipulation.md)). Part A is the arms: safety, calibration, named poses, teleop and the simulator. The lift and taught skills (`skill.run`, "Let go?") are part B and are refused here. Every number not from the contract is a placeholder, not measured.
+**Status, 2026-10-24: built and tested on a Mac against simulated STS3215 servos only. Not yet run on a real servo, adapter, Pi, stop switch or person.** The coordinator follows the motion contract ([`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts), [manipulation guide](../../docs/subsystems/manipulation.md)). It covers the arms: safety, calibration, named poses, teleop, **taught skills** (recording, replay and "Let go?", [below](#taught-skills-record-and-replay)) and the simulator. The lift isn't wired into it (its client is in `src/motion/lift/`), so lift commands are refused here (`part_missing`). Every number not from the contract is a placeholder, not measured.
 
 **The rule: motors move only while a person at the walker is acting.** Nothing but a handle Confirm press starts anything:
 
-- **Preparing.** The terminal (`walker arms ...`, `walker motion clear`) and, later, the cloud's id-only offers and the screen can only *prepare* a command. A prepared command becomes the walker's one pending Confirm target. The walker says it aloud in the Pi's own words, such as "Turn on the left arm's motors. Park the walker and lock the brakes, then press Confirm."
+- **Preparing.** The terminal (`walker arms ...`, `walker motion clear`), the cloud's id-only offers of a pose or a skill (the coordinator takes them; nothing sends one yet) and, later, the screen can only *prepare* a command. The Pi also prepares its own "Let go?" after a skill ends holding. A prepared command becomes the walker's one pending Confirm target. The walker says it aloud in the Pi's own words, such as "Turn on the left arm's motors. Park the walker and lock the brakes, then press Confirm."
 - **Starting.** The target runs only on a handle Confirm press at least 2 s and less than 30 s after it appeared. That button must have been seen released for the whole 2 s, with no hello, gap or loss from its hand module since. A press too early is ignored, and its 2 s starts again from its release.
 - **What withdraws a target.** It is single use. A hand module's hello or loss withdraws it, and so do a Talk press, a fault, a stop, the mode leaving `ready`, and the terminal that prepared it going away (Ctrl-C).
 - **Stopping.** Any Talk or Confirm press while anything moves stops it and holds; that press does nothing else. `walker motion stop` stops too.
@@ -477,7 +477,7 @@ bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdR
     3. torque, read back with the limits.
 
     An abort turns that arm's torque off. So does a fault, the stop, or a handle press part-way through: the press stops it and does nothing else.
-  - **Moving needs `limitsWritten`.** A pose or teleop needs torque to have written and read back its limits. A reading that shows torque off, or a torque limit other than the one written (a power loss resets both), ends that. So do stale readings and a lost bus. The arm must then be turned on again from the terminal with Confirm.
+  - **Moving needs `limitsWritten`.** A pose or teleop needs torque to have written and read back its limits. A reading that shows torque off, or a torque limit other than the one written (a power loss resets both), ends that, and stops anything moving that arm. So do stale readings and a lost bus. The arm must then be turned on again from the terminal with Confirm.
   - **Holds read first.** A hold (a stop, a fault, a clear) reads the arm, then writes goal = the position just read, only to servos that read torque on. A torque off always wins: each torque off bumps a counter before it is sent, and a hold or re-read that started before it writes nothing.
   - **Each arm is read on its own.** A slow bus (retries) never makes a healthy arm's reading stale, and no goal is queued behind an arm's read that is still on the bus. A Feetech servo may turn torque on when it gets a goal, so a limp arm (calibration, or released after a fault) never gets one. A clear reads every arm before anything holds.
   - Leaders never get torque, and one that reads torque on gets it turned off.
@@ -486,13 +486,16 @@ bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdR
 - **No broadcast** except one torque off, when an acknowledged torque off fails.
 - **Bench mode** (`WALKER_MOTION_BENCH=no-hardware-stop`) is the only way to move without a wired stop. It uses the bench limits: poses 20°/s, teleop 45°/s, torque 40% (gripper 35%). It logs the moving arm's angles twice a second. It still needs Confirm for everything, and a lost hand control mid-motion still stops it.
 
-**Files** (`src/motion/`): `coordinator.ts` (the loop, Confirm targets, commands, guards, faults, calibration, the published `MotionStateSchema` state on the bus as `motionState`), `arm.ts` (the start-up check and the few writes motion needs, over `feetech/`), `limits.ts` (goal ramps and clamps), `stopSense.ts` (the GPIO stop-sense input), `operator.ts` (the terminal's local socket), `cli.ts` (`walker arms`, `walker motion`), `files.ts` (calibration and pose files), `settings.ts`, `handControls.ts`, `runtime.ts`. The simulator's arms are `src/sim/motionSim.ts`.
+**Files** (`src/motion/`): `coordinator.ts` (the loop, Confirm targets, commands, guards, faults, calibration, recording and replay, the published `MotionStateSchema` state on the bus as `motionState`), `arm.ts` (the start-up check and the few writes motion needs, over `feetech/`), `limits.ts` (goal ramps and clamps), `skills.ts` (the recording and replay arithmetic), `stopSense.ts` (the GPIO stop-sense input), `operator.ts` (the terminal's local socket), `cli.ts` (`walker arms`, `walker motion`), `files.ts` (calibration, pose and skill files), `settings.ts`, `handControls.ts`, `runtime.ts`. The simulator's arms are `src/sim/motionSim.ts`, and its made-up sample skill `src/sim/sampleSkill.ts`.
 
 **Kept on the Pi** in `/var/lib/steady-walker/motion/` (0700, files 0600, no secrets and no one's words):
 - `calibration-<side>-<follower|leader>.json`, each a contract `ArmCalibrationSchema`. A calibration made on another adapter (`bus_id`) isn't used.
 - `poses.json`, the follower poses, each a `NamedPoseSchema`.
+- `skills/<skill_id>.json` (folder 0700), each a contract `SkillSchema` whose `skill_id` is its file name, one waypoint a line. Written atomically. A file that fails the schema is listed as unable to run, never repaired.
 
-Old files are renamed `*.replaced-<time>`, never deleted. Recalibrating a follower sets its poses aside, since its angles change. The contract's single `MotionSetupSchema` file isn't used: it needs a `stowed` pose for each calibrated follower, which can't exist before the first calibration.
+Every file carries the motion contract's version, now **2** (2026-10-24: two new faults, and letting go allowed with a fault latched). A file written under version 1 doesn't parse, so it counts as missing and must be made again. None exists on a walker yet: the arms haven't been calibrated.
+
+Old files are renamed `*.replaced-<time>` (or `*.removed-<time>` for a removed skill), never deleted. Recalibrating a follower sets its poses aside, since its angles change. The contract's single `MotionSetupSchema` file isn't used: it needs a `stowed` pose for each calibrated follower, which can't exist before the first calibration.
 
 **Terminal commands** (on the Pi, as root: `sudo node /opt/steady-walker/walker.mjs arms status`, and so on). Each talks to the running service's socket. Everything but `stop` waits for a Confirm press on the walker:
 
@@ -504,12 +507,76 @@ walker arms pose save <name> [--arm left|right] [--title "<words the walker says
 walker arms pose go <name> [--arm left|right]
 walker arms pose list
 walker arms teleop <left|right>
+walker arms record <skill-id> --title "<words the walker says>" --arm left|right [--replace] [--let-go <degrees>]
+walker arms skills
+walker arms skill run <skill-id>
+walker arms skill rm <skill-id>
+walker arms let-go [--arm left|right] [--deg <degrees>]
 walker motion stop
 walker motion clear --reason "<why it is safe>"
 walker motion status
 ```
 
-**In the simulator:** `node dist/walker.mjs simulate --arms` adds four SIMULATED servo buses (two followers, two leaders) with made-up calibrations and poses (`stowed`, `ready`, `handover`), and a simulated stop switch. The simulated servos use the dangerous default, where turning torque on drives to whatever goal is in the register. Press `?` for the keys (`s` stop switch, `h` unplug the handle, `1` torque on left, then `c`, and so on). The terminal commands work against it with `--socket <state folder>/motion.sock`. The scripts in `test/sim/motion/*.walk` run there too (`simulate --arms --script ...`), and `test/motion-walk.test.ts` runs them all on a fake clock.
+**In the simulator:** `node dist/walker.mjs simulate --arms` adds four SIMULATED servo buses (two followers, two leaders) with made-up calibrations and poses (`stowed`, `ready`, `handover`), and a simulated stop switch. The simulated servos use the dangerous default, where turning torque on drives to whatever goal is in the register. Press `?` for the keys (`s` stop switch, `h` unplug the handle, `1` torque on left, then `c`, and so on). For skills: `M` then `R` (then `c`) records the left arm, `T` moves its teaching arm through a made-up pick, `3` marks a grasp, `S` ends it, `E` saves it, `X` puts an object in the left gripper (or takes it away), `b` a finger-sized blocker, `5` replays it, `N` runs a made-up sample skill (`sim_sample_handover`, titled "SIMULATED sample: hold it out"; written only into a simulator's state folder, never a taught skill). The terminal commands work against it with `--socket <state folder>/motion.sock` (a relative `--state` folder keeps the socket path under macOS's 104-byte limit). The scripts in `test/sim/motion/*.walk` and `test/sim/skills/*.walk` run there too (`simulate --arms --script ...`), and `test/motion-walk.test.ts` runs them all on a fake clock.
+
+### Taught skills (record and replay)
+
+A skill is a movement taught once with the teaching arm and replayed on the walker's arm after a Confirm press, such as the first demo skill, `tray_pick_handover`: take a light object from a fixed tray and hold it out. Built 2026-10-24, tested only against simulated servos (`test/sim/skills/`, `test/skills.test.ts`, rows T1 to T35).
+
+**LETTING GO IS ALWAYS POSSIBLE.** Releasing a grasp ("Let go?", `gripper.release`) is a safety action:
+
+- **Allowed** with a fault latched, and on an arm gone soft after a push. It is refused only when the gripper physically can't move: the stop pressed, no fresh reading, or the gripper's servo not reading torque on.
+- **Gripper only, and opening only.** Which way a grasp closed is fixed once, on the first tick the gripper is 1° or more from where the grasp began; opening is the other way.
+  - It opens toward the let-go angle, which may not be more closed than where the grasp began.
+  - It never moves back toward closing, even if someone pulls the gripper open faster than it opens.
+  - Already open at least to the let-go angle (jaws pulled open)? It ends at once and moves nothing.
+  - While the direction isn't known yet (a mark that came late, the gripper not closed), an angle typed at the terminal (`--deg`) is refused; the taught one still works.
+- **On a frozen arm too.** After a servo stops answering (`feedback_stale` freezes that arm), the gripper's squeeze goal stays only until the first fresh read. Then only the gripper's goal goes to where it is, and the rest of the arm stays frozen. "Let go?" then opens it, gripper only.
+- **While it runs**, with a fault latched, the screen says "Letting go" (not the fault). A clear is refused (`busy`) until it ends. A deadline passed again while that fault is already latched still ends it.
+- **Offered at once** by the Pi itself whenever anything ends a motion with a grasp active (a replay completing, a stop, a fault, a recording ending), and again after a fault clears.
+- **A stop or a fault lets off the squeeze:** the gripper's goal goes to where it is, in case it is on a finger.
+- **Not holding what was taught** (`grasp_mismatch`). During a replay, a grasping gripper more than 10° from where the skill has it, for 300 ms (placeholders), has something else in it, such as a finger. The Pi latches `grasp_mismatch` (hold), lets off the squeeze, drops that gripper to 25% torque, says why, and offers "Let go?". Opening it still takes that Confirm press.
+
+- **Recording is teleop.** `walker arms record <id> --title "..." --arm left` prepares teleop for that arm with `record_skill_id`. The walker says "Record a movement: the left arm copies its teaching arm. Park the walker and lock the brakes, then press Confirm." It needs everything teleop needs: torque on, calibrated, the teaching arm within 10° of the arm.
+  - While recording, the arm follows at most 60°/s (45°/s in bench mode), the contract's skill ceiling.
+  - It samples **the walker's arm's own readings, never the teaching arm's**, every 50 Hz control tick.
+  - The terminal marks the gripper: `g` + Enter just before it closes on the object (a grasp), `r` + Enter when it lets go (a release). A mark names its recording (the socket's `record.mark` needs the recording's request `id`), so another terminal can't mark it.
+  - It ends on Enter at the terminal, any handle press, `walker motion stop`, or by itself at 55 s (`RECORD_MAX_MS`: the contract's 60 s less a margin for the slowing below). Each is a stop: the arm holds where it is, and if it is grasping, "Let go?" is offered.
+  - **Nothing is saved** if it ends with a fault, or if the terminal goes away (Ctrl-C, a dropped SSH).
+- **Saving.** Each sample is clamped into the arm's calibrated range less 2°, as teleop's goals already are, and rounded toward the inside of it. A stretch where a joint moved faster than the recording's own limit (a servo overshooting its goal, reading noise) is slowed to that limit; the path stays the same. Then it must pass the contract's `SkillSchema` and `checkSkillAgainstSetup`, or it isn't saved, with the reason.
+  - It starts where the arm was at the press, with an 8° start tolerance (placeholder; the contract allows up to 10°).
+  - A recording that ends grasping needs **the angle its gripper opens to** for "Let go?". The terminal asks: Enter takes where the gripper was when the grasp was marked, or type one (`--let-go` gives it up front). An angle outside the gripper's range, or one that would close it further, is asked again.
+  - It never records over an existing skill without `--replace`, and then the old file is set aside.
+- **Replay.** `walker arms skill run <id>`, or an id-only offer, prepares `skill.run`, worded from the skill file's own title (for a skill titled "Hand you the cup": "Hand you the cup. Park the walker and lock the brakes, then press Confirm."). Refused at once, before anyone is asked to press Confirm, when:
+  - the arm isn't within the skill's start tolerance (`not_at_start`). The reason names a taught pose at its start, such as "walker arms pose go ready --arm left". The Pi doesn't move it there by itself: going to the start is its own Confirmed move.
+  - torque is off or its limits weren't written by torque on (after a power loss, `torque_off`);
+  - the file fails either check (`skill_invalid`, which also latches the `skill_invalid` fault). An offer of such a skill is dropped with a log line instead, and latches nothing.
+
+  At the press the file is read again and must be exactly the one the walker asked about; a changed one is refused (`confirm_target_mismatch`).
+- **Running.**
+  - The arm first goes to the skill's first waypoint, and the timeline starts once every joint is within 3° of it.
+  - The timeline then moves on with each control tick and doesn't wait for a lagging joint. The exception is a gripper event: there it waits until that arm is within 3° of the event's point, so a grasp never closes somewhere else. All of this is bounded by the deadline.
+  - Each tick advances the timeline by the time since the last tick, capped at two control periods (40 ms). A control loop running late therefore slows the timeline, while the deadline counts real time. A loop that is late for long could end the skill with `motion_timeout`; the `BENCH loop` log lines show the slowest tick.
+  - Each goal moves at most 2° a step and stays within 5° of where the joint is, at the skill's own speeds, capped at the mode's replay speed (60°/s; bench 30°/s, where a faster skill's whole timeline is stretched).
+  - Any handle press stops it, and it never resumes.
+  - A torque or torque limit that changes under the moving arm (a power dip) latches `torque_lost` (hold).
+  - It ends **holding** the last waypoint, still squeezing. The Pi offers "Let go?" (`walker_local`): "Let go? Park the walker and lock the brakes, then press Confirm." The person takes hold of the object, then presses Confirm. Only the gripper opens, slowly (the pose speed), to the taught angle.
+  - If "Let go?" expired, `walker arms let-go` asks again from the terminal.
+- **A grasp** (from a `g` mark while recording, or a grasp event in a replay) holds at 30% torque (`GRIPPER_HOLD_TORQUE_PCT`). A grasp whose 30% can't be written isn't active.
+  - That gripper is exempt from the divergence, stall and load rules and the teleop gap, since an object stops it, as the contract says.
+  - If the arm goes soft (a push), the gripper keeps 30%.
+  - The grasp ends with a release, "Let go?", or the arm's torque going off.
+- **Listing and removing.** `walker arms skills` lists each skill: its title, length, grasps, whether it ends holding, and whether it would run on this walker now (or why not). `walker arms skill rm <id>` sets the file aside with no Confirm. Removing moves nothing and can only take a movement away, like `pose save`, which also changes files and not motors. It withdraws a pending target to run it, and is refused while it runs.
+
+These choices aren't in the contract:
+- refusing (rather than moving) when the arm is away from the start;
+- a recording ending at 55 s, as a stop, not a `motion_timeout` fault;
+- recording a grasping gripper's goal (up to 5° past the object) instead of its reading, so a replay squeezes as the teaching did;
+- exempting a grasping gripper from the teleop gap;
+- the `grasp_mismatch` thresholds;
+- dropping offers of failing skills without a fault.
+
+[`manipulation.md`](../../docs/subsystems/manipulation.md#taught-skills-built-2026-10-24-simulated-servos-only) lists them.
 
 ### Bench bring-up with real arms (2026-10-25 plan; nothing below has been done yet)
 
@@ -606,6 +673,52 @@ Two people: one at the arm, one at the terminal. The person at the arm keeps a h
 
 Afterwards, write every result, measured value and surprise into `hardware/current-build.md`, with the date. In bench mode the log also shows `BENCH loop` every 5 s, with the slowest control tick and each bus's retries and timeouts: record them.
 
+### Teach the tray task (`tray_pick_handover`), after the bench bring-up (2026-10-25 plan; not done yet)
+
+The first demo skill: the left arm takes a light object from a fixed tray and holds it out, then lets go when the person holding it presses Confirm. Teach it only once steps 1 to 20 above have passed on the left side: both arms calibrated, the `stowed`, `ready` and `handover` poses saved, the push test, the stop tests and teleop. The gate still holds: nobody else within reach. Bench mode stays on until the real stop is wired (step 21), and the person at the arm keeps a hand on the 12 V switch.
+
+Two people: **the teacher** moves the teaching arm. **The operator** is at the terminal and the 12 V switch, and presses the handle buttons.
+
+**Set up**
+
+1. **The tray.** Fix the tray where the arm reaches it comfortably from `ready`, and tape its outline and the object's spot, so both go back to the same place for every replay. Use a light object that can't break or cut, such as a plastic cup or a foam block. Weigh it. Record the tray's position and the object's weight in `hardware/current-build.md`.
+2. **Start pose.** `arms torque on --arm left`, wait 2 s, Confirm. Then `arms pose go ready --arm left`, wait 2 s, Confirm. Every teaching and every replay starts from `ready`.
+3. **Match the teaching arm.** Move the teaching arm by hand to within 10° of the arm on every joint (compare them in `arms status`), gripper open.
+
+**Record**
+
+4. `sudo node /opt/steady-walker/walker.mjs arms record tray_pick_handover --title "<the words the walker says to start it>" --arm left`.
+   - The title is at most 60 characters, such as "Hand you the cup". It is what the walker says before every replay.
+   - The walker says "Record a movement: the left arm copies its teaching arm. Park the walker and lock the brakes, then press Confirm." Wait 2 s, then press Confirm.
+5. **Teach, slowly.** The arm follows at up to 45°/s in bench mode, and lags if the teacher is faster. Keep the whole movement under 55 s, where the recording ends by itself; 10 to 20 s is plenty.
+   - Lower the teaching arm to the object on the tray.
+   - **Just before the gripper touches the object**, the operator types `g` and Enter (a grasp). Late is worse than early: once it closes on the object without a grasp marked, the stall rule makes the arm go soft within about 0.3 s.
+   - Close the teaching arm's gripper fully. The arm's gripper stops on the object: that is the grasp, now at 30% torque.
+   - Lift, and move out to where the person will take it (near `handover`). Hold still for a moment.
+   - The operator presses Enter (or any handle button). The arm holds where it is, the gripper's squeeze let off, and the walker asks "Let go?" at once (leave it for now: take the object in step 6).
+6. **The let-go angle.** The terminal asks where the gripper opens to. Enter takes where it was when the grasp was marked (open, just before it closed), or type an angle (one that would close it is asked again). The terminal says "Saved tray_pick_handover: ..." with its length. Take hold of the object, wait 2 s, press Confirm on "Let go?": only the gripper opens. If "Let go?" has expired, `arms let-go` asks again.
+   - If it says "Not done: not saved: ...", read why. A fault while teaching (`walker motion status`) means clear it, torque on again, and record again with `--replace`.
+7. **Check it.** `arms skills` lists it as able to run, with its length and one grasp, ending holding.
+
+**Replay**
+
+8. **Empty first.** With no object on the tray, `arms pose go ready --arm left` and Confirm, then `arms skill run tray_pick_handover`. The walker says the title and the park prompt. Wait 2 s, then press Confirm. Watch the whole path, with a hand on the 12 V switch.
+   - If it says the arm isn't where the movement starts, the reason names the pose: go there first.
+   - It ends `completed` and holding, and the walker asks "Let go?": press Confirm (nothing to take).
+9. **Stop tests on the replay**, before any replay with the object: start it again and press Talk mid-way, then Confirm mid-way, then `motion stop`. Each must stop it at once and hold. A stopped replay never resumes; if it had grasped, the gripper's squeeze is let off and the walker asks "Let go?" at once.
+   - **The finger check** (a soft stand-in first, such as a foam block thicker than the object): put it where the object goes and replay. The gripper stops well short of where it was taught. Within about 0.3 s the walker says "The hand met something it wasn't taught to hold, so it loosened and stopped." and asks "Let go?". Confirm opens it, with the fault still latched; then `motion clear`.
+10. **With the object.** Put it on its spot, go to `ready`, replay. It picks the object up and holds it out. The person takes hold of it, waits 2 s and presses Confirm on "Let go?". While it holds, read the gripper's load in `arms status`. If the object slips, record how: the 30% hold torque and the 5° squeeze are placeholders.
+11. **Rehearse it three times in a row** (AGENTS.md), each from `ready` with the object on its spot. Record each run in `hardware/current-build.md`: completed or not, picked and held without slipping, the time, any fault, and the gripper's load and temperature while holding.
+
+Only the real arms can show:
+- whether the follower keeps up with the teaching arm closely enough that the recorded path picks the object again;
+- whether the grasp mark's timing works for a person typing;
+- how hard the 30% hold and the 5° squeeze really grip, and whether the gripper heats while holding;
+- whether the 10° / 300 ms `grasp_mismatch` thresholds catch a finger without tripping on the real object;
+- whether replay lands within the tray's tolerance each time (repeatability);
+- how much the arm sags under the object at `handover`;
+- whether its own weight trips the load rule while it holds out the object.
+
 ## Settings (environment variables)
 
 | Variable | Default | Meaning |
@@ -628,7 +741,7 @@ Afterwards, write every result, measured value and surprise into `hardware/curre
 | `WALKER_SCREEN_PORT` | `8740` | The walker screen page's port on 127.0.0.1 (1024 to 65535), or `off` for no screen page. Also read by `walker simulate --screen`. |
 | `WALKER_SCREEN_ASSETS` | `screen-page` beside `walker.mjs` | Where the page's built files are (`/opt/steady-walker/screen-page` on the Pi). |
 | `WALKER_SCREEN_GREETING` | unset | A name for "Good evening, Nan" on the clock (up to 12 characters), until the circle brings her own. |
-| `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT` | unset | The follower arms' Feetech adapters, as `/dev/serial/by-id/<name>` or `/dev/serial/by-path/<name>`. Unset: no arm, and no motion at all. Set them **before** plugging an arm into a running Pi, so the ESP32 scanner never opens a servo bus. See [The arms](#the-arms-motion-coordinator-part-a). |
+| `WALKER_ARM_LEFT_PORT`, `WALKER_ARM_RIGHT_PORT` | unset | The follower arms' Feetech adapters, as `/dev/serial/by-id/<name>` or `/dev/serial/by-path/<name>`. Unset: no arm, and no motion at all. Set them **before** plugging an arm into a running Pi, so the ESP32 scanner never opens a servo bus. See [The arms](#the-arms-motion-coordinator). |
 | `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` | unset | The leader (teaching) arms' adapters, the same way. |
 | `WALKER_STOP_SENSE` | `not_wired` | `gpio:<BCM line>` once the hardware stop's normally closed stop-sense contact is wired to that pin (to ground, pull-up on). `not_wired` refuses all motion unless bench mode is on. |
 | `WALKER_MOTION_BENCH` | unset | Exactly `no-hardware-stop` for bench mode: the bench speed and torque limits, every motion logged, no hardware stop required. Anything else is an error that turns motion off. |
