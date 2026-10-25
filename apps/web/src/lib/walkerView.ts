@@ -456,6 +456,11 @@ export function errorMessage(code: WalkerErrorCode | "network" | "not_offered"):
       return "Sophi's server isn't available right now. Try again in a moment.";
     case "network":
       return "Can't reach Sophi's server. Check the connection.";
+    // Only the walker's own help routes answer these; the page never asks for help.
+    case "no_caretaker":
+      return "No caretaker's phone is linked to this walker.";
+    case "help_closed":
+      return "That request for help is already closed.";
   }
 }
 

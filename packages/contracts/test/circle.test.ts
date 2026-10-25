@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   AddPhoneRequestSchema,
+  WALKER_ERROR_STATUS,
+  WalkerErrorSchema,
   DeviceAskForHelpRequestSchema,
   DeviceHelpStatusResponseSchema,
   HELP_COUNTDOWN_MS,
@@ -538,26 +540,35 @@ describe("the walker's incoming messages (GET /devices/{id}/messages)", () => {
 });
 
 describe("asking for help", () => {
-  const open = { help_id: uuid(40), source: "handles", age_seconds: 12, told: ["Maya"], coming: [], closed: null };
+  const maya = { member_id: uuid(43), name: "Maya" };
+  const sam = { member_id: uuid(44), name: "Sam" };
+  const rose = { member_id: uuid(45), name: "Rose" };
+  const open = { help_id: uuid(40), source: "handles", age_seconds: 12, sent_to: [maya], shown_to: [], coming: [], closed: null };
 
-  it("names who was told and who is coming, with an age and no times", () => {
+  it("names who it was sent to, shown to and who is coming, by phone, with an age and no times", () => {
     ok(HelpViewSchema, open);
-    ok(HelpViewSchema, { ...open, source: "phone", told: ["Maya", "Sam"], coming: ["Sam"] });
-    bad(HelpViewSchema, { ...open, told: [] });
-    bad(HelpViewSchema, { ...open, coming: ["Maya", "Maya"] });
+    ok(HelpViewSchema, { ...open, source: "phone", sent_to: [maya, sam], shown_to: [sam, maya], coming: [sam] });
+    // Owner-typed names can repeat; phones can't.
+    ok(HelpViewSchema, { ...open, sent_to: [maya, { ...sam, name: "Maya" }], coming: [maya, { ...sam, name: "Maya" }] });
+    bad(HelpViewSchema, { ...open, sent_to: [] });
+    bad(HelpViewSchema, { ...open, coming: [maya, maya] });
+    bad(HelpViewSchema, { ...open, shown_to: [sam, sam] });
+    bad(HelpViewSchema, { ...open, sent_to: [{ ...maya, name: "x".repeat(13) }] });
     bad(HelpViewSchema, { ...open, source: "model" });
     bad(HelpViewSchema, { ...open, started_at: T0 });
+    bad(HelpViewSchema, { ...open, told: [maya] });
     bad(HelpViewSchema, { ...open, age_seconds: HELP_RETENTION_MS / 1_000 + 1 });
     bad(HelpViewSchema, { ...open, location: { latitude: 1, longitude: 2 } });
     expect(JSON.stringify(z.toJSONSchema(HelpViewSchema, { unrepresentable: "any" }))).not.toMatch(/_at"/);
   });
 
-  it("names who closed it, except when it expired", () => {
-    ok(HelpViewSchema, { ...open, closed: { how: "okay", by_name: "Rose" } });
-    ok(HelpViewSchema, { ...open, coming: ["Maya"], closed: { how: "with_her", by_name: "Maya" } });
-    ok(HelpViewSchema, { ...open, closed: { how: "expired", by_name: null } });
-    bad(HelpViewSchema, { ...open, closed: { how: "expired", by_name: "Rose" } });
-    bad(HelpViewSchema, { ...open, closed: { how: "okay", by_name: null } });
+  it("names a caretaker who is with her, may leave her okay unnamed, and names nobody for an expired one", () => {
+    ok(HelpViewSchema, { ...open, closed: { how: "okay", by: rose } });
+    ok(HelpViewSchema, { ...open, closed: { how: "okay", by: null } });
+    ok(HelpViewSchema, { ...open, coming: [maya], closed: { how: "with_her", by: maya } });
+    ok(HelpViewSchema, { ...open, closed: { how: "expired", by: null } });
+    bad(HelpViewSchema, { ...open, closed: { how: "with_her", by: null } });
+    bad(HelpViewSchema, { ...open, closed: { how: "expired", by: rose } });
   });
 
   it("lets the walker ask from its handles or by voice, and her phone with an id alone", () => {
@@ -572,10 +583,15 @@ describe("asking for help", () => {
     ok(DeviceHelpStatusResponseSchema, { help: open });
   });
 
-  it("answers a closed one with the request as it stands", () => {
+  it("answers a closed one with the request as it stands, in both envelopes", () => {
     expect(CIRCLE_ERROR_STATUS.no_caretaker).toBe(409);
     expect(CIRCLE_ERROR_STATUS.help_closed).toBe(409);
-    ok(CircleErrorSchema, { error: { code: "help_closed", message: "Closed.", trace_id: "t", help: { ...open, closed: { how: "okay", by_name: "Rose" } } } });
+    expect(WALKER_ERROR_STATUS.no_caretaker).toBe(409);
+    expect(WALKER_ERROR_STATUS.help_closed).toBe(409);
+    const closed = { ...open, closed: { how: "okay", by: rose } };
+    ok(CircleErrorSchema, { error: { code: "help_closed", message: "Closed.", trace_id: "t", help: closed } });
+    ok(WalkerErrorSchema, { error: { code: "help_closed", message: "Closed.", trace_id: "t", help: closed } });
+    ok(WalkerErrorSchema, { error: { code: "no_caretaker", message: "Nobody to ask.", trace_id: "t" } });
   });
 
   it("joins names the way the walker says them", () => {
@@ -598,9 +614,10 @@ describe("asking for help", () => {
     bad(ScreenStateSchema, state({ state: "help_countdown", seconds_left: HELP_COUNTDOWN_MS / 1_000 + 1 }));
     ok(ScreenStateSchema, state({ state: "help", help: { phase: "sending", retrying: true } }));
     ok(ScreenStateSchema, state({ state: "help", help: { phase: "not_sent", why: "no_caretaker" } }));
-    ok(ScreenStateSchema, state({ state: "help", help: { phase: "open", told: ["Maya"], coming: ["Maya"], confirm_okay: true } }));
-    bad(ScreenStateSchema, state({ state: "help", help: { phase: "open", told: [], coming: [], confirm_okay: false } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "open", sent_to: ["Maya"], shown_to: ["Maya"], coming: ["Maya"], confirm_okay: true } }));
+    bad(ScreenStateSchema, state({ state: "help", help: { phase: "open", sent_to: [], shown_to: [], coming: [], confirm_okay: false } }));
     ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya" } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "okay", by_name: null } }));
     expect(ScreenActionSchema.options.some((a) => /help|okay/.test(a))).toBe(false);
   });
 });
