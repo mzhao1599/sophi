@@ -1223,8 +1223,8 @@ export const MOTION_COMMAND_POLICY: Readonly<Record<MotionCommandKind, MotionCom
     refuses_when: [...LIFT_PRECONDITIONS, "lift_not_homed", "out_of_range"],
     limits:
       "target_mm inside the lift configuration's soft limits; speed and acceleration the lower of the configuration's and the mode's (MOTION_LIMITS); deadline motionTimeoutMs(distance / speed).",
-    cancelled_by: `letting go of the hold; ${STOP_ANYTHING}`,
-    watchdog: LIFT_WATCHDOG,
+    cancelled_by: `letting go of the hold; ${STOP_ANYTHING}. A spoken move (no Confirm target, hold_source local_voice_request) is cancelled by a left Confirm press, the screen's Stop lift, or any stop source; a Talk press does not stop it`,
+    watchdog: `${LIFT_WATCHDOG} A spoken move's lease is set by the Pi's control loop instead of a held control, so a stalled loop still stops it.`,
     on_lost: STOP_ALL,
     ends_in: "ready at target_mm; on release or stop, ready where it stopped (still homed); on fault, fault.",
   },
@@ -1734,6 +1734,10 @@ export const ActiveMotionSchema = z
   ])
   .refine((a) => !("phase" in a) || (a.phase === "running") === (a.hold_source !== null), {
     message: "A lift motion runs exactly while a hold control holds it; after a release it is stopping.",
+    path: ["hold_source"],
+  })
+  .refine((a) => !("phase" in a) || (a.initiated_by === "talk" ? a.kind === "lift.move" && a.hold_source !== "screen_hold_control" : a.hold_source !== "local_voice_request"), {
+    message: "Only a lift.move started from a local Talk turn holds on local_voice_request, and it never holds on the screen control.",
     path: ["hold_source"],
   });
 export type ActiveMotion = z.infer<typeof ActiveMotionSchema>;

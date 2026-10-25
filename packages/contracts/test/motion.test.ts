@@ -688,7 +688,8 @@ describe("command policy (AGENTS.md rule 8)", () => {
     }
   });
 
-  it("makes every lift motion hold-to-run, guarded and with the arms stowed", () => {
+  it("makes every Confirm-started lift motion hold-to-run, guarded and with the arms stowed", () => {
+    // A spoken lift.move (58dfc86) skips Confirm and the hold, but the Pi still applies these refusals before it starts.
     for (const kind of MotionCommandKindSchema.options) {
       expect(MOTION_COMMAND_POLICY[kind].hold_to_run).toBe(kind === "lift.home" || kind === "lift.move");
     }
@@ -699,8 +700,9 @@ describe("command policy (AGENTS.md rule 8)", () => {
     expect(MOTION_COMMAND_POLICY["skill.run"].refuses_when).toEqual(expect.arrayContaining(["lift_not_homed", "lift_not_at_height"]));
   });
 
-  it("holds the lift only from the screen's hold control, which lets go on every kind of release", () => {
-    expect([...HoldSourceSchema.options]).toEqual(["screen_hold_control"]);
+  it("holds the lift from the screen's hold control, which lets go on every kind of release, or from a local Talk turn's Pi lease", () => {
+    // 58dfc86: a spoken lift.move runs on a Pi-owned lease (no Confirm target, no held control) until it ends or is stopped.
+    expect([...HoldSourceSchema.options]).toEqual(["screen_hold_control", "local_voice_request"]);
     for (const event of ["pointerup", "pointercancel", "touchcancel", "blur", "visibilitychange"]) expect(SCREEN_HOLD_RELEASE_EVENTS).toContain(event);
   });
 
@@ -761,9 +763,9 @@ describe("command policy (AGENTS.md rule 8)", () => {
     expect(guide).toContain(BENCH_MODE_LABEL);
     expect(guide).toContain(`${MOTION_BENCH_ENV}=${MOTION_BENCH_ENV_VALUE}`);
     expect(guide).toContain(SCREEN_OS_USER);
-    expect(guide).toContain("**Motors start only when a person at the walker acts, and the lift moves only while a person holds its control.**");
+    expect(guide).toContain("**Motors start only when a person at the walker acts. Spoken lift moves have an explicit local Talk path with a Pi-owned heartbeat lease and immediate Stop controls.**");
     const source = readFileSync(new URL("../src/motion.ts", import.meta.url), "utf8");
-    expect(source).toContain("THE RULE: motors start only when a person at the walker acts, and the lift moves only while a person holds");
+    expect(source).toContain("THE RULE: motors start only when a person at the walker acts. A locally dictated lift move is a separate,");
   });
 });
 
@@ -1010,6 +1012,16 @@ describe("motion state", () => {
     const { target_mm: _, ...home } = liftActive;
     expect(ok(ActiveMotionSchema, { ...home, kind: "lift.home" })).toBe(true);
     expect(ok(ActiveMotionSchema, { ...liftActive, phase: "stopping", hold_source: null })).toBe(true);
+  });
+
+  it("holds a spoken lift move only on its Talk lease, and nothing else on that lease", () => {
+    const spoken = { ...liftActive, hold_source: "local_voice_request", initiated_by: "talk" };
+    const { target_mm: _, ...home } = spoken;
+    expect(ok(ActiveMotionSchema, spoken)).toBe(true);
+    expect(ok(ActiveMotionSchema, { ...spoken, phase: "stopping", hold_source: null })).toBe(true);
+    expect(ok(ActiveMotionSchema, { ...spoken, hold_source: "screen_hold_control" })).toBe(false);
+    expect(ok(ActiveMotionSchema, { ...liftActive, hold_source: "local_voice_request" })).toBe(false);
+    expect(ok(ActiveMotionSchema, { ...home, kind: "lift.home" })).toBe(false);
   });
 
   it.each([
