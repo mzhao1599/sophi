@@ -248,8 +248,6 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
   else ctx.db.session.insert({ identity: ctx.sender, subject: jwt.subject });
 });
 
-export const onDisconnect = spacetimedb.clientDisconnected(() => {});
-
 // ---- The server's procedures: one per CircleStore step (store.ts). Each returns JSON. ----
 
 export const ping = spacetimedb.procedure({}, t.string(), (ctx) =>

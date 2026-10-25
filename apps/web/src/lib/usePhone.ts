@@ -18,8 +18,6 @@ export interface Phone {
   home: PhoneHome | null;
   /** The last poll got no answer: what's on screen is what the server said last. */
   unreachable: boolean;
-  /** Live updates from SpacetimeDB: `off` when the server keeps the circle itself. */
-  live: LiveStatus;
   /** A lasting line on the join screen (for example: this phone was removed). */
   notice: string | null;
   joining: boolean;
@@ -70,10 +68,11 @@ export function usePhone(api: PhoneApi): Phone {
     }
   }, [api]);
 
-  // The live connection, while this phone is linked (waiting or in). A new home for another membership reconnects.
-  const linkedAs = phase === "home" && home ? (home.membership === "member" ? home.me.member_id : home.membership) : null;
+  // The live connection, while this phone is linked (waiting or in). Its token names this phone's membership, which
+  // stays the same from waiting to approved, so approval keeps the connection; leaving for the code screen closes it.
+  const linked = phase === "home" && !!home && home.membership !== "no_answer";
   useEffect(() => {
-    if (!linkedAs || !api.live) return;
+    if (!linked || !api.live) return;
     const access = api.live.bind(api);
     const handle = openLive(
       access,
@@ -91,12 +90,12 @@ export function usePhone(api: PhoneApi): Phone {
       setLive("off");
       setLiveRows(null);
     };
-  }, [api, linkedAs]);
+  }, [api, linked]);
 
   // Approved, removed, or replaced: what the live rows say about this phone wins, so ask the server now.
   useEffect(() => {
-    if (membershipMoved(home, liveRows)) void refresh();
-  }, [home, liveRows, refresh]);
+    if (live === "live" && membershipMoved(home, liveRows)) void refresh();
+  }, [home, liveRows, live, refresh]);
 
   useEffect(() => {
     void refresh();
@@ -138,6 +137,7 @@ export function usePhone(api: PhoneApi): Phone {
     setPhase("join");
   }, []);
 
-  const shown = useMemo(() => withLiveCircle(home, liveRows), [home, liveRows]);
-  return { phase, home: shown, unreachable, live, notice, joining, join, startOver, refresh };
+  // Only while live: a dropped connection's rows would hide what the polls bring meanwhile.
+  const shown = useMemo(() => (live === "live" ? withLiveCircle(home, liveRows) : home), [home, liveRows, live]);
+  return { phase, home: shown, unreachable, notice, joining, join, startOver, refresh };
 }

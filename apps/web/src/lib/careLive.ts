@@ -1,5 +1,5 @@
 import type { CareLiveAccess } from "@walker/contracts";
-import { DbConnection } from "@walker/care-db/bindings";
+import type { DbConnection } from "@walker/care-db/bindings";
 import type { PhoneHome, PhoneMessage, PhonePerson } from "./phoneApi";
 
 /**
@@ -25,10 +25,14 @@ export interface LiveHandle {
 export const PHONE_VIEWS = ["SELECT * FROM my_membership", "SELECT * FROM my_people", "SELECT * FROM my_messages"];
 export const OWNER_VIEWS = ["SELECT * FROM owner_members", "SELECT * FROM owner_invites"];
 
+/** After a first connection that failed, or one SpacetimeDB won't retry, try again this much later. */
+const RETRY_MS = 5_000;
+
 /**
  * Opens one live connection. `onRows` runs after the first full set of rows and after every change (batched
- * to once per task); `onStatus` reports the connection. A rejected or expired token gets a fresh one from
- * `access` when the SDK reconnects.
+ * to once per task); `onStatus` reports the connection. The SDK reconnects a dropped connection by itself,
+ * asking `access` for a fresh token; a first connection that fails (SpacetimeDB waking up, the server busy)
+ * is tried again every RETRY_MS. The SpacetimeDB client is loaded only once the server says there is one.
  */
 export function openLive(
   access: () => Promise<CareLiveAccess | null>,
@@ -38,6 +42,7 @@ export function openLive(
 ): LiveHandle {
   let closed = false;
   let conn: DbConnection | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
   let queued = false;
   const changed = () => {
     if (queued || closed) return;
@@ -47,18 +52,37 @@ export function openLive(
       if (!closed && conn) onRows(conn);
     });
   };
+  const drop = () => {
+    try {
+      conn?.disconnect();
+    } catch {
+      // Already closed.
+    }
+    conn = undefined;
+  };
+  const again = () => {
+    if (closed || retry) return;
+    onStatus("lost");
+    drop();
+    retry = setTimeout(() => {
+      retry = undefined;
+      void start();
+    }, RETRY_MS);
+  };
 
-  void (async () => {
+  async function start() {
     let first: CareLiveAccess | null;
     try {
       first = await access();
     } catch {
-      if (!closed) onStatus("lost");
-      return;
+      return again();
     }
     if (closed) return;
     if (!first) return onStatus("off");
+    const { DbConnection } = await import("@walker/care-db/bindings");
+    if (closed) return;
     onStatus("connecting");
+    let connected = false;
     const subscribe = (c: DbConnection) => {
       c.subscriptionBuilder()
         .onApplied(() => {
@@ -66,32 +90,39 @@ export function openLive(
           onStatus("live");
           changed();
         })
-        .onError(() => !closed && onStatus("lost"))
+        .onError(() => again())
         .subscribe(views);
     };
+    const token = first.token;
     conn = DbConnection.builder()
       .withUri(first.uri)
       .withDatabaseName(first.database)
-      .withToken(first.token)
+      .withToken(token)
       .withAutomaticReconnect()
-      .withTokenProvider(async () => (await access())?.token ?? first.token)
-      .onConnect((c) => subscribe(c))
+      .withTokenProvider(async () => (await access())?.token ?? token)
+      .onConnect((c) => {
+        connected = true;
+        subscribe(c);
+      })
       .onAutomaticReconnect(() => !closed && onStatus("live"))
-      .onConnectError(() => !closed && onStatus("lost"))
-      .onDisconnect(() => !closed && onStatus("lost"))
+      // The SDK never retries a first connection; after one, it retries until it gives up (no next attempt).
+      .onConnectError(() => (connected ? !closed && onStatus("lost") : again()))
+      .onDisconnect((_ctx, _error, nextAttempt) => (nextAttempt === undefined ? again() : !closed && onStatus("lost")))
       .build();
     for (const table of [conn.db.myMembership, conn.db.myPeople, conn.db.myMessages, conn.db.ownerMembers, conn.db.ownerInvites]) {
       table.onInsert(changed);
       table.onDelete(changed);
       table.onUpdate?.(changed);
     }
-    if (closed) conn.disconnect();
-  })();
+  }
+  void start();
 
   return {
     close() {
       closed = true;
-      if (conn?.isActive) conn.disconnect();
+      clearTimeout(retry);
+      // Whatever its state, connecting and reconnecting included: otherwise it would keep trying after the page left.
+      drop();
     },
   };
 }

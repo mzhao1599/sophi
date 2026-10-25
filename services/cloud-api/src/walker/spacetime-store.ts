@@ -147,8 +147,18 @@ export class SpacetimeCircleStore implements WalkerStore {
     return members.some((m) => m.member_id === memberId && m.role === "walker_user" && m.state === "member");
   }
 
+  /**
+   * After SpacetimeDB committed the change, so a failure here mustn't report it as failed. A position stays hidden
+   * anyway until her phone is back (CircleService.homeFor), and her next phone starts with sharing off (join).
+   */
   private async stopSharing(deviceIds: string[]) {
-    for (const id of deviceIds) await this.base.writeLocationSharing(id, false);
+    for (const id of deviceIds) {
+      try {
+        await this.base.writeLocationSharing(id, false);
+      } catch (error) {
+        console.warn(`[circle] couldn't turn GPS sharing off for device=${id} (${error instanceof Error ? error.name : "unknown"})`);
+      }
+    }
   }
 
   // ---- The walker's own steps: unchanged, in the base store ----

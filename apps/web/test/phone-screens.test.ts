@@ -158,7 +158,7 @@ describe("Maya's phone (caretaker)", () => {
 });
 
 describe("a caretaker waiting for the family", () => {
-  const phone = { phase: "home" as const, home: null, unreachable: false, live: "off" as const, notice: null, joining: false, join: async () => null, startOver: () => undefined, refresh: noop };
+  const phone = { phase: "home" as const, home: null, unreachable: false, notice: null, joining: false, join: async () => null, startOver: () => undefined, refresh: noop };
   const render = (home: Parameters<typeof Home>[0]["home"]) =>
     renderToStaticMarkup(createElement(Home, { phone, home, api: createDemoCircle().phone(), announce: () => undefined }));
 

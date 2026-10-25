@@ -43,6 +43,10 @@ export function careDbConfigFromEnv(env: Record<string, string | undefined>, war
     warn("[care-db] Some SPACETIME_* settings are missing (all four are needed); the circle stays in the walker store.");
     return null;
   }
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(database!)) {
+    warn("[care-db] SPACETIME_DATABASE must be lowercase letters, digits and single hyphens; the circle stays in the walker store.");
+    return null;
+  }
   let privateKey: KeyObject;
   try {
     // A dashboard may not keep line breaks, so the key may also be given as base64 of the PEM.
@@ -135,9 +139,13 @@ export class CareDbClient {
     const text = await response.text();
     if (!response.ok) throw new CareDbError(procedure, response.status, `The care database answered ${response.status} to ${procedure}: ${text.slice(0, 200)}`);
     // A procedure returns a string (its JSON result), which the HTTP API sends as a JSON string.
-    const outer: unknown = JSON.parse(text);
-    if (typeof outer !== "string") throw new CareDbError(procedure, response.status, `The care database's ${procedure} didn't return a string.`);
-    return JSON.parse(outer) as T;
+    try {
+      const outer: unknown = JSON.parse(text);
+      if (typeof outer === "string") return JSON.parse(outer) as T;
+    } catch {
+      // Falls through to the error below.
+    }
+    throw new CareDbError(procedure, response.status, `The care database's ${procedure} didn't return its JSON result.`);
   }
 
   private serverToken(): string {

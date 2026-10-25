@@ -585,6 +585,9 @@ export class WalkerService {
    * no one to message.
    */
   private async circleForTurn(deviceId: string, now: Date): Promise<CircleMemberRecord[]> {
+    // Only a circle kept apart from the walker (SpacetimeCircleStore, found by shape) gets the deadline and the
+    // fallback; with the walker's own store, the turn reads its circle as before.
+    if (!("pingCare" in this.store)) return (await this.store.circleOf(deviceId, now)).members;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("circle_timeout")), CIRCLE_FOR_TURN_MS)));

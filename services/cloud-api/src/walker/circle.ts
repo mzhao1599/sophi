@@ -213,6 +213,8 @@ export class CircleService {
     }
     // Her phone is in now, so its earlier membership goes now; a caretaker's goes when the owner approves.
     if (old && claim.member.state === "member") await this.store.removeMember(old.device_id, old.member_id);
+    // A new phone of hers starts with GPS sharing off, even if turning it off failed when her last phone left.
+    if (claim.member.role === "walker_user") await this.store.writeLocationSharing(claim.member.device_id, false);
     return { secret, home: await this.homeFor(claim.member, now) };
   }
 
