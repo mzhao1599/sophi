@@ -501,6 +501,29 @@ export const PairDeviceResponseSchema = z.strictObject({
 });
 export type PairDeviceResponse = z.infer<typeof PairDeviceResponseSchema>;
 
+/** At most this many points of the route ahead go to the server for her caretakers' map, thinned by the Pi. */
+export const SHARED_ROUTE_POINTS = 200;
+
+const sharedPoint = z.tuple([z.number().finite().min(-90).max(90), z.number().finite().min(-180).max(180)]);
+
+/**
+ * The walking route in progress, for her approved caretakers' phones (added 2026-10-25). Sent only while she
+ * shares her location (the same opt-in as `location`) and a route is on: where she's going, how far and how
+ * long is left, and the route ahead of her as `[lat, lon]` points. `simulated` is true when the position is the
+ * simulator's walk, and every phone that draws it says Simulated.
+ */
+export const SharedRouteSchema = z.strictObject({
+  destination: PlaceNameSchema,
+  phase: NavigationPhaseSchema,
+  remaining_m: z.int().min(0).max(100_000),
+  remaining_min: z.int().min(0).max(1_000),
+  /** From her snapped position to the end. */
+  ahead: z.array(sharedPoint).min(2).max(SHARED_ROUTE_POINTS),
+  destination_point: sharedPoint,
+  simulated: z.boolean(),
+});
+export type SharedRoute = z.infer<typeof SharedRouteSchema>;
+
 /** POST /api/v1/devices/{id}/heartbeat, every HEARTBEAT_INTERVAL_MS. */
 export const HeartbeatRequestSchema = z.strictObject({
   sent_at: time,
@@ -509,8 +532,20 @@ export const HeartbeatRequestSchema = z.strictObject({
   manifest: CapabilityManifestSchema,
   /** null when the walker has no obstacle sensors attached. */
   snapshot: SensorSnapshotSchema.nullable(),
-  /** Present only after the server has enabled sharing; absent on older Pi software. */
-  location: z.strictObject({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), age_ms: z.int().min(0).max(30_000) }).optional(),
+  /**
+   * Present only after the server has enabled sharing; absent on older Pi software. `simulated` (added
+   * 2026-10-25) marks the simulator's walk: phones label it, and an older Pi never sends one.
+   */
+  location: z
+    .strictObject({
+      latitude: z.number().finite().min(-90).max(90),
+      longitude: z.number().finite().min(-180).max(180),
+      age_ms: z.int().min(0).max(30_000),
+      simulated: z.boolean().optional(),
+    })
+    .optional(),
+  /** The route in progress while sharing is on (SharedRouteSchema); absent with no route, sharing off, or older Pi software. */
+  route: SharedRouteSchema.optional(),
   /** Lines said since the last heartbeat that succeeded, newest MAX_QUEUED_EVENTS at most. */
   events: z
     .array(WalkerEventSchema)

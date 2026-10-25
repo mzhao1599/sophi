@@ -6,6 +6,7 @@ import type {
   PhoneRole,
   ProposalView,
   SensorSnapshot,
+  SharedRoute,
   WalkerConfiguration,
   WalkerEventView,
   WalkerTurnView,
@@ -33,8 +34,28 @@ export interface DeviceRecord {
   /** The server's clock when it received `snapshot`. */
   snapshot_received_at: string | null;
   location_sharing_enabled: boolean;
-  location: { latitude: number; longitude: number } | null;
+  location: StoredLocation | null;
   location_received_at: string | null;
+}
+
+/**
+ * Her latest shared fix, kept only while sharing is on and for LOCATION_FIX_MAX_AGE_MS. The route she's on (added
+ * 2026-10-25) is stored with the fix it came with, so it follows the same opt-in, revocation and deletion.
+ * `simulated` marks the simulator's walk, or anything a simulator walker sends.
+ */
+export interface StoredLocation {
+  latitude: number;
+  longitude: number;
+  simulated?: true;
+  route?: SharedRoute;
+}
+
+/** What a heartbeat's fix and route become in storage, or null with no fix. */
+export function storedLocation(heartbeat: Heartbeat): StoredLocation | null {
+  const fix = heartbeat.location;
+  if (!fix) return null;
+  const simulated = fix.simulated === true || heartbeat.manifest.simulator;
+  return { latitude: fix.latitude, longitude: fix.longitude, ...(simulated ? { simulated: true as const } : {}), ...(heartbeat.route ? { route: heartbeat.route } : {}) };
 }
 
 /** The owner comes from the pairing code it claims. */
@@ -83,7 +104,8 @@ export interface Heartbeat {
   service_version: string;
   manifest: CapabilityManifest;
   snapshot: SensorSnapshot | null;
-  location?: { latitude: number; longitude: number; age_ms: number };
+  location?: { latitude: number; longitude: number; age_ms: number; simulated?: boolean };
+  route?: SharedRoute;
   /** Placed in time by the service; ones already stored (same event_id) are ignored. */
   events: WalkerEventView[];
 }
@@ -487,8 +509,9 @@ export class MemoryWalkerStore implements WalkerStore {
     d.manifest = copy(heartbeat.manifest);
     d.snapshot = copy(heartbeat.snapshot);
     d.snapshot_received_at = heartbeat.snapshot ? heartbeat.at : null;
-    if (d.location_sharing_enabled && heartbeat.location && !heartbeat.manifest.simulator) {
-      d.location = { latitude: heartbeat.location.latitude, longitude: heartbeat.location.longitude };
+    const fix = storedLocation(heartbeat);
+    if (d.location_sharing_enabled && fix && heartbeat.location) {
+      d.location = fix;
       d.location_received_at = new Date(Date.parse(heartbeat.at) - heartbeat.location.age_ms).toISOString();
     }
     for (const line of heartbeat.events) if (!d.lines.some((l) => l.event_id === line.event_id)) d.lines.push({ ...line });

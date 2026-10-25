@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { RouteSummarySchema, type LatLon, type WalkerToolCall } from "@walker/contracts";
+import { RouteSummarySchema, SHARED_ROUTE_POINTS, type LatLon, type WalkerToolCall } from "@walker/contracts";
 import { CloudError } from "../src/cloud/client";
 import { GpsSampler, type GpsResult } from "../src/gps";
 import { attachLogging } from "../src/logging";
@@ -450,7 +450,7 @@ describe("position sources", () => {
 });
 
 describe("privacy", () => {
-  it("N25: no guidance line is a walker line, and a simulated position never goes in a heartbeat", async () => {
+  it("N25: no guidance line is a walker line; a shared heartbeat marks a simulated position and carries the route, and nothing goes unshared", async () => {
     const h = walker();
     h.fake.locationSharing = true;
     await boot(h);
@@ -459,8 +459,16 @@ describe("privacy", () => {
     expect(guidance(h).length).toBeGreaterThan(3);
     const lines = JSON.stringify([h.device()!.events, h.store.pendingEvents(h.clock.monotonic())]);
     for (const line of guidance(h)) expect(lines).not.toContain(line);
-    expect(h.device()!.lastHeartbeat).not.toBeNull();
+    const beat = h.device()!.lastHeartbeat!;
+    expect(beat.location?.simulated).toBe(true);
+    expect(beat.route).toMatchObject({ destination: "Lake Merritt Boating Center", phase: "guiding", simulated: true });
+    expect(beat.route!.ahead.length).toBeGreaterThanOrEqual(2);
+    expect(beat.route!.ahead.length).toBeLessThanOrEqual(SHARED_ROUTE_POINTS);
+    // Sharing off: no fix and no route, even mid-route.
+    h.fake.locationSharing = false;
+    await h.clock.advance(20_000);
     expect(h.device()!.lastHeartbeat!.location).toBeUndefined();
+    expect(h.device()!.lastHeartbeat!.route).toBeUndefined();
     // A real receiver's fix still goes, with sharing on.
     const real = walker({ source: () => stubSource({ current: () => ({ latitude: 37.8, longitude: -122.25, age_ms: 100 }) }) });
     real.fake.locationSharing = true;

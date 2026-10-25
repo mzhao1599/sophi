@@ -199,7 +199,7 @@ Both are made-up data with one "Sample" tag in the corner, and neither needs a w
 
 1. On the page's Phones card: "Add a phone", "A caretaker's phone", name "Maya", "Get a code". The card shows "Code for Maya (caretaker)" and six digits.
 2. Maya types the code on her phone and presses "Link this phone". Her phone says "Waiting for the family to approve". A waiting phone lapses after 5 minutes.
-3. The Phones card shows Maya waiting, with a box to tick: "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her, be told when she asks for help, see a recent GPS position only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on." Tick it, then "Approve Maya". Approve does nothing until the box is ticked.
+3. The Phones card shows Maya waiting, with a box to tick: "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her, be told when she asks for help, see a recent GPS position and any walking route in progress only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on." Tick it, then "Approve Maya". Approve does nothing until the box is ticked.
 
    > "Maya gets in only after the family ticks what Rose agreed to."
 

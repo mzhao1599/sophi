@@ -10,6 +10,7 @@ import {
   WALKER_SETUP,
   type CircleErrorCode,
   type PhoneHomeResponse,
+  LOCATION_FIX_MAX_AGE_MS,
 } from "@walker/contracts";
 import { CIRCLE_SWEEP_EVERY_MS, CircleService, WalkerService, isCircleError, isWalkerError, sha256, type MemberCaller, type MessageEvent, type OwnerCaller } from "../../src";
 import { Clock, SKIP_POSTGRES, SKIP_SPACETIME, manifest, memoryHarness, postgresHarness, snapshot, spacetimeHarness, spacetimeTestServer, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
@@ -417,6 +418,54 @@ function describeCircle(name: string, makeHarness: () => Promise<StoreHarness>) 
       clock.advance(CIRCLE_MESSAGE_RETENTION_MS);
       await walkers.prepare();
       expect(await h.dump()).not.toContain("Lunch at noon?");
+    });
+
+    it("shows a caretaker the route she's on only while she shares, labelled simulated, and never on her own phone", async () => {
+      const { w, rose, maya } = await twoPhones();
+      const route = {
+        destination: "Lake Merritt Boating Center",
+        phase: "guiding" as const,
+        remaining_m: 300,
+        remaining_min: 6,
+        ahead: [[37.807, -122.2573], [37.8051, -122.2578]] as [number, number][],
+        destination_point: [37.8051, -122.2578] as [number, number],
+        simulated: true,
+      };
+      const beat = (extra: object) =>
+        walkers.heartbeat({ kind: "device", credential: w.credential }, w.deviceId, {
+          sent_at: clock.iso(-15),
+          service_version: "pi-0.1.0",
+          manifest: manifest(clock),
+          snapshot: snapshot(clock),
+          events: [],
+          ...extra,
+        });
+      // Sharing off: a route that arrives anyway is dropped.
+      await beat({ location: { latitude: 37.807, longitude: -122.2573, age_ms: 0, simulated: true }, route });
+      expect(member(await circle.home(phone(maya.secret))).walker.route).toBeUndefined();
+
+      await circle.locationSharing(phone(rose.secret), { enabled: true, consent: true });
+      await beat({ location: { latitude: 37.807, longitude: -122.2573, age_ms: 2_000, simulated: true }, route });
+      const seen = member(await circle.home(phone(maya.secret))).walker;
+      expect(seen.location).toEqual({ latitude: 37.807, longitude: -122.2573, age_seconds: 2, simulated: true });
+      expect(seen.route).toEqual({ ...route, age_seconds: 2 });
+      const hers = member(await circle.home(phone(rose.secret))).walker;
+      expect(hers.location ?? null).toBeNull();
+      expect(hers.route ?? null).toBeNull();
+
+      // The route ends: the next fix comes without one.
+      await beat({ location: { latitude: 37.8051, longitude: -122.2578, age_ms: 0, simulated: true } });
+      expect(member(await circle.home(phone(maya.secret))).walker.route).toBeNull();
+
+      // Stale after LOCATION_FIX_MAX_AGE_MS, and gone at once when she turns sharing off.
+      await beat({ location: { latitude: 37.807, longitude: -122.2573, age_ms: 0, simulated: true }, route });
+      clock.advance(LOCATION_FIX_MAX_AGE_MS + 1_000);
+      await heartbeat(w);
+      expect(member(await circle.home(phone(maya.secret))).walker.route).toBeNull();
+      await beat({ location: { latitude: 37.807, longitude: -122.2573, age_ms: 0, simulated: true }, route });
+      await circle.locationSharing(phone(rose.secret), { enabled: false });
+      expect(member(await circle.home(phone(maya.secret))).walker.route).toBeUndefined();
+      expect(await h.dump()).not.toContain("Boating Center");
     });
 
     it("starts her new phone with GPS sharing off, even if turning it off failed when her last phone left", async () => {

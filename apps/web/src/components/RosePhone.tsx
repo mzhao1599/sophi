@@ -191,7 +191,7 @@ function MyWalker({ home, api, refresh, announce }: { home: PhoneMember; api: Ph
       <p className={styles.bigBody}>{alertsSentence(w.alerts)}</p>
       <section className={styles.card} aria-labelledby="location-sharing-title">
         <h2 id="location-sharing-title" className={styles.cardTitle}>Location sharing</h2>
-        <p>Only approved caretakers can see your walker's latest GPS position. Sharing starts off. You can turn it off at any time; that erases the saved position.</p>
+        <p>Only approved caretakers can see your walker's latest GPS position, and the walking route you're on. Sharing starts off. You can turn it off at any time; that erases the saved position and route.</p>
         <p>{w.location_sharing_enabled ? "Sharing is on." : "Sharing is off."}</p>
         <button type="button" className={styles.primary} aria-pressed={w.location_sharing_enabled === true} disabled={changing} onClick={() => void changeSharing()}>
           {changing ? "Changing…" : w.location_sharing_enabled ? "Stop sharing my location" : "Share my location with approved caretakers"}

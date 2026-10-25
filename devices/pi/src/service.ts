@@ -75,7 +75,7 @@ export interface ServiceDeps {
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
   /**
    * Optional position source: the USB GPS, or the SIMULATED position (`walker simulate`, WALKER_GPS_SIMULATED).
-   * Sharing consent enables heartbeat sampling (never for a simulated one); a location question reads once; a
+   * Sharing consent enables heartbeat sampling (a simulated one goes marked `simulated`); a location question reads once; a
    * route keeps it tracking. With one, every device turn carries `navigation` and the route tools can run. Its
    * `simulated` also marks the cards show_on_screen fills as simulated.
    */
@@ -1276,15 +1276,19 @@ export class WalkerService {
       if (!cloud) return;
       const events = this.deps.store.pendingEvents(this.deps.clock.monotonic());
       const epoch = this.proposalEpoch;
-      // A simulated position never goes in a heartbeat: caretakers must never see a made-up position as hers.
+      // Only while she shares. A simulated position goes marked `simulated`, so a caretaker's phone never shows a
+      // made-up position as hers; the route she's on goes with the fix it belongs to.
       const source = this.deps.location;
-      const location = this.locationSharingEnabled && source && !source.simulated ? source.current() : null;
+      const fix = this.locationSharingEnabled && source ? source.current() : null;
+      const location = fix ? { ...fix, ...(source!.simulated ? { simulated: true } : {}) } : null;
+      const route = location ? (this.navigator?.shared() ?? null) : null;
       const body: HeartbeatRequest = {
         sent_at: iso(this.deps.clock.now()),
         service_version: SERVICE_VERSION,
         manifest: this.manifest(),
         snapshot: this.snapshotIfSensors(),
         ...(location ? { location } : {}),
+        ...(route ? { route } : {}),
         events,
       };
       try {

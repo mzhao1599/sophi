@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import type { ProposalView, WalkerConfiguration, WalkerEventView, WalkerTurnView } from "@walker/contracts";
 import { HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS, OFFLINE_AFTER_MS } from "@walker/contracts";
 import { WALKER_MIGRATIONS } from "./migrations";
-import { keepIds } from "./store";
+import { keepIds, storedLocation } from "./store";
 import { decideAnswer, type Answer } from "./rules";
 import type {
   AnswerResult,
@@ -177,8 +177,8 @@ export class PostgresWalkerStore implements WalkerStore {
     await this.transaction("record a heartbeat", async (db) => {
       await db.query(
         `update walker_devices set last_heartbeat_at = $2, service_version = $3, manifest = $4, snapshot = $5, snapshot_received_at = $6,
-           location = case when location_sharing_enabled and $7::jsonb is not null and $4::jsonb->>'simulator' = 'false' then $7::jsonb else location end,
-           location_received_at = case when location_sharing_enabled and $7::jsonb is not null and $4::jsonb->>'simulator' = 'false' then $8::timestamptz else location_received_at end
+           location = case when location_sharing_enabled and $7::jsonb is not null then $7::jsonb else location end,
+           location_received_at = case when location_sharing_enabled and $7::jsonb is not null then $8::timestamptz else location_received_at end
          where id = $1`,
         [
           deviceId,
@@ -187,7 +187,7 @@ export class PostgresWalkerStore implements WalkerStore {
           JSON.stringify(heartbeat.manifest),
           heartbeat.snapshot && JSON.stringify(heartbeat.snapshot),
           heartbeat.snapshot ? heartbeat.at : null,
-          heartbeat.location ? JSON.stringify({ latitude: heartbeat.location.latitude, longitude: heartbeat.location.longitude }) : null,
+          heartbeat.location ? JSON.stringify(storedLocation(heartbeat)) : null,
           heartbeat.location ? new Date(Date.parse(heartbeat.at) - heartbeat.location.age_ms).toISOString() : null,
         ],
       );
