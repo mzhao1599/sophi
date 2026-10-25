@@ -199,6 +199,15 @@
   line-height: 1.15;
 }
 
+/* Sophi's caption under a card she pulled up: a hairline above it, so her words don't read as the card's. */
+.ws-line[data-size="caption"] {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 2px solid var(--ws-hairline-strong);
+  font-size: var(--ws-smallest);
+  line-height: 1.15;
+}
+
 /* ---- The band over the handles ---- */
 
 .ws-band {

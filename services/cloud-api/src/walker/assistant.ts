@@ -1,4 +1,4 @@
-import { CueSchema, LiftPresetSchema, MODULE_CATALOG, WALKER_MAX_TOOL_CALLS, type ModuleId, type WalkerModel, type WalkerStatusView, type WalkerToolResult } from "@walker/contracts";
+import { CueSchema, LiftPresetSchema, MODULE_CATALOG, WALKER_MAX_TOOL_CALLS, WalkerToolCallSchema, type ModuleId, type ShowView, type WalkerModel, type WalkerStatusView, type WalkerToolResult } from "@walker/contracts";
 import { z } from "zod";
 import type { AgentFailure, AgentModel, AgentReply, AgentRequest } from "../onboarding/agent";
 import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
@@ -7,7 +7,7 @@ import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
  * The walker assistant's model step: one structured-output call per attempt. Spoken turns go to Gemini,
  * with the person's voice clip inline; typed turns go to Claude when the server has a Claude key
  * (config.ts), otherwise to Gemini too. The model reads the walker's status and their words and returns a transcript, a
- * reply, the topics it touched and at most one suggested cues change. It decides nothing else: the
+ * reply, the topics it touched and at most one suggested cues change or tool request. It decides nothing else: the
  * service applies the rules (lines.ts and service.ts), opens any proposal, and only a person's Confirm
  * changes the walker. A reply that breaks the shape, or one that says "clear" or "safe" (saysClearOrSafe),
  * is retried once with the reason; a second failure,
@@ -24,8 +24,10 @@ export type Topic = z.infer<typeof TopicSchema>;
 
 export const WalkerToolSchema = z.enum(["get_location", "get_distance", "get_weather"]);
 export type MessageRecipient = { member_id: string; name: string };
+// The contract's tool requests, show_on_screen included: the schema the model gets offers it only with the
+// turn's `screen` views, and the service refuses a view the turn didn't list.
 const ModelToolCallSchema = z.union([
-  z.strictObject({ name: WalkerToolSchema }),
+  WalkerToolCallSchema,
   /** Offered only on a walker turn that can ask for help (HelpTurn.offer); the service ignores it anywhere else. */
   z.strictObject({ name: z.literal("ask_for_help") }),
   z.strictObject({ name: z.literal("send_message"), to_member_id: z.uuid(), text: z.string().trim().min(1).max(30) }),
@@ -35,54 +37,63 @@ const ModelToolCallSchema = z.union([
 export const WalkerReplySchema = z.strictObject({
   /** The person's words as heard in the clip; empty when none were made out. Ignored for typed turns. */
   transcript: z.string().trim().max(MAX_TRANSCRIPT),
-  /** Empty only with tool_call ask_for_help: the server words that reply, and the model often leaves it empty. */
+  /** Empty only with tool_call ask_for_help or show_on_screen: the server words that step's reply. */
   reply: z.string().trim().max(MAX_REPLY),
   topics: z.array(TopicSchema).max(6),
   cues_change: z.strictObject({ cues: z.array(CueSchema).min(1).max(4) }).nullable(),
   tool_call: ModelToolCallSchema.nullable().optional(),
 })
   .refine((reply) => !reply.cues_change || !reply.tool_call, "A tool request and a settings offer must be separate steps.")
-  .refine((reply) => reply.reply.length > 0 || reply.tool_call?.name === "ask_for_help", {
-    message: "Write a reply; it may be empty only with tool_call ask_for_help.",
+  // The server words the spoken line of a show_on_screen step ("Putting that on your screen.") and of
+  // ask_for_help, so the model's reply isn't used there and it often leaves it empty (show_on_screen: 15 of 18
+  // live first attempts, 2026-10-24). Anywhere else, and a show_on_screen step with nothing heard (the step then
+  // isn't taken and the reply would be the answer), a reply is required.
+  .refine((reply) => reply.reply.length > 0 || reply.tool_call?.name === "ask_for_help" || (reply.tool_call?.name === "show_on_screen" && reply.transcript.length > 0), {
+    message: "Write a reply; it may be empty only with tool_call ask_for_help or show_on_screen.",
     path: ["reply"],
   });
 export type WalkerReply = z.infer<typeof WalkerReplySchema>;
 
-/** The same shape for the API, with the enums written out; lengths are in the descriptions and checked above. */
-export const WALKER_REPLY_JSON_SCHEMA: Record<string, unknown> = walkerReplyJsonSchema(false);
-
-/** On a turn that may ask for help, `tool_call` also offers `{ name: "ask_for_help" }`. */
-export const WALKER_REPLY_JSON_SCHEMA_WITH_HELP: Record<string, unknown> = walkerReplyJsonSchema(true);
-
-function walkerReplyJsonSchema(offerHelp: boolean): Record<string, unknown> {
+/**
+ * The same shape for the API, with the enums written out; lengths are in the descriptions and checked above.
+ * `views`: what the walker's screen can show this turn (its `screen.views`); show_on_screen is offered only
+ * with at least one, and only those, so the model is never told about a card the walker can't fill. `offerHelp`:
+ * on a turn that may ask for help, `tool_call` also offers `{ name: "ask_for_help" }`.
+ */
+export function walkerReplyJsonSchema(views: readonly ShowView[], offerHelp = false): Record<string, unknown> {
   const help = offerHelp ? [{ type: "object", additionalProperties: false, required: ["name"], properties: { name: { type: "string", enum: ["ask_for_help"] } } }] : [];
+  const show = { type: "object", additionalProperties: false, required: ["name", "view"], properties: { name: { type: "string", enum: ["show_on_screen"] }, view: { type: "string", enum: [...views] } } };
   return {
-  type: "object",
-  additionalProperties: false,
-  required: ["transcript", "reply", "topics", "cues_change", "tool_call"],
-  properties: {
-    transcript: { type: "string", description: "Voice turns: exactly what the person said in the audio, word for word; empty if no words could be made out. Typed turns: person_words." },
-    reply: { type: "string", description: `What Sophi says back: at most two short sentences, at most ${MAX_REPLY - 50} characters.${offerHelp ? " Empty only with tool_call ask_for_help, whose reply the server writes." : ""}` },
-    topics: { type: "array", items: { type: "string", enum: TopicSchema.options }, description: "Every topic the question touches." },
-    cues_change: {
-      anyOf: [
-        { type: "null" },
-        {
-          type: "object",
-          additionalProperties: false,
-          required: ["cues"],
-          properties: { cues: { type: "array", items: { type: "string", enum: CueSchema.options }, description: "The full new list of alert cues." } },
-        },
-      ],
-      description: "Only when the person asks to change how alerts reach them; otherwise null.",
+    type: "object",
+    additionalProperties: false,
+    required: ["transcript", "reply", "topics", "cues_change", "tool_call"],
+    properties: {
+      transcript: { type: "string", description: "Voice turns: exactly what the person said in the audio, word for word; empty if no words could be made out. Typed turns: person_words." },
+      reply: { type: "string", description: `What Sophi says back: at most two short sentences, at most ${MAX_REPLY - 50} characters.${offerHelp ? " Empty only with tool_call ask_for_help, whose reply the server writes." : ""}` },
+      topics: { type: "array", items: { type: "string", enum: TopicSchema.options }, description: "Every topic the question touches." },
+      cues_change: {
+        anyOf: [
+          { type: "null" },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["cues"],
+            properties: { cues: { type: "array", items: { type: "string", enum: CueSchema.options }, description: "The full new list of alert cues." } },
+          },
+        ],
+        description: "Only when the person asks to change how alerts reach them; otherwise null.",
+      },
+      tool_call: {
+        anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, required: ["name"], properties: { name: { type: "string", enum: WalkerToolSchema.options } } }, ...(views.length > 0 ? [show] : []), { type: "object", additionalProperties: false, required: ["name", "to_member_id", "text"], properties: { name: { type: "string", enum: ["send_message"] }, to_member_id: { type: "string" }, text: { type: "string" } } }, { type: "object", additionalProperties: false, required: ["name", "preset"], properties: { name: { type: "string", enum: ["set_lift_height"] }, preset: { type: "string", enum: LiftPresetSchema.options } } }, ...help],
+        description: "Request exactly one host-executed tool when needed. Never invent a tool result in reply.",
+      },
     },
-    tool_call: {
-      anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, required: ["name"], properties: { name: { type: "string", enum: WalkerToolSchema.options } } }, { type: "object", additionalProperties: false, required: ["name", "to_member_id", "text"], properties: { name: { type: "string", enum: ["send_message"] }, to_member_id: { type: "string" }, text: { type: "string" } } }, { type: "object", additionalProperties: false, required: ["name", "preset"], properties: { name: { type: "string", enum: ["set_lift_height"] }, preset: { type: "string", enum: LiftPresetSchema.options } } }, ...help],
-      description: "Request exactly one host-executed tool when needed. Never invent a tool result in reply.",
-    },
-  },
   };
 }
+export const WALKER_REPLY_JSON_SCHEMA: Record<string, unknown> = walkerReplyJsonSchema([]);
+
+/** On a turn that may ask for help, `tool_call` also offers `{ name: "ask_for_help" }`. */
+export const WALKER_REPLY_JSON_SCHEMA_WITH_HELP: Record<string, unknown> = walkerReplyJsonSchema([], true);
 
 export const WALKER_SYSTEM_PROMPT = `You are Sophi, the voice assistant on one person's physical augmentation walker. The person asks by holding the walker's Talk button and speaking, or by typing on the walker's page. The walker speaks your reply aloud, so write it for the ear. Speak to the person as "you"; never assume their gender.
 
@@ -96,6 +107,7 @@ Rules:
 - Parts: say which parts work, and which are degraded or not responding, in plain words. A part with simulated true is a stand-in, not real hardware: never call it working; say it's simulated. But when every part in parts has simulated true and "obstacles" isn't in your topics, the server ends your reply with "${SIMULATED_ALL_PARTS}" itself, so leave that out and don't say it in other words (all simulated, stand-ins, not real hardware): name the parts and their health instead. Put "parts" in topics.
 - GPS: a reported location-sharing part means a USB GPS receiver is connected. It does not mean the receiver has a satellite fix or that sharing is enabled. No coordinates are in your context. When a spoken walker turn explicitly asks where the person is, for their current address, or for the place they are at, request tool_call get_location. The Pi then checks GPS and a map service. Never claim to know the location yourself. On a typed page turn, ask them to use Talk on the walker. Do not call get_location for general questions about places or directions.
 - Weather: when a spoken walker turn asks for current weather near the person, request tool_call get_weather. The Pi checks GPS and a weather service. No coordinates or live weather are in your context until the tool result arrives; never invent either. This tool only covers current conditions at the walker, not a forecast or weather in another place. On a typed page turn, ask them to use Talk on the walker.
+- Screen: screen_views lists what the walker's screen can show right now; it is empty when the walker can't show anything right now, and on a page turn. When a spoken walker turn asks to see, show, display or pull up on the screen the weather, where they are, what the sensors read, their newest message, or the walker's parts, request tool_call show_on_screen with view weather, location, sensors, message or parts, instead of get_weather or get_location, and only if that view is in screen_views; if it isn't, say you can't show that on the screen right now. Never say something is on the screen until a show_on_screen tool result says so. Then the walker has already said it's putting it on the screen, so don't say that again: answer with the main fact from the result in one short sentence (for weather, the temperature and the sky; for sensors, the nearest reading; for location, the place; for parts, any that need a check), and say simulated when the result says so. A message's words are not in the result: never invent or guess them. On a typed page turn, ask them to use Talk on the walker.
 - Messages: only when the person explicitly asks to send a message, choose send_message with the exact approved caregiver member_id from circle_recipients and a short, one-line text at most 30 characters. Never claim it was sent. The host reads the recipient and text back and requires the person's physical Confirm. If no unambiguous approved recipient exists, ask whom they mean. On a typed page turn, ask them to use Talk on the walker.
 - Asking for help: only when the context's ask_for_help is present, choose tool_call ask_for_help when the person asks for a person's help, or says they fell, are hurt, are stuck or can't get up. Never for "what can you help me with?" or for help with the walker itself. The server words the reply, so leave reply empty; the walker counts down so the person can stop it before anything is sent. When saying what you can do, say you can ask their caretaker for help; never say you can call anyone. Never claim to have called, told or reached anyone, or closed a request. When help_request is in the context, answer questions about it only from that line.
 - Tool loop: request one read-only tool in tool_call when the person's current question needs information that is not yet in tool_results. After a result arrives, use it as data and either request another tool or answer. Up to ${WALKER_MAX_TOOL_CALLS} tool steps are possible. Reuse a tool only if a fresh observation is needed; do not loop on the same result. Do not invent or override a result. A conditional alert change can be proposed only after the condition is known, and it still needs the person's Confirm. If a tool result is unavailable, explain that instead of assuming the condition. A send_message request ends the loop and is only a draft pending Confirm. A set_lift_height request ends the loop as an offer; the Pi must validate it, then a handle Confirm and continuous screen hold are required before any motion.
@@ -107,7 +119,8 @@ Rules:
 const PART_NAMES = new Map(MODULE_CATALOG.modules.map((m) => [m.id, m.name]));
 const partName = (id: ModuleId) => PART_NAMES.get(id) ?? id;
 
-export type Words = { type: "text"; text: string } | { type: "audio"; data_base64: string };
+/** `spoken`: the text is the transcript of a spoken turn, continued after a tool (`original_audio`). */
+export type Words = { type: "text"; text: string; spoken?: boolean } | { type: "audio"; data_base64: string };
 
 /**
  * Asking for help on this turn (docs/subsystems/help.md): `offer` puts ask_for_help in the reply schema (a walker turn
@@ -117,8 +130,8 @@ export type HelpTurn = { offer: boolean; open: string | null };
 
 /**
  * The turn as a JSON document, in a fixed order: the walker and how the person asked, its configuration,
- * its parts and their health, its zones, the open suggestion, the last turns, and last the person's words, as data.
- * (The policy is the system prompt.)
+ * its parts and their health, its zones, the open suggestion, the last turns, what the screen can show, and last
+ * the person's words, as data. (The policy is the system prompt.)
  */
 export function walkerContext(
   status: WalkerStatusView,
@@ -128,6 +141,7 @@ export function walkerContext(
   toolResults: readonly WalkerToolResult[] = [],
   recipients: readonly MessageRecipient[] = [],
   help: HelpTurn = { offer: false, open: null },
+  screenViews: readonly ShowView[] = [],
 ): string {
   const proposal = status.open_proposal;
   return JSON.stringify({
@@ -135,7 +149,7 @@ export function walkerContext(
       name: status.name,
       online: status.online,
       simulator: status.simulator,
-      how_they_asked: source === "walker" ? (words.type === "audio" ? "spoke while holding Talk" : "typed on the walker") : "typed on the walker's page",
+      how_they_asked: source === "walker" ? (words.type === "audio" || words.spoken ? "spoke while holding Talk" : "typed on the walker") : "typed on the walker's page",
       consent: "The person chose to ask this question. recent_turns are this walker's last questions and answers, from the walker and its page.",
     },
     configuration: {
@@ -161,6 +175,7 @@ export function walkerContext(
       { from: "person", words: t.heard ?? "(not transcribed)" },
       { from: "sophi", words: t.reply },
     ]),
+    screen_views: screenViews,
     tool_results: toolResults,
     circle_recipients: recipients,
     ...(help.offer ? { ask_for_help: "Available on this turn: tool_call ask_for_help asks the caretakers in circle_recipients, after the walker's countdown." } : {}),
@@ -182,7 +197,8 @@ export interface WalkerAssistant {
   readonly provider?: WalkerModel;
   /**
    * `timeoutMs` shortens the deadline when the turn has less time left than WALKER_TIMEOUT_MS. `signal`
-   * cancels the attempt early (the hedge cancels the model it didn't use).
+   * cancels the attempt early (the hedge cancels the model it didn't use). `screenViews`, from a walker turn's
+   * `screen` only, offers show_on_screen with those views and lists them in the context.
    */
   reply(
     status: WalkerStatusView,
@@ -194,6 +210,7 @@ export interface WalkerAssistant {
     toolResults?: readonly WalkerToolResult[],
     recipients?: readonly MessageRecipient[],
     help?: HelpTurn,
+    screenViews?: readonly ShowView[],
   ): Promise<AssistantResult>;
 }
 
@@ -211,7 +228,8 @@ class RejectedReply extends Error {
  * "clearance", "safer", "safety", "safely", "unsafe"), not even to deny it ("I cannot say if the way is
  * clear" still puts the words in the person's ear). The policy says so; this check is the guarantee, and
  * it reads every reply the server will speak in the model's words, whatever topics the model tagged:
- * the arms line and offers replace the model's words, so those replies aren't checked. "clearly" passes.
+ * the arms line, offers and the step lines of the tools listed below replace the model's words, so those replies
+ * aren't checked; the answer after a tool's result (a sensors card included) carries no tool call and is. "clearly" passes.
  * Measured live 2026-10-23 (local runs, not recorded in the repo): on the demo's lines, gemini-3.6-flash
  * denied in those words on 9 of 210 obstacle answers and gemini-3.7-flash never, and no other answer of 419
  * used them. Asked outright ("Is the way ahead clear?"), both models use them on most first tries, and
@@ -221,9 +239,10 @@ const CLEAR_OR_SAFE = /\b(clear|clears|cleared|clearance|safe|safer|safest|safet
 const CLEAR_OR_SAFE_NOTE =
   'Server note: your previous reply broke a rule. Never use the words "clear" or "safe" in any form, not even to deny them: a sensor can miss things. Say what was measured and how old the reading is.';
 
+const WORDED_STEPS: ReadonlySet<string> = new Set(["get_distance", "get_weather", "show_on_screen", "ask_for_help"]);
+
 export function saysClearOrSafe(reply: WalkerReply): boolean {
-  // Replies the server replaces with its own words aren't spoken as the model wrote them.
-  if (reply.topics.includes("arms") || reply.cues_change || reply.tool_call?.name === "get_distance" || reply.tool_call?.name === "get_weather" || reply.tool_call?.name === "ask_for_help") return false;
+  if (reply.topics.includes("arms") || reply.cues_change || (reply.tool_call && WORDED_STEPS.has(reply.tool_call.name))) return false;
   return CLEAR_OR_SAFE.test(reply.reply);
 }
 
@@ -257,15 +276,16 @@ function deadline<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 export function createWalkerAssistant({ model, name, provider, timeoutMs = WALKER_TIMEOUT_MS }: { model: AgentModel; name?: string; provider?: WalkerModel; timeoutMs?: number }): WalkerAssistant {
   return {
     provider,
-    async reply(status, source, words, now, limitMs = timeoutMs, cancel, toolResults = [], recipients = [], help = { offer: false, open: null }) {
+    async reply(status, source, words, now, limitMs = timeoutMs, cancel, toolResults = [], recipients = [], help = { offer: false, open: null }, screenViews = []) {
       const started = Date.now();
       const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, limitMs)));
       const signal = cancel ? AbortSignal.any([deadlineSignal, cancel]) : deadlineSignal;
+      const views = source === "walker" ? screenViews : [];
       let request: AgentRequest = {
         system: WALKER_SYSTEM_PROMPT,
-        context: walkerContext(status, source, words, now, toolResults, recipients, help),
+        context: walkerContext(status, source, words, now, toolResults, recipients, help, views),
         retry: null,
-        schema: help.offer ? WALKER_REPLY_JSON_SCHEMA_WITH_HELP : WALKER_REPLY_JSON_SCHEMA,
+        schema: views.length > 0 ? walkerReplyJsonSchema(views, help.offer) : help.offer ? WALKER_REPLY_JSON_SCHEMA_WITH_HELP : WALKER_REPLY_JSON_SCHEMA,
         ...(words.type === "audio" ? { audio: { mime: "audio/wav" as const, data_base64: words.data_base64 } } : {}),
       };
       let attempts = 0;

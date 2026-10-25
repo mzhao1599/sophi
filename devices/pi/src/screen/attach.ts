@@ -87,6 +87,7 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
   on("answerSpoken", ({ id }) => machine.answerSpoken(id));
   on("circleMessage", (message) => machine.message(message));
   on("circleMessageSpoken", ({ id }) => machine.messageSpoken(id));
+  on("show", ({ card }) => machine.show(card));
   on("offer", ({ proposal }) => machine.offer(proposal));
   on("settled", ({ result }) => machine.settled(result));
   on("confirming", ({ phase }) => machine.confirm(phase));
@@ -94,7 +95,7 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
   on("help", ({ screen }) => machine.help(screen));
   on("zones", ({ zones }) => {
     const simulated = new Map(deps.modules.modules().map((m) => [m.instanceId, m.simulated]));
-    machine.zones(zones.map((z) => ({ zone: z.zone, mm: z.mm, quality: z.quality, simulated: simulated.get(z.instanceId) ?? false })));
+    machine.zones(zones.map((z) => ({ zone: z.zone, mm: z.mm, quality: z.quality, simulated: simulated.get(z.instanceId) ?? false, receivedMono: z.receivedMono })));
   });
 
   return {

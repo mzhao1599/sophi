@@ -30,6 +30,7 @@ import {
   type WalkerStatusView,
   type WalkerTurnResponse,
   type WalkerTurnView,
+  type WalkerToolName,
   type WalkerToolResult,
   WALKER_MAX_TOOL_CALLS,
   CIRCLE_MESSAGE_RETENTION_MS,
@@ -93,9 +94,13 @@ import {
 /** How long a turn waits for the circle's people before going on without them. */
 const CIRCLE_FOR_TURN_MS = 1_500;
 
-const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
-const WEATHER_LOOKUP_LINE = "I'll check the weather near you now.";
-const DISTANCE_LOOKUP_LINE = "I'll check the obstacle sensors now.";
+/** What the walker says while a tool runs: one line per tool, so a new tool can't fall through to another's. */
+const LOOKUP_LINE: Record<WalkerToolName, string> = {
+  get_location: "I'll check your GPS location now.",
+  get_weather: "I'll check the weather near you now.",
+  get_distance: "I'll check the obstacle sensors now.",
+  show_on_screen: "Putting that on your screen.",
+};
 /** The model chose ask_for_help on a walker turn that can't ask (an older Pi, or the circle unreachable this turn). */
 const HELP_UNAVAILABLE_LINE = "I can't ask anyone for help from here right now. If you need help now, call 911 from your phone.";
 
@@ -437,19 +442,23 @@ export class WalkerService {
     // caretaker it answers with the fixed no-caretaker line). Never on the owner's page.
     const canAsk = source === "walker" && "can_ask_for_help" in request && request.can_ask_for_help === true;
     const help = { offer: canAsk && circle !== null, open: source === "walker" && circle?.help ? helpContextLine(circle.help) : null };
-    const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
+    // A spoken turn continued after a tool is still spoken: the model must not answer it as typed ("use Talk").
+    const words: Words = input.type === "text" ? { type: "text", text: input.text, ...("original_audio" in request && request.original_audio ? { spoken: true } : {}) } : { type: "audio", data_base64: input.data_base64 };
     const toolResults: WalkerToolResult[] = "tool_results" in request
       ? (request.tool_results ?? []).map((r) => r.name === "get_distance" ? { name: r.name, text: distanceLine(status) } : r)
       : [];
+    // Only a walker turn that carries `screen` is offered show_on_screen, and only with the views it lists.
+    const screenViews = source === "walker" && "screen" in request ? (request.screen?.views ?? []) : [];
     const assistant = this.assistantFor(request);
-    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, help) : null;
+    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, help, screenViews) : null;
 
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
     const tool = toolCall?.name;
-    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && toolResults.length < WALKER_MAX_TOOL_CALLS ? tool : null;
+    const unlistedView = toolCall?.name === "show_on_screen" && !screenViews.includes(toolCall.view);
+    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && !unlistedView && toolResults.length < WALKER_MAX_TOOL_CALLS ? tool : null;
     if (nextTool) {
       const heard = input.type === "audio" ? result?.ok ? result.reply.transcript.trim() : "" : input.text;
-      const line = nextTool === "get_location" ? LOCATION_LOOKUP_LINE : nextTool === "get_weather" ? WEATHER_LOOKUP_LINE : DISTANCE_LOOKUP_LINE;
+      const line = LOOKUP_LINE[nextTool];
       if (nextTool === "get_distance") toolResults.push({ name: "get_distance", text: distanceLine(status) });
       const speech = await this.speak(line, left(), () => flight?.stage("voicing"));
       return WalkerTurnResponseSchema.parse({
@@ -457,11 +466,12 @@ export class WalkerService {
         proposal: null,
         speech: speech ? { mime: "audio/wav", data_base64: speech } : null,
         status,
-        tool_call: { name: nextTool },
+        tool_call: toolCall?.name === "show_on_screen" ? { name: toolCall.name, view: toolCall.view } : { name: nextTool },
         tool_results: toolResults,
       });
     }
-    const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance");
+    // After a card the walker showed (a sensors card included), the model answers from that result.
+    const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance" || r.name === "show_on_screen");
     const motionOffer = source === "walker" && toolCall?.name === "set_lift_height" && !status.open_proposal ? { preset: toolCall.preset } : null;
     const messageRecipient = source === "walker" && toolCall?.name === "send_message" ? recipients.find((r) => r.member_id === toolCall.to_member_id) : undefined;
     const validMessage = messageRecipient && toolCall?.name === "send_message" ? DeviceSendMessageRequestSchema.safeParse({ client_message_id: this.randomId(), to_member_id: messageRecipient.member_id, text: toolCall.text }) : null;
@@ -485,8 +495,10 @@ export class WalkerService {
       ? { reply: `Send to ${messageOffer.to_name}: ${messageOffer.text}. Press Confirm to send.`, answered_by: "model" as const, reason: "message_offer", proposal: null }
       : source === "page" && tool === "get_distance"
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
-      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height")
+      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height" || tool === "show_on_screen")
         ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
+      : unlistedView
+        ? { reply: "I can't show that on this walker's screen right now.", answered_by: "fixed" as const, reason: "show_unavailable", proposal: null }
       : tool === "send_message"
         ? { reply: "I couldn't prepare that message. Check that both phones have joined your circle and try again.", answered_by: "fixed" as const, reason: "message_unavailable", proposal: null }
       : unhandledTool
@@ -494,7 +506,7 @@ export class WalkerService {
       : distanceLookup
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
         : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
-    if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => r.name === "get_weather" && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
+    if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => (r.name === "get_weather" || r.name === "show_on_screen") && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
       decided.reply += " Weather data from Open-Meteo.";
     }
     const transcript = input.type === "audio" && result?.ok ? result.reply.transcript.trim() : "";

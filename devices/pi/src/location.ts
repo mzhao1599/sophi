@@ -10,7 +10,16 @@ type ReverseResult = {
 const DEFAULT_URL = "https://nominatim.openstreetmap.org/reverse";
 const USER_AGENT = "SophiWalker-CalHacks26/0.1 (https://github.com/mzhao1599/sophi)";
 const CACHE_MS = 5 * 60_000;
-const cache = new Map<string, { at: number; text: string }>();
+const cache = new Map<string, { at: number; reading: PlaceReading }>();
+
+/** The nearest address: the sentence `get_location` says, and the cleaned address a `location` card shows (null when there is no reliable one). */
+export interface PlaceReading {
+  text: string;
+  place: string | null;
+}
+
+/** A `location` card's line holds at most this many characters (ShowCardSchema). */
+const PLACE_MAX = 120;
 let nextRequestAt = 0;
 
 function spoken(value: unknown): string | null {
@@ -26,7 +35,7 @@ function metres(lat1: number, lon1: number, lat2: number, lon2: number): number 
   return 12_742_000 * Math.asin(Math.sqrt(a));
 }
 
-function line(result: ReverseResult, latitude: number, longitude: number): string {
+function line(result: ReverseResult, latitude: number, longitude: number): PlaceReading {
   const address = result.address ?? {};
   const street = spoken(address.road ?? address.pedestrian ?? address.footway);
   const number = spoken(address.house_number);
@@ -37,26 +46,33 @@ function line(result: ReverseResult, latitude: number, longitude: number): strin
   const placeLat = Number(result.lat);
   const placeLon = Number(result.lon);
   const distance = Number.isFinite(placeLat) && Number.isFinite(placeLon) ? metres(latitude, longitude, placeLat, placeLon) : Infinity;
-  if (distance > 200) return "I have a GPS fix, but the map does not show a reliable nearby address.";
+  if (distance > 200) return { text: "I have a GPS fix, but the map does not show a reliable nearby address.", place: null };
   const nearby = distance <= 100;
   const isVenue = ["amenity", "tourism", "leisure", "shop", "office", "historic"].includes(String(result.category));
   const venue = nearby && isVenue && place !== street ? place : null;
   const area = [streetLine, city, state].filter(Boolean).join(", ");
-  if (venue && area) return `Your GPS puts you near ${venue}, around ${area}.`;
-  if (venue) return `Your GPS puts you near ${venue}.`;
-  if (area) return `Your GPS puts you near ${area}.`;
-  return "I have a GPS fix, but the map could not identify an address nearby.";
+  // The card's line: the same words as the sentence, shortened (never invented) to fit.
+  const fits = (text: string) => (text && text.length <= PLACE_MAX ? text : null);
+  const card = fits(venue && area ? `${venue}, ${area}` : "") ?? fits(area) ?? fits([streetLine, city].filter(Boolean).join(", ")) ?? fits(venue ?? "");
+  if (venue && area) return { text: `Your GPS puts you near ${venue}, around ${area}.`, place: card };
+  if (venue) return { text: `Your GPS puts you near ${venue}.`, place: card };
+  if (area) return { text: `Your GPS puts you near ${area}.`, place: card };
+  return { text: "I have a GPS fix, but the map could not identify an address nearby.", place: null };
 }
 
 /** The public Nominatim endpoint is for a single prototype; configure WALKER_GEOCODER_URL to switch provider. */
 export async function describeGpsLocation(latitude: number, longitude: number, signal: AbortSignal, endpoint = process.env.WALKER_GEOCODER_URL ?? DEFAULT_URL): Promise<string> {
+  return (await lookUpPlace(latitude, longitude, signal, endpoint)).text;
+}
+
+export async function lookUpPlace(latitude: number, longitude: number, signal: AbortSignal, endpoint = process.env.WALKER_GEOCODER_URL ?? DEFAULT_URL): Promise<PlaceReading> {
   if (signal.aborted) throw signal.reason;
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     throw new Error("Invalid GPS coordinates.");
   }
   const key = `${endpoint}:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
   const prior = cache.get(key);
-  if (prior && Date.now() - prior.at < CACHE_MS) return prior.text;
+  if (prior && Date.now() - prior.at < CACHE_MS) return prior.reading;
   const url = new URL(endpoint);
   if (url.protocol !== "https:" || url.username || url.password) throw new Error("Geocoder must use HTTPS.");
   url.searchParams.set("format", "jsonv2");
@@ -77,8 +93,8 @@ export async function describeGpsLocation(latitude: number, longitude: number, s
   const body = await response.text();
   if (body.length > 16_384) throw new Error("Geocoder response too large.");
   const data = JSON.parse(body) as ReverseResult;
-  const text = line(data, latitude, longitude);
+  const reading = line(data, latitude, longitude);
   if (cache.size >= 16) cache.delete(cache.keys().next().value!);
-  cache.set(key, { at: Date.now(), text });
-  return text;
+  cache.set(key, { at: Date.now(), reading });
+  return reading;
 }

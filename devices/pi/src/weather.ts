@@ -14,7 +14,22 @@ function condition(code: number): string {
   return "unreported conditions";
 }
 
+/** Current conditions near her: the sentence `get_weather` says, and the values a `weather` card shows. */
+export interface WeatherReading {
+  text: string;
+  /** Whole degrees Fahrenheit. */
+  temperature_f: number;
+  /** The Pi's words for the weather code ("partly cloudy skies"). */
+  conditions: string;
+  /** Whole miles per hour. */
+  wind_mph: number;
+}
+
 export async function describeCurrentWeather(latitude: number, longitude: number, signal: AbortSignal): Promise<string> {
+  return (await currentWeather(latitude, longitude, signal)).text;
+}
+
+export async function currentWeather(latitude: number, longitude: number, signal: AbortSignal): Promise<WeatherReading> {
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     throw new Error("Invalid GPS coordinates.");
   }
@@ -36,5 +51,13 @@ export async function describeCurrentWeather(latitude: number, longitude: number
       typeof current.wind_speed_10m !== "number" || !Number.isFinite(current.wind_speed_10m) || current.wind_speed_10m < 0 || current.wind_speed_10m > 300) {
     throw new Error("Weather response missing current conditions.");
   }
-  return `The latest weather estimate near you is ${Math.round(current.temperature_2m)} degrees Fahrenheit with ${condition(current.weather_code)} and wind around ${Math.round(current.wind_speed_10m)} miles per hour. Weather data from Open-Meteo.`;
+  const temperature_f = Math.round(current.temperature_2m);
+  const conditions = condition(current.weather_code);
+  const wind_mph = Math.round(current.wind_speed_10m);
+  return {
+    text: `The latest weather estimate near you is ${temperature_f} degrees Fahrenheit with ${conditions} and wind around ${wind_mph} miles per hour. Weather data from Open-Meteo.`,
+    temperature_f,
+    conditions,
+    wind_mph,
+  };
 }

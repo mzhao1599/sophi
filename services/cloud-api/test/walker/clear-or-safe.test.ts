@@ -31,4 +31,10 @@ describe("saysClearOrSafe", () => {
     expect(saysClearOrSafe(reply("It's safe.", { topics: ["arms"] }))).toBe(false);
     expect(saysClearOrSafe(reply("Sounds are safer.", { topics: ["settings"], cues_change: { cues: ["sound", "spoken"] } }))).toBe(false);
   });
+
+  it("skips a step the server words itself, but reads the answer after a sensors card", () => {
+    expect(saysClearOrSafe(reply("Let me show you if it's clear.", { tool_call: { name: "show_on_screen", view: "sensors" } }))).toBe(false);
+    // The final answer carries no tool call: it is checked.
+    expect(saysClearOrSafe(reply("It's on your screen, and the way is clear."))).toBe(true);
+  });
 });
