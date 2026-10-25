@@ -19,7 +19,10 @@ import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "./fakeClo
 import { NetworkSwitch, SwitchableCloudClient, type NetworkMode } from "./networkSwitch";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
-import { ScriptRunner, parseScript } from "./script";
+import { ScriptRunner, parseScript, type CommandStep } from "./script";
+import { SimulatedPosition, readWalkSpeedup } from "../navigation/simulated";
+import { mapServicesFromEnv } from "../navigation/osm";
+import { recordedMapServices } from "./fakeMaps";
 import { LIFT_HELP, LIFT_KEYS, LiftSim, liftSimBench } from "./liftSim";
 import { MOTION_HELP, MOTION_KEYS, MotionSim, type MotionSimHand } from "./motionSim";
 import { handControlsConnected } from "../motion/handControls";
@@ -82,6 +85,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   const outDir = options.out ?? join(stateDir, "audio-out");
   const store = new StateStore(stateDir, log);
   log.info("SIMULATOR: every part below is simulated; nothing here is the real walker", { state: stateDir, audio: outDir });
+  const steps = options.script ? parseScript(readFileSync(options.script, "utf8")) : null;
 
   // ---- Cloud: the fake one, unless a real server is named ----
   let fake: FakeCloud | null = null;
@@ -105,7 +109,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     }
   } else {
     fake = new FakeCloud(clock);
-    fake.script = FAKE_DEMO_TURNS.map((turn) => ({ ...turn }));
+    // A script that scripts the fake cloud itself (`fake ...` steps) starts with none of the demo's answers.
+    fake.script = steps?.some((step) => step.kind === "fake") ? [] : FAKE_DEMO_TURNS.map((turn) => ({ ...turn }));
     // WALKER_FAKE_TURN_MS: how long the fake cloud takes to answer a turn (0 unless set; at most 10 s).
     const turnDelay = Math.min(10_000, Math.max(0, Number(process.env.WALKER_FAKE_TURN_MS) || 0));
     fakeServer = await startFakeCloudServer(fake, log, turnDelay);
@@ -191,8 +196,25 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     motion = { sim, socket: new OperatorSocket(join(stateDir, "motion.sock"), sim.coordinator, log), actions };
   }
 
+  // ---- SIMULATED position and map services ----
+  // The position always is simulated here. The map services are the recorded responses (offline, repeatable)
+  // unless WALKER_SIM_MAPS=live asks for the real public ones.
+  let speedup: number;
+  try {
+    speedup = readWalkSpeedup(process.env.WALKER_SIM_WALK_SPEEDUP);
+  } catch (error) {
+    log.error((error as Error).message);
+    return 2;
+  }
+  const position = new SimulatedPosition(clock, log, { speedup });
+  const liveMaps = process.env.WALKER_SIM_MAPS === "live";
+  const maps = liveMaps ? mapServicesFromEnv(process.env, clock) : recordedMapServices(clock);
+  log.info("SIMULATED GPS position by Lake Merritt, Oakland", {
+    walk_speedup: speedup,
+    maps: liveMaps ? "live OpenStreetMap services" : "recorded responses (only the Lake Merritt Boating Center route)",
+  });
+
   // ---- Service ----
-  const steps = options.script ? parseScript(readFileSync(options.script, "utf8")) : null;
   const runner = steps ? new ScriptRunner(bus) : null;
   // A real cloud's replies can repeat what someone said: log them by length only, as on the Pi.
   attachLogging(bus, log, { replyText: !options.server });
@@ -210,6 +232,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     makeCloud: (credential) =>
       new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
     ...(motion ? { motion: motion.sim.coordinator } : {}),
+    location: position,
+    maps,
   });
   announce = (text) => service.announce(text);
   proposalOpen = () => service.hasOpenProposal();
@@ -305,9 +329,24 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     }
   };
 
+  // `gps ...` and `fake ...` script steps.
+  const command = (step: CommandStep) => {
+    if (step.kind === "fake") {
+      if (!fake) throw new Error("fake steps need the fake cloud (no --server)");
+      fake.script.push(step.tool ? { reply: step.reply, tool: step.tool } : { reply: step.reply });
+      return;
+    }
+    const [a = 0, b = 0] = step.numbers;
+    if (step.action === "at") position.at(a, b);
+    else if (step.action === "walk") position.walk(a);
+    else if (step.action === "off_route") position.offRoute(a);
+    else if (step.action === "pause") position.pause();
+    else position.resume();
+  };
+
   let restoreTty = () => {};
   if (runner && steps) {
-    void runner.run(steps, press, (message) => log.info(`SCRIPT ${message}`)).then((failure) => {
+    void runner.run(steps, press, (message) => log.info(`SCRIPT ${message}`), undefined, command).then((failure) => {
       if (failure) log.error(`SCRIPT FAILED ${failure}`);
       else log.info("SCRIPT PASSED: every step happened in order");
       finish(failure ? 1 : 0);

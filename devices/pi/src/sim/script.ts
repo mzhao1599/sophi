@@ -1,4 +1,14 @@
+import { WalkerToolCallSchema, type WalkerToolCall, type WalkerToolName } from "@walker/contracts";
 import type { Bus, BusEvents } from "../bus";
+
+/** What the FAKE cloud says before the walker runs a scripted tool (the real server's "I'll check" lines differ). */
+const FAKE_TOOL_LINES: Record<WalkerToolName, string> = {
+  get_location: "Fake cloud: let me check where you are.",
+  get_distance: "Fake cloud: let me check the sensor.",
+  get_weather: "Fake cloud: let me check the weather.",
+  start_route: "Fake cloud: let me find that.",
+  stop_route: "Fake cloud: stopping the directions.",
+};
 
 /**
  * A tiny script language for driving the simulator end to end, one step per line:
@@ -8,6 +18,12 @@ import type { Bus, BusEvents } from "../bus";
  *   expect 60000 link offline  the same, waiting up to 60,000 ms (for steps outside the script's control)
  *   absent 1500 haptic         fail if a matching event happens within 1,500 ms
  *   wait 1000                  let 1,000 ms pass (for example, holding Talk while "speaking")
+ *   gps off_route 50           move the SIMULATED position: `gps at <lat> <lon>`, `gps walk <metres>`,
+ *                              `gps off_route <metres>`, `gps pause`, `gps resume` (counts as an action, like `key`)
+ *   fake tool start_route Lake Merritt Boating Center
+ *                              queue the FAKE cloud's next answer: `fake reply <text>`, or `fake tool <name>
+ *                              [destination]` (it asks the walker for that tool, then says "Fake cloud: " and the
+ *                              walker's result). A script with any `fake` step starts with no other fake answers.
  *   # comment
  *
  * `expect` and `absent` look only at events since the last `key` step, so an old event can't satisfy them.
@@ -16,15 +32,21 @@ import type { Bus, BusEvents } from "../bus";
  * module (`<instance> <health>`), screen (the walker screen's state name, with `--screen`), lift (`<kind> <text>`,
  * with `--lift`: the simulated lift board's state, its injected faults and the hold control; the coordinator's
  * lift requests are `motion lift ...`), motion (`<kind> <text>`, what
- * the motion coordinator did) and sim (what the simulated servos saw, with `--arms`).
+ * the motion coordinator did), sim (what the simulated servos saw, with `--arms`) and navigation (the route's
+ * phase and next maneuver, `guiding left`, or `none` once no route is on; never its coordinates or names).
  */
 export type ScriptStep =
   | { kind: "key"; key: string; line: number }
   | { kind: "expect"; event: keyof BusEvents; match: string; timeoutMs: number; line: number }
   | { kind: "absent"; event: keyof BusEvents; match: string; forMs: number; line: number }
-  | { kind: "wait"; forMs: number; line: number };
+  | { kind: "wait"; forMs: number; line: number }
+  | { kind: "gps"; action: "at" | "walk" | "off_route" | "pause" | "resume"; numbers: number[]; line: number }
+  | { kind: "fake"; reply: string; tool: WalkerToolCall | null; line: number };
 
-const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen", "lift", "motion", "sim"]);
+export type CommandStep = Extract<ScriptStep, { kind: "gps" | "fake" }>;
+
+const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen", "lift", "motion", "sim", "navigation"]);
+const GPS_ARGS = { at: 2, walk: 1, off_route: 1, pause: 0, resume: 0 } as const;
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 600_000;
 
@@ -64,6 +86,29 @@ export function parseScript(text: string): ScriptStep[] {
       steps.push({ kind: "absent", event: event as keyof BusEvents, match: match.join(" "), forMs, line });
       return;
     }
+    if (word === "gps") {
+      const [action, ...args] = rest;
+      const numbers = args.map(Number);
+      if (!action || !(action in GPS_ARGS) || numbers.length !== GPS_ARGS[action as keyof typeof GPS_ARGS] || numbers.some((n) => !Number.isFinite(n))) {
+        throw new Error(`Line ${line}: gps takes at <lat> <lon>, walk <metres>, off_route <metres>, pause or resume.`);
+      }
+      steps.push({ kind: "gps", action: action as keyof typeof GPS_ARGS, numbers, line });
+      return;
+    }
+    if (word === "fake") {
+      const [what, ...words] = rest;
+      if (what === "reply" && words.length) {
+        steps.push({ kind: "fake", reply: words.join(" "), tool: null, line });
+        return;
+      }
+      if (what === "tool" && words[0]) {
+        const parsed = WalkerToolCallSchema.safeParse(words[0] === "start_route" ? { name: words[0], destination: words.slice(1).join(" ") } : { name: words[0] });
+        if (!parsed.success || (words[0] !== "start_route" && words.length > 1)) throw new Error(`Line ${line}: fake tool needs a tool name (start_route takes a destination).`);
+        steps.push({ kind: "fake", reply: FAKE_TOOL_LINES[parsed.data.name], tool: parsed.data, line });
+        return;
+      }
+      throw new Error(`Line ${line}: fake takes reply <text> or tool <name> [destination].`);
+    }
     throw new Error(`Line ${line}: can't read "${trimmed}".`);
   });
   return steps;
@@ -98,6 +143,10 @@ export function eventText<K extends keyof BusEvents>(name: K, payload: BusEvents
       return `${String(p.kind)} ${String(p.text)}`;
     case "sim":
       return String(p.text);
+    case "navigation": {
+      const view = (payload as BusEvents["navigation"]).view;
+      return view ? `${view.phase} ${view.maneuver}` : "none";
+    }
     default:
       return "";
   }
@@ -139,8 +188,21 @@ export class ScriptRunner {
     press: (key: string) => void,
     report: (message: string) => void,
     advance?: (ms: number) => Promise<void>,
+    command?: (step: CommandStep) => void,
   ): Promise<string | null> {
     for (const step of steps) {
+      if (step.kind === "gps" || step.kind === "fake") {
+        if (!command) return `step ${step.line}: ${step.kind} needs the simulator`;
+        // Moving the position is an action, like a key: later expects look only at what follows it.
+        if (step.kind === "gps") this.cursor = this.seen.length;
+        report(`step ${step.line}: ${step.kind} ${step.kind === "gps" ? `${step.action} ${step.numbers.join(" ")}` : step.tool?.name ?? "reply"}`.trimEnd());
+        try {
+          command(step);
+        } catch (error) {
+          return `step ${step.line}: ${(error as Error).message}`;
+        }
+        continue;
+      }
       if (advance && step.kind === "expect") {
         let waited = 0;
         while (!this.find(step.event, step.match) && waited < step.timeoutMs) {
