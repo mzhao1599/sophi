@@ -38,6 +38,8 @@ The owner then unplugged the USB cable at the physical left ESP32, observed its 
 
 The owner moved that left ESP32 to the Mac for the isolation check. The Mac exposed no new `/dev/cu.usb*` serial node and its USB tree showed no CP2102 device at the time of inspection. This is consistent with a board, attached-wiring, cable or adapter fault; it does not by itself identify which. Compare a known-working spare ESP32 on the exact same Mac cable and port before replacing the board.
 
+The owner connected the spare ESP32 on that same Mac cable and port. It also did not enumerate in the Mac's USB tree or create a serial node. This comparison does **not** isolate a fault to the left board: the Mac cable, adapter, port or accessory authorization must first be checked with the setup that previously flashed an ESP32. Only then compare the left board on that proven setup.
+
 ## The screen: an ELECROW 5-inch HDMI touch panel (not yet fitted or measured)
 
 **From the vendor's documents (2026-10-23), not checked on our unit:** model DIS05490T (Amazon B0CYKXCM8J), 800x480, capacitive touch, 137 x 80 x 14 mm, 140 g, with a power switch, a 3.5 mm headphone jack and a 4-pin speaker socket. Elecrow's [manual](https://www.elecrow.com/download/product/DIS05490T/5inch_HDMI_Display_User_Manual.pdf) connects it to a Pi 5 with an HDMI cable (plus the included micro-HDMI adapter) for the picture and a USB-C-to-USB-A cable for "touch function and power supply"; both cables and the adapter are in the box, screws aren't. The listing calls it "driver-free", says 60 Hz, and says touch is five-point on Windows but single-point on Raspberry Pi OS; its title says TN and one bullet says IPS. Elecrow's product page lists a 5 V 2 A supply.
