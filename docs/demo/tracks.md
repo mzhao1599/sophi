@@ -27,6 +27,7 @@ Nothing below presents a planned part as working; each cut that needs a planned 
 | MLH: Commit Fellowship | Free, plus a supplemental form | [Commit Fellowship](#mlh-commit-fellowship-free-plus-a-form) |
 | Meta: Bringing People Closer Together with AI | Small: framing, and the phones on stage | [Meta](#meta-bringing-people-closer-together-with-ai-small) |
 | MLH: Best Domain Name from GoDaddy Registry, and Best .Tech Domain Name | Small: register a domain for each, point them at Render | [Domains](#mlh-the-two-domain-name-categories-small) |
+| Spacetime: core real-time backend | Built 2026-10-24: the care circle on SpacetimeDB; needs the Render settings and a check on Render | [Spacetime](#spacetime-the-care-circle-on-spacetimedb-added-2026-10-24) |
 
 ## Before submitting (all tracks)
 
@@ -56,6 +57,7 @@ For the Devpost text. Cal Hacks runs October 23 to 25, 2026. Everything here was
 - **Taught arm skills and "Let go?"** (#80): record a movement with the teaching arm, replay it after a Confirm press, and open the gripper only when the person holding the object presses Confirm, even after a fault. Tested only against simulated servos; the demo's tray task hasn't been taught.
 - **The lift wired into the motion coordinator** (#85): a lift target is prepared at the terminal and starts only on a handle Confirm press while someone holds the screen's hold control and both arms are folded; letting go, any handle press, the stop switch or any fault stops it, and it never moves without the hardware stop. Tested on a Mac against the simulated lift board and simulated servos, including the demo's lift flow in real time 3 of 3; it has never talked to the real lift.
 - **The walker demo script for the screen, the phones and the arms** (#83). Documentation only.
+- **The care circle on SpacetimeDB** (branch `spacetime-care-loop`, 2026-10-24): the phones, codes, approvals and messages in a SpacetimeDB module (`services/care-db`), the server calling its procedures, and the phones and the owner's page getting each change pushed live. Tested against a local SpacetimeDB 2.13 (the 20 circle tests, 6 WebSocket view tests) and in a production build with Postgres, two phones and the owner's page in one browser, 3 of 3. Published to Maincloud as `sophi-care`; not yet run from Render, or on real iPhones.
 - **Test fixes after direct pushes to `main`** (#78, #81, #82, #84): the tests and shape snapshots caught up with Cooper's pushes for opt-in GPS sharing, the location and distance tools, the weather tool and the walker's tool loop. Tests only; those features' own testing isn't recorded on this page.
 
 Before the event (2026-10-23 to the morning of 2026-10-23): the website and its Stripe test checkout, the onboarding agent, the walker assistant and its server on Render, the "Your walker" page and its "Behind the scenes" panel, the Pi service and its simulator, the ESP32 firmware, and the Pi's first run on 2026-10-23.
@@ -324,13 +326,30 @@ These are two different registries, so entering both means two names, for exampl
 
 **Max's steps:** pick the names (short, with "sophi" in them), register each with MLH's codes, and add both to the `steady-walker` service on Render as custom domains, following Render's instructions for the DNS records. Then open the website at each name once before submitting. Every link in the demo keeps working at the Render address too.
 
+### Spacetime: the care circle on SpacetimeDB (added 2026-10-24)
+
+**What they ask** (Cal Hacks prize page, read 2026-10-24): projects "where Spacetime is the core real-time backend, especially anything with live shared state, multiplayer interaction, or instant sync between users/agents/systems", naming chat and community apps and multi-user tools; "the main thing we'd want is for Spacetime to be meaningfully used, not just added on the side." Prizes: 1st 2,048 USD, 2nd 1,024 USD, 3rd 512 USD.
+
+**The line:** "Rose's family and her caretaker share one live circle. Every join, approval and message is a SpacetimeDB transaction, and it reaches the other phones the moment it commits."
+
+**What Sophi shows:** the care loop on two phones and the owner's page (the Microsoft cut's step 3), with the timing visible: Maya types her code, and the owner's page shows "Maya is waiting to join." at once; the owner ticks Rose's consent line and approves, and Maya's phone leaves "Waiting for the family to approve" by itself; Maya's message appears on Rose's phone as she sends it, and Rose's one-tap reply on Maya's. Then show the code: the module (`services/care-db/src/index.ts`), its per-phone views, and the dashboard at <https://spacetimedb.com/sophi-care>.
+
+**What SpacetimeDB does here, exactly** (say it this way): it holds the circle's state (phones, codes, waiting caretakers, messages, wrong-code tries); each change runs in it as one transaction (the server calls one procedure per step); and each phone subscribes to its own views, which SpacetimeDB keeps current. The server still checks the cookies and the consent, and the walker's own data (pairing, turns, GPS) stays in Postgres.
+
+**Honest limits to say if asked:**
+- Writes go through Sophi's server, which checks who may do what before calling SpacetimeDB; the phones read live from SpacetimeDB.
+- Measured on a local SpacetimeDB 2.13 with a production build on a Mac: approval 42 to 62 ms, messages 24 to 34 ms, removal 15 to 32 ms. Not measured on Maincloud from Render; say "about instant" only after seeing it there.
+- The phones are in one browser for that check, not two real iPhones yet (the same rule as the Microsoft cut's step 3).
+
+**Before entering:** Max adds the four `SPACETIME_*` settings on Render (services/care-db/README.md, "Deploying"), the branch is merged and deployed, `GET /api/v1/health` shows `care_db: "ok"`, and the two-phone path passes three times in a row on Render. Phones linked before the switch join again with new codes.
+
 ### Watch: Armadin, Elastic, AfterQuery and Annapurna Labs
 
 Their criteria say "Coming soon!". Check them at the event. For Armadin's Best Security Hack: if the criteria are general, the story is Sophi's guardrails (the model offers an action only by id, the server or the Pi writes every word, a person confirms on the walker, and webpages, model output and typed words are data, never instructions); if they want an attack or a security tool, skip.
 
 ### Skipped, and why
 
-- **A sponsor's product would have to become core, which means new work off the demo path:** Spacetime (SpacetimeDB must be "the core real-time backend"; moving the care loop's shared state onto it is a backend rewrite), Creao's AI-First Disruptor and Team Empowerment (criteria only on Creao's community page), Convex, Moss, Bitdeer AI, Factory (Droid must "do real work in the running product"), Fetch.ai, Apify and Bright Data (live public web data must be essential), Atlassian (both its tracks require building "a Forge app for one or more Atlassian products", per its rules document, read 2026-10-24), and MLH's Tiger Data, Vultr, Snowflake, Backboard, Auth0, DigitalOcean and MongoDB Atlas.
+- **A sponsor's product would have to become core, which means new work off the demo path:** Creao's AI-First Disruptor and Team Empowerment (criteria only on Creao's community page), Convex, Moss, Bitdeer AI, Factory (Droid must "do real work in the running product"), Fetch.ai, Apify and Bright Data (live public web data must be essential), Atlassian (both its tracks require building "a Forge app for one or more Atlassian products", per its rules document, read 2026-10-24), and MLH's Tiger Data, Vultr, Snowflake, Backboard, Auth0, DigitalOcean and MongoDB Atlas.
 - **Conflicts with the plan:** MLH's ElevenLabs (Sophi's voice is Cartesia, entered above; a second voice provider just for a prize would muddy that entry) and MLH's Presage (camera-based heart rate, breathing and emotion: sensitive health data that Sophi's consent rules keep out, and not on the demo path).
 - **Finance, payments or crypto, which Sophi isn't:** Hyphenate, CRS, Capital One's Nessie, Coinbase's x402, MLH's Solana.
 - **Requires a tool used to build the project, which Sophi wasn't built with:** Mana, Notability, Figma in the Workflow, SpaceXAI (built with Cursor, using Grok's Imagine or Voice API), and MLH's SpaceXSI A-Team raffle (Cursor and Grok Bot in the workflow).

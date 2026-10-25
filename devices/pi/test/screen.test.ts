@@ -1,7 +1,7 @@
 import { ScreenStateSchema, type ProposalView, type ScreenContent, type ScreenState } from "@walker/contracts";
 import { captionPages } from "@walker/walker-screen/view";
 import { describe, expect, it } from "vitest";
-import { CAPTION_PAGE_MIN_MS, SCREEN_ANSWER_HOLD_MS, SCREEN_DONE_MS, SCREEN_OBSTACLE_TAIL_MS } from "../src/constants";
+import { CAPTION_PAGE_MIN_MS, SCREEN_ANSWER_HOLD_MS, SCREEN_DONE_MS, SCREEN_MESSAGE_HOLD_MS, SCREEN_OBSTACLE_TAIL_MS } from "../src/constants";
 import { attachScreen, seedScreen, startingSettings } from "../src/screen/attach";
 import { ScreenMachine, pageAt, pageMs, pickScreen, type ScreenModel } from "../src/screen/machine";
 import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from "./support/fakes";
@@ -9,7 +9,7 @@ import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from
 /** Rows D1 to D9 of test/EXPECTED.md ("The walker screen"). Every time comes from a fake clock. */
 
 const settings = startingSettings(undefined, Date.parse("2026-10-24T02:00:00Z"));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null };
 const offer = { proposal_id: "11111111-1111-4111-8111-111111111111", from_cues: ["vibration" as const], cues: ["sound" as const] };
 const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, ...model }, now, settings).content.state;
 
@@ -447,5 +447,54 @@ describe("D9: the offer event follows the proposal id, not every heartbeat", () 
     h.press("confirm");
     await flush();
     expect(offers.map((p) => p?.cues ?? null)).toEqual([["sound"], null]);
+  });
+});
+
+describe("D25/D26: a caretaker's message read aloud", () => {
+  const message = { id: 1, message_id: "22222222-2222-4222-8222-222222222222", from_name: "Maya", text: "Dinner at six. I'll get you.", spokenMono: null };
+
+  it("shows under her own Talk, the answer, Sophi's offer and Done, and over offline and the clock", () => {
+    const answer = { id: 1, heard: null, reply: "Fake cloud: hello.", source: "fixed" as const, startedMono: 0, spokenMono: null };
+    const done = { result: { kind: "nothing_changed" as const }, untilMono: 5000 };
+    expect(name({ message, talk: "recording" })).toBe("listening");
+    expect(name({ message, answer })).toBe("answering");
+    expect(name({ message, offer })).toBe("model_offer");
+    expect(name({ message, done })).toBe("done");
+    expect(name({ message, link: "offline" })).toBe("message");
+    expect(name({ message })).toBe("message");
+    expect(pickScreen({ ...base, message }, 0, settings).content).toEqual({
+      state: "message",
+      message_id: message.message_id,
+      from_name: "Maya",
+      text: "Dinner at six. I'll get you.",
+    });
+  });
+
+  it("stays until SCREEN_MESSAGE_HOLD_MS after it has played, then goes", () => {
+    const played = { ...message, spokenMono: 1000 };
+    expect(name({ message: played }, 1000 + SCREEN_MESSAGE_HOLD_MS - 1)).toBe("message");
+    expect(pickScreen({ ...base, message: played }, 1000, settings).nextAt).toBe(1000 + SCREEN_MESSAGE_HOLD_MS);
+    expect(name({ message: played }, 1000 + SCREEN_MESSAGE_HOLD_MS)).toBe("ambient");
+  });
+
+  it("is dropped by a new Talk press, and heard again starts its time afresh", async () => {
+    const clock = new FakeClock();
+    const { m, names } = machine(clock);
+    m.seed({ link: "online", alerts: ["vibration"] });
+    await flush();
+    m.message({ id: 1, message_id: message.message_id, from_name: "Maya", text: message.text });
+    m.messageSpoken(1);
+    await flush();
+    await clock.advance(SCREEN_MESSAGE_HOLD_MS - 1000);
+    m.message({ id: 2, message_id: message.message_id, from_name: "Maya", text: message.text });
+    m.messageSpoken(2);
+    await clock.advance(SCREEN_MESSAGE_HOLD_MS - 1000);
+    await flush();
+    expect(names().at(-1)).toBe("message");
+    m.talk("recording");
+    await flush();
+    m.talk("idle");
+    await flush();
+    expect(names().slice(-2)).toEqual(["listening", "ambient"]);
   });
 });

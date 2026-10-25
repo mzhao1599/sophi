@@ -11,11 +11,12 @@ import {
   type CircleErrorCode,
   type PhoneHomeResponse,
 } from "@walker/contracts";
-import { CIRCLE_SWEEP_EVERY_MS, CircleService, WalkerService, isCircleError, isWalkerError, type MemberCaller, type MessageEvent, type OwnerCaller } from "../../src";
-import { Clock, SKIP_POSTGRES, manifest, memoryHarness, postgresHarness, snapshot, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
+import { CIRCLE_SWEEP_EVERY_MS, CircleService, WalkerService, isCircleError, isWalkerError, sha256, type MemberCaller, type MessageEvent, type OwnerCaller } from "../../src";
+import { Clock, SKIP_POSTGRES, SKIP_SPACETIME, manifest, memoryHarness, postgresHarness, snapshot, spacetimeHarness, spacetimeTestServer, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
 
 /**
- * The two-phone circle (circle.ts, "The two-phone app"), against the in-memory store and Postgres.
+ * The two-phone circle (circle.ts, "The two-phone app"), against the in-memory store, Postgres, and SpacetimeDB
+ * (SpacetimeCircleStore over the care-db module, with the walker's own rows in memory).
  * Expected, written before the run:
  * - her own phone is in on the code alone; a caretaker waits for the owner's approval, which lapses after 5 minutes;
  * - owner routes need the owner's own walker; member calls need a known cookie;
@@ -330,6 +331,30 @@ function describeCircle(name: string, makeHarness: () => Promise<StoreHarness>) 
       await rejects(circle.removeMember(owner(w.secret), w.deviceId, maya.id), "not_found");
     });
 
+    it("gives the walker only a caretaker's messages to her phone, newest five, and drops them when the phone goes", async () => {
+      const { w, rose, maya } = await twoPhones();
+      const device = { kind: "device" as const, credential: w.credential };
+      expect(await walkers.incomingMessages(device, w.deviceId)).toEqual({ messages: [] });
+      await circle.sendMessage(phone(maya.secret), { client_message_id: uuid(), text: "Dinner at six. I'll get you." });
+      await circle.sendMessage(phone(rose.secret), { client_message_id: uuid(), preset: "okay", to_member_id: maya.id });
+      const first = await walkers.incomingMessages(device, w.deviceId);
+      expect(first.messages).toEqual([{ message_id: expect.any(String), from_name: "Maya", text: "Dinner at six. I'll get you." }]);
+      // Her own replies and every member id stay off the walker.
+      expect(keys(first)).not.toContain("from_member_id");
+      expect(keys(first)).not.toContain("to_member_id");
+      for (let i = 1; i <= 6; i += 1) await circle.sendMessage(phone(maya.secret), { client_message_id: uuid(), text: `Note ${i}` });
+      const many = await walkers.incomingMessages(device, w.deviceId);
+      expect(many.messages.map((m) => m.text)).toEqual(["Note 2", "Note 3", "Note 4", "Note 5", "Note 6"]);
+      await expect(walkers.incomingMessages({ kind: "device", credential: "x".repeat(43) }, w.deviceId)).rejects.toThrow();
+      await circle.removeMember(owner(w.secret), w.deviceId, maya.id);
+      expect(await walkers.incomingMessages(device, w.deviceId)).toEqual({ messages: [] });
+    });
+
+    it("gives a walker with no phone of hers no messages", async () => {
+      const w = await pairWalker();
+      expect(await walkers.incomingMessages({ kind: "device", credential: w.credential }, w.deviceId)).toEqual({ messages: [] });
+    });
+
     it("lets the owner decline a waiting caretaker by removing it", async () => {
       const w = await pairWalker();
       const maya = await addAndJoin(w, "caregiver", "Maya");
@@ -394,7 +419,18 @@ function describeCircle(name: string, makeHarness: () => Promise<StoreHarness>) 
       expect(await h.dump()).not.toContain("Lunch at noon?");
     });
 
-    it("deletes the whole circle when the walker is forgotten", async () => {
+    it("starts her new phone with GPS sharing off, even if turning it off failed when her last phone left", async () => {
+      const { w, rose } = await twoPhones();
+      expect(await circle.locationSharing(phone(rose.secret), { enabled: true, consent: true })).toEqual({ enabled: true });
+      const herId = rose.id;
+      await circle.removeMember(owner(w.secret), w.deviceId, herId);
+      // As if the walker's write had failed after the circle committed (two databases with SpacetimeDB).
+      await h.store().writeLocationSharing(w.deviceId, true);
+      await addAndJoin(w, "walker_user", "Rose");
+      expect((await h.store().deviceForOwner(w.deviceId, sha256(w.secret)))?.location_sharing_enabled).toBe(false);
+    });
+
+        it("deletes the whole circle when the walker is forgotten", async () => {
       const { w, rose, maya } = await twoPhones();
       await circle.sendMessage(phone(maya.secret), { client_message_id: uuid(), text: "Lunch at noon?" });
       await walkers.forget(owner(w.secret), w.deviceId);
@@ -415,5 +451,14 @@ if (walkerTestDatabaseUrl) {
 } else {
   describe.skip(SKIP_POSTGRES, () => {
     it("needs a local cluster", () => {});
+  });
+}
+
+if (spacetimeTestServer) {
+  const server = spacetimeTestServer;
+  describeCircle("spacetime", () => spacetimeHarness(server));
+} else {
+  describe.skip(SKIP_SPACETIME, () => {
+    it("needs a local spacetime server", () => {});
   });
 }

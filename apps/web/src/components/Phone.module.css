@@ -638,12 +638,146 @@
   font-weight: 700;
 }
 
+/* The street map: a picture of the sample. Each kind has its own shape, not only a colour:
+   people are filled circles, groups filled squares, places hollow circles. */
+.mapFigure {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.map {
+  height: 18rem;
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--wash);
+  z-index: 0;
+}
+
+.map:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.simple .map {
+  height: 20rem;
+}
+
+.mapCaption {
+  display: grid;
+  gap: 6px;
+  color: var(--text-meta);
+  font-size: 0.9375rem;
+}
+
+.simple .mapCaption {
+  font-size: 1.125rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend .pin {
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+}
+
+.pinBox {
+  display: grid;
+  place-items: center;
+  background: none;
+  border: none;
+}
+
+.pin {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.pinBox .pin {
+  box-shadow: var(--shadow-float);
+}
+
+.pin[data-kind="person"] {
+  border-color: var(--live);
+  background: var(--live);
+  color: var(--on-ink);
+}
+
+.pin[data-kind="group"] {
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.pin[data-kind="place"] {
+  background: var(--card-solid);
+  color: var(--text-strong);
+}
+
+.startPin {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card-solid);
+  box-shadow: 0 0 0 4px var(--live-wash);
+}
+
+.map :global(.leaflet-marker-icon:focus-visible) {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.map :global(.leaflet-popup-content) {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.simple .map :global(.leaflet-popup-content) {
+  font-size: 1.25rem;
+}
+
+/* OpenStreetMap has no dark tiles: invert the light ones so the map doesn't glare in dark mode. */
+@media (prefers-color-scheme: dark) {
+  .map :global(.leaflet-tile-pane) {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+  }
+}
+
 @media (forced-colors: active) {
   .tile,
   .message,
   .reply,
   .card,
   .person,
+  .map,
+  .pin,
+  .startPin,
   .tag,
   .navItem,
   .back {

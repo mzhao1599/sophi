@@ -36,6 +36,9 @@ import {
   MAX_LIVE_MESSAGES,
   DeviceSendMessageRequestSchema,
   type DeviceSendMessageRequest,
+  DeviceMessagesResponseSchema,
+  type DeviceMessagesResponse,
+  WALKER_MESSAGES_KEPT,
 } from "@walker/contracts";
 import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
@@ -55,7 +58,10 @@ import {
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMemberRecord, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+
+/** How long a turn waits for the circle's people before going on without them. */
+const CIRCLE_FOR_TURN_MS = 1_500;
 
 const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
 const WEATHER_LOOKUP_LINE = "I'll check the weather near you now.";
@@ -384,7 +390,7 @@ export class WalkerService {
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
-    const { members } = await this.store.circleOf(device.device_id, now);
+    const members = await this.circleForTurn(device.device_id, now);
     const recipients = members.filter((m) => m.state === "member" && m.role === "caregiver").map((m) => ({ member_id: m.member_id, name: m.name }));
     const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
     const toolResults: WalkerToolResult[] = "tool_results" in request
@@ -532,6 +538,25 @@ export class WalkerService {
     return { sent: true };
   }
 
+  /**
+   * For the paired Pi, after each heartbeat: the newest messages an approved caretaker sent to her phone, which
+   * her walker reads aloud in its own voice. Never sent to a model or the voice service, and never logged.
+   */
+  async incomingMessages(caller: DeviceCaller, deviceId: string): Promise<DeviceMessagesResponse> {
+    const device = await this.resolve(caller, deviceId);
+    const now = this.now();
+    const { members } = await this.store.circleOf(device.device_id, now);
+    const her = members.find((m) => m.role === "walker_user" && m.state === "member");
+    if (!her) return { messages: [] };
+    const caretakers = new Map(members.filter((m) => m.role === "caregiver" && m.state === "member").map((m) => [m.member_id, m.name]));
+    const toHer = (await this.store.messagesFor(device.device_id, her.member_id, now)).filter(
+      (m) => m.to_member_id === her.member_id && caretakers.has(m.from_member_id),
+    );
+    return DeviceMessagesResponseSchema.parse({
+      messages: toHer.slice(-WALKER_MESSAGES_KEPT).map((m) => ({ message_id: m.message_id, from_name: caretakers.get(m.from_member_id), text: m.text })),
+    });
+  }
+
   /** Confirm or decline by id, from the walker's Confirm button or the page. The first answer wins. */
   async answer(caller: WalkerCaller, deviceId: string, proposalId: string, request: AnswerProposalRequest): Promise<AnswerProposalResponse> {
     const device = await this.resolve(caller, deviceId);
@@ -591,6 +616,27 @@ export class WalkerService {
   }
 
   /** The walker's history sweep, then the circle's (at most once a minute; always at server start). */
+
+  /**
+   * The circle for one turn's recipients. A turn never fails, and never waits more than CIRCLE_FOR_TURN_MS,
+   * because of the circle (it may live in SpacetimeDB, apart from the walker): without it the turn just has
+   * no one to message.
+   */
+  private async circleForTurn(deviceId: string, now: Date): Promise<CircleMemberRecord[]> {
+    // Only a circle kept apart from the walker (SpacetimeCircleStore, found by shape) gets the deadline and the
+    // fallback; with the walker's own store, the turn reads its circle as before.
+    if (!("pingCare" in this.store)) return (await this.store.circleOf(deviceId, now)).members;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("circle_timeout")), CIRCLE_FOR_TURN_MS)));
+      return (await Promise.race([this.store.circleOf(deviceId, now), late])).members;
+    } catch (error) {
+      console.warn(`[walker] turn without the circle (${error instanceof Error ? error.message.slice(0, 80) : "unknown"})`);
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   private async sweep(now: Date, atStart = false) {
     await this.store.sweep(now, new Date(now.getTime() - WALKER_HISTORY_RETENTION_MS), new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS));
     await sweepCircleThrottled(this.store, now, atStart);

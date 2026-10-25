@@ -31,6 +31,17 @@ services:
         sync: false
       - key: CARTESIA_API_KEY
         sync: false
+      # The care circle in SpacetimeDB on Maincloud (services/care-db/README.md, "Deploying"), entered by Max in the
+      # dashboard, all four together: https://maincloud.spacetimedb.com, sophi-care, https://steady-walker.onrender.com,
+      # and the signing key (a secret). With none of them the circle stays in Postgres.
+      - key: SPACETIME_URI
+        sync: false
+      - key: SPACETIME_DATABASE
+        sync: false
+      - key: SPACETIME_ISSUER
+        sync: false
+      - key: SPACETIME_JWT_PRIVATE_KEY
+        sync: false
       # One instance, so the onboarding page's in-memory sessions work here too.
       - key: ONBOARDING_ALLOW_MEMORY_STORE
         value: "true"

@@ -10,6 +10,8 @@ import { cueList } from "./walkerView";
 
 /** How often the app asks the server for news while it's on screen. */
 export const PHONE_POLL_MS = 2_000;
+/** With live updates from SpacetimeDB, the circle comes pushed; this is only for the walker's status (online, alerts, parts, GPS). */
+export const PHONE_LIVE_POLL_MS = 10_000;
 
 /** A random v4 UUID. `crypto.randomUUID` exists only on https pages, and a phone on the venue's LAN may be on plain http. */
 export function newId(): string {
@@ -34,7 +36,7 @@ export function newId(): string {
 export const codeDigits = (typed: string) => typed.replace(/\D/g, "").slice(0, 6);
 
 export const JOIN_NOTICE =
-  "Joining links this phone to the walker. Messages between the phones are deleted after 24 hours. GPS sharing starts off and only the walker user's phone can turn it on for approved caretakers.";
+  "Joining links this phone to the walker. Messages between the phones are deleted after 24 hours, and the walker reads a caretaker's messages aloud. GPS sharing starts off and only the walker user's phone can turn it on for approved caretakers.";
 
 export function joinError(code: PhoneFailure): string {
   switch (code) {

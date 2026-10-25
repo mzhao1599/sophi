@@ -1,6 +1,7 @@
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { MemoryWalkerStore, type WalkerAgent, type WalkerBackend } from "@walker/cloud-api";
+import { CareDbClient, MemoryWalkerStore, SpacetimeCircleStore, type WalkerAgent, type WalkerBackend } from "@walker/cloud-api";
 import { AnswerProposalResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, WalkerListResponseSchema, WalkerTurnResponseSchema, type HeartbeatRequest } from "@walker/contracts";
 import { clientAddress } from "@/server/walker";
 import * as health from "../app/api/v1/health/route";
@@ -161,7 +162,17 @@ describe("walker routes", () => {
   it("answers health with the store kind, and 503 when the store can't be reached", async () => {
     const response = await health.GET();
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok", walker_store: "memory" });
+    expect(await response.json()).toEqual({ status: "ok", walker_store: "memory", care_db: "off" });
+    // The circle's SpacetimeDB away: reported, but the walker is still healthy (it works without it).
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const care = new CareDbClient(
+      { uri: "http://127.0.0.1:9", database: "sophi-care", issuer: "http://127.0.0.1:3000", privateKey, kid: "test" },
+      { fetch: async () => { throw new TypeError("fetch failed"); } },
+    );
+    shared.__walkerBackend = { kind: "memory", store: new SpacetimeCircleStore(new MemoryWalkerStore(), care), care: care.config };
+    const careDown = await health.GET();
+    expect(careDown.status).toBe(200);
+    expect(await careDown.json()).toEqual({ status: "ok", walker_store: "memory", care_db: "unreachable" });
     const down = new MemoryWalkerStore();
     down.ping = async () => {
       throw new Error("connection refused");
