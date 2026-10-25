@@ -102,3 +102,22 @@ Written before the code (2026-10-23). The server keeps one `ActivityLog` per pro
 | Owner A and owner B each have a walker with activity | A's list carries only A's walker's activity, B's only B's; an owner with no activity gets no `activity` key at all (`{ walkers: [...] }` as before) |
 | The log, dumped as JSON after typed and spoken turns | Contains none of the person's words or the replies |
 | `GET /api/v1/walkers` after a page turn, over HTTP | 200, parses with `WalkerListResponseSchema`, and carries that walker's trace |
+
+## Pulling something up on the walker's screen (`show_on_screen`)
+
+Written before the code (2026-10-24), from [the show-on-screen guide](../../../../docs/subsystems/show-on-screen.md). Stub model, both stores. The walker is the demo walker; "with a screen" means the turn request carries `screen: { views: [...] }`, as the Pi sends while a screen page is connected.
+
+| Case | Expected |
+| --- | --- |
+| A walker turn with `screen: { views: ["weather", "sensors"] }` | The schema sent to the model offers `show_on_screen`, with `view` limited to `weather` and `sensors` (not `location`, `message` or `parts`); the context's `screen_views` is `["weather", "sensors"]` |
+| A walker turn without `screen` (an older Pi, or no screen page connected), and a page turn | The schema doesn't offer `show_on_screen` at all; `screen_views` is `[]` |
+| The system prompt | Says to request `show_on_screen` when she asks to see, show, display or pull up one of the five things, only for a view in `screen_views`; never to say it's on the screen until a `show_on_screen` result says so; that a message's words aren't in the result and mustn't be invented; Talk on a page turn. The old rules stay (never "clear" or "safe") and nothing says the walker has no screen |
+| The model asks for a listed view on a spoken walker turn | Unfinished response: `tool_call: { name: "show_on_screen", view: "weather" }` (parses with `WalkerToolCallSchema`), reply "Putting that on your screen.", `answered_by: "fixed"`, `heard` her transcript; nothing stored |
+| The model asks for a view the turn didn't list (`location` with `["weather"]`), or any view on a walker turn without `screen` | No `tool_call`; the fixed line "I can't show that on this walker's screen right now.", reason `show_unavailable` |
+| The model asks for `show_on_screen` on a page turn | No `tool_call`; "Please use Talk on the walker for that request.", reason `device_tool_only` |
+| A continuation whose `tool_results` holds a `show_on_screen` result, and the model answers | The model's reply is the final turn (stored once, spoken), `answered_by: "model"`; the context carries the result, `screen_views`, and `how_they_asked: "spoke while holding Talk"` |
+| That continuation after a sensors card, the reply tagged `obstacles` | The model's reply is used, not the fixed distance line (the card's result is the reading she asked about). A reply that says "clear" or "safe" is still retried once (`attempts: 2`) and a good second reply is used |
+| That continuation after a weather card whose result says "Weather data from Open-Meteo." | The reply ends with " Weather data from Open-Meteo." when the model left it out, as after `get_weather` |
+| A continuation already holding `WALKER_MAX_TOOL_CALLS` results, and the model asks for `show_on_screen` | Not run: the fixed line "I couldn't finish checking all of that right now.", reason `tool_limit` |
+| The "I'll check" line | Comes from one record over every `WalkerToolName`, so each tool has its own: "I'll check your GPS location now.", "I'll check the weather near you now.", "I'll check the obstacle sensors now.", "Putting that on your screen." |
+| The backup model (hedge.ts) | Gets the same `screen` views as the main model |
