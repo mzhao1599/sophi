@@ -13,6 +13,7 @@ import {
   type ScreenState,
 } from "@walker/contracts";
 import type { Logger } from "../log";
+import { parseTilePath, type TileCache } from "./tiles";
 
 /**
  * The walker screen's local server (docs/interfaces.md, "The walker screen's local contract"): the page, its
@@ -35,6 +36,12 @@ import type { Logger } from "../log";
  *
  * Never logged: state bodies, the token, request URLs (the stream's carries the token), message text, heard
  * words or replies. A failure to start is one log line, and the walker carries on without its screen.
+ *
+ * Map tiles for walking directions (GET /tiles/{z}/{x}/{y}.png, src/screen/tiles.ts): images, so no token (an
+ * <img> can't send one), with the same loopback, Host and Origin rules, and refused when the browser says
+ * another site asked (Sec-Fetch-Site), so a page elsewhere can't use the walker to fetch tiles or probe which
+ * ones are cached. The page's policy stays img-src 'self': the browser only ever loads tiles from here. Tile
+ * numbers say roughly where she is, so they are never logged either.
  *
  * The lift's hold control (POST /screen/hold, `ScreenHoldSchema`): every message is stamped with the Pi's
  * monotonic clock when it arrives, and the page's own `at` is never trusted for freshness, only to drop a
@@ -67,6 +74,8 @@ export interface ScreenServerOptions {
   monotonic: () => number;
   /** The hold control: "still held", or let go (with why). */
   onHold?: (hold: ScreenHoldEvent) => void;
+  /** Map tiles for walking directions; without it every tile is a 404 (the map draws on a plain background). */
+  tiles?: Pick<TileCache, "get"> | null;
 }
 
 export interface ScreenServer {
@@ -242,6 +251,22 @@ export async function startScreenServer(options: ScreenServerOptions): Promise<S
         release("stream_closed");
       });
       return;
+    }
+    if (req.method === "GET" && path.startsWith("/tiles/")) {
+      const site = req.headers["sec-fetch-site"];
+      if (site !== undefined && site !== "same-origin" && site !== "none") return send(res, 403, "Refused.");
+      const tile = parseTilePath(path);
+      if (!tile || !options.tiles) return send(res, 404, "Not found.");
+      const result = await options.tiles.get(tile);
+      if (result.status === "missing") return send(res, 404, "Not cached.");
+      res.writeHead(200, {
+        ...SECURITY_HEADERS,
+        // A tile never changes under its numbers here: the page may keep it for a day.
+        "Cache-Control": "private, max-age=86400",
+        "Content-Type": "image/png",
+        "Content-Length": result.body.length,
+      });
+      return res.end(result.body);
     }
     if (req.method === "POST" && (path === "/screen/shown" || path === "/screen/press" || path === "/screen/hold")) {
       if (!tokenMatches(expected, req.headers["x-screen-token"])) return send(res, 403, "Refused.");

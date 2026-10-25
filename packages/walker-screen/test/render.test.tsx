@@ -49,6 +49,46 @@ describe("WalkerScreenView", () => {
   });
 });
 
+describe("walking directions", () => {
+  const find = (name: string) => screenFixtures().find((f) => f.name === name)!;
+
+  it("draws the map in its column, her dot, the credit, the arrow, and Repeat and End route", () => {
+    const view = screenView(find("navigating--large").state);
+    const html = renderToStaticMarkup(<WalkerScreenView view={view} />);
+    expect(html).toContain('data-layout="navigating"');
+    expect(html).toContain('role="img" aria-label="Map: your simulated position, the route ahead, the next turn, the place. Map data © OpenStreetMap contributors."');
+    expect(html).toContain(">© OpenStreetMap contributors<");
+    expect(html).toContain('data-maneuver="left"');
+    expect(html).toContain(">Simulated<");
+    expect(html).toContain('class="ws-map-me-ring" data-simulated="true"');
+    expect(html).toMatch(/>Repeat<[\s\S]*>End route</);
+    expect(html).toContain('aria-live="polite">Turn left onto Lenox Avenue.<');
+    // Without a tile base, the plain background: the route and the dot, and no image at all.
+    expect(html).not.toContain("<img");
+    expect(html).toContain('class="ws-route"');
+  });
+
+  it("asks only its own server for tiles, by number, and hides them from a screen reader", () => {
+    const view = screenView(find("navigating--large").state);
+    const html = renderToStaticMarkup(<WalkerScreenView view={view} tiles="/tiles/" />);
+    const srcs = [...html.matchAll(/<img [^>]*src="([^"]+)"/g)].map((m) => m[1]);
+    expect(srcs.length).toBe(view.nav!.map.tiles.length);
+    expect(srcs).toContain("/tiles/17/21023/50645.png");
+    for (const src of srcs) expect(src).toMatch(/^\/tiles\/\d+\/\d+\/\d+\.png$/);
+    expect(html).not.toMatch(/<img (?![^>]*alt="")/);
+  });
+
+  it("a real position has a solid ring and no Simulated tag; no position draws no dot", () => {
+    const real = renderToStaticMarkup(<WalkerScreenView view={screenView(find("navigating-real-gps-path--large").state)} />);
+    expect(real).not.toContain(">Simulated<");
+    expect(real).toContain('data-simulated="false"');
+    const lost = renderToStaticMarkup(<WalkerScreenView view={screenView(find("navigating-no-position--large").state)} />);
+    expect(lost).not.toContain("ws-map-me");
+    expect(lost).toContain('aria-label="Map: the route ahead, the next turn, the place.');
+    expect(lost).not.toContain("ws-turn-arrow");
+  });
+});
+
 describe("screen.css", () => {
   it("never follows a system dark mode, and themes only by data-theme", () => {
     expect(css).not.toMatch(/prefers-color-scheme/);
@@ -62,6 +102,8 @@ describe("screen.css", () => {
     for (const ms of durations) expect(ms).toBeLessThanOrEqual(300);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*{\s*\.ws-one\s*{\s*animation: none;/);
     expect(css).not.toMatch(/blur\(|translate|infinite/);
+    // Nothing pans or zooms: the map redraws in place (no transitions anywhere).
+    expect(css).not.toMatch(/transition/);
   });
 
   it("sets no text size by hand: every one comes from sizes.ts", () => {

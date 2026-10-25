@@ -1,15 +1,16 @@
-import { ScreenStateSchema, type ProposalView, type ScreenContent, type ScreenState } from "@walker/contracts";
+import { ScreenStateSchema, type NavigatingScreen, type ProposalView, type ScreenContent, type ScreenState } from "@walker/contracts";
 import { captionPages } from "@walker/walker-screen/view";
 import { describe, expect, it } from "vitest";
 import { CAPTION_PAGE_MIN_MS, SCREEN_ANSWER_HOLD_MS, SCREEN_DONE_MS, SCREEN_MESSAGE_HOLD_MS, SCREEN_OBSTACLE_TAIL_MS } from "../src/constants";
 import { attachScreen, seedScreen, startingSettings } from "../src/screen/attach";
 import { ScreenMachine, pageAt, pageMs, pickScreen, type ScreenModel } from "../src/screen/machine";
+import { Bus } from "../src/bus";
 import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from "./support/fakes";
 
 /** Rows D1 to D9 of test/EXPECTED.md ("The walker screen"). Every time comes from a fake clock. */
 
 const settings = startingSettings(undefined, Date.parse("2026-10-24T02:00:00Z"));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, navigation: null };
 const offer = { proposal_id: "11111111-1111-4111-8111-111111111111", from_cues: ["vibration" as const], cues: ["sound" as const] };
 const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, ...model }, now, settings).content.state;
 
@@ -496,5 +497,116 @@ describe("D25/D26: a caretaker's message read aloud", () => {
     m.talk("idle");
     await flush();
     expect(names().slice(-2)).toEqual(["listening", "ambient"]);
+  });
+});
+
+/**
+ * D27 to D29 (walking directions on the screen, added 2026-10-24), written before the code:
+ * D27 `navigating` sits under a message being read and above offline, not set up and the clock; an obstacle, her
+ *     own Talk (listening, thinking, answering), Sophi's offer and Done all still come first (motion: D19), and
+ *     the route comes back once they finish. A Talk press doesn't end it.
+ * D28 every view the Navigator sends is a new state with the same name (the map moves), and null ends it.
+ * D29 a view that isn't a NavigatingScreen is never drawn: logged once, by kind only (no coordinates or place),
+ *     and the screen shows no route rather than a stale one.
+ */
+const navView = (over: Partial<NavigatingScreen> = {}): NavigatingScreen => ({
+  state: "navigating",
+  destination: "Lake Merritt Boating Center",
+  phase: "guiding",
+  instruction: "Turn left onto Lenox Avenue.",
+  maneuver: "left",
+  street: "Lenox Avenue",
+  to_step_m: 30,
+  remaining_m: 750,
+  remaining_min: 10,
+  simulated: true,
+  map: {
+    position: [37.809875, -122.257855],
+    route: [
+      [37.809875, -122.257855],
+      [37.809971, -122.258176],
+      [37.805086, -122.257848],
+    ],
+    step_at: [37.809971, -122.258176],
+    destination_at: [37.805086, -122.257848],
+  },
+  ...over,
+});
+
+describe("D27: walking directions in the screen's priority", () => {
+  const navigation = navView();
+  const obstacle = { zone: "front_left", mm: 300, simulated: true, lastNearMono: 0, near: true };
+  const answer = { id: 1, heard: null, reply: "Fake cloud: hello.", source: "fixed" as const, startedMono: 0, spokenMono: null };
+  const done = { result: { kind: "nothing_changed" as const }, untilMono: 5000 };
+  const message = { id: 1, message_id: "22222222-2222-4222-8222-222222222222", from_name: "Maya", text: "Dinner at six.", spokenMono: null };
+
+  it("under the obstacle, her Talk, the offer, Done and a message; over offline, not set up and the clock", () => {
+    expect(name({ navigation, obstacle })).toBe("obstacle");
+    expect(name({ navigation, talk: "recording" })).toBe("listening");
+    expect(name({ navigation, talk: "waiting" })).toBe("thinking");
+    expect(name({ navigation, answer })).toBe("answering");
+    expect(name({ navigation, offer })).toBe("model_offer");
+    expect(name({ navigation, done })).toBe("done");
+    expect(name({ navigation, message })).toBe("message");
+    expect(name({ navigation, link: "offline" })).toBe("navigating");
+    expect(name({ navigation, link: "unpaired" })).toBe("navigating");
+    expect(name({ navigation, link: "unauthorized" })).toBe("navigating");
+    expect(name({ navigation })).toBe("navigating");
+    // Done and the message hold end on their own, and the route is underneath.
+    expect(name({ navigation, done }, 5000)).toBe("navigating");
+    expect(name({ navigation, message: { ...message, spokenMono: 0 } }, SCREEN_MESSAGE_HOLD_MS)).toBe("navigating");
+    expect(pickScreen({ ...base, navigation }, 0, settings).content).toEqual(navigation);
+    const state: ScreenState = { v: 1, revision: 0, screen: navigation, settings, strip: { link: "offline", simulator: true, bench_mode: false, clock: null } };
+    expect(ScreenStateSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("D27, D28: on the bus: Talk covers the route and it comes back; each view is a new state; null ends it", async () => {
+    const clock = new FakeClock();
+    const bus = new Bus();
+    const log = captureLogger();
+    const states: ScreenState[] = [];
+    const service = { link: "online" as const, talk: "idle" as const, configuration: null, openProposal: null };
+    const { machine } = attachScreen({ bus, clock, log, service, modules: { modules: () => [] }, simulator: true, settings, localTime: () => null, onState: (s) => states.push(s) });
+    seedScreen(machine, service);
+    await flush();
+    bus.emit("navigation", { view: navigation });
+    await flush();
+    bus.emit("navigation", { view: navView({ to_step_m: 20, map: { ...navigation.map, position: [37.80989, -122.25792] } }) });
+    await flush();
+    bus.emit("talk", { state: "recording" });
+    await flush();
+    bus.emit("talk", { state: "idle" });
+    await flush();
+    bus.emit("navigation", { view: null });
+    await flush();
+    expect(states.map((s) => s.screen.state)).toEqual(["ambient", "navigating", "navigating", "listening", "navigating", "ambient"]);
+    expect((states[2]!.screen as NavigatingScreen).to_step_m).toBe(20);
+    // The same view again draws nothing new.
+    const count = states.length;
+    bus.emit("navigation", { view: null });
+    await flush();
+    expect(states).toHaveLength(count);
+  });
+
+  it("D29: a view that isn't a NavigatingScreen is never drawn, and is logged once without its contents", async () => {
+    const clock = new FakeClock();
+    const bus = new Bus();
+    const log = captureLogger();
+    const states: ScreenState[] = [];
+    const service = { link: "online" as const, talk: "idle" as const, configuration: null, openProposal: null };
+    const { machine } = attachScreen({ bus, clock, log, service, modules: { modules: () => [] }, simulator: true, settings, localTime: () => null, onState: (s) => states.push(s) });
+    seedScreen(machine, service);
+    await flush();
+    bus.emit("navigation", { view: navigation });
+    await flush();
+    const tooMany = navView({ map: { ...navigation.map, route: Array.from({ length: 201 }, () => [37.8, -122.25] as [number, number]) } });
+    bus.emit("navigation", { view: tooMany });
+    bus.emit("navigation", { view: { ...navigation, street: "x".repeat(61) } });
+    await flush();
+    expect(states.map((s) => s.screen.state)).toEqual(["ambient", "navigating", "ambient"]);
+    const warnings = log.lines.filter((l) => l.includes("walker screen error"));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('where="navigation view"');
+    expect(log.lines.join("\n")).not.toMatch(/37\.8|122\.2|Lenox|Merritt/);
   });
 });

@@ -10,16 +10,22 @@ import { WalkerScreenView, screenFixtures, screenView } from "../src";
  * Draws every fixture at 800x480 in headless Chromium, saves a PNG of each, and checks what a screenshot can't
  * be trusted to show by eye: nothing overflows its region or the panel, the main line takes at most two
  * lines, no text is under 40 px, buttons are at least 147 px on their short side with at most 3 a screen,
- * and every text colour is 7:1 or better on what's behind it.
+ * and every text colour is 7:1 or better on what's behind it. On walking directions' screens it also checks
+ * that the maneuver word keeps one line, that no line needed its ellipsis backstop, that the map sits in its
+ * column, and that the OpenStreetMap credit is on the map at 7:1.
  *
  * Off unless these are set (no browser is installed by this package):
  *   SCREEN_SHOTS_DIR  where the PNGs and report.json go
  *   PLAYWRIGHT_CORE   path to a playwright-core package directory
  *   CHROMIUM_PATH     path to a Chromium (or chrome-headless-shell) binary
+ * Optional:
+ *   SCREEN_TILES      a tile base URL for the map ("file:///path/to/tiles", holding {z}/{x}/{y}.png); without
+ *                     it the map draws on its plain background, as offline with nothing cached
  */
 const outDir = process.env.SCREEN_SHOTS_DIR;
 const playwrightPath = process.env.PLAYWRIGHT_CORE;
 const chromiumPath = process.env.CHROMIUM_PATH;
+const tiles = process.env.SCREEN_TILES || undefined;
 
 const src = fileURLToPath(new URL("../src/", import.meta.url));
 const css = readFileSync(join(src, "screen.css"), "utf8").replaceAll("./fonts/", pathToFileURL(join(src, "fonts")).href + "/");
@@ -69,7 +75,7 @@ function measure(): Measured {
   const inside = (r: DOMRect, o: DOMRect) => r.left >= o.left - 0.5 && r.right <= o.right + 0.5 && r.top >= o.top - 0.5 && r.bottom <= o.bottom + 0.5;
   for (const el of texts) {
     const r = el.getBoundingClientRect();
-    const region = el.closest(".ws-strip, .ws-one, .ws-band, .ws-button") as HTMLElement;
+    const region = el.closest(".ws-strip, .ws-one, .ws-band, .ws-button, .ws-nav-side") as HTMLElement;
     if (!inside(r, R)) problems.push(`"${el.textContent}" leaves the screen`);
     if (region && !inside(r, region.getBoundingClientRect())) problems.push(`"${el.textContent}" leaves its region`);
     const size = parseFloat(getComputedStyle(el).fontSize);
@@ -79,6 +85,23 @@ function measure(): Measured {
   const main = root.querySelector<HTMLElement>(".ws-main")!;
   const mainLines = Math.round(main.getBoundingClientRect().height / parseFloat(getComputedStyle(main).lineHeight));
   if (main.dataset.size === "main" && mainLines > 2) problems.push(`main line takes ${mainLines} lines`);
+  if (main.dataset.size === "nav" && mainLines > (main.dataset.wraps === "true" ? 2 : 1)) problems.push(`"${main.textContent}" takes ${mainLines} lines`);
+  // The ellipsis backstop never fires on a fixture: the view shortened the line enough.
+  // (A line box is shorter than the glyphs, so a clamped block's height is allowed half a line of slack.)
+  for (const el of root.querySelectorAll<HTMLElement>("[data-max-lines]")) {
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+    const clipped = el.dataset.maxLines === "1" ? el.scrollWidth > el.clientWidth + 1 : el.scrollHeight > el.clientHeight + lineHeight / 2;
+    if (clipped) problems.push(`"${el.textContent}" is clipped`);
+  }
+  const map = root.querySelector<HTMLElement>(".ws-map");
+  if (map) {
+    const m = map.getBoundingClientRect();
+    const side = root.querySelector(".ws-nav-side")!.getBoundingClientRect();
+    if (!inside(m, side) || !inside(m, R)) problems.push("the map leaves its column");
+    const credit = map.querySelector<HTMLElement>(".ws-map-credit");
+    if (!credit || credit.textContent !== "© OpenStreetMap contributors") problems.push("no OpenStreetMap credit on the map");
+    else if (!inside(credit.getBoundingClientRect(), m)) problems.push("the OpenStreetMap credit leaves the map");
+  }
   // A word broken across lines: any word whose own rects span two lines.
   for (const el of texts) {
     for (const node of el.childNodes) {
@@ -125,7 +148,7 @@ function measure(): Measured {
     return out;
   };
   let minContrast = Infinity;
-  for (const el of texts) {
+  for (const el of [...texts, ...root.querySelectorAll<HTMLElement>(".ws-map-credit")]) {
     const fg = rgba(getComputedStyle(el).color);
     const bg = background(el);
     const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x) as [number, number];
@@ -147,12 +170,25 @@ describe.skipIf(!outDir || !playwrightPath || !chromiumPath)("every fixture at 8
       // Shots show the settled screen: the 240 ms cross-fade is skipped, as on a reduced-motion setting.
       await page.emulateMedia({ reducedMotion: "reduce" });
       for (const fixture of screenFixtures()) {
-        const markup = renderToStaticMarkup(<WalkerScreenView view={screenView(fixture.state)} />);
+        const markup = renderToStaticMarkup(<WalkerScreenView view={screenView(fixture.state)} tiles={tiles} />);
         const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${css}</style><style>body{margin:0}</style></head><body>${markup}</body></html>`;
         const file = join(outDir!, "html", `${fixture.name}.html`);
         writeFileSync(file, html);
         await page.goto(pathToFileURL(file).href);
         await page.evaluate(() => document.fonts.ready);
+        // Map tiles: wait until each has loaded or failed (a failed one is hidden, as on the Pi's page).
+        await page.evaluate(() =>
+          Promise.all(
+            [...document.images].map((img) =>
+              img.complete
+                ? null
+                : new Promise((done) => {
+                    img.addEventListener("load", done, { once: true });
+                    img.addEventListener("error", done, { once: true });
+                  }),
+            ),
+          ),
+        );
         const loaded = await page.evaluate(() => document.fonts.check('700 88px "Atkinson Hyperlegible Next"'));
         report[fixture.name] = await page.evaluate(measure);
         if (!loaded) report[fixture.name]!.problems.push("Atkinson Hyperlegible Next didn't load");

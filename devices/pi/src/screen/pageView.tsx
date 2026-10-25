@@ -28,5 +28,6 @@ export function ScreenPage({
   onHold: (pressed: boolean) => void;
 }) {
   if (!view) return <Waiting />;
-  return <WalkerScreenView view={view} onPress={onPress} onHold={onHold} held={held && view.hold !== null} />;
+  // Walking directions' map tiles come from this page's own server (src/screen/tiles.ts), as img-src 'self' asks.
+  return <WalkerScreenView view={view} onPress={onPress} onHold={onHold} held={held && view.hold !== null} tiles="/tiles" />;
 }
