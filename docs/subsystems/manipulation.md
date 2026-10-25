@@ -23,9 +23,9 @@ separately. Never let both control stacks own the same arm adapters.
 
 ## The rule
 
-**Motors start only when a person at the walker acts, and the lift moves only while a person holds its control.**
+**Motors start only when a person at the walker acts. Spoken lift moves have an explicit local Talk path with a Pi-owned heartbeat lease and immediate Stop controls.**
 
-- **Starting.** Starting any motion, and every other command except a stop, needs a **handle Confirm press** on the **one pending Confirm target**. The walker shows that target on its screen and says it aloud, in the Pi's own words.
+- **Starting.** Arm motion, lift homing, and the older screen-hold lift flow need a **handle Confirm press** on the **one pending Confirm target**. A spoken relative lift move is initiated by a local right Talk turn and rechecked by the Pi before it starts.
   - The press counts only if the Pi saw that Confirm button released for the whole 2 s before it, all after the target appeared.
   - It also needs no hello, sequence gap, error line or loss from that hand module since the target appeared.
   - Any ignored press restarts the 2 s.
@@ -230,6 +230,10 @@ What each reaction does (`FAULT_REACTION`). In every case all other motion stops
 - **Release:** that arm's torque goes off. It goes limp and may sag.
 
 ## The lift (proposed)
+
+**Spoken move path (deployed 2026-10-25; physical spoken-move check pending):** Hold right Talk and request a relative millimetre move or a named preset. The cloud supplies an offer only; the Pi calculates the target and checks its current position, installed limits, faults, arm stow state, and link before it queues motion. It does not show a Confirm screen or wait for a second press. The lift runs in the Pi control loop while Talk remains available. Left Confirm or the screen's Stop lift button cancels. A Pi loop stall, serial loss, fault, or motion deadline also stops it. The screen's clock or route stays in place, with Stop lift at bottom left. This applies only to spoken lift moves; the older terminal and homing flows still use Confirm and screen hold.
+
+The Pi bundle was deployed to the walker on 2026-10-25. The service reported the lift connected, homed at 650 mm, and ready after restart. A physical spoken-move check is still pending. A latched motion fault still blocks motor commands, but its screen page yields when Talk, navigation, a message, help, or a new card takes over; the fault returns to view only if its fault set changes.
 
 - **Hold-to-run.** Hold the screen's lift control, then press Confirm on a handle. The lift moves only while the screen control stays held; the screen reports it at least every 200 ms, and lifting the finger, a cancelled touch, losing focus or being hidden all release it at once. *Screen side built 2026-10-24* (`devices/pi/src/screen/`, the Pi README's "Motion on the screen"): the page reports every 50 ms, the server stamps each report on receipt and emits `screenHold` on the bus; the coordinator routes it to the lift client's hold lease (built 2026-10-24, simulated lift only).
   - The coordinator puts the held request's id in every `lift.heartbeat` as a lease. The lift ramps down and holds when a heartbeat names anything else, or after 300 ms without one.
