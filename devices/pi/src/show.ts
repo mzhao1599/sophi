@@ -69,7 +69,7 @@ export function sensorsCard(zones: readonly ShowZone[]): Extract<ShowCard, { vie
 export function sensorsShow(zones: readonly ShowZone[]): ShowOutcome {
   const card = sensorsCard(zones);
   if (!card) return notShown("The obstacle sensors haven't reported any zone yet.");
-  const words = card.zones.map((z) => `${z.zone.replace(/_/g, " ")} ${z.distance.status === "measured" ? `${z.distance.mm} millimetres` : "unknown"}`);
+  const words = card.zones.map((z) => `${z.zone.replace(/_/g, " ")} ${z.distance.status === "measured" ? `${Math.round(z.distance.mm / 10)} centimetres` : "unknown"}`);
   return checked(card, `Showing the obstacle sensors on the screen, kept current while it is up. Right now: ${words.join(", ")}.`);
 }
 

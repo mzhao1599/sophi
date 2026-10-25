@@ -2,7 +2,7 @@
 
 **For:** whoever builds or demos the assistant's `show_on_screen` tool: the cloud assistant (`services/cloud-api/src/walker/`), the Pi service and its screen state machine (`devices/pi`), the walker screen (`packages/walker-screen`) and the shared contract (`packages/contracts`).
 
-**Status (2026-10-24, design):** the contract below is written and tested. The cloud's part is built and tested against a fake model only (see "The cloud"). Nothing else is built until this line says so.
+**Status (2026-10-24):** built on branch `show-on-screen`, not yet merged or deployed. The contract, the cloud (fake model), the Pi (unit tests and a `.walk` script, 3 of 3 in the simulator) and the screen (every card at 800x480 at every text size, in headless Chromium) are tested. Live with Gemini, the Pi simulator on a Mac against a local server passed "Show me the weather" and "Show me what the sensors see" three runs in a row, twice (see "Live results"), with simulated GPS and sample weather. Not run on the real Pi, with a real GPS fix, or on the walker's panel.
 
 ## What she can do
 
@@ -164,6 +164,7 @@ From the Gemini reply log:
 
 **Seen in the second pass, not changed:**
 - **Units:** the spoken sensors answer says "1500 millimetres" while the card says "150 cm". The walker's result gives the model millimetres (`devices/pi/src/show.ts`, the result words), but the card and the obstacle screen use centimetres.
+  Fixed after this pass: the result now gives centimetres, as the card does ("front left 42 centimetres"); not re-run live.
 - **Caption paging:** the 75-character caption pages break mid-sentence. Run 10's weather caption showed "It shows simulated weather of 64 degrees Fahrenheit with" and then "partly cloudy skies." on the next page.
 - **Tag layout:** on the simulated weather card, the Simulated tag wraps onto a line of its own under "Simulated weather, not a forecast", which already says the same thing.
 

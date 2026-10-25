@@ -202,7 +202,7 @@ describe("SH4: sensors", () => {
         { zone: "front_right", distance: { status: "unknown" }, simulated: true },
       ],
     });
-    expect(result(h).text).toBe("Showing the obstacle sensors on the screen, kept current while it is up. Right now: front left 420 millimetres, front right unknown.");
+    expect(result(h).text).toBe("Showing the obstacle sensors on the screen, kept current while it is up. Right now: front left 42 centimetres, front right unknown.");
   });
 
   it("a sensor that went quiet: its zones read unknown, never clear", async () => {
