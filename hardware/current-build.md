@@ -36,9 +36,7 @@ On 2026-10-25, the owner confirmed the carriage was independently supported and 
 
 The owner then unplugged the USB cable at the physical left ESP32, observed its LED go out, and reconnected it. The Pi logged a disconnect and a new CP2102 enumeration at USB path `1-1.4.3`, confirming the mapping. `stty` continued to fail on that path after reconnection. A targeted CP2102 driver unbind/rebind also failed to restore it. The next isolation check is the same board with a known working data cable directly on the Mac; these observations do not yet distinguish board, cable, hub, or attached wiring.
 
-The owner moved that left ESP32 to the Mac for the isolation check. The Mac exposed no new `/dev/cu.usb*` serial node and its USB tree showed no CP2102 device at the time of inspection. This is consistent with a board, attached-wiring, cable or adapter fault; it does not by itself identify which. Compare a known-working spare ESP32 on the exact same Mac cable and port before replacing the board.
-
-The owner connected the spare ESP32 on that same Mac cable and port. It also did not enumerate in the Mac's USB tree or create a serial node. This comparison does **not** isolate a fault to the left board: the Mac cable, adapter, port or accessory authorization must first be checked with the setup that previously flashed an ESP32. Only then compare the left board on that proven setup.
+The owner later reported that the wrong device had been connected during the first Mac checks, so those checks do not establish the left board's Mac behavior and the claimed spare-board comparison is invalid. After the owner said the left ESP32 was connected to the Mac, the Pi logged its disconnect and the Mac still showed no new `/dev/cu.usb*` serial node or CP2102 in its USB tree. Confirm the board's power LED and the exact cable/adapter before attributing this result to the board.
 
 ## The screen: an ELECROW 5-inch HDMI touch panel (not yet fitted or measured)
 
