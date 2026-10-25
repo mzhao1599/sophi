@@ -120,3 +120,11 @@ The candidate [goBILDA 12 V 3000 mAh NiMH battery](https://www.gobilda.com/conte
 7. **Sensor placement:** ToF cable lengths, I2C voltage and stability, sensor blind spots, camera mounts, and audio feedback at walking height.
 
 No moving- or human-support function should be described as validated until measurements and stop-path evidence are recorded.
+
+## ToF bus isolation, 2026-10-25
+
+With the lift independently supported and its driver 12 V off, the Pi's combined lift/ToF ESP32 was temporarily flashed with the read-only `i2c_diagnostic` image. The installed application was backed up first at 115200 baud; the diagnostic image and subsequent restoration of the exact 384 KiB application backup both passed esptool's write-hash check. The normal `steady-walker` service was restarted and is active. It reported `tof-front-01` as degraded after startup, with the hand modules healthy.
+
+The first scan with both sensors connected found SDA high, **SCL low**, and mux error 5 (bus timeout), so it could not identify either sensor. With all sensor branches disconnected, SDA and SCL were high and the TCA9548A acknowledged at `0x70` repeatedly. After reconnecting the sensors, a repeat scan with **both** attached found the mux healthy, the physical right sensor acknowledging at `0x29` on channel 2, and no acknowledgment from the physical left sensor on channel 3 (error 2, NACK) across four cycles. The owner corrected an initial mix-up of the physical left/right labels during isolation. The left branch also did not acknowledge when tried alone; the right branch did. The SCL-low condition did not recur during the final scan, so the cause of that intermittent bus lock remains unproven.
+
+Next inspect the left sensor's VIN-to-GND voltage **at the sensor**, then continuity of its channel-3 SDA/SCL and ground connections with USB power off. If power and wiring are sound, swap the sensor boards between the known-good channel-2 wiring and channel 3 to distinguish a failed sensor from a mux-channel or cable fault. Do not treat a NACK as proof that the sensor chip is damaged. Until channel 3 returns valid ranges, left-side distance cues are unavailable; the right-side scan only establishes I2C acknowledgment, not calibrated ranging or physical haptic behavior.
