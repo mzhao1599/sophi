@@ -4,7 +4,7 @@
   "config": {
     "microsteps": 8,
     "soft_min_mm": 5,
-    "soft_max_mm": 710,
+    "soft_max_mm": 950,
     "max_speed_mm_s": 10,
     "max_accel_mm_s2": 25,
     "top_switch_mm": null

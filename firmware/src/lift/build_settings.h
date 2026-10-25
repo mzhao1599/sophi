@@ -94,7 +94,7 @@ constexpr bool kEstimatedDemo = WALKER_LIFT_ESTIMATED_DEMO == 1;
 
 // The configuration built into this firmware and reported in lift.hello (placeholders, not measured):
 // soft limits 5 to 600 mm, 20 mm/s and 50 mm/s² (MOTION_LIMITS.normal), top switch position unmeasured.
-constexpr LiftSettings kSettings{WALKER_LIFT_MICROSTEPS, 5000, kEstimatedDemo ? 710000u : 600000u,
+constexpr LiftSettings kSettings{WALKER_LIFT_MICROSTEPS, 5000, kEstimatedDemo ? 950000u : 600000u,
                                  kEstimatedDemo ? 10000u : 20000u, kEstimatedDemo ? 25000u : 50000u, false, 0,
                                  WatchdogDriverAction::Hold, kStopSenseWired, kDisableSafe};
 static_assert(settingsValid(kSettings), "the lift's built-in limits break the contract");
