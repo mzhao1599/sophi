@@ -111,7 +111,8 @@ Pi code, never a model's. `{names}` is `helpNames(...)` of the phones' names. Ev
 
 ## The server's voice path
 
-- The server offers the model an `ask_for_help` tool only on a walker turn that carries `can_ask_for_help` and only when the walker has at least one approved caretaker; never on a typed page turn. A model that sets it anyway on any other turn is ignored.
+- The server offers the model an `ask_for_help` tool only on a walker turn that carries `can_ask_for_help` and whose circle it could read in time; never on a typed page turn. With no approved caretaker, choosing it gets the no-caretaker line below and no countdown. A model that picks it on a turn where it wasn't offered gets a fixed line instead ("I can't ask anyone for help from here right now. If you need help now, call 911 from your phone." on the walker; "Please use Talk on the walker for that request." on the page), never a countdown.
+- A replayed countdown turn (its answer lost on the way) returns `ask_for_help: true` again, recognised by the countdown line's exact words on a fixed walker reply, so changing those words means changing `isHelpCountdownTurn` too.
 - The prompt rule: use it only when the person asks for a person's help, or says they fell, are hurt, stuck or can't get up; never for "what can you help me with?"; never claim to have called, told or reached anyone, or closed a request.
 - When the model chooses it, the server replaces the reply with a fixed line, "I'll ask {names} for help in 8 seconds. Press any button to stop.", and returns `ask_for_help: true` with no proposal, message draft or tool call (the contract refuses the mix). No request exists yet.
 - With no approved caretaker, a help request by voice gets the fixed reply "No caretaker's phone is linked to this walker, so I can't ask anyone. If you need help now, call 911 from your phone."
