@@ -5,6 +5,7 @@ import {
   WALKER_MAX_TOOL_CALLS,
   type CapabilityManifest,
   type Cue,
+  type LatLon,
   type HeartbeatRequest,
   type DeviceTurnRequest,
   type DeviceSendMessageRequest,
@@ -30,6 +31,8 @@ import {
   LOCAL_LINE_REPEAT_MS,
   MESSAGES_RETRY_MS,
   OFFLINE_AFTER_FAILED_HEARTBEATS,
+  ROUTE_TOOL_MS,
+  SCREEN_MESSAGE_HOLD_MS,
   SPEECH_LINE_MAX_MS,
   TALK_PRESS_HAPTIC_MS,
   TURN_DEADLINE_MS,
@@ -39,6 +42,11 @@ import { CuePolicy } from "./cues";
 import { describeGpsLocation } from "./location";
 import { describeCurrentWeather } from "./weather";
 import type { Logger } from "./log";
+import { NAV_LINES, Navigator, type GuidanceLine } from "./navigation/navigator";
+import { defaultMapServices, type MapServices } from "./navigation/osm";
+import { findPlace, type Place } from "./navigation/places";
+import type { PositionSource } from "./navigation/position";
+import { minutesWords, planRoute, roughDistanceWords, tooFarLine, walkingMinutes, type RouteOutcome } from "./navigation/route";
 import { LINES, appliedLine, moduleDownLine, offlineLine } from "./notices";
 import type { ModuleManager } from "./serial/modules";
 import type { CredentialFile, StateStore } from "./store";
@@ -61,8 +69,14 @@ export interface ServiceDeps {
   coordinatorInstanceId: string;
   /** The Pi's own GPIO Talk and Confirm buttons, only when the installer declared them wired (never in the simulator). */
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
-  /** Optional GPS reader. Sharing consent enables heartbeat sampling; a location question reads once. */
-  location?: { connected(): boolean; setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; onDemand(signal: AbortSignal): Promise<{ status: "fix"; latitude: number; longitude: number } | { status: "no_fix" | "no_rmc" }>; stop(): void };
+  /**
+   * Optional position source: the USB GPS, or the SIMULATED position (`walker simulate`, WALKER_GPS_SIMULATED).
+   * Sharing consent enables heartbeat sampling (never for a simulated one); a location question reads once; a
+   * route keeps it tracking. With one, every device turn carries `navigation` and the route tools can run.
+   */
+  location?: PositionSource;
+  /** The map services for places, routes and addresses (tests and the simulator inject recorded ones). */
+  maps?: MapServices;
   /**
    * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
    * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
@@ -194,9 +208,14 @@ interface PendingTurn {
  * Talk (the design's button map): hold to talk, release to send. The ESP32 handle waits briefly after a
  * release so a quick re-press continues the same recording; after the turn is sent, a press while waiting
  * cancels. A press while a reply is playing stops it and starts listening. The simulator keyboard only
- * presses, so a second press sends. Confirm answers the open proposal by id; with none it plays the
- * "nothing to confirm" sound, or reads her newest message again when she has one. The Pi
- * never judges a proposal's expiry by its own clock: the server says whether it is still open.
+ * presses, so a second press sends. Confirm answers the open proposal by id; with none it reads a caretaker's
+ * message again while it is on screen, else says a route's next instruction again, else reads her newest
+ * message again, else plays the "nothing to confirm" sound. The Pi never judges a proposal's expiry by its own
+ * clock: the server says whether it is still open.
+ *
+ * Walking directions (with a position source): `start_route` and `stop_route` run here, the Navigator follows the
+ * route, and its lines are spoken as `guidance` (never sent to the page or the server) whenever nothing of hers
+ * is using the walker's voice. They keep going offline.
  *
  * Messages: after each heartbeat the walker asks for her newest messages from caretakers and reads each new one
  * aloud once in its own voice ("Message from Maya. …"), waiting while she talks or a message draft awaits Confirm.
@@ -239,6 +258,18 @@ export class WalkerService {
   private messagesRetryAt = 0;
   private messageCount = 0;
   private readonly audioFaults = new Set<string>();
+  /** A caretaker's message stays on the walker screen until then (monotonic) after it was read. */
+  private messageHeldUntil = 0;
+  /** Walking directions, when the walker has a position source. */
+  private readonly navigator: Navigator | null = null;
+  private readonly maps: MapServices;
+  /** The route's first line, said once the turn that started it has finished speaking. */
+  private introWaiting: GuidanceLine | null = null;
+  /** The newest guidance line waiting its turn (a newer one replaces it). */
+  private guidanceWaiting: GuidanceLine | null = null;
+  private guidancePlaying = false;
+  /** Answers to her Talk turns queued or playing: guidance waits for them. */
+  private answersPlaying = 0;
   private readonly voice: VoiceQueue;
   private readonly cues: CuePolicy;
   private readonly unsubscribe: Array<() => void> = [];
@@ -246,6 +277,30 @@ export class WalkerService {
 
   constructor(private readonly deps: ServiceDeps) {
     this.newId = deps.newId ?? randomUUID;
+    this.maps = deps.maps ?? defaultMapServices();
+    const source = deps.location;
+    if (source) {
+      this.navigator = new Navigator({
+        clock: deps.clock,
+        log: deps.log,
+        position: () => source.current(),
+        simulated: source.simulated,
+        replan: (from, place, signal) => planRoute(this.maps, from, place, signal),
+        say: (line) => {
+          this.guidanceWaiting = line;
+          this.flushGuidance();
+        },
+        view: (view) => deps.bus.emit("navigation", { view }),
+        routeChanged: (route) => {
+          source.track(route !== null);
+          source.follow?.(route ? route.line.points : null);
+          if (!route) {
+            this.introWaiting = null;
+            this.guidanceWaiting = null;
+          }
+        },
+      });
+    }
     this.voice = new VoiceQueue(deps.speaker, deps.clock, (error) => this.audioFault("playback_failed", error));
     this.cues = new CuePolicy({
       clock: deps.clock,
@@ -264,6 +319,7 @@ export class WalkerService {
       bus.on("zones", ({ zones }) => this.cues.evaluate(zones)),
       bus.on("moduleDown", ({ module }) => void this.say(moduleDownLine(module), "notice")),
       bus.on("buttonsLost", (lost) => this.buttonsLost(lost)),
+      bus.on("screenPress", ({ action, state }) => this.screenPressed(action, state)),
     );
     void this.say(LINES.boot, "notice");
     this.refreshCredential();
@@ -272,6 +328,7 @@ export class WalkerService {
 
   stop(): void {
     this.stopped = true;
+    this.navigator?.stop("service stopped");
     this.deps.location?.stop();
     this.cancelHeartbeat?.();
     this.recording?.session?.abort();
@@ -471,6 +528,7 @@ export class WalkerService {
       client_turn_id: this.newId(),
       input: { type: "audio" as const, mime: "audio/wav" as const, data_base64: clip.wav.toString("base64"), duration_ms: clip.durationMs },
       snapshot: this.snapshotIfSensors(),
+      ...this.navigationField(),
     };
     clip.wav.fill(0);
     turn.clientTurnId = body.client_turn_id;
@@ -479,6 +537,7 @@ export class WalkerService {
     try {
       let request = body;
       let reply;
+      let routeToolRan = false;
       for (let step = 0; step <= WALKER_MAX_TOOL_CALLS; step++) {
         reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(request, signal), turn.abort.signal);
         if (this.turn !== turn) return;
@@ -487,14 +546,27 @@ export class WalkerService {
         const prior = reply.tool_results ?? [];
         if (step === WALKER_MAX_TOOL_CALLS) throw new Error("Tool loop limit reached.");
         if (step === 0) this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
-        // This walker doesn't send `navigation: true` yet, so a server never offers it the route tools.
-        const text = tool === "get_distance" ? null
-          : tool === "get_location" || tool === "get_weather" ? await this.runLocationTool(tool, turn.abort.signal)
-          : "This walker can't give walking directions yet.";
+        const call = reply.tool_call!;
+        let text: string | null;
+        if (call.name === "get_distance") text = null;
+        else if (call.name === "get_location" || call.name === "get_weather") text = await this.runLocationTool(call.name, turn.abort.signal);
+        else if (routeToolRan) text = "Walking directions were already handled in this turn.";
+        else {
+          // At most one route tool in a turn (the server ends the loop after one; this is the Pi's own check).
+          routeToolRan = true;
+          text = call.name === "start_route" ? await this.runStartRoute(call.destination, turn.abort.signal) : this.runStopRoute();
+        }
         if (this.turn !== turn) return;
         const heard = reply.turn.heard?.trim();
         if (!heard) throw new Error("Tool continuation needs a transcript.");
-        request = { client_turn_id: body.client_turn_id, input: { type: "text", text: heard.slice(0, 500) }, snapshot: this.snapshotIfSensors(), tool_results: text === null ? prior : [...prior, { name: tool, text }], original_audio: true };
+        request = {
+          client_turn_id: body.client_turn_id,
+          input: { type: "text", text: heard.slice(0, 500) },
+          snapshot: this.snapshotIfSensors(),
+          tool_results: text === null ? prior : [...prior, { name: tool, text }],
+          original_audio: true,
+          ...this.navigationField(),
+        };
       }
       if (!reply) throw new Error("The agent did not answer.");
       if (this.turn !== turn) return;
@@ -543,7 +615,9 @@ export class WalkerService {
       else {
         const reading = await gps.onDemand(signal);
         answer = reading.status === "fix"
-          ? await (tool === "get_weather" ? describeCurrentWeather : describeGpsLocation)(reading.latitude, reading.longitude, signal)
+          ? tool === "get_weather"
+            ? await describeCurrentWeather(reading.latitude, reading.longitude, signal)
+            : await describeGpsLocation(reading.latitude, reading.longitude, signal, { services: this.maps, simulated: gps.simulated })
           : "The GPS receiver has no satellite fix yet. Try again outdoors with a view of the sky.";
       }
     } catch (error) {
@@ -552,6 +626,103 @@ export class WalkerService {
       answer = tool === "get_weather" ? "I couldn't check the weather right now." : "I found the GPS receiver, but couldn't look up an address right now.";
     }
     return answer;
+  }
+
+  // ---- Walking directions ----
+
+  /** `navigation` for a device turn: present whenever the walker has a position source, so the route tools are offered. */
+  private navigationField(): Pick<DeviceTurnRequest, "navigation"> {
+    return this.navigator ? { navigation: { route: this.navigator.summary() } } : {};
+  }
+
+  /**
+   * `start_route`: her position, the place (Nominatim, near her) and a walking route, all within ROUTE_TOOL_MS.
+   * On success guidance starts (replacing any route on) and the first line waits for the turn's reply. The
+   * result for the model names the place and the distances; the coordinates stay here. Every failure is a
+   * fixed line, and leaves no route on.
+   */
+  private async runStartRoute(destination: string, signal: AbortSignal): Promise<string> {
+    const source = this.deps.location;
+    const navigator = this.navigator;
+    if (!source || !navigator) return "This walker has no GPS, so I can't give walking directions.";
+    if (!source.connected()) return "I can't give walking directions because the GPS receiver is not connected.";
+    type Planned = { kind: "no_fix" } | { kind: "not_found" } | (RouteOutcome & { from: LatLon; place: Place });
+    let planned: Planned;
+    try {
+      planned = await withDeadline(this.deps.clock, ROUTE_TOOL_MS, async (deadline): Promise<Planned> => {
+        const reading = await source.onDemand(deadline);
+        if (reading.status !== "fix") return { kind: "no_fix" };
+        const from: LatLon = [reading.latitude, reading.longitude];
+        const place = await findPlace(this.maps, destination, from, deadline);
+        if (!place) return { kind: "not_found" };
+        return { ...(await planRoute(this.maps, from, place, deadline)), from, place };
+      }, signal);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // The message never carries a coordinate (map errors are this code's own words), but numbers go anyway.
+      this.deps.log.warn("start_route failed", { error: String((error as Error).message ?? error).replace(/-?\d+\.\d+/g, "#").slice(0, 80) });
+      return error instanceof DeadlineError ? "I couldn't plan a route in time. Please try again in a moment." : "I couldn't plan a route right now.";
+    }
+    switch (planned.kind) {
+      case "no_fix":
+        return "The GPS receiver has no satellite fix yet, so I can't plan a route. Try again outdoors with a view of the sky.";
+      case "not_found":
+        return `I couldn't find "${destination}" near you.`;
+      case "none":
+        return `I found ${planned.place.name}, but couldn't find a walking route there.`;
+      case "too_far":
+        return tooFarLine(planned.metres);
+      case "ok": {
+        const { route, from } = planned;
+        navigator.start(route, from);
+        this.introWaiting = navigator.introLine();
+        return `Walking directions started to ${route.place.name}: about ${roughDistanceWords(route.length)}, around ${minutesWords(walkingMinutes(route.length))} on foot. First: ${route.steps[0]!.instruction} The walker says each turn itself. ${NAV_LINES.osm}`;
+      }
+    }
+  }
+
+  /** `stop_route`: ends the route, if one is on. */
+  private runStopRoute(): string {
+    const place = this.navigator?.stop("asked to stop");
+    return place ? `Stopped the directions to ${place.spoken}.` : "There were no walking directions to stop.";
+  }
+
+  /** The next instruction again (Confirm with nothing else to confirm, the screen's Repeat). */
+  private repeatDirection(): void {
+    const line = this.navigator?.repeatLine();
+    if (!line) return;
+    this.guidanceWaiting = line;
+    this.flushGuidance();
+  }
+
+  /** The walker screen's End route and Repeat, acted on only when they were drawn on the route's screen. */
+  private screenPressed(action: string, state: string | null): void {
+    if (this.stopped || state !== "navigating" || !this.navigator?.active()) return;
+    if (action === "end_route") {
+      this.navigator.stop("ended on the screen");
+      void this.say("Directions stopped.", "guidance");
+    } else if (action === "repeat_direction") this.repeatDirection();
+  }
+
+  /**
+   * Says the waiting guidance line when nothing of hers is using the walker's voice: not while Talk is held or
+   * her turn waits, nor while an answer, a message or another guidance line plays. The route's first line goes
+   * first; a line that is no longer true (she passed that turn meanwhile) is dropped.
+   */
+  private flushGuidance(): void {
+    const navigator = this.navigator;
+    if (!navigator || this.stopped || this.guidancePlaying) return;
+    if (this.talk !== "idle" || this.answersPlaying > 0 || this.readingMessage) return;
+    const line = this.introWaiting ?? this.guidanceWaiting;
+    if (!line) return;
+    if (line === this.introWaiting) this.introWaiting = null;
+    else this.guidanceWaiting = null;
+    if (!navigator.due(line)) return this.flushGuidance();
+    this.guidancePlaying = true;
+    void this.say(line.text, "guidance").then(() => {
+      this.guidancePlaying = false;
+      this.flushGuidance();
+    });
   }
 
   /** The server's voiced reply, if it is a readable 16-bit PCM WAV; otherwise the walker speaks the text itself. */
@@ -623,14 +794,23 @@ export class WalkerService {
       return;
     }
     if (this.confirmInFlight) return;
-    // Nothing waits for Confirm: it reads her newest message again (offline too: the words are on the walker).
-    if (!this.pendingMessage && !this.openProposal && this.latestMessage) {
-      confirmed();
-      if (!this.readingMessage) {
-        this.unreadMessages.unshift(this.latestMessage);
-        this.readMessages();
+    // Nothing waits for Confirm (motion's claim came first, in onButton): a caretaker's message on screen is read
+    // again; else a route's next instruction; else her newest message. All offline too: they are on the walker.
+    if (!this.pendingMessage && !this.openProposal) {
+      const messageOnScreen = this.latestMessage && (this.readingMessage || this.deps.clock.monotonic() < this.messageHeldUntil);
+      if (!messageOnScreen && this.navigator?.active()) {
+        confirmed();
+        this.repeatDirection();
+        return;
       }
-      return;
+      if (this.latestMessage) {
+        confirmed();
+        if (!this.readingMessage) {
+          this.unreadMessages.unshift(this.latestMessage);
+          this.readMessages();
+        }
+        return;
+      }
     }
     if (this.link !== "online" || !this.cloud) {
       const line = this.link === "offline" ? LINES.offlineNoSettings : this.localLine();
@@ -778,8 +958,10 @@ export class WalkerService {
     );
     void spoken.then(() => {
       this.deps.bus.emit("circleMessageSpoken", { id });
+      this.messageHeldUntil = this.deps.clock.monotonic() + SCREEN_MESSAGE_HOLD_MS;
       this.readingMessage = false;
       this.readMessages();
+      this.flushGuidance();
     });
   }
 
@@ -801,8 +983,13 @@ export class WalkerService {
    */
   private sayAnswer(heard: string | null, reply: string, source: "model" | "fixed" | "walker", kind: SpeechKind, wav?: Buffer): Promise<void> {
     const id = (this.answerCount += 1);
+    this.answersPlaying += 1;
     const spoken = this.say(reply, kind, wav, () => this.deps.bus.emit("answer", { id, heard, reply, source }));
-    void spoken.then(() => this.deps.bus.emit("answerSpoken", { id }));
+    void spoken.then(() => {
+      this.answersPlaying -= 1;
+      this.deps.bus.emit("answerSpoken", { id });
+      this.flushGuidance();
+    });
     return spoken;
   }
 
@@ -879,7 +1066,9 @@ export class WalkerService {
       if (!cloud) return;
       const events = this.deps.store.pendingEvents(this.deps.clock.monotonic());
       const epoch = this.proposalEpoch;
-      const location = this.locationSharingEnabled ? this.deps.location?.current() : null;
+      // A simulated position never goes in a heartbeat: caretakers must never see a made-up position as hers.
+      const source = this.deps.location;
+      const location = this.locationSharingEnabled && source && !source.simulated ? source.current() : null;
       const body: HeartbeatRequest = {
         sent_at: iso(this.deps.clock.now()),
         service_version: SERVICE_VERSION,
@@ -1054,16 +1243,17 @@ export class WalkerService {
             },
           ]
       : [];
-    const gpsPart: CapabilityManifest["modules"] = this.deps.location?.connected()
+    const gps = this.deps.location;
+    const gpsPart: CapabilityManifest["modules"] = gps?.connected()
       ? [{
           module_id: "location.gps",
-          instance_id: "pi-usb-gps",
+          instance_id: gps.simulated ? "simulated-gps" : "pi-usb-gps",
           firmware_version: null,
           protocol_version: null,
           health: "ok",
           faults: [],
           observed_at: iso(now),
-          simulated: false,
+          simulated: gps.simulated,
         }]
       : [];
     const room = 32 - 2 - gpioPart.length - gpsPart.length; // coordinator and voice always fit
@@ -1171,7 +1361,10 @@ export class WalkerService {
     this.talk = state;
     this.deps.bus.emit("talk", { state });
     // After the code that set it idle has queued her reply (or a message draft), so a waiting message comes after.
-    if (state === "idle") queueMicrotask(() => this.readMessages());
+    if (state === "idle") queueMicrotask(() => {
+      this.readMessages();
+      this.flushGuidance();
+    });
   }
 
   private setLink(state: LinkState): void {
@@ -1181,7 +1374,11 @@ export class WalkerService {
       this.locationSharingEnabled = false;
       this.deps.location?.setEnabled(false);
     }
-    if (state === "unpaired" || state === "unauthorized") this.forgetMessages();
+    if (state === "unpaired" || state === "unauthorized") {
+      this.forgetMessages();
+      // Forgotten or unpaired: this walker's route ends with its pairing (offline, it keeps going).
+      this.navigator?.stop(state);
+    }
     this.deps.bus.emit("link", { state });
   }
 }

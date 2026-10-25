@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { closeSync, constants, openSync, readSync, statSync } from "node:fs";
+import type { PositionSource } from "./navigation/position";
 
 export type GpsReading = { status: "fix"; latitude: number; longitude: number } | { status: "no_fix" };
 export type GpsResult = GpsReading | { status: "no_rmc" };
@@ -79,35 +80,52 @@ export async function readGps(port: string, baud: number, waitMs: number, signal
   });
 }
 
-/** Keeps only one fresh fix in memory. User-initiated location questions can read once without enabling sharing. */
-export class GpsSampler {
-  private enabled = false;
+/**
+ * Keeps only one fresh fix in memory. It samples while caretaker sharing or an active route needs it (two
+ * separate flags): every few seconds for sharing, about once a second while tracking a route. Going offline
+ * turns sharing off, never tracking, so guidance keeps going offline. User-initiated questions can read once
+ * without either.
+ */
+export class GpsSampler implements PositionSource {
+  readonly simulated = false;
+  private sharing = false;
+  private tracking = false;
   private epoch = 0;
   private abort: AbortController | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private fix: { latitude: number; longitude: number; at: number } | null = null;
 
-  constructor(private readonly port: string, private readonly baud: number, private readonly onError: (error: Error) => void) {}
+  constructor(
+    private readonly port: string,
+    private readonly baud: number,
+    private readonly onError: (error: Error) => void,
+    /** The receiver read (tests replace it). */
+    private readonly read: typeof readGps = readGps,
+  ) {}
 
   /** A connected serial device is not proof of a satellite fix. */
   connected(): boolean {
     try { return statSync(this.port).isCharacterDevice(); } catch { return false; }
   }
 
+  /** Caretaker sharing. Turning it off erases the fix unless a route still needs it. */
   setEnabled(enabled: boolean): void {
-    if (enabled === this.enabled) return;
-    this.enabled = enabled;
-    this.epoch += 1;
-    this.abort?.abort();
-    if (this.retry) clearTimeout(this.retry);
-    this.abort = null;
-    this.retry = null;
-    this.fix = null;
-    if (enabled) void this.sample(this.epoch);
+    if (enabled === this.sharing) return;
+    const was = this.sampling();
+    this.sharing = enabled;
+    this.changed(was);
+  }
+
+  /** An active route: sample about once a second while on, whatever sharing says. */
+  track(on: boolean): void {
+    if (on === this.tracking) return;
+    const was = this.sampling();
+    this.tracking = on;
+    this.changed(was);
   }
 
   current(): { latitude: number; longitude: number; age_ms: number } | null {
-    if (!this.enabled || !this.fix) return null;
+    if (!this.sampling() || !this.fix) return null;
     const age = Math.max(0, Math.floor(performance.now() - this.fix.at));
     return age <= 30_000 ? { latitude: this.fix.latitude, longitude: this.fix.longitude, age_ms: age } : null;
   }
@@ -116,10 +134,10 @@ export class GpsSampler {
   async onDemand(signal: AbortSignal): Promise<GpsResult> {
     const fresh = this.current();
     if (fresh) return { status: "fix", latitude: fresh.latitude, longitude: fresh.longitude };
-    // The sharing sampler already owns the serial stream; wait for it instead of stealing its sentences.
-    if (this.enabled) {
+    // The sampler already owns the serial stream; wait for it instead of stealing its sentences.
+    if (this.sampling()) {
       const until = performance.now() + 20_000;
-      while (this.enabled && performance.now() < until) {
+      while (this.sampling() && performance.now() < until) {
         await new Promise<void>((resolve, reject) => {
           const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
           const timer = setTimeout(() => { signal.removeEventListener("abort", onAbort); resolve(); }, 500);
@@ -131,16 +149,39 @@ export class GpsSampler {
       }
       return { status: "no_fix" };
     }
-    return readGps(this.port, this.baud, 20_000, signal);
+    return this.read(this.port, this.baud, 20_000, signal);
   }
 
-  stop(): void { this.setEnabled(false); }
+  stop(): void {
+    const was = this.sampling();
+    this.sharing = false;
+    this.tracking = false;
+    this.changed(was);
+  }
+
+  private sampling(): boolean {
+    return this.sharing || this.tracking;
+  }
+
+  /** Starts or stops the sampling loop when the flags turn it on or off; a running loop picks up the new pace. */
+  private changed(was: boolean): void {
+    const now = this.sampling();
+    if (now === was) return;
+    this.epoch += 1;
+    this.abort?.abort();
+    if (this.retry) clearTimeout(this.retry);
+    this.abort = null;
+    this.retry = null;
+    this.fix = null;
+    if (now) void this.sample(this.epoch);
+  }
 
   private async sample(epoch: number): Promise<void> {
     const abort = new AbortController();
     this.abort = abort;
     try {
-      const result = await readGps(this.port, this.baud, 4_000, abort.signal);
+      // A receiver sends a fix about once a second, so a read returns at the next one.
+      const result = await this.read(this.port, this.baud, this.tracking ? 2_000 : 4_000, abort.signal);
       if (epoch === this.epoch) this.fix = result.status === "fix" ? { latitude: result.latitude, longitude: result.longitude, at: performance.now() } : null;
     } catch (error) {
       if (epoch === this.epoch) {
@@ -148,9 +189,9 @@ export class GpsSampler {
         this.onError(error as Error);
       }
     } finally {
-      if (epoch === this.epoch && this.enabled) {
+      if (epoch === this.epoch && this.sampling()) {
         this.abort = null;
-        this.retry = setTimeout(() => void this.sample(epoch), 5_000);
+        this.retry = setTimeout(() => void this.sample(epoch), this.tracking ? 200 : 5_000);
       }
     }
   }

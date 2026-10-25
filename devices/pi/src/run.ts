@@ -9,6 +9,7 @@ import { systemClock } from "./clock";
 import { HttpCloudClient } from "./cloud/client";
 import { createLogger } from "./log";
 import { GpsSampler } from "./gps";
+import { SimulatedPosition, readWalkSpeedup } from "./navigation/simulated";
 import { attachLogging } from "./logging";
 import { ModuleManager } from "./serial/modules";
 import { SERIAL_BY_PATH_DIR, SerialScanner } from "./serial/port";
@@ -94,9 +95,15 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
   // The arms' Feetech adapters are also under /dev/serial: the ESP32 scanner never opens them (compared by the
   // device each link points to), nor the GPS.
   const scanner = new SerialScanner({ clock, log, modules, dir: config.serialDir, excludedPort: env.WALKER_GPS_PORT, exclude: (path) => isArmPort(path, env) });
-  const location = env.WALKER_GPS_PORT
-    ? new GpsSampler(env.WALKER_GPS_PORT, Number(env.WALKER_GPS_BAUD || "9600"), (error) => log.warn("GPS read failed", { code: (error as NodeJS.ErrnoException).code ?? error.name }))
-    : null;
+  // WALKER_GPS_SIMULATED=1: the SIMULATED position instead of the receiver (indoor demos; labelled Simulated
+  // everywhere, never in a heartbeat). The map services stay the real ones.
+  const simulatedGps = env.WALKER_GPS_SIMULATED === "1";
+  if (simulatedGps && env.WALKER_GPS_PORT) log.warn("WALKER_GPS_SIMULATED is on: the GPS receiver is not read");
+  const location = simulatedGps
+    ? new SimulatedPosition(clock, log, { speedup: readWalkSpeedup(env.WALKER_SIM_WALK_SPEEDUP) })
+    : env.WALKER_GPS_PORT
+      ? new GpsSampler(env.WALKER_GPS_PORT, Number(env.WALKER_GPS_BAUD || "9600"), (error) => log.warn("GPS read failed", { code: (error as NodeJS.ErrnoException).code ?? error.name }))
+      : null;
   // The Pi can't sense a button, so it watches (and reports) the GPIO buttons only when declared wired.
   const buttons = config.gpioWired
     ? new GpioButtons(

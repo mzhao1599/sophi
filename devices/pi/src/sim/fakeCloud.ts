@@ -39,6 +39,7 @@ import {
   type WalkerStatusView,
   type WalkerTurnResponse,
   type WalkerTurnView,
+  type WalkerToolCall,
 } from "@walker/contracts";
 import type { z } from "zod";
 import { readWav } from "../audio/wav";
@@ -53,7 +54,15 @@ import type { Logger } from "../log";
  * and exists to exercise the Pi's side of pairing, heartbeats, configuration, turns and proposals.
  */
 export interface FakeTurnScript {
+  /** The reply; with `tool`, the line said before the walker runs it (the server's "I'll check" line). */
   reply: string;
+  /**
+   * Makes the turn ask the walker for this tool first (as the real server does when the model asks), so scripts
+   * run the Pi's tools without a model. The continuation's reply is `final`, or "Fake cloud: " and the walker's
+   * own tool result.
+   */
+  tool?: WalkerToolCall;
+  final?: string;
   /** Makes the fake open a `cues_change` proposal with these cues. */
   proposeCues?: Cue[];
   /** Makes the turn end with a spoken message draft to this (made-up) caretaker (tests). */
@@ -90,6 +99,10 @@ interface FakeDevice {
   turns: Map<string, { turn: WalkerTurnView; proposal: ProposalView | null; speech: WalkerTurnResponse["speech"] }>;
   /** Messages a (fake) caretaker sent to her phone, oldest first. */
   messages: WalkerIncomingMessage[];
+  /** Turns waiting for the walker's tool result, by client turn id, with the answer that asked for it. */
+  toolTurns: Map<string, { step: FakeTurnScript; response: WalkerTurnResponse }>;
+  /** Every turn request as received, with any clip replaced by its length (privacy tests read these). */
+  turnRequests: DeviceTurnRequest[];
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -102,6 +115,8 @@ export class FakeCloud {
   script: FakeTurnScript[] = [];
   /** When set (tests), every walker turn comes back with this WAV as the server's voiced reply. */
   speech: Buffer | null = null;
+  /** What the heartbeat answers for `location_sharing_enabled` (her phone's choice; tests turn it on). */
+  locationSharing = false;
 
   constructor(
     private readonly clock: Clock,
@@ -142,6 +157,8 @@ export class FakeCloud {
       clips: [],
       turns: new Map(),
       messages: [],
+      toolTurns: new Map(),
+      turnRequests: [],
     });
     return { device_id: deviceId, credential, configuration };
   }
@@ -189,7 +206,7 @@ export class FakeCloud {
       device.events.push({ event_id: event.event_id, kind: event.kind, text: event.text, at: this.iso(now - event.ago_ms) });
     }
     device.events.splice(0, Math.max(0, device.events.length - 100));
-    return { configuration_version: this.current(device).version, open_proposal: this.open(device) };
+    return { configuration_version: this.current(device).version, open_proposal: this.open(device), ...(this.locationSharing ? { location_sharing_enabled: true } : {}) };
   }
 
   /** A fake caretaker's message to her phone (the simulator's `m` key, tests). Made up: there are no real phones here. */
@@ -216,8 +233,16 @@ export class FakeCloud {
   }
 
   turn(device: FakeDevice, body: DeviceTurnRequest): WalkerTurnResponse {
+    device.turnRequests.push(
+      body.input.type === "audio" ? { ...body, input: { ...body.input, data_base64: `(${body.input.data_base64.length} characters)` } } : body,
+    );
+    device.turnRequests.splice(0, Math.max(0, device.turnRequests.length - 50));
     const seen = device.turns.get(body.client_turn_id);
     if (seen) return { ...seen, status: this.status(device) };
+    const waiting = device.toolTurns.get(body.client_turn_id);
+    if (waiting && body.tool_results) return this.finishToolTurn(device, body, waiting.step);
+    if (waiting) return { ...waiting.response, status: this.status(device) };
+    if (body.tool_results) throw new FakeCloudError("invalid_request", "No tool request is waiting for that turn.");
     let seconds = 0;
     if (body.input.type === "audio") {
       const wav = Buffer.from(body.input.data_base64, "base64");
@@ -234,6 +259,7 @@ export class FakeCloud {
     }
     this.turnCount += 1;
     const step = this.script.shift();
+    if (step?.tool) return this.askForTool(device, body, step);
     const configuration = this.current(device);
     let proposal: ProposalView | null = null;
     if (step?.proposeCues && checkCuesChange(configuration.cues, step.proposeCues, configuration.selected_module_ids) === null) {
@@ -274,6 +300,45 @@ export class FakeCloud {
       ? { message_offer: { client_message_id: randomUUID(), to_member_id: randomUUID(), to_name: step.offerMessage.to_name, text: step.offerMessage.text } }
       : {};
     return { turn, proposal, speech, status: this.status(device), ...offer };
+  }
+
+  /** The first answer of a scripted tool turn: the "I'll check" line and the tool request, with a made-up transcript. */
+  private askForTool(device: FakeDevice, body: DeviceTurnRequest, step: FakeTurnScript): WalkerTurnResponse {
+    const call = step.tool!;
+    const turn: WalkerTurnView = {
+      turn_id: randomUUID(),
+      client_turn_id: body.client_turn_id,
+      source: "walker",
+      // The contract has no "fake" transcriber: the words say they are made up.
+      heard: `Fake transcript: ${call.name === "start_route" ? `take me to ${call.destination}` : call.name.replace(/_/g, " ")}`,
+      heard_by: "gemini",
+      reply: step.reply,
+      answered_by: "fixed",
+      voiced_by: "walker",
+      created_at: this.iso(),
+    };
+    const response: WalkerTurnResponse = { turn, proposal: null, speech: null, status: this.status(device), tool_call: call, tool_results: [] };
+    device.toolTurns.set(body.client_turn_id, { step, response });
+    return response;
+  }
+
+  /** The continuation: the final reply, from the script or the walker's own result ("Fake cloud: ..."). */
+  private finishToolTurn(device: FakeDevice, body: DeviceTurnRequest, step: FakeTurnScript): WalkerTurnResponse {
+    device.toolTurns.delete(body.client_turn_id);
+    const result = body.tool_results?.at(-1);
+    const turn: WalkerTurnView = {
+      turn_id: randomUUID(),
+      client_turn_id: body.client_turn_id,
+      source: "walker",
+      heard: body.input.type === "text" ? body.input.text : null,
+      heard_by: body.input.type === "text" ? "gemini" : null,
+      reply: (step.final ?? `Fake cloud: ${result?.text ?? "the walker sent no tool result."}`).slice(0, 600),
+      answered_by: "fixed",
+      voiced_by: "walker",
+      created_at: this.iso(),
+    };
+    device.turns.set(body.client_turn_id, { turn, proposal: null, speech: null });
+    return { turn, proposal: null, speech: null, status: this.status(device) };
   }
 
   answer(device: FakeDevice, proposalId: string, answer: "confirm" | "decline"): AnswerProposalResponse {
