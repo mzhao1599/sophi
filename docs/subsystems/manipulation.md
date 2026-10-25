@@ -2,14 +2,14 @@
 
 **For:** the robotics and Pi developers integrating two SO-101 arms (with their leader arms), the cameras, and the ball-screw lift.
 
-**Status, 2026-10-24: proposed, partly built, nothing run on the walker.** The motion contract exists as schemas and tests in [`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts) and [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts). Built on 2026-10-24, and tested only against simulated or bench-free stand-ins:
+**Status, 2026-10-24: proposed, partly built; the production motion stack has not run the assembled lift.** The motion contract exists as schemas and tests in [`packages/contracts/src/motion.ts`](../../packages/contracts/src/motion.ts) and [`lift-serial.ts`](../../packages/contracts/src/lift-serial.ts). Built on 2026-10-24, and tested only against simulated or bench-free stand-ins:
 
 - the lift ESP32 firmware, written and tested on a computer ([firmware/README.md](../../firmware/README.md#lift-board));
 - the Pi's Feetech servo driver;
 - the Pi's motion coordinator for the arms ([`devices/pi/src/motion/`](../../devices/pi/README.md#the-arms-motion-coordinator)): Confirm targets, guards, calibration, poses, teleop and a simulator;
 - taught skills on that coordinator ([below](#taught-skills-built-2026-10-24-simulated-servos-only)): recording a teleop session, replay, and "Let go?". `tray_pick_handover` itself isn't taught yet: that needs the real arms ([the steps](../../devices/pi/README.md#teach-the-tray-task-tray_pick_handover-after-the-bench-bring-up-2026-10-25-plan-not-done-yet));
 - the walker screen's motion screens and the lift's hold control ([`devices/pi/src/screen/`](../../devices/pi/README.md#the-walker-screens-page)): the pending Confirm target, what moves and how to stop it, faults, bench mode, and the hold reports on the bus as `screenHold`;
-- the lift under that coordinator ([the Pi README](../../devices/pi/README.md#the-lift-under-the-motion-coordinator)): `lift.home`, `lift.move` and `lift.disable` prepared at the terminal (`walker lift ...`) and started by a Confirm press, held by the screen's hold control, the arms stowed first, one motion at a time, every stop and fault sending `lift.stop`, and the lift's height in taught skills. The lift never moves without the hardware stop, bench mode or not, and bench's lower limits refuse it (`lift_over_limits`: homing's 15 mm/s and the firmware's 50 mm/s² are above bench's 10 mm/s and 25 mm/s²), so its Pi-side bring-up runs in normal mode. Tested against a simulated lift board and simulated servos, with the real screen server in one test.
+- the lift under that coordinator ([the Pi README](../../devices/pi/README.md#the-lift-under-the-motion-coordinator)): `lift.home`, `lift.move` and `lift.disable` prepared at the terminal (`walker lift ...`) and started by a Confirm press, held by the screen's hold control, the arms stowed first, one motion at a time, every stop and fault sending `lift.stop`, and the lift's height in taught skills. A separate explicit bench demo now permits a lift without stop switches using a journaled estimated position and lower speed limits. Its combined lift/ToF firmware has been flashed and observed idle, but the Pi coordinator has not yet moved this lift.
 
 None of these has run on real arms or a real lift. Not built: preparing a lift target from the screen itself (the terminal does today), and a touch Stop on the screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
 
@@ -43,7 +43,7 @@ The schemas enforce this:
 | --- | --- | --- |
 | Arms | Two SO-101 follower arms on the walker and their two leader arms. Six Feetech STS3215 servos per arm, each arm on its own Feetech bus controller board over USB serial | 1,000,000 baud (LeRobot's default), servo ids 1 to 6 in joint order (`shoulder_pan`, `shoulder_lift`, `elbow_flex`, `wrist_flex`, `wrist_roll`, `gripper`), 4096 ticks per turn. Followers on 12 V regulators |
 | Lift | Two HGR20 1000 mm rails, an RM1605 ball screw (5 mm per turn), a NEMA 17 17HS19-2004S1 (1.8°, 59 N·cm) on a TB6600-type step/dir/enable driver, roller limit switches at top and bottom | Usable travel is shorter than 1000 mm (not measured). Height is counted in steps from the bottom switch; there is no position sensor. **Computed, not measured: about 450 to 670 N of thrust, a crushing force** |
-| Lift controller | A dedicated ESP32, provisioned `lift-01`, as [current-build.md](../../hardware/current-build.md) prefers | A third board is needed, because the two we bought are for the handles. If there isn't one, the obstacle board could later run a combined build (not part of this contract). PUL, DIR, ENA and the inputs must avoid the strapping pins (GPIO 0, 2, 5, 12, 15) and the flash pins (6 to 11) |
+| Lift controller | One ESP32 shares the lift and two active ToF sensors; it reports `lift-01` and `tof-front-01` on one USB port | The `lift_tof_demo` image is flashed. PUL, DIR and ENA use GPIO33, GPIO25 and GPIO26. Its 5 mm starting position is an estimate, not a measured home. |
 | Stop | Not chosen yet | A **latching, twist-to-release** mushroom switch; see [The stop circuit](#the-stop-circuit-decided) |
 | Cameras | Three UVC cameras | Not used for motion in this version |
 
@@ -60,7 +60,7 @@ The schemas enforce this:
 There is at most **one pending Confirm target** at a time, across everything Confirm can answer (`ConfirmTargetSchema`). It names the exact action, who prepared it, the Pi-written title, and the words shown and said (`confirmPrompt`). A target that can lead to motion ends with "Park the walker and lock the brakes, then press Confirm."; clearing faults ends with "Press Confirm to go ahead."
 
 - **Who may prepare.** The preparers are `walker_screen`, `operator_cli` (the terminal), `offer` (the cloud's id-only request) and `walker_local` (the Pi's own "Let go?"). The policy lists, for each command, who may prepare it.
-  - The cloud may offer only a locally taught skill or pose, by id (`MotionOfferRequestSchema`). The Pi drops the request if it has no such skill or pose, and words the target from its own titles. No cloud text is ever shown or spoken.
+  - The cloud may offer only a locally taught skill or pose by id, or the `ground`/`up` lift preset (`MotionOfferRequestSchema`). The Pi drops unknown skills or poses and refuses an unavailable lift preset; it words any Confirm target itself. No cloud text is ever shown or spoken.
 - **Timing, on the Pi's monotonic clock.**
   - A target expires after `WALKER_CONFIRM_WAIT_MS` (30 s).
   - A press is accepted only after the button was seen released for the whole `CONFIRM_ARM_DELAY_MS` (2 s), all after the target appeared, with no reset of that hand module since (`confirmPressVerdict`). Otherwise it is ignored, and the ignored press restarts the window.
@@ -275,7 +275,7 @@ Each SO-101 arm is six Feetech STS3215 servos on one half-duplex serial bus behi
 
 ## Planning versus control
 
-The cloud planner, when it comes, can decide *what* to try, and only by choosing a taught skill or pose by id. It cannot set servo targets, skip homing, change limits, disable stops, word what the walker says, or confirm anything. The Pi holds calibration, poses, skills, workspace and lift limits, speed and torque limits, and the watchdogs. Avoid sending continuous video to the cloud.
+The cloud planner can decide *what* to try by choosing a taught skill or pose by id, or a named lift preset. It cannot set servo targets, skip homing, change limits, disable stops, word what the walker says, or confirm anything. The Pi holds calibration, poses, skills, workspace and lift limits, speed and torque limits, and the watchdogs. Avoid sending continuous video to the cloud.
 
 ## What must be measured
 

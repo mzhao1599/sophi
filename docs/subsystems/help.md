@@ -136,7 +136,7 @@ Pi code, never a model's. `{names}` is `helpNames(...)` of the phones' names. Ev
 
 Three ways to ask, none of them voice-only or fine-motor-only: two big buttons held (gross motor, both hands), her voice, or two taps on a big phone button. On the walker, stopping a countdown and saying "I'm okay" are handle presses only; her phone is the touch path for both (it can close a request, and a countdown stopped by nothing sends after 8 s, which she can then close from the phone). Every spoken line is on the walker's screen too. The phones work by keyboard and screen reader with large text, and the alert is a word and a shape, not only a colour or a sound.
 
-## The demo beat (once built and rehearsed 3 of 3)
+## The demo beat
 
 1. Presenter holds Talk: "I've fallen. Please get Maya." The walker: "I'll ask Maya for help in 8 seconds. Press any button to stop." The screen counts down.
 2. At zero: "Asking for help." then "Sent to Maya's phone." Maya's phone, held up, shows "Rose asked for help", and the walker says "It's showing on Maya's phone." (measure the time from the walker's ask to her screen).
@@ -144,6 +144,18 @@ Three ways to ask, none of them voice-only or fine-motor-only: two big buttons h
 4. Rose presses Confirm twice: "Okay. Maya will see that you're okay." Maya's phone: "Rose says she's okay."
 
 **Fallback:** if the voice turn fails or is slow, hold both handle buttons for 2 s (on the simulator, press `h`). Don't say it detects falls, calls 911 or reaches a phone whose app is closed.
+
+### Rehearsal results (2026-10-24, on a Mac, not the real walker or phones)
+
+**Setup:** branch `sos` at `a39dab8`; a production build of `apps/web` on a local Postgres 17 and a local SpacetimeDB 2.13 with the care module; live Gemini (no Cartesia key, so the walker's own voice); the walker simulator from the rebuilt bundle with `--server`, its Talk clips made with macOS `say` (nothing played aloud); Rose's and Maya's phones as two headless Chromium pages at 390x844 (joined through the join route, not the join screen). Every walker line was matched word for word by a `.walk` script.
+
+| Run | Talk let go → reply | Model | Walker asks → Maya's card | Maya's tap → "Maya is on the way." | Result |
+| --- | --- | --- | --- | --- | --- |
+| Voice 1 | 1.78 s | 1 call, 1.7 s | 172 ms | 0.48 s | pass |
+| Voice 2 | 2.66 s | 1 call, 2.5 s | 88 ms | 1.84 s | pass |
+| Voice 3 | 3.89 s | 1 call, 3.8 s | 98 ms | 0.66 s | pass |
+
+The tap-to-line time varies with the walker's 2 s poll (`HELP_POLL_MS`). "It's showing on Maya's phone." followed Maya's card by 0.6 to 1.8 s for the same reason. In an earlier run at `133b6a6` the voice beat failed 1 of 3 (a timeout): Gemini left its reply empty beside `ask_for_help`, the server rejected that and retried; fixed in `a39dab8` (all 6 later fall-clip turns took one model call). Also passed once each at `133b6a6`: the chord (Maya "I'm with Rose" → "Maya says they're with you."), a request from Rose's phone (Maya's card 102 ms after her tap; the walker picked it up 4 s later from its poll), and no caretaker linked ("…so nothing was sent."). Gemini's judgement, live: "What can you help me with?" never counted down (6 of 6), and its replies said Sophi can "ask your caretaker for help" (one reply said "call for help" before `a39dab8`'s prompt line, none after); "Help, I fell.", "I can't get up. Can you get Maya?" and "I've fallen. Please get Maya." always did (8 of 8). Not yet: the real Pi, its buttons and panel, a real iPhone, Render with Maincloud, and hearing any of it aloud.
 
 **Deploy order:** the server first (with the care database published), then the walker's bundle. A new walker talks to an old server safely (it sends `can_ask_for_help` only after `/help` answers), but the demo needs both.
 

@@ -15,6 +15,7 @@ import {
   WalkerErrorCodeSchema,
   WalkerStatusViewSchema,
   WalkerTurnResponseSchema,
+  LiftPresetSchema,
   WalkerTurnViewSchema,
   checkCuesChange,
   checkSelection,
@@ -303,6 +304,7 @@ describe("turn responses", () => {
     const ask = { turn, proposal: null, speech: null, status, ask_for_help: true };
     expect(WalkerTurnResponseSchema.safeParse(ask).success).toBe(true);
     expect(WalkerTurnResponseSchema.safeParse({ ...ask, tool_call: { name: "get_location" } }).success).toBe(false);
+    expect(WalkerTurnResponseSchema.safeParse({ ...ask, motion_offer: { preset: LiftPresetSchema.options[0] } }).success).toBe(false);
     expect(WalkerTurnResponseSchema.safeParse({ ...ask, message_offer: { client_message_id: uuid(7), to_member_id: uuid(8), to_name: "Maya", text: "Come over" } }).success).toBe(false);
     expect(WalkerTurnResponseSchema.safeParse({ ...ask, turn: { ...turn, source: "page", heard_by: "typed", voiced_by: null } }).success).toBe(false);
   });

@@ -69,6 +69,8 @@ export interface LiftClientDeps {
   setup: { config: LiftConfig; installation: LiftInstallation };
   /** Bench mode (MOTION_BENCH_ENV), read once at start. */
   bench: boolean;
+  /** Explicit no-switch demo: the ESP32 journals counted position and reports it as an estimate. */
+  unswitchedLiftDemo?: boolean;
   /** The Pi's monotonic clock, the same one `tick(now)` is given, to stamp received lines. */
   monotonic: () => number;
   /** The lift to drive. Default `lift-01`. */
@@ -451,6 +453,8 @@ export class LiftClient implements LiftLineHandler {
       this.connectedReported = true;
       this.emit({ type: "link", connected: true });
     }
+    if (this.deps.unswitchedLiftDemo && status.homed && status.faults.length === 0 &&
+        !MOVING_STATES.has(status.state) && this.request === null) this.piHomed = true;
     const latched = new Set(status.faults);
     for (const fault of status.faults) {
       if (!this.knownFaults.has(fault)) {
@@ -589,6 +593,7 @@ export class LiftClient implements LiftLineHandler {
     const fresh = this.link !== null && !this.lost && !this.needHello && this.heardAt !== null && now - this.heardAt < LIFT_STATUS_STALE_MS;
     return {
       bench: this.deps.bench,
+      unswitchedLiftDemo: this.deps.unswitchedLiftDemo === true,
       config: this.deps.setup.config,
       installation: this.deps.setup.installation,
       heard: this.hello !== null && this.link !== null,

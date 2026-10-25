@@ -43,13 +43,11 @@ export interface CuePolicyDeps {
  * triggers a cue, and the cloud's only influence is the user-confirmed `cues` list.
  *
  * A zone becomes near under NEAR_ENTER_MM and clears only over NEAR_EXIT_MM (hysteresis). A zone that is
- * missing, stale or invalid is unknown, never clear. A zone that becomes near cues if no obstacle cue played
- * in the last CUE_MIN_GAP_MS; a zone that stays near repeats every CUE_REPEAT_MS. One cue covers every zone
- * that is near at that moment. All of these numbers are placeholders, not measured.
+ * missing, stale or invalid is unknown, never clear. Each zone has its own cue gap and repeat timer, so a
+ * new obstacle on the other side can buzz immediately. All of these numbers are placeholders, not measured.
  */
 export class CuePolicy {
   private readonly states = new Map<string, { state: ZoneState; lastCueMono: number | null; nearBeforeUnknown: boolean }>();
-  private lastCueMono: number | null = null;
 
   constructor(private readonly deps: CuePolicyDeps) {}
 
@@ -59,8 +57,7 @@ export class CuePolicy {
     const present = new Set(zones.map((zone) => zone.zone));
     for (const [name, entry] of this.states) if (!present.has(name)) this.toUnknown(entry);
 
-    let fire = false;
-    const nearNow: string[] = [];
+    const dueZones: string[] = [];
     for (const zone of zones) {
       let entry = this.states.get(zone.zone);
       if (!entry) this.states.set(zone.zone, (entry = { state: "unknown", lastCueMono: null, nearBeforeUnknown: false }));
@@ -72,24 +69,22 @@ export class CuePolicy {
       const near = before === "near" ? zone.mm <= NEAR_EXIT_MM : zone.mm < NEAR_ENTER_MM;
       entry.state = near ? "near" : "clear";
       if (!near) continue;
-      nearNow.push(zone.zone);
-      const gapOk = this.lastCueMono === null || now - this.lastCueMono >= CUE_MIN_GAP_MS;
+      const gapOk = entry.lastCueMono === null || now - entry.lastCueMono >= CUE_MIN_GAP_MS;
       const repeatOk = entry.lastCueMono === null || now - entry.lastCueMono >= CUE_REPEAT_MS;
       // Back from unknown soon after its last cue, having been near before (a reading flickering near and
       // invalid), counts as staying near. Near, clear, invalid, near is a new entry.
       const flicker =
         before === "unknown" && entry.nearBeforeUnknown && entry.lastCueMono !== null && now - entry.lastCueMono < CUE_REPEAT_MS;
       const staying = before === "near" || flicker;
-      if (gapOk && (!staying || repeatOk)) fire = true;
+      if (gapOk && (!staying || repeatOk)) dueZones.push(zone.zone);
     }
-    if (!fire) return;
+    if (dueZones.length === 0) return;
 
-    this.lastCueMono = now;
-    for (const name of nearNow) {
+    for (const name of dueZones) {
       const entry = this.states.get(name);
       if (entry) entry.lastCueMono = now;
     }
-    this.give();
+    this.give(dueZones);
   }
 
   private toUnknown(entry: { state: ZoneState; nearBeforeUnknown: boolean }): void {
@@ -101,16 +96,22 @@ export class CuePolicy {
     return this.states.get(name)?.state ?? "unknown";
   }
 
-  private give(): void {
+  private give(dueZones: readonly string[]): void {
     const targets = this.deps.modules.hapticTargets();
     const cues = effectiveObstacleCues(this.deps.cues(), targets.length > 0);
+    const targetFor = (zone: string, id: string) =>
+      (zone !== "left" && zone !== "right") || id.startsWith(`hand-${zone}-`);
+    const selected = targets.filter((target) => dueZones.some((zone) => targetFor(zone, target.instanceId)));
+    const missingSide = dueZones.some((zone) =>
+      (zone === "left" || zone === "right") && !selected.some((target) => targetFor(zone, target.instanceId)));
     let buzzed = 0;
     if (cues.includes("vibration")) {
-      for (const target of targets) {
+      for (const target of selected) {
         if (this.deps.modules.sendHaptic(target.instanceId, "near_obstacle", OBSTACLE_HAPTIC_MS)) buzzed += 1;
       }
     }
-    // If no haptic actually went out (every hand's port busy), the sound stands in, so the cue is never lost.
-    if (cues.includes("sound") || (cues.includes("vibration") && buzzed === 0)) this.deps.playObstacleSound();
+    if (cues.includes("sound") || (cues.includes("vibration") && (missingSide || buzzed < selected.length || buzzed === 0))) {
+      this.deps.playObstacleSound();
+    }
   }
 }

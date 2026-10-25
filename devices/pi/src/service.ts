@@ -74,6 +74,7 @@ export interface ServiceDeps {
     ownsConfirm(): boolean;
     /** Help owns Confirm (help.md): withdraw a pending target (a "Let go?" stays) and refuse new ones until false. */
     helpActive?(active: boolean): void;
+    requestOffer?(raw: unknown): unknown | null;
   };
   newId?: () => string;
 }
@@ -620,6 +621,11 @@ export class WalkerService {
         answered_by: reply.turn.answered_by,
         voice: wav ? "server" : "walker",
       });
+      if (reply.motion_offer) {
+        const target = this.deps.motion?.requestOffer?.({ target: { kind: "lift.preset", preset: reply.motion_offer.preset } });
+        if (!target) this.sayAnswer(reply.turn.heard, "The lift isn't ready for that height yet.", "fixed", "reply");
+        return;
+      }
       const message = reply.message_offer;
       if (message && !this.openProposal && !this.confirmTaken()) {
         const pending = { body: { client_message_id: message.client_message_id, to_member_id: message.to_member_id, text: message.text }, toName: message.to_name, ready: false, expiresAt: 0 };

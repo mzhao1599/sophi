@@ -1,4 +1,4 @@
-// The obstacle board's four zone names, one per multiplexer channel 0 to 3, checked at build time.
+// The obstacle board's four zone slots, assigned to physical mux channels in each firmware image.
 // Change one with a build flag, for example: build_src_flags = -D WALKER_ZONE_2=\"left_low\"
 #pragma once
 

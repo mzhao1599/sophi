@@ -111,12 +111,16 @@ struct LiftIdentity {
 
 class LiftCore {
  public:
-  LiftCore(const LiftIdentity& identity, const LiftSettings& settings, LineOutput& output, StepperPort& stepper);
+  LiftCore(const LiftIdentity& identity, const LiftSettings& settings, LineOutput& output, StepperPort& stepper,
+           bool allowHoming = true);
 
   // Rule 1: not stepping, unhomed, no fault, driver enabled (holding); then lift.hello (seq 0) and a status.
   // `stop` is the stop-sense reading: Pressed if it read pressed at any moment since the last call (the
   // board latches the edge in an interrupt), NotWired on a build without the input.
   void begin(uint32_t now, bool bottomPressed, bool topPressed, StopSense stop);
+  // Demo only: seed a counted position after a person has set the carriage at the recorded origin.
+  // This is an estimate; it cannot detect missed steps or movement while unpowered.
+  bool assumePosition(int32_t steps, uint32_t now);
   // Bytes read from the serial port.
   void receive(const uint8_t* data, size_t length, uint32_t now);
   // Call every loop with the raw switch readings (true: the switch reads pressed, or its wire is open).
@@ -184,6 +188,7 @@ class LiftCore {
 
   const LiftIdentity identity_;
   const LiftSettings settings_;
+  const bool allowHoming_;
   LineOutput& output_;
   StepperPort& stepper_;
   LineReader reader_;
