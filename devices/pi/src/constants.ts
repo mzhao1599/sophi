@@ -102,7 +102,7 @@ export const MAP_REQUEST_MS = 6_000;
 /** Placeholder: a map response bigger than this is refused (the recorded 773 m route is about 11 KB). */
 export const MAP_RESPONSE_MAX_BYTES = 64 * 1024;
 /** Placeholder: the whole `start_route` tool (position, search, route) gives up after this long. */
-export const ROUTE_TOOL_MS = 12_000;
+export const ROUTE_TOOL_MS = 25_000;
 /** Placeholder: a place is searched for within about this far of her, each way. */
 export const PLACE_SEARCH_RADIUS_M = 5_000;
 /** Placeholder: a longer walking route is refused. */
