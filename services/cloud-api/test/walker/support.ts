@@ -57,6 +57,7 @@ const TABLES = [
   "walker_circle_members",
   "walker_circle_invites",
   "walker_circle_messages",
+  "walker_help_requests",
 ];
 
 export async function postgresHarness(url: string): Promise<StoreHarness> {
@@ -108,7 +109,7 @@ export const SKIP_SPACETIME = "Skipping the circle's SpacetimeDB tests: set SPAC
 
 const run = promisify(execFile);
 const CARE_DB_DIR = fileURLToPath(new URL("../../../care-db", import.meta.url));
-const CARE_TABLES = ["circle_member", "circle_invite", "circle_message", "join_try", "session"];
+const CARE_TABLES = ["circle_member", "circle_invite", "circle_message", "help_request", "join_try", "session"];
 
 export async function spacetimeHarness(server: string): Promise<StoreHarness> {
   const spacetime = (...args: string[]) => run("spacetime", args, { cwd: CARE_DB_DIR, maxBuffer: 16 * 1024 * 1024 });

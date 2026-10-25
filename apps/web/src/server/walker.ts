@@ -1,7 +1,7 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { WalkerService, isWalkerError, sharedWalkerActivity, sharedWalkerAgent, sharedWalkerBackend, walkerTypedModelFromEnv, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
-import { WALKER_ERROR_STATUS, type ProposalView, type WalkerError, type WalkerErrorCode, type WalkerModel } from "@walker/contracts";
+import { WALKER_ERROR_STATUS, type HelpView, type ProposalView, type WalkerError, type WalkerErrorCode, type WalkerModel } from "@walker/contracts";
 import type { z } from "zod";
 
 /**
@@ -113,9 +113,9 @@ export function rememberTraceId(response: Response, traceId: string) {
   traceIds.set(response, traceId);
 }
 
-export function walkerError(code: WalkerErrorCode, message: string, proposal?: ProposalView): NextResponse {
+export function walkerError(code: WalkerErrorCode, message: string, proposal?: ProposalView, help?: HelpView): NextResponse {
   const trace_id = crypto.randomUUID();
-  const body: WalkerError = { error: { code, message, trace_id, ...(proposal ? { proposal } : {}) } };
+  const body: WalkerError = { error: { code, message, trace_id, ...(proposal ? { proposal } : {}), ...(help ? { help } : {}) } };
   const response = walkerJson(body, WALKER_ERROR_STATUS[code]);
   traceIds.set(response, trace_id);
   return response;
@@ -175,7 +175,7 @@ export async function walkerRoute(route: string, deviceId: string | null, fn: ()
     response = await fn();
   } catch (error) {
     if (isWalkerError(error)) {
-      response = walkerError(error.code, error.message, error.proposal);
+      response = walkerError(error.code, error.message, error.proposal, error.help);
     } else {
       // The error's name and, for a database error, its code; never its message, which can quote data.
       const code = error instanceof Error && "code" in error && typeof error.code === "string" ? ` code=${error.code}` : "";

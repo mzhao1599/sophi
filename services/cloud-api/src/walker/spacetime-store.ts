@@ -123,13 +123,12 @@ export class SpacetimeCircleStore implements WalkerStore {
       kind: answer.kind,
       how: answer.kind === "close" ? answer.how : "",
       member_id: answer.member_id ?? "",
-      fallback_name: answer.kind === "close" ? answer.fallback_name : "",
       now: now.toISOString(),
     });
   }
 
-  async helpOf(deviceId: string, now: Date) {
-    return this.care.call<HelpRecord | null>("help_of", { device_id: deviceId, now: now.toISOString() });
+  async helpOf(deviceId: string, now: Date, shownTo: string | null = null) {
+    return this.care.call<HelpRecord | null>("help_of", { device_id: deviceId, now: now.toISOString(), shown_to: shownTo ?? "" });
   }
 
   // ---- Where the circle meets the walker's own rows ----
