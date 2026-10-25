@@ -8429,6 +8429,20 @@
                 "delta_mm"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "reference_mm": {
+                  "type": "number",
+                  "minimum": 5,
+                  "maximum": 950
+                }
+              },
+              "required": [
+                "reference_mm"
+              ],
+              "additionalProperties": false
             }
           ]
         },
