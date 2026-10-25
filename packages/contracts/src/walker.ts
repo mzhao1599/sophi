@@ -202,9 +202,32 @@ export const VoiceClipSchema = z.strictObject({
 
 export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: typedText });
 
+/**
+ * What Sophi can pull up on the walker's screen with `show_on_screen` (docs/subsystems/show-on-screen.md, added
+ * 2026-10-24). The model picks only the view's name; the Pi builds every word and number on the card from its
+ * own data, so a model reply can never put text of its own on her screen. `weather`: current conditions near
+ * her (GPS, then Open-Meteo, as `get_weather`). `location`: the nearest address (GPS, then the reverse
+ * geocoder, as `get_location`). `sensors`: each obstacle zone's distance, live, unknown when not measured.
+ * `message`: her newest caretaker message (its words never go to the model). `parts`: the walker's parts and
+ * their health, simulated ones marked.
+ */
+export const ShowViewSchema = z.enum(["weather", "location", "sensors", "message", "parts"]);
+export type ShowView = z.infer<typeof ShowViewSchema>;
+
+/** Tools the Pi runs or the cloud computes; `send_message` is separate (`message_offer`). */
+export const WalkerToolNameSchema = z.enum(["get_location", "get_distance", "get_weather", "show_on_screen"]);
+export type WalkerToolName = z.infer<typeof WalkerToolNameSchema>;
+
+/** A tool request on a device turn response. No coordinates cross this route: the Pi has them, the cloud never. */
+export const WalkerToolCallSchema = z.union([
+  z.strictObject({ name: z.enum(["get_location", "get_distance", "get_weather"]) }),
+  z.strictObject({ name: z.literal("show_on_screen"), view: ShowViewSchema }),
+]);
+export type WalkerToolCall = z.infer<typeof WalkerToolCallSchema>;
+
 /** Tool results supplied by the paired Pi during one user-initiated turn. Coordinates never appear here. */
 export const WalkerToolResultSchema = z.strictObject({
-  name: z.enum(["get_location", "get_distance", "get_weather"]),
+  name: WalkerToolNameSchema,
   text: z.string().trim().min(1).max(1000),
 });
 export type WalkerToolResult = z.infer<typeof WalkerToolResultSchema>;
@@ -217,6 +240,13 @@ export const DeviceTurnRequestSchema = z.strictObject({
   /** Present on a continuation. The first step's transcript is sent as text; no audio is replayed. */
   tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
   original_audio: z.boolean().optional(),
+  /**
+   * Present while a screen page is connected to the Pi: the views it can show right now (GPS connected for
+   * `weather` and `location`, obstacle sensors for `sensors`, a message held for `message`). The server offers
+   * `show_on_screen` only with at least one, and only those, so an older Pi (no field) never receives it. Sent
+   * on continuations too.
+   */
+  screen: z.strictObject({ views: z.array(ShowViewSchema).min(1).max(ShowViewSchema.options.length).refine((v) => new Set(v).size === v.length, "Each view appears once.") }).optional(),
   /**
    * This walker can ask for help after a countdown ("Asking for help" below; added 2026-10-24). The server offers
    * the model its `ask_for_help` tool only on a turn that carries it, so an older Pi never gets `ask_for_help`. The
@@ -468,7 +498,7 @@ export const WalkerTurnResponseSchema = z
     speech: SpeechSchema.nullable(),
     status: WalkerStatusViewSchema,
     /** A user-initiated device tool request. No coordinates cross this route. */
-    tool_call: z.strictObject({ name: z.enum(["get_location", "get_distance", "get_weather"]) }).optional(),
+    tool_call: WalkerToolCallSchema.optional(),
     /** Results already gathered in this unfinished turn; the Pi returns them with the next tool result. */
     tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
     /** A named lift request, delivered only on a newly saved device turn. The Pi may refuse it. */

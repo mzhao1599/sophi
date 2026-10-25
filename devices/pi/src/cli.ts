@@ -27,10 +27,11 @@ const USAGE = `walker: Sophi's always-on walker service
       only by root and the service). --sim checks simulated serial boards, lift and arms instead of real
       ports. The arms are only PINGed and READ; the lift is only sent hello.request.
   walker simulate [--script <file>] [--mic-file <16 kHz mono WAV>] [--mic mac] [--loud]
-                  [--server <url>] [--state <dir>] [--out <dir>] [--screen] [--lift] [--arms]
+                  [--server <url>] [--state <dir>] [--out <dir>] [--screen] [--gps] [--lift] [--arms]
       Runs the whole walker on this computer with simulated parts and, unless --server is given, a FAKE
       cloud on 127.0.0.1. Silent by default: speech is written to audio files. --loud plays it.
       --screen also serves the walker screen's page on http://127.0.0.1:8740/ (WALKER_SCREEN_PORT).
+      --gps adds a SIMULATED GPS receiver with SIMULATED weather and address samples (no internet).
       --lift adds a SIMULATED lift board, driven by the real lift client under the motion coordinator (it
       needs --arms, which it turns on); press ? for its keys.
       --arms adds SIMULATED arms (fake servo buses) and a simulated stop switch; press ? for their keys.
@@ -38,7 +39,7 @@ ${ARMS_USAGE}
 
 State folder: --state, else WALKER_STATE_DIR, else ${DEFAULT_STATE_DIR} (run and pair) or a new temp folder (simulate).`;
 
-const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen", "lift", "arms", "leader", "replace"]);
+const BOOLEAN_FLAGS = new Set(["loud", "sound", "buzz", "press", "sim", "screen", "gps", "lift", "arms", "leader", "replace"]);
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];
@@ -149,6 +150,7 @@ async function main(argv: string[]): Promise<number> {
         out: text(flags.get("out")),
         script: text(flags.get("script")),
         screen: flags.get("screen") === true,
+        gps: flags.get("gps") === true,
         lift: flags.get("lift") === true,
       });
     }
