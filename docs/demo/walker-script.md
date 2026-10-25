@@ -298,6 +298,10 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 
 > "Her position goes only to the map services, straight from the walker. Our server and the model get the place's name and how far, never where she is. And the turn-by-turn voice runs on the walker, so it keeps going without the internet."
 
+**If Sophi says "I can't answer that right now"** (Gemini ran past the server's 8 seconds; it happened on 2 of 6 route questions in the live check before the fix below, and route questions take two model steps, 7 to 10.4 seconds in all), say "It took too long that time" and ask again. Never say it worked.
+
+**Live check (2026-10-24, the Mac simulator against a local production build on Gemini, live OpenStreetMap services, synthetic spoken clips):** "Where am I right now?", "Can you walk me to the Lake Merritt Boating Center?", "How much farther is it?" and "Please stop the directions." passed 3 of 3 runs in a row, each answer as written above in Gemini's own words ("You have about 740 meters left, which will take around 10 minutes. Your position is currently simulated."). Two later route questions timed out; one cause was a retry when the model's discarded "I'll check" words said "safe", fixed in the same change, and one more run after the fix started the route and ended it with a tap on End route. Not yet with Cartesia's voice, on the real Pi or on Render.
+
 **Honesty lines:** the position is simulated indoors, and the screen and the first spoken line both say so; the route is OpenStreetMap's walking route and can include steps or curbs; the walker never steers, it only speaks.
 
 ## Fallbacks
