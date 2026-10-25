@@ -29,7 +29,7 @@ export type WalkerBackend =
  */
 export function walkerBackendFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void = console.warn): WalkerBackend {
   const backend = baseBackendFromEnv(env, warn);
-  const care = careDbConfigFromEnv(env);
+  const care = careDbConfigFromEnv(env, warn);
   if (!care || backend.kind === "off") return backend;
   return { kind: backend.kind, store: new SpacetimeCircleStore(backend.store, new CareDbClient(care)), care };
 }

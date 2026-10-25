@@ -11,6 +11,8 @@ flowchart LR
   User <--> Voice[ESP32 voice module or Pi audio]
   Web <--> API[Cloud API and agent orchestrator]
   API <--> DB[(Supabase Auth, Postgres, Storage)]
+  API <--> Care[(SpacetimeDB: the care circle)]
+  Phones[Family and caretaker phones] <-- live views --> Care
   API <--> Models[Speech and language models]
   Hand <-- USB serial --> Pi[Pi 5 coordinator]
   Voice <-- USB serial/audio --> Pi
@@ -80,6 +82,7 @@ The Pi starts in `booting`, discovers modules, performs health checks, and enter
 - `apps/web`: Next.js on Vercel; routes for onboarding, settings, and device management.
 - `services/cloud-api`: authenticated request handlers for conversation and device turns. A long-lived experience is built from persisted sessions and event processing, rather than assuming one server process stays alive. Move lengthy work to a durable worker/queue if request limits become a problem.
 - Supabase: Auth, Postgres, and private Storage. Use row-level security on exposed user tables, private buckets and signed access, and server-only elevated credentials.
+- SpacetimeDB (Maincloud, database `sophi-care`): the care circle's state (phones, codes, approvals, messages), changed only by the server's procedure calls and pushed live to each phone's own views. Built 2026-10-24; the walker's own rows stay in Postgres. [`services/care-db`](../services/care-db/README.md), [interfaces](interfaces.md#the-care-circle-on-spacetimedb-added-2026-10-24).
 - Pi: one supervised service with independently restartable module adapters. Local state contains configuration version, calibration, and a bounded offline event queue.
 - ESP32: separate firmware targets sharing the versioned serial envelope.
 

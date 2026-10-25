@@ -27,11 +27,11 @@ export interface CareDbConfig {
 }
 
 /**
- * The care database's settings, or null when none of them is set (the circle then stays in the walker
- * store). Throws when only some are set, or the key isn't a P-256 private key, so a half-configured server
- * fails at start instead of on a phone.
+ * The care database's settings, or null when they aren't all set (the circle then stays in the walker store).
+ * Half a configuration, or a key that isn't a P-256 private key, is logged and ignored rather than thrown:
+ * the walker must keep running whatever the circle's settings say.
  */
-export function careDbConfigFromEnv(env: Record<string, string | undefined>): CareDbConfig | null {
+export function careDbConfigFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void = console.warn): CareDbConfig | null {
   const get = (name: string) => env[name]?.trim() || undefined;
   const uri = get("SPACETIME_URI");
   const database = get("SPACETIME_DATABASE");
@@ -39,12 +39,22 @@ export function careDbConfigFromEnv(env: Record<string, string | undefined>): Ca
   const pem = get("SPACETIME_JWT_PRIVATE_KEY");
   const given = [uri, database, issuer, pem].filter(Boolean).length;
   if (given === 0) return null;
-  if (given < 4) throw new Error("Set all four of SPACETIME_URI, SPACETIME_DATABASE, SPACETIME_ISSUER and SPACETIME_JWT_PRIVATE_KEY, or none.");
-  // A dashboard may not keep line breaks, so the key may also be given as base64 of the PEM.
-  const text = pem!.includes("BEGIN") ? pem!.replace(/\\n/g, "\n") : Buffer.from(pem!, "base64").toString("utf8");
-  const privateKey = createPrivateKey(text);
+  if (given < 4) {
+    warn("[care-db] Some SPACETIME_* settings are missing (all four are needed); the circle stays in the walker store.");
+    return null;
+  }
+  let privateKey: KeyObject;
+  try {
+    // A dashboard may not keep line breaks, so the key may also be given as base64 of the PEM.
+    const text = pem!.includes("BEGIN") ? pem!.replace(/\\n/g, "\n") : Buffer.from(pem!, "base64").toString("utf8");
+    privateKey = createPrivateKey(text);
+  } catch {
+    warn("[care-db] SPACETIME_JWT_PRIVATE_KEY isn't a private key; the circle stays in the walker store.");
+    return null;
+  }
   if (privateKey.asymmetricKeyType !== "ec" || privateKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
-    throw new Error("SPACETIME_JWT_PRIVATE_KEY must be a P-256 (ES256) private key.");
+    warn("[care-db] SPACETIME_JWT_PRIVATE_KEY must be a P-256 (ES256) key; the circle stays in the walker store.");
+    return null;
   }
   const jwk = createPublicKey(privateKey).export({ format: "jwk" });
   const kid = createHash("sha256").update(`${jwk.x}.${jwk.y}`).digest("hex").slice(0, 16);
