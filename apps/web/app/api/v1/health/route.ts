@@ -1,4 +1,4 @@
-import { sharedWalkerBackend } from "@walker/cloud-api";
+import { sharedWalkerBackend, type SpacetimeCircleStore } from "@walker/cloud-api";
 
 export const dynamic = "force-dynamic";
 
@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
  * GET /api/v1/health — Render's health check. 200 when the walker store is ready (on Render, its
  * Postgres migrations have run) and answers now, 503 while it can't be reached, so a deploy whose
  * database isn't ready never takes traffic. A server with walkers off (no database in production) is still healthy: onboarding works.
+ * With the circle in SpacetimeDB, `care_db` says whether it answers now, but never fails the check: the walker
+ * keeps working without it.
  */
 export async function GET() {
   const backend = sharedWalkerBackend();
@@ -14,7 +16,10 @@ export async function GET() {
   try {
     await backend.store.ready();
     await backend.store.ping();
-    return Response.json({ status: "ok", walker_store: backend.kind }, { headers });
+    // By shape, not instanceof: the start-up hook and the routes are bundled apart, so classes can differ.
+    const store = backend.store as Partial<SpacetimeCircleStore>;
+    const care = backend.care && store.pingCare ? await store.pingCare.call(backend.store).then(() => "ok", () => "unreachable") : "off";
+    return Response.json({ status: "ok", walker_store: backend.kind, care_db: care }, { headers });
   } catch {
     return Response.json({ status: "unavailable", walker_store: backend.kind }, { status: 503, headers });
   }

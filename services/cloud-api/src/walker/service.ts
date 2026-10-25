@@ -55,7 +55,10 @@ import {
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMemberRecord, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+
+/** How long a turn waits for the circle's people before going on without them. */
+const CIRCLE_FOR_TURN_MS = 1_500;
 
 const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
 const WEATHER_LOOKUP_LINE = "I'll check the weather near you now.";
@@ -370,7 +373,7 @@ export class WalkerService {
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
-    const { members } = await this.store.circleOf(device.device_id, now);
+    const members = await this.circleForTurn(device.device_id, now);
     const recipients = members.filter((m) => m.state === "member" && m.role === "caregiver").map((m) => ({ member_id: m.member_id, name: m.name }));
     const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
     const toolResults: WalkerToolResult[] = "tool_results" in request
@@ -575,6 +578,24 @@ export class WalkerService {
   }
 
   /** The walker's history sweep, then the circle's (at most once a minute; always at server start). */
+
+  /**
+   * The circle for one turn's recipients. A turn never fails, and never waits more than CIRCLE_FOR_TURN_MS,
+   * because of the circle (it may live in SpacetimeDB, apart from the walker): without it the turn just has
+   * no one to message.
+   */
+  private async circleForTurn(deviceId: string, now: Date): Promise<CircleMemberRecord[]> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("circle_timeout")), CIRCLE_FOR_TURN_MS)));
+      return (await Promise.race([this.store.circleOf(deviceId, now), late])).members;
+    } catch (error) {
+      console.warn(`[walker] turn without the circle (${error instanceof Error ? error.message.slice(0, 80) : "unknown"})`);
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   private async sweep(now: Date, atStart = false) {
     await this.store.sweep(now, new Date(now.getTime() - WALKER_HISTORY_RETENTION_MS), new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS));
     await sweepCircleThrottled(this.store, now, atStart);

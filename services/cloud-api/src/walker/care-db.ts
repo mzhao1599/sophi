@@ -1,4 +1,5 @@
 import { createHash, createPrivateKey, createPublicKey, sign, type KeyObject } from "node:crypto";
+import type { CareLiveAccess } from "@walker/contracts";
 
 /**
  * Sophi's server and the care circle's SpacetimeDB database (services/care-db; docs/interfaces.md, "The care
@@ -72,13 +73,6 @@ export function mintCareToken(config: CareDbConfig, subject: string, now: Date):
 }
 
 /** What a phone or the owner's page needs to connect: where, which database, and its own token. */
-export interface CareLiveAccess {
-  uri: string;
-  database: string;
-  token: string;
-  expires_at: string;
-}
-
 export function careLiveAccess(config: CareDbConfig, subject: string, now: Date): CareLiveAccess {
   return { uri: config.uri, database: config.database, ...mintCareToken(config, subject, now) };
 }

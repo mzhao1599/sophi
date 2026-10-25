@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { caregiverConsentLine, type CircleInvite, type OwnerPhonesResponse } from "@walker/contracts";
+import { OWNER_VIEWS, openLive, type LiveStatus } from "@/lib/careLive";
 import { PhoneApiError, type OwnerPhonesApi, type PhoneRole } from "@/lib/phoneApi";
 import { ownerError, phoneRoleWord } from "@/lib/phoneView";
 import { formatCode } from "@/lib/walkerView";
@@ -9,23 +10,43 @@ import walker from "./Walker.module.css";
 import styles from "./PhonesPanel.module.css";
 
 const LIST_POLL_MS = 3_000;
+/** With live updates from SpacetimeDB, a change reloads the list at once; this only catches what a dropped connection missed. */
+const LIST_LIVE_POLL_MS = 15_000;
 
 /**
  * "Phones" on the owner's page: add a phone with a one-time code (her own phone, or a caretaker's), approve a
  * caretaker who typed a code (only with the consent line ticked: the lean stand-in for her own Confirm on the
- * walker), and remove a phone. Codes show here only.
+ * walker), and remove a phone. Codes show here only. When the circle is in SpacetimeDB, the list reloads the
+ * moment a phone joins or leaves (careLive.ts), and a caretaker who starts waiting is announced.
  */
 export function PhonesPanel({ api, deviceId }: { api: OwnerPhonesApi; deviceId: string }) {
   const [list, setList] = useState<OwnerPhonesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [live, setLive] = useState<LiveStatus>("off");
   const busy = useRef(false);
+  /** A reload asked for while one was running (a live change): run once more after it. */
+  const again = useRef(false);
+  const seenJoins = useRef<Set<string> | null>(null);
 
   const load = useCallback(async () => {
-    if (busy.current) return;
+    if (busy.current) {
+      again.current = true;
+      return;
+    }
     busy.current = true;
     try {
-      setList(await api.list(deviceId));
+      do {
+        again.current = false;
+        const next = await api.list(deviceId);
+        // The first list is what was already there; after that, say who started waiting.
+        if (seenJoins.current) {
+          const fresh = next.joins.filter((j) => !seenJoins.current!.has(j.member_id));
+          if (fresh.length > 0) setStatus(fresh.map((j) => `${j.name} is waiting to join.`).join(" "));
+        }
+        seenJoins.current = new Set(next.joins.map((j) => j.member_id));
+        setList(next);
+      } while (again.current);
     } catch (e) {
       if (e instanceof PhoneApiError && e.code === "not_offered") setError(ownerError("not_offered"));
     } finally {
@@ -34,12 +55,21 @@ export function PhonesPanel({ api, deviceId }: { api: OwnerPhonesApi; deviceId: 
   }, [api, deviceId]);
 
   useEffect(() => {
+    if (!api.live) return;
+    const handle = openLive(() => api.live!(deviceId), OWNER_VIEWS, () => void load(), setLive);
+    return () => {
+      handle.close();
+      setLive("off");
+    };
+  }, [api, deviceId, load]);
+
+  useEffect(() => {
     void load();
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, LIST_POLL_MS);
+    }, live === "live" ? LIST_LIVE_POLL_MS : LIST_POLL_MS);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, live]);
 
   async function act(what: () => Promise<unknown>, done: string) {
     setError(null);

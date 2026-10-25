@@ -114,7 +114,7 @@ const session = table(
   { name: "session" },
   {
     identity: t.identity().primaryKey(),
-    subject: t.string(),
+    subject: t.string().index("btree"),
   },
 );
 
@@ -190,7 +190,13 @@ function dropMember(ctx: Ctx, memberId: string): string[] {
   const sent = [...ctx.db.message.device_id.filter(m.device_id)].filter((x) => x.from_member_id === memberId || x.to_member_id === memberId);
   for (const x of sent) ctx.db.message.message_id.delete(x.message_id);
   ctx.db.member.member_id.delete(memberId);
+  forgetSessions(ctx, `member:${memberId}`);
   return m.role === "walker_user" ? [m.device_id] : [];
+}
+
+/** A removed phone's or forgotten walker's connections: their views were already empty, and now nothing is kept. */
+function forgetSessions(ctx: Ctx, subject: string) {
+  for (const x of [...ctx.db.session.subject.filter(subject)]) ctx.db.session.identity.delete(x.identity);
 }
 
 function sweep(ctx: Ctx, nowMs: number, lapsedBeforeMs: number, triesBeforeMs: number) {
@@ -445,6 +451,7 @@ export const forgetWalker = spacetimedb.procedure({ device_id: t.string() }, t.s
     for (const m of membersOf(tx, a.device_id)) dropMember(tx, m.member_id);
     for (const i of invitesOf(tx, a.device_id)) tx.db.invite.invite_id.delete(i.invite_id);
     for (const m of messagesOf(tx, a.device_id)) tx.db.message.message_id.delete(m.message_id);
+    forgetSessions(tx, `owner:${a.device_id}`);
     return JSON.stringify("ok");
   }),
 );

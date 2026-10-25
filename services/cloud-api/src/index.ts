@@ -54,7 +54,6 @@ export {
   careLiveAccess,
   mintCareToken,
   type CareDbConfig,
-  type CareLiveAccess,
 } from "./walker/care-db";
 export { WALKER_MIGRATIONS } from "./walker/migrations";
 export { buildStatusView } from "./walker/status";

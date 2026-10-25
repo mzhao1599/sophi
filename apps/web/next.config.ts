@@ -13,6 +13,13 @@ const config: NextConfig = {
       { source: "/onboarding/review", destination: "/", permanent: false },
     ];
   },
+  // The care circle's token issuer (SpacetimeDB reads these at the issuer's origin; see app/api/v1/care-db).
+  async rewrites() {
+    return [
+      { source: "/.well-known/openid-configuration", destination: "/api/v1/care-db/openid-configuration" },
+      { source: "/.well-known/jwks.json", destination: "/api/v1/care-db/jwks" },
+    ];
+  },
   async headers() {
     return [
       {

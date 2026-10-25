@@ -1,5 +1,5 @@
 import { PAIRING_LOCK_WINDOW_MS } from "@walker/contracts";
-import type { CareDbClient } from "./care-db";
+import { CareDbError, type CareDbClient } from "./care-db";
 import type {
   CircleInviteRecord,
   CircleMemberRecord,
@@ -34,6 +34,19 @@ export class SpacetimeCircleStore implements WalkerStore {
   }
 
   async claimInvite(claim: InviteClaim): Promise<InviteClaimResult> {
+    try {
+      return await this.claim(claim);
+    } catch (error) {
+      // The call may have committed after we stopped waiting: then the member exists under this phone's new
+      // secret, and the code is used up. Find it rather than report a failure the phone would retry.
+      if (!(error instanceof CareDbError)) throw error;
+      const member = await this.memberBySecret(claim.member.secret_hash).catch(() => undefined);
+      if (member) return { ok: true, member };
+      throw error;
+    }
+  }
+
+  private claim(claim: InviteClaim): Promise<InviteClaimResult> {
     return this.care.call("claim_invite", {
       code: claim.code,
       now: claim.now.toISOString(),
@@ -73,14 +86,23 @@ export class SpacetimeCircleStore implements WalkerStore {
     return this.care.call<CircleMessageRecord[]>("messages_for", { device_id: deviceId, member_id: memberId, now: now.toISOString() });
   }
 
+  /**
+   * The walker's own sweep calls this from heartbeats and turns, so it never fails them: the module also
+   * sweeps itself every minute, so a missed call only delays deletion.
+   */
   async sweepCircle(now: Date, lapsedBefore: Date) {
     // The base store drops stale GPS fixes (its circle tables are empty here).
     await this.base.sweepCircle(now, lapsedBefore);
-    await this.care.call("sweep_circle", {
-      now: now.toISOString(),
-      lapsed_before: lapsedBefore.toISOString(),
-      tries_before: new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS).toISOString(),
-    });
+    try {
+      await this.care.call("sweep_circle", {
+        now: now.toISOString(),
+        lapsed_before: lapsedBefore.toISOString(),
+        tries_before: new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS).toISOString(),
+      });
+    } catch (error) {
+      if (!(error instanceof CareDbError)) throw error;
+      console.warn(`[circle] sweep skipped: ${error.message.slice(0, 120)}`);
+    }
   }
 
   // ---- Where the circle meets the walker's own rows ----
@@ -100,14 +122,23 @@ export class SpacetimeCircleStore implements WalkerStore {
     return this.base.writeLocationSharing(deviceId, enabled);
   }
 
+  /**
+   * The circle first: if deleting it fails, the walker is still there to forget again. The other order could
+   * leave a circle with no walker, which nothing would ever delete.
+   */
   async forget(deviceId: string, ownerHash: string) {
-    if (!(await this.base.forget(deviceId, ownerHash))) return false;
+    if (!(await this.base.deviceForOwner(deviceId, ownerHash))) return false;
     await this.care.call("forget_walker", { device_id: deviceId });
-    return true;
+    return this.base.forget(deviceId, ownerHash);
   }
 
-  async ping() {
-    await this.base.ping();
+  /** The walker store only: Render's health check must not fail, or restart the server, when SpacetimeDB is away. */
+  ping() {
+    return this.base.ping();
+  }
+
+  /** The care database on its own, for the health route's report. */
+  async pingCare() {
     await this.care.call("ping", {});
   }
 

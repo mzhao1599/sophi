@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { membershipMoved, openLive, phoneRows, withLiveCircle, PHONE_VIEWS, type LiveStatus, type PhoneLiveRows } from "./careLive";
 import { PhoneApiError, type PhoneApi, type PhoneFailure, type PhoneHome } from "./phoneApi";
-import { NOT_IN_CIRCLE, PHONE_POLL_MS, joinError } from "./phoneView";
+import { NOT_IN_CIRCLE, PHONE_LIVE_POLL_MS, PHONE_POLL_MS, joinError } from "./phoneView";
 
 /**
  * One hook owns the phone's talk with the server: the first load, polling every PHONE_POLL_MS while the
  * page is visible (one request at a time), joining, and a refresh after each send. The screens only read
- * `phone` and call its functions.
+ * `phone` and call its functions. When the server keeps the circle in SpacetimeDB, the hook also holds a live
+ * connection (careLive.ts): people and messages then come pushed, a change of membership refreshes at once,
+ * and polling slows to PHONE_LIVE_POLL_MS for the walker's status.
  */
 export interface Phone {
   /** `loading` until the first answer; `join` when this phone isn't linked; `home` once the server sent a home. */
@@ -15,6 +18,8 @@ export interface Phone {
   home: PhoneHome | null;
   /** The last poll got no answer: what's on screen is what the server said last. */
   unreachable: boolean;
+  /** Live updates from SpacetimeDB: `off` when the server keeps the circle itself. */
+  live: LiveStatus;
   /** A lasting line on the join screen (for example: this phone was removed). */
   notice: string | null;
   joining: boolean;
@@ -32,6 +37,8 @@ export function usePhone(api: PhoneApi): Phone {
   const [unreachable, setUnreachable] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [live, setLive] = useState<LiveStatus>("off");
+  const [liveRows, setLiveRows] = useState<PhoneLiveRows | null>(null);
   const busy = useRef(false);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -63,11 +70,39 @@ export function usePhone(api: PhoneApi): Phone {
     }
   }, [api]);
 
+  // The live connection, while this phone is linked (waiting or in). A new home for another membership reconnects.
+  const linkedAs = phase === "home" && home ? (home.membership === "member" ? home.me.member_id : home.membership) : null;
+  useEffect(() => {
+    if (!linkedAs || !api.live) return;
+    const access = api.live.bind(api);
+    const handle = openLive(
+      access,
+      PHONE_VIEWS,
+      (conn) => {
+        const rows = phoneRows(conn);
+        setLiveRows(rows);
+        // Kept in the home too, so when the live rows go (removed, reconnecting) the screen never steps back to an older poll.
+        setHome((h) => withLiveCircle(h, rows));
+      },
+      setLive,
+    );
+    return () => {
+      handle.close();
+      setLive("off");
+      setLiveRows(null);
+    };
+  }, [api, linkedAs]);
+
+  // Approved, removed, or replaced: what the live rows say about this phone wins, so ask the server now.
+  useEffect(() => {
+    if (membershipMoved(home, liveRows)) void refresh();
+  }, [home, liveRows, refresh]);
+
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => {
       if (document.visibilityState === "visible" && phaseRef.current !== "join") void refresh();
-    }, PHONE_POLL_MS);
+    }, live === "live" ? PHONE_LIVE_POLL_MS : PHONE_POLL_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible" && phaseRef.current !== "join") void refresh();
     };
@@ -76,7 +111,7 @@ export function usePhone(api: PhoneApi): Phone {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh]);
+  }, [refresh, live]);
 
   const join = useCallback(
     async (code: string) => {
@@ -103,5 +138,6 @@ export function usePhone(api: PhoneApi): Phone {
     setPhase("join");
   }, []);
 
-  return { phase, home, unreachable, notice, joining, join, startOver, refresh };
+  const shown = useMemo(() => withLiveCircle(home, liveRows), [home, liveRows]);
+  return { phase, home: shown, unreachable, live, notice, joining, join, startOver, refresh };
 }

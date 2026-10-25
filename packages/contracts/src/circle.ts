@@ -727,6 +727,23 @@ export const PhoneHomeResponseSchema = z.discriminatedUnion("membership", [
 ]);
 export type PhoneHomeResponse = z.infer<typeof PhoneHomeResponseSchema>;
 
+// ---- Live updates from SpacetimeDB (docs/interfaces.md, "The care circle on SpacetimeDB") ----
+
+/**
+ * Where a phone or the owner's page connects for live updates, with its own short-lived token. `live: null`
+ * when this server keeps the circle itself (no SpacetimeDB settings): the page then keeps polling.
+ */
+export const CareLiveAccessSchema = z.strictObject({
+  uri: z.url(),
+  database: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+  token: z.string().min(1),
+  expires_at: z.iso.datetime(),
+});
+export type CareLiveAccess = z.infer<typeof CareLiveAccessSchema>;
+
+export const CareLiveResponseSchema = z.strictObject({ live: CareLiveAccessSchema.nullable() });
+export type CareLiveResponse = z.infer<typeof CareLiveResponseSchema>;
+
 // ---- Errors ----
 
 export const CircleErrorCodeSchema = z.enum([
