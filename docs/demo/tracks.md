@@ -203,10 +203,10 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 
 **Where it could go wrong, and what Sophi does about it:** the model could misread a need (each part's panel quotes the words it came from, and every switch stays with the person); it could fail or be slow (a 15-second deadline, then the fixed questions, with a note saying so); it could be steered by what someone types (her words are passed as data, and fixed rules choose modules); and people's words leave the laptop (the notice names who reads them before anyone types).
 
-**Status:** the adapter is built and tested with stub models only. It has never run live, because there is no Claude key on the demo laptop.
+**Status:** the key went into `apps/web/.env.local` on 2026-10-24. The first live run failed every turn in about 0.2 seconds: the adapter sent the beta header `server-side-fallback-2026-10-23`, which the API rejects. `fallbacks: "default"` needs `server-side-fallback-2026-07-01`, which fixed it. Measured on 2026-10-24 (rehearsal, real Claude Opus 5.5, laptop only): 3 runs, 9 of 9 paths passed, 39 model turns, no fallbacks, 1.9 to 5.1 seconds a turn, median 2.5 seconds. Steps 3 and 4 below haven't been done yet, and it hasn't run on Render.
 
 **To switch the demo to Claude (Max pastes the key):**
-1. Put `ANTHROPIC_API_KEY` and `ONBOARDING_AGENT_PROVIDER=anthropic` in `apps/web/.env.local`.
+1. Put `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_PROVIDER=anthropic` and `ONBOARDING_ENGINE=agent` in `apps/web/.env.local`.
 2. Rehearse: `REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse`. It must pass every path on all 3 runs with every reply from the model, as Gemini did.
 3. Rebuild and start as in the script's setup checklist. The notice must name "Anthropic's Claude", and each reply must say "Read by Claude". Mention Claude only after that check.
 4. Check Anthropic's current commercial terms on retention and training, and update judge Q&A 1 and 2 in the script to match.
