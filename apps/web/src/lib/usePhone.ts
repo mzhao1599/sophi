@@ -115,12 +115,14 @@ export function usePhone(api: PhoneApi): Phone {
 
   // Any change to a help row (asked, someone showing or coming, closed, deleted): fetch the server's home at once.
   // Compared with the last key, not a first-run flag (Strict Mode runs effects twice); the first rows only set it.
+  // While the rows are away (reconnecting) the last key is kept, so a change made meanwhile is fetched on return.
   const helpKey = helpRowsKey(liveRows, helpSubscribed);
   const lastHelpKey = useRef<string | null>(null);
   useEffect(() => {
+    if (helpKey === null) return;
     const before = lastHelpKey.current;
     lastHelpKey.current = helpKey;
-    if (before !== null && helpKey !== null && before !== helpKey) void refresh();
+    if (before !== null && before !== helpKey) void refresh();
   }, [helpKey, refresh]);
 
   // Approved, removed, or replaced: what the live rows say about this phone wins, so ask the server now.

@@ -103,7 +103,11 @@ function Linked({ api, preview, circle }: { api: PhoneApi; preview: boolean; cir
   // also plays the tone and vibrates. Focus stays where it is.
   const lastHelp = useRef<HelpView | null | undefined>(undefined);
   useEffect(() => {
-    if (home?.membership !== "member") return;
+    if (home?.membership !== "member") {
+      // Unlinked or waiting: a later link starts fresh, so its first home is a load again (nothing said).
+      lastHelp.current = undefined;
+      return;
+    }
     const prev = lastHelp.current;
     lastHelp.current = home.help;
     if (prev === home.help) return;
