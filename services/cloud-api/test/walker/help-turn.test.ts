@@ -105,6 +105,36 @@ function describeHelpTurns(name: string, makeHarness: () => Promise<StoreHarness
       expect((await h.store().recentTurns(w.id, 10)).filter((t) => t.client_turn_id === request.client_turn_id)).toHaveLength(1);
     });
 
+    it("V9: an empty reply beside ask_for_help is accepted at once (one model call) and gets the countdown line", async () => {
+      const stub = stubModel({ transcript: "I've fallen. Please get Maya.", reply: "", tool_call: { name: "ask_for_help" } });
+      const s = services(stub.model);
+      const w = await walkerWith(s, ["Maya", "Ana"], true);
+      const r = await s.walkers.turn(device(w.credential), w.id, talk("I've fallen. Please get Maya."));
+      parses(r);
+      expect(stub.requests).toHaveLength(1);
+      expect(stub.requests[0]!.retry).toBeNull();
+      expect(r.turn.reply).toBe(COUNTDOWN);
+      expect(r.ask_for_help).toBe(true);
+    });
+
+    it("V10: an empty reply without ask_for_help is sent back once with a note; never spoken empty", async () => {
+      const stub = stubModel({ reply: "" });
+      const s = services(stub.model);
+      const w = await walkerWith(s, ["Maya"], true);
+      const r = await s.walkers.turn(device(w.credential), w.id, talk("Hello"));
+      parses(r);
+      expect(stub.requests.length).toBeGreaterThan(1);
+      expect(stub.requests[1]!.retry).toMatch(/reply/);
+      expect(r.turn.reply.length).toBeGreaterThan(0);
+      expect(r.turn.answered_by).toBe("fixed");
+      expect(r.ask_for_help).toBeUndefined();
+    });
+
+    it("V11: the prompt says to leave the reply empty for ask_for_help, and never to offer to call anyone", () => {
+      expect(WALKER_SYSTEM_PROMPT).toContain("so leave reply empty");
+      expect(WALKER_SYSTEM_PROMPT).toContain("never say you can call anyone");
+    });
+
     it("V3: an older walker (no can_ask_for_help) isn't offered it, and a model that sets it anyway is ignored", async () => {
       const stub = stubModel(HELP_CALL);
       const s = services(stub.model);

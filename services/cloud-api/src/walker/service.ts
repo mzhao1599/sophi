@@ -779,6 +779,11 @@ export function applyRules(
 ): { reply: string; answered_by: "model" | "fixed"; reason: string | null; proposal: ProposalView | null } {
   if (!result?.ok) return { reply: withReminder(fallbackLine(status), status), answered_by: "fixed", reason: result?.reason ?? "no_model", proposal: null };
   const out = result.reply;
+  // An empty reply is valid only beside ask_for_help; when the turn didn't take it (no words were made out), say
+  // the fixed line rather than nothing.
+  if (out.reply.length === 0 && !out.topics.includes("arms") && !out.cues_change) {
+    return { reply: withReminder(fallbackLine(status), status), answered_by: "fixed", reason: "empty_reply", proposal: null };
+  }
   if (out.topics.includes("arms")) return { reply: withReminder(armsLine(manifest), status), answered_by: "fixed", reason: "arms", proposal: null };
   if (out.cues_change) {
     const current = status.configuration;

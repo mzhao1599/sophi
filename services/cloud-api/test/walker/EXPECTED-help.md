@@ -89,6 +89,9 @@ Clock: a fake clock (`now` injected); nothing sleeps.
 | V6 | while a request is open, a walker turn | the context has one line with sent to, showing on and coming, no location, no ids; none on a page turn; none once closed |
 | V7 | replay of V1's `client_turn_id` (same request) | the same reply and `ask_for_help: true` again (the Pi may have lost the first answer); nothing stored twice |
 | V8 | the circle unreachable (SpacetimeDB timing out) | `ask_for_help` isn't offered; the turn still answers |
+| V9 | the model answers `ask_for_help` with `reply: ""` (Gemini did this in 4 of 6 live answers on 2026-10-24) | accepted on the first call, no retry; the countdown line and `ask_for_help` |
+| V10 | the model answers `reply: ""` with no `ask_for_help` | sent back once with a note naming `reply`; never spoken empty (a fixed line if the retry is empty too) |
+| V11 | the prompt | tells the model to leave `reply` empty for `ask_for_help`, and never to say it can call anyone |
 
 ## Logs
 
