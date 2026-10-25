@@ -417,6 +417,9 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         center: { lines: [detail("Press Confirm to hear it again.")] },
         announce: `${content.from_name} says: ${content.text}`,
       };
+    case "showing":
+      // TODO(show-on-screen screen piece): the real card layouts. Until then the Pi never sends this state.
+      return { key: `showing:${content.card.view}`, main: { text: content.card.view, size: "main" }, lines: [] };
     case "offline":
       // TODO(circle piece): add back the "My screen" button here and on the clock once the Pi acts on it. A
       // control that does nothing is never shown (AGENTS.md: never present something unbuilt as working).

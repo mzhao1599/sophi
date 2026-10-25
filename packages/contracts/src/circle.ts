@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { CueListSchema, PartViewSchema, SpeechSchema } from "./walker";
+import { ModuleIdSchema } from "./catalog";
+import { ModuleHealthSchema } from "./device";
 import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
 import { MotionFaultCodeSchema, MotionRefusalSchema, confirmPrompt } from "./motion";
 
@@ -63,6 +65,11 @@ export const SETTLE_IGNORE_MS = 2_000;
 export const JOIN_ARMED_TTL_MS = 30_000;
 /** "Change it back" stays on the Done screen this long. */
 export const CHANGE_BACK_MS = 60_000;
+/**
+ * A card Sophi pulled up (`showing`) stays this long after her turn's answer has finished, or after it was
+ * drawn when the answer was already over; a Talk press, an obstacle or a newer card ends it sooner.
+ */
+export const SCREEN_SHOW_MS = 30_000;
 
 const id = z.uuid();
 const time = z.iso.datetime();
@@ -971,9 +978,64 @@ const motionStates = [
     .refine((f) => new Set(f.faults).size === f.faults.length, { message: "Each fault appears once.", path: ["faults"] }),
 ] as const;
 
+// ---- Cards Sophi pulls up (`show_on_screen`, added 2026-10-24, docs/subsystems/show-on-screen.md) ----
+//
+// The model names a view (ShowViewSchema in walker.ts); the Pi fills the card from its own data and the screen
+// draws it. No field here holds words the model wrote. Coordinates never appear: the card carries the address
+// and the weather, not the position.
+
+const cardLine = (max: number) => z.string().trim().min(1).max(max).regex(oneLine, "One line, no control characters.");
+
+export const ShowCardSchema = z.discriminatedUnion("view", [
+  z.strictObject({
+    view: z.literal("weather"),
+    /** Whole degrees Fahrenheit, as Open-Meteo reported them near her. */
+    temperature_f: z.int().min(-150).max(150),
+    /** The Pi's words for the weather code ("partly cloudy skies"). */
+    conditions: cardLine(40),
+    wind_mph: z.int().min(0).max(300),
+    /** The position came from a simulated source: the card says so. */
+    simulated: z.boolean(),
+  }),
+  z.strictObject({
+    view: z.literal("location"),
+    /** The reverse geocoder's nearest address, cleaned on the Pi ("600 Bellevue Avenue, Oakland"). */
+    place: cardLine(120),
+    simulated: z.boolean(),
+  }),
+  z.strictObject({
+    view: z.literal("sensors"),
+    /** Every zone the walker reports, kept current by the Pi while the card is up. Unknown is never clear. */
+    zones: z
+      .array(
+        z.strictObject({
+          zone: ZoneNameSchema,
+          distance: z.discriminatedUnion("status", [
+            z.strictObject({ status: z.literal("measured"), mm: ZoneDistanceSchema }),
+            z.strictObject({ status: z.literal("unknown") }),
+          ]),
+          simulated: z.boolean(),
+        }),
+      )
+      .min(1)
+      .max(16),
+  }),
+  z.strictObject({
+    view: z.literal("message"),
+    message_id: z.uuid(),
+    from_name: CircleNameSchema,
+    text: CircleMessageSchema.shape.text,
+  }),
+  z.strictObject({
+    view: z.literal("parts"),
+    parts: z.array(z.strictObject({ module_id: ModuleIdSchema, health: ModuleHealthSchema, simulated: z.boolean() })).min(1).max(16),
+  }),
+]);
+export type ShowCard = z.infer<typeof ShowCardSchema>;
+
 /**
  * The one thing on screen, in the Pi's priority order: an obstacle first; then a running motion or a latched
- * motion fault; then her own Talk (listening, thinking, answering); then a pending motion Confirm target; then
+ * motion fault; then her own Talk (listening, then a card Sophi pulled up, then thinking, answering); then a pending motion Confirm target; then
  * today's model offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message
  * notice; then the clock. (The motion states and their place, added 2026-10-24, are explained in the Pi's
  * `pickScreen`.) An offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen
@@ -992,6 +1054,12 @@ export const ScreenContentSchema = z.discriminatedUnion("state", [
     simulated: z.boolean(),
   }),
   z.strictObject({ state: z.literal("listening") }),
+  /**
+   * A card Sophi pulled up for her own question. It sits under `listening` and over `thinking` and `answering`,
+   * so the card stays up while Sophi says it's there; `caption` carries the answer's current caption page then
+   * (null when none is playing, or captions are off), so captions never vanish under a card.
+   */
+  z.strictObject({ state: z.literal("showing"), card: ShowCardSchema, caption: z.string().min(1).max(600).nullable() }),
   /** Her Talk turn is with Sophi: Talk was let go and no answer has come yet ("One moment"). Added 2026-10-24. */
   z.strictObject({ state: z.literal("thinking") }),
   z.strictObject({
