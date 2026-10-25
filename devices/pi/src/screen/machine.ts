@@ -140,6 +140,7 @@ export interface ScreenModel {
   motionEnded: { content: MotionHolding; untilMono: number } | null;
   /** The caretaker's message being read aloud, or read last. */
   message: ScreenMessage | null;
+  companionCode?: { code: string; untilMono: number } | null;
   /** The route in progress as the Navigator draws it (validated against the contract), or null with no route. */
   navigation: NavigatingScreen | null;
   /** A card Sophi pulled up for her, until it goes (see `showEndsAt`). */
@@ -227,7 +228,11 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   // A card she asked for, while its time lasts (a Talk press clears it in the machine). Never while help shows:
   // an open request ("Maya is on the way") outranks a card, which keeps its clock and comes back if time is left.
   let showEnds: number | null = null;
-  const showLive = model.showing !== null && model.help === null && model.talk !== "recording" && ((showEnds = showEndsAt(model.showing, model.answer)) === null || now < showEnds);
+  const code = model.companionCode;
+  if (code && now < code.untilMono) soonest.push(code.untilMono);
+  const showLive = model.showing !== null && model.help === null && model.talk !== "recording" &&
+    (model.showing.card.view !== "companion" || (code !== null && code !== undefined && model.showing.card.code === code.code && now < code.untilMono)) &&
+    ((showEnds = showEndsAt(model.showing, model.answer)) === null || now < showEnds);
   if (showLive && showEnds !== null) soonest.push(showEnds);
 
   // The answer as captions: on the answering screen, or as the caption under a card. Under a card the reply is
@@ -271,7 +276,11 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   } else if (model.navigation) under = model.navigation;
   else if (model.link === "offline") under = { state: "offline" };
   else if (model.link === "unpaired" || model.link === "unauthorized") under = { state: "not_set_up" };
-  else under = { state: "ambient", alerts: model.alerts };
+  else {
+    const code = model.companionCode;
+    if (code && now < code.untilMono) soonest.push(code.untilMono);
+    under = { state: "ambient", alerts: model.alerts, companion_code: code && now < code.untilMono ? code.code : null };
+  }
 
   const future = soonest.filter((t) => t > now);
   return { content: content ?? under, nextAt: future.length ? Math.min(...future) : null };
@@ -313,6 +322,7 @@ export class ScreenMachine {
     motion: null,
     motionEnded: null,
     message: null,
+    companionCode: null,
     showing: null,
     navigation: null,
     help: null,
@@ -398,6 +408,12 @@ export class ScreenMachine {
   /** A caretaker's message, as the walker starts reading it aloud (a new one, or heard again). */
   message(message: { id: number; message_id: string; from_name: string; text: string }): void {
     this.model.message = { ...message, spokenMono: null };
+    this.changed();
+  }
+
+  companionCode(invite: { code: string; expires_at: string } | null): void {
+    const remaining = invite ? Date.parse(invite.expires_at) - this.deps.clock.now() : 0;
+    this.model.companionCode = invite && remaining > 0 ? { code: invite.code, untilMono: this.deps.clock.monotonic() + remaining } : null;
     this.changed();
   }
 

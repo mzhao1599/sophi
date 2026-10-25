@@ -7,18 +7,7 @@ import { MemorySessionStore } from "./store";
 /** The agent's provider. Claude is the only one; the type keeps the notice's wording in one place. */
 export type AgentProvider = "anthropic";
 
-/** Who reads the user's words when the agent runs, and who may keep a copy, as the first screen's notice names them. */
-export const AGENT_PROVIDER_NAMES: Record<AgentProvider, { model: string; company: string }> = {
-  anthropic: { model: "Anthropic's Claude", company: "Anthropic" },
-};
-
-/** The notice's clause for the agent: who reads the answers and who may keep them, under its own terms. */
-export function agentNoticeClause(provider: AgentProvider): string {
-  const { model, company } = AGENT_PROVIDER_NAMES[provider];
-  return `${model} reads your answers to choose each question, and ${company} may keep a copy`;
-}
-
-/** The model's short name, for the note under a reply it worded ("Read by Claude"). */
+/** The model's short name while the agent runs. */
 export function agentModelName(_provider: AgentProvider): string {
   return "Claude";
 }

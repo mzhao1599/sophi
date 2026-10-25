@@ -289,6 +289,7 @@ function Paired({ page, walker, phones, typedBy }: { page: WalkerPage; walker: W
         ) : null}
         {page.notice ? <p className={styles.lasting}>{page.notice}</p> : null}
         <NotLive page={page} />
+        <a href="#phones-heading" className="button-text">Connect the companion app</a>
       </div>
 
       <div className={styles.talk}>

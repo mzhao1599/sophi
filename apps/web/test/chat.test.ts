@@ -4,7 +4,6 @@ import {
   OnboardingService,
   SKIP_REPLY as ENGINE_SKIP,
   SKIP_REST_REPLY as ENGINE_SKIP_REST,
-  agentNoticeClause,
   openingQuestion,
 } from "@walker/cloud-api";
 import type { TurnInput } from "@walker/contracts";
@@ -96,18 +95,9 @@ describe("quick replies", () => {
 });
 
 describe("the notice under the text box", () => {
-  const claude = agentNoticeClause("anthropic");
-
-  it("names who reads a guest's answers when the agent runs, and is empty with the fixed questions", () => {
-    expect(noticeLine(claude, false)).toBe("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy.");
-    expect(noticeLine(null, false)).toBe("");
-  });
-
-  it("says answers are saved to the account when signed in, with and without the model's clause", () => {
-    expect(noticeLine(claude, true)).toBe(
-      "Your answers are saved to your account. Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy.",
-    );
-    expect(noticeLine(null, true)).toBe("Your answers are saved to your account.");
+  it("is empty for a guest, and says answers are saved to the account when signed in", () => {
+    expect(noticeLine(false)).toBe("");
+    expect(noticeLine(true)).toBe("Your answers are saved to your account.");
   });
 });
 

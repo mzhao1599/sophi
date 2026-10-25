@@ -103,7 +103,7 @@ export const CircleMemberSchema = z.strictObject({
 });
 export type CircleMember = z.infer<typeof CircleMemberSchema>;
 
-/** Made by the owner on the /walker page; the code shows there only, never on the walker. */
+/** Made by the owner on the /walker page; an active walker_user code also appears on the walker's home screen. */
 export const CircleInviteSchema = z
   .strictObject({
     invite_id: id,
@@ -685,6 +685,8 @@ export type WalkerIncomingMessage = z.infer<typeof WalkerIncomingMessageSchema>;
  * A message deleted on the server (24 hours, or a phone removed) drops out of the next answer.
  */
 export const DeviceMessagesResponseSchema = z.strictObject({
+  /** Active code for the walker user only; never a caretaker invite. */
+  companion_code: z.strictObject({ code: CircleInviteSchema.shape.code, expires_at: time }).nullable().optional(),
   messages: z
     .array(WalkerIncomingMessageSchema)
     .max(WALKER_MESSAGES_KEPT)
@@ -1134,6 +1136,7 @@ export const ShowCardSchema = z.discriminatedUnion("view", [
     view: z.literal("parts"),
     parts: z.array(z.strictObject({ module_id: ModuleIdSchema, health: ModuleHealthSchema, simulated: z.boolean() })).min(1).max(16),
   }),
+  z.strictObject({ view: z.literal("companion"), code: CircleInviteSchema.shape.code }),
 ]);
 export type ShowCard = z.infer<typeof ShowCardSchema>;
 
@@ -1284,6 +1287,7 @@ export const ScreenContentSchema = z.discriminatedUnion("state", [
     state: z.literal("ambient"),
     /** The alerts in force; null before the walker has a configuration. */
     alerts: CueListSchema.nullable(),
+    companion_code: CircleInviteSchema.shape.code.nullable().optional(),
   }),
   z.strictObject({ state: z.literal("my_screen"), view: MyScreenViewSchema }),
   ...motionStates,
