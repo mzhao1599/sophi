@@ -2655,3 +2655,12 @@
 < {"v":1,"type":"lift.status","module_id":"lift-01","seq":939,"uptime_ms":29411,"state":"unhomed","homed":false,"position_mm":null,"target_mm":null,"driver_enabled":false,"limits":{"top":"released","bottom":"released"},"stop_sense":"released","faults":[],"request_id":null,"heartbeat_age_ms":11}
 @ 29461
 < {"v":1,"type":"lift.status","module_id":"lift-01","seq":940,"uptime_ms":29461,"state":"unhomed","homed":false,"position_mm":null,"target_mm":null,"driver_enabled":false,"limits":{"top":"released","bottom":"released"},"stop_sense":"released","faults":[],"request_id":null,"heartbeat_age_ms":61}
+@ 29491
+> {"v":1,"type":"lift.set_position","module_id":"lift-01","seq":311,"request_id":"k3x9q2-10","target_mm":650}
+< {"v":1,"type":"lift.ack","module_id":"lift-01","seq":941,"request_id":"k3x9q2-10","result":"rejected","reason":"invalid_field","uptime_ms":29491}
+@ 29500
+> {"v":1,"type":"lift.heartbeat","module_id":"lift-01","seq":151,"hold_request_id":null}
+@ 29511
+< {"v":1,"type":"lift.status","module_id":"lift-01","seq":942,"uptime_ms":29511,"state":"unhomed","homed":false,"position_mm":null,"target_mm":null,"driver_enabled":false,"limits":{"top":"released","bottom":"released"},"stop_sense":"released","faults":[],"request_id":null,"heartbeat_age_ms":11}
+@ 29561
+< {"v":1,"type":"lift.status","module_id":"lift-01","seq":943,"uptime_ms":29561,"state":"unhomed","homed":false,"position_mm":null,"target_mm":null,"driver_enabled":false,"limits":{"top":"released","bottom":"released"},"stop_sense":"released","faults":[],"request_id":null,"heartbeat_age_ms":61}

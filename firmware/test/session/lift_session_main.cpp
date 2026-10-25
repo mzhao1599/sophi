@@ -333,6 +333,10 @@ void liftSession() {
   rig.run(100);
   rig.forceBottom = false;
   rig.run(200);
+  // The contract's lift.set_position fixture, sent last so it doesn't shift the path's timing. This normal build
+  // keeps no saved position to relabel (only the no-switch demo build does), so it is refused invalid_field.
+  rig.send(R"({"v":1,"type":"lift.set_position","module_id":"lift-01","seq":311,"request_id":"k3x9q2-10","target_mm":650})");
+  rig.run(100);
 }
 
 }  // namespace

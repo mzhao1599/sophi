@@ -206,6 +206,7 @@ describe("lift firmware session transcript against lift-serial.ts", () => {
       if (
         message.type !== "lift.home" &&
         message.type !== "lift.move" &&
+        message.type !== "lift.set_position" &&
         message.type !== "lift.stop" &&
         message.type !== "lift.enable" &&
         message.type !== "lift.clear"
@@ -218,6 +219,12 @@ describe("lift firmware session transcript against lift-serial.ts", () => {
       expect(ack.request_id, context).toBe(message.request_id);
       if (message.module_id !== "lift-01") {
         expect(ack, context).toMatchObject({ result: "rejected", reason: "invalid_field" });
+        return;
+      }
+      if (message.type === "lift.set_position") {
+        // Only the no-switch demo build keeps a saved position to relabel; this build refuses it first, whatever its seq.
+        expect(ack, context).toMatchObject({ result: "rejected", reason: "invalid_field" });
+        seen.add("set_position refused");
         return;
       }
       const always = isAlwaysAcceptedLiftCommand(message);
@@ -269,6 +276,7 @@ describe("lift firmware session transcript against lift-serial.ts", () => {
       "disable disable_unsafe",
       "accepted lift.home",
       "accepted lift.move",
+      "set_position refused",
     ]) {
       expect([...seen], kind).toContain(kind);
     }
@@ -358,14 +366,18 @@ describe("lift firmware session transcript against lift-serial.ts", () => {
     // Each limit is either a number or `kEstimatedDemo ? <demo>u : <normal>u`; the normal build's values are compared.
     const limit = String.raw`(?:kEstimatedDemo \? [0-9]+u : )?([0-9]+)u?`;
     const built = new RegExp(
-      String.raw`kSettings\{WALKER_LIFT_MICROSTEPS, ${limit}, ${limit},\s+${limit}, ${limit}, false, 0,\s+WatchdogDriverAction::Hold, kStopSenseWired, kDisableSafe\}`,
+      String.raw`kSettings\{WALKER_LIFT_MICROSTEPS, ${limit}, ${limit},\s+${limit}, ${limit}, false, 0,\s+WatchdogDriverAction::Hold, kStopSenseWired, kDisableSafe,\s+WALKER_LIFT_SCALE_NUMERATOR, WALKER_LIFT_SCALE_DENOMINATOR\}`,
     ).exec(firmwareMain);
     const rig = /kDefaultSettings\{8, ([0-9]+), ([0-9]+), ([0-9]+), ([0-9]+), false, 0, lift::WatchdogDriverAction::Hold,\s+true, false\}/.exec(
       read("../../../firmware/test/support/lift_rig.h"),
     );
     expect(built).not.toBeNull();
     expect(rig?.slice(1)).toEqual(built!.slice(1));
-    expect(/#define WALKER_LIFT_MICROSTEPS 8\n/.test(firmwareMain)).toBe(true);
+    // 32 since d4c7d61: the as-built driver's travel measured about 4x short at 8 (hardware/current-build.md).
+    expect(/#define WALKER_LIFT_MICROSTEPS 32\n/.test(firmwareMain)).toBe(true);
+    // The measured pulse scale is a per-build flag (platformio.ini); the default build is unscaled.
+    expect(/#define WALKER_LIFT_SCALE_NUMERATOR 1\n/.test(firmwareMain)).toBe(true);
+    expect(/#define WALKER_LIFT_SCALE_DENOMINATOR 1\n/.test(firmwareMain)).toBe(true);
     expect(/#define WALKER_LIFT_STOP_SENSE 1\n/.test(firmwareMain)).toBe(true);
     expect(/#define WALKER_LIFT_DISABLE_SAFE 0\n/.test(firmwareMain)).toBe(true);
     // The no-switch demo's limits apply only when a build asks for it.

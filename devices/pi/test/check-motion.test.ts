@@ -416,7 +416,7 @@ describe("walker check: lift", () => {
     expect(tapped.write(`${JSON.stringify({ v: 1, type: "haptic.play", module_id: "lift-01", seq: 9, request_id: "r", pattern: "error", duration_ms: 100 })}\n`)).toBe(false);
     expect(tapped.write(`${JSON.stringify({ v: 1, type: "hello.request", module_id: "any", seq: 0 })}\n`)).toBe(true);
     expect(liftPort.received.map((line) => JSON.parse(line).type)).toEqual(["hello.request"]);
-    expect(new Set(state.blocked)).toEqual(new Set(["lift.heartbeat", "lift.enable", "lift.home", "lift.move", "lift.stop", "lift.clear", "haptic.play"]));
+    expect(new Set(state.blocked)).toEqual(new Set(["lift.heartbeat", "lift.enable", "lift.home", "lift.move", "lift.set_position", "lift.stop", "lift.clear", "haptic.play"]));
 
     const handPort = new SimulatedPort("usb-hand");
     const hand = tap(handPort);

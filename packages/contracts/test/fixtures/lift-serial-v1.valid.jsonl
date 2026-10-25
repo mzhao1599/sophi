@@ -9,6 +9,7 @@
 {"v":1,"type":"lift.status","module_id":"lift-01","seq":200,"uptime_ms":31500,"state":"homing","homed":false,"position_mm":null,"target_mm":5,"driver_enabled":true,"limits":{"top":"released","bottom":"pressed"},"stop_sense":"released","faults":[],"request_id":"k3x9q2-2","heartbeat_age_ms":30}
 {"v":1,"type":"lift.done","module_id":"lift-01","seq":212,"request_id":"k3x9q2-2","uptime_ms":31800,"outcome":"completed","position_mm":5}
 {"v":1,"type":"lift.move","module_id":"lift-01","seq":310,"request_id":"k3x9q2-3","target_mm":250,"speed_mm_s":20}
+{"v":1,"type":"lift.set_position","module_id":"lift-01","seq":311,"request_id":"k3x9q2-10","target_mm":650}
 {"v":1,"type":"lift.status","module_id":"lift-01","seq":260,"uptime_ms":34000,"state":"moving","homed":true,"position_mm":121.5,"target_mm":250,"driver_enabled":true,"limits":{"top":"released","bottom":"released"},"stop_sense":"released","faults":[],"request_id":"k3x9q2-3","heartbeat_age_ms":60}
 {"v":1,"type":"lift.stop","module_id":"lift-01","seq":330,"request_id":"k3x9q2-4"}
 {"v":1,"type":"lift.done","module_id":"lift-01","seq":281,"request_id":"k3x9q2-3","uptime_ms":35020,"outcome":"stopped","position_mm":140.2}
