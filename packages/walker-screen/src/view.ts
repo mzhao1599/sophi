@@ -407,11 +407,14 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         announce: `Message from ${content.from_name}. Press Confirm to read it.`,
       };
     case "message":
+      // The walker reads it aloud as it shows it; a Confirm press with nothing to confirm reads it again. A hint,
+      // not a touch button: the Pi doesn't act on screen presses yet, and a control that does nothing isn't shown.
       return {
         key: `message:${content.message_id}`,
         main: { text: content.text, size: "message" },
         lines: [detail(`From ${content.from_name}`)],
-        center: { buttons: [button("done", "Done")] },
+        left: { kind: "hint", word: "Confirm" },
+        center: { lines: [detail("Press Confirm to hear it again.")] },
         announce: `${content.from_name} says: ${content.text}`,
       };
     case "offline":

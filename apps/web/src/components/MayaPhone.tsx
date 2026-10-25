@@ -207,7 +207,7 @@ function Thread({ home, api, refresh, announce }: { home: PhoneMember; api: Phon
               autoComplete="off"
               enterKeyHint="send"
               aria-invalid={counter.over || undefined}
-              aria-describedby={error ? "message-counter message-error" : "message-counter"}
+              aria-describedby={error ? "message-counter message-aloud message-error" : "message-counter message-aloud"}
               onChange={(e) => {
                 setText(e.target.value);
                 if (error) setError(null);
@@ -219,6 +219,9 @@ function Thread({ home, api, refresh, announce }: { home: PhoneMember; api: Phon
           </div>
           <p id="message-counter" className={`${styles.meta} ${styles.counter}`} data-over={counter.over}>
             {counter.line}
+          </p>
+          <p id="message-aloud" className={styles.meta}>
+            {rose.name}&apos;s walker reads your messages aloud.
           </p>
           {error ? (
             <p id="message-error" className={styles.alert} role="alert">

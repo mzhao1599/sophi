@@ -54,7 +54,7 @@ describe("Join", () => {
     expect(html).toMatch(/inputmode="numeric"/i);
     expect(html).toMatch(/autocomplete="one-time-code"/i);
     expect(html).toContain('aria-describedby="join-notice"');
-    expect(text(html)).toContain("Messages between the phones are deleted after 24 hours.");
+    expect(text(html)).toContain("Messages between the phones are deleted after 24 hours, and the walker reads a caretaker's messages aloud.");
     expect(buttons(html).map((b) => b.name)).toEqual(["Link this phone"]);
   });
 
@@ -145,7 +145,8 @@ describe("Maya's phone (caretaker)", () => {
     expect(t).toContain("You Dinner at six. I'll get you.");
     expect(html).toMatch(/<label[^>]*for="message-text"[^>]*>Message to <!-- -->Rose<\/label>|<label[^>]*for="message-text"[^>]*>Message to Rose<\/label>/);
     expect(t).toContain("0 of 30 characters");
-    expect(html).toContain('aria-describedby="message-counter"');
+    expect(html).toContain('aria-describedby="message-counter message-aloud"');
+    expect(t).toContain("Rose's walker reads your messages aloud.");
     expect(buttons(html).map((b) => b.name)).toEqual(["Walker", "Messages", "Nearby", "Send"]);
   });
 

@@ -75,6 +75,8 @@ export const SCREEN_DEFAULT_PORT = 8740;
 export const SCREEN_DONE_MS = 4000;
 /** Placeholder, not measured: captions stay this long after the reply finishes (none while an offer waits for Confirm). */
 export const SCREEN_ANSWER_HOLD_MS = 3000;
+/** A caretaker's message stays on the screen this long after it was read aloud (it can be heard again on Confirm). */
+export const SCREEN_MESSAGE_HOLD_MS = 20_000;
 /** Placeholder, not measured: speaking rate used to turn caption pages (Piper and Cartesia both sound near this). */
 export const CAPTION_CHARS_PER_S = 15;
 /** Placeholder, not measured: the shortest time a caption page shows. */
@@ -99,6 +101,8 @@ export const OFFLINE_AFTER_FAILED_HEARTBEATS = 2;
 export const TURN_DEADLINE_MS = 10000;
 /** Placeholder, not measured: how long one heartbeat may take. */
 export const HEARTBEAT_DEADLINE_MS = 5000;
+/** After a messages fetch fails for a reason other than the network (an older server has no route), wait this long. */
+export const MESSAGES_RETRY_MS = 60_000;
 /** Placeholder, not measured: retry delays after failed heartbeats; the last one repeats. */
 export const HEARTBEAT_BACKOFF_MS = [5000, 10000, 15000] as const;
 

@@ -57,6 +57,7 @@ export const FAKE_DEMO_TURNS = [
 const HELP = `Keys: t Talk (press to start, press again to send; a terminal can't see key release)
       c Confirm   n hand in front of the ToF   f nothing in front   i invalid reading
       x ToF stops responding / comes back   o network down / up   g network hangs / up (the walker's own requests)
+      m a fake caretaker ("Maya") sends a message (fake cloud only)
       r fake cloud forgets this walker (401)   p pair again   ? help   q quit`;
 
 class SilentSpeaker implements Speaker {
@@ -275,6 +276,12 @@ export async function simulate(options: SimulateOptions): Promise<number> {
         const target: NetworkMode = key === "o" ? "down" : "hang";
         network.mode = network.mode === "up" ? target : "up";
         return log.info("SIMULATED network for the walker's requests", { mode: network.mode });
+      }
+      case "m": {
+        const credential = store.readCredential();
+        if (!fake || !credential) return log.warn("the m key needs the fake cloud and a paired walker");
+        fake.sendFromCaretaker(credential.device_id, "Maya", "Dinner at six. I'll get you.");
+        return log.info("FAKE caretaker Maya sent a message (sample words, no real phone)");
       }
       case "r": {
         const credential = store.readCredential();

@@ -34,7 +34,7 @@ export function newId(): string {
 export const codeDigits = (typed: string) => typed.replace(/\D/g, "").slice(0, 6);
 
 export const JOIN_NOTICE =
-  "Joining links this phone to the walker. Messages between the phones are deleted after 24 hours. GPS sharing starts off and only the walker user's phone can turn it on for approved caretakers.";
+  "Joining links this phone to the walker. Messages between the phones are deleted after 24 hours, and the walker reads a caretaker's messages aloud. GPS sharing starts off and only the walker user's phone can turn it on for approved caretakers.";
 
 export function joinError(code: PhoneFailure): string {
   switch (code) {
