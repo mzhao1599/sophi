@@ -3218,7 +3218,9 @@
                   "get_location",
                   "get_distance",
                   "get_weather",
-                  "show_on_screen"
+                  "show_on_screen",
+                  "start_route",
+                  "stop_route"
                 ]
               },
               "text": {
@@ -3236,6 +3238,84 @@
         },
         "original_audio": {
           "type": "boolean"
+        },
+        "navigation": {
+          "type": "object",
+          "properties": {
+            "route": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "destination": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "guiding",
+                        "rerouting",
+                        "off_route",
+                        "no_position",
+                        "arrived"
+                      ]
+                    },
+                    "next": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                    },
+                    "to_next_m": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "remaining_m": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "remaining_min": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000
+                    },
+                    "simulated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "destination",
+                    "phase",
+                    "next",
+                    "to_next_m",
+                    "remaining_m",
+                    "remaining_min",
+                    "simulated"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "route"
+          ],
+          "additionalProperties": false
         },
         "screen": {
           "type": "object",
@@ -4067,6 +4147,39 @@
       ],
       "additionalProperties": false
     },
+    "InstructionSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+    },
+    "ManeuverSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "straight",
+        "left",
+        "right",
+        "slight_left",
+        "slight_right",
+        "sharp_left",
+        "sharp_right",
+        "u_turn",
+        "arrive"
+      ]
+    },
+    "NavigationPhaseSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "guiding",
+        "rerouting",
+        "off_route",
+        "no_position",
+        "arrived"
+      ]
+    },
     "PageTurnRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -4280,6 +4393,13 @@
       ],
       "additionalProperties": false
     },
+    "PlaceNameSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+    },
     "ProposalStateSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
@@ -4392,6 +4512,76 @@
         "created_at",
         "expires_at",
         "configuration_version"
+      ],
+      "additionalProperties": false
+    },
+    "RouteDestinationSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+    },
+    "RouteSummarySchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "guiding",
+            "rerouting",
+            "off_route",
+            "no_position",
+            "arrived"
+          ]
+        },
+        "next": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+        },
+        "to_next_m": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining_m": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "remaining_min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "simulated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "destination",
+        "phase",
+        "next",
+        "to_next_m",
+        "remaining_m",
+        "remaining_min",
+        "simulated"
       ],
       "additionalProperties": false
     },
@@ -6924,12 +7114,33 @@
               "enum": [
                 "get_location",
                 "get_distance",
-                "get_weather"
+                "get_weather",
+                "stop_route"
               ]
             }
           },
           "required": [
             "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "const": "start_route"
+            },
+            "destination": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+            }
+          },
+          "required": [
+            "name",
+            "destination"
           ],
           "additionalProperties": false
         },
@@ -6966,7 +7177,9 @@
         "get_location",
         "get_distance",
         "get_weather",
-        "show_on_screen"
+        "show_on_screen",
+        "start_route",
+        "stop_route"
       ]
     },
     "WalkerToolResultSchema": {
@@ -6979,7 +7192,9 @@
             "get_location",
             "get_distance",
             "get_weather",
-            "show_on_screen"
+            "show_on_screen",
+            "start_route",
+            "stop_route"
           ]
         },
         "text": {
@@ -7796,12 +8011,33 @@
                   "enum": [
                     "get_location",
                     "get_distance",
-                    "get_weather"
+                    "get_weather",
+                    "stop_route"
                   ]
                 }
               },
               "required": [
                 "name"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "const": "start_route"
+                },
+                "destination": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                }
+              },
+              "required": [
+                "name",
+                "destination"
               ],
               "additionalProperties": false
             },
@@ -7843,7 +8079,9 @@
                   "get_location",
                   "get_distance",
                   "get_weather",
-                  "show_on_screen"
+                  "show_on_screen",
+                  "start_route",
+                  "stop_route"
                 ]
               },
               "text": {
