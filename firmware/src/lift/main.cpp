@@ -233,6 +233,21 @@ void setup() {
 #endif
   if (build::kEstimatedDemo) {
     positionStoreOpen = positionStore.begin("sophi_lift", false);
+#if defined(WALKER_LIFT_REBASE_MM)
+    // One-off local provisioning image. Flash only with the driver off and the carriage supported,
+    // then restore the normal image before starting the Pi service.
+    static_assert(build::kEstimatedDemo, "position reseed is only for the no-switch demo build");
+    static_assert(WALKER_LIFT_REBASE_MM >= 5 && WALKER_LIFT_REBASE_MM <= 950,
+                  "rebase height must fit this demo build's software range");
+    if (positionStoreOpen) {
+      const int32_t rebaseSteps = static_cast<int32_t>(walker::lift::milliMmToSteps(
+          static_cast<int64_t>(WALKER_LIFT_REBASE_MM) * 1000, build::kSettings.microsteps));
+      positionStoreOpen = positionStore.putBool("valid", false) == 1 &&
+                          positionStore.putInt("steps", rebaseSteps) == sizeof(rebaseSteps) &&
+                          positionStore.putBool("valid", true) == 1;
+      Serial.println(positionStoreOpen ? "LIFT_REBASE_SAVED" : "LIFT_REBASE_FAILED");
+    }
+#endif
     if (positionStoreOpen && !positionStore.isKey("steps")) {
       // shortcut: this one-time origin is the owner-confirmed 5 mm physical position; recheck it if the lift is moved by hand.
       const int32_t initialSteps = static_cast<int32_t>(walker::lift::milliMmToSteps(5000, build::kSettings.microsteps));
