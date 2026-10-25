@@ -63,6 +63,22 @@ The perception ESP32 measures ToF sensors and reports zone readings and quality 
 
 The assistant or user requests a high-level action such as “pick up the cup.” The Pi captures bounded camera frames and the manipulation planner proposes an object, grasp, and short motion plan. The user explicitly starts the action. The local motion guard checks available arm, homing state, workspace, lift position, velocity/force/current limits, timeout, collision zones, and current stop state. It executes a small segment, checks feedback, and can pause/replan. Emergency stop, user cancel, stale sensing, communication loss, or watchdog expiry stops motion. See [manipulation](subsystems/manipulation.md). The first version (proposed in [`motion.ts`](../packages/contracts/src/motion.ts), not built) has no camera planning: a person teaches a movement with a leader arm, and the walker replays it after a Confirm press; the lift runs on its own ESP32 (`lift-01`) with a watchdog and moves only while a person holds its control.
 
+## Standalone phone teleoperation (2026-10-25)
+
+The [two-phone operator harness](subsystems/phone-teleop.md) lives in
+`devices/pi/phone-teleop`. Two local HEBI receivers feed two independently owned
+SO-101 controllers; a loopback dashboard on port 8767 combines status and per-arm
+pause, release, and reset. Its control authority is an explicit paired-phone B1
+press, and it has its own calibration and motion checks. It is not wired into the
+cloud, the walker screen, the lift, or the TypeScript coordinator's Confirm flow.
+
+**Architecture decision:** retain this working operator path as a standalone
+component with explicit USB ownership, rather than route two motion stacks to the
+same servos. The walker service can continue serving other users/devices, provided
+its scanner and coordinator cannot open the harness's adapters. This import adds
+no startup service or changes to the installed walker runtime. Integrating this
+path with the shared motion contract would be a separate reviewed change.
+
 ## Data and trust boundaries
 
 - **Device identity:** each Pi has its own credential and capability manifest. A user's login cannot be used as the device credential. Pairing binds a device to an account and can be revoked.

@@ -10,6 +10,15 @@ The Pi later logged repeated five-second `stty` timeouts while scanning USB seri
 
 With no arm ports configured (the default), the service cannot move the arms. The explicit `WALKER_LIFT_UNSWITCHED_DEMO=1` setting can enable the lift coordinator without arm ports when a matching `motion/lift.json` is installed; this path has **not yet moved the assembled lift**. With arm ports set in its settings file, it also runs the **motion coordinator for the two SO-101 arms** ([The arms](#the-arms-motion-coordinator)), built 2026-10-24 and tested only against simulated servos. It includes taught skills (record a movement with the teaching arm, replay it, "Let go?"), also tested only against simulated servos.
 
+## Separate two-phone arm teleoperation
+
+[`phone-teleop/`](phone-teleop/README.md) contains the imported Python SO-101
+harness and combined live dashboard on port 8767. It includes per-arm pause,
+supported release, and session reset. See the [integration guide](../../docs/subsystems/phone-teleop.md)
+for setup, measured versus simulated results, and exclusive adapter ownership
+while the shared walker service keeps running. It is installed separately and
+does not run through `walker run`, this package's motion coordinator, or the lift.
+
 ## What runs where
 
 | Where | What | How |

@@ -18,6 +18,13 @@ The always-on service is in [`devices/pi`](../../devices/pi/README.md): TypeScri
 - **Not built in this service:** the rest of the camera manager (discovering the overhead and gripper feeds, bounded frames for manipulation) and the action manager, and the lift's side of the motion coordinator. Apart from the arms' coordinator above, the only module command is `haptic.play`, from the local cue policy or as a short buzz on the hand whose button was pressed.
 - **Placeholders, not measured:** every timing and threshold is in `devices/pi/src/constants.ts`, labelled.
 
+## Separate phone teleop harness (2026-10-25)
+
+The imported [phone harness and combined dashboard](phone-teleop.md) are separate
+Python processes, installed manually from `devices/pi/phone-teleop`. They use their
+own B1/A3 controls and exclusive servo ownership, and do not join this service's
+event bus, motion coordinator or cloud link. Follow that guide before sharing a Pi.
+
 ## The Pi's job in plain language
 
 The Raspberry Pi 5 is the walker coordinator. It listens to buttons and sensors, knows which modules are actually attached, sends user-initiated requests to the cloud, plays responses, and refuses unsafe or stale action requests. It does not have to run a large language model locally. A cloud outage must not prevent stops, input handling, or basic proximity cues.

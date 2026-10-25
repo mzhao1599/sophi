@@ -484,3 +484,39 @@ Audio clips and camera frames use bounded uploads to private storage or authenti
 ## Implementation checklist
 
 When writing `packages/contracts/`, add schemas for module catalog, profile, configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and agent tool arguments. Written so far: catalog, onboarding profile and configuration, serial envelope, capability manifest, sensor snapshot, action request/status, and (proposed, not built) the motion contract and the lift's serial lines (`motion.ts`, `lift-serial.ts`). Still to write: agent tool arguments and the Pi's reply to `hello`. Define compatibility rules and fixtures. Document exact byte limits, timeout values, and error codes after device measurements. The examples above are contract proposals, not permission to skip validation.
+
+
+## Standalone phone teleop HTTP interface (2026-10-25)
+
+The imported [phone harness](subsystems/phone-teleop.md) owns this existing local
+interface; it does not implement the cloud action protocol or `motion.ts`.
+Both Python server and browser client are imported together from the revision
+recorded in `devices/pi/phone-teleop/UPSTREAM.json`. There is no wire-version field
+in this prototype API. Future cross-component integration needs an explicit shared
+schema/version before another caller relies on it.
+
+- Receiver `GET /state` (8766 for follower 1, 8765 for follower 2): phone identity,
+  connection/tracking, B1, A3, XYZ phone delta, controller message and enabled state.
+- Receiver `POST /control`: JSON `action: "pause" | "release"`; release requires
+  `supported: true`. Writes only that arm's command file, accepted by its controller
+  for less than two seconds. HTTP 204 means queued, not motor completion.
+- Combined `GET /api/state` (8767): `{arms, checked_at}`. Each arm has its expected
+  identity/port, `available`, optional receiver `state` or `error`, and `session`
+  with reset availability, busy flag, phase/message and optional request ID.
+- Combined `POST /api/arms/{follower_1|follower_2}/control`: same actions plus
+  `"reset"`, which requires `supported: true` and a UUID `request_id`. Reset is
+  available only with `--manage-sessions` on the controller host. HTTP 202 means
+  reset accepted; poll `session` for `complete` or `failed`. Repeated request IDs
+  are deduplicated in bounded process memory (100 requests), not across restarts.
+- Control requests require the server's loopback Origin and JSON Content-Type,
+  with a nonempty body under 1024 bytes. The combined server also validates Host,
+  expected receiver identity, and fixed destinations. It has no CORS or arbitrary
+  command/URL endpoint. Unknown arm/path is 404; malformed input 400; disallowed
+  origin/host 403; unavailable reset/busy/non-centered phone 409; receiver outage
+  503; unconfirmed forwarding 502. Pause/release forwarding returns 200 on receipt.
+
+Reset commands come from validated local configuration, never request JSON. It
+serializes each arm's resets, waits for the old owner to exit and report torque
+off, and requires a new matching `controller_pid` with fresh status before claiming
+completion. Runtime logs, calibration, phone addresses and serial paths are local,
+gitignored installation data. See the [operator command and failure table](subsystems/phone-teleop.md#command-authority-and-failure-behavior).
