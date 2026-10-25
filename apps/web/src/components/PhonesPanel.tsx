@@ -23,6 +23,7 @@ export function PhonesPanel({ api, deviceId }: { api: OwnerPhonesApi; deviceId: 
   const [list, setList] = useState<OwnerPhonesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [creatingOwnCode, setCreatingOwnCode] = useState(false);
   const [live, setLive] = useState<LiveStatus>("off");
   const busy = useRef(false);
   /** A reload asked for while one was running (a live change): run once more after it. */
@@ -86,11 +87,22 @@ export function PhonesPanel({ api, deviceId }: { api: OwnerPhonesApi; deviceId: 
 
   const herName = list?.members.find((m) => m.role === "walker_user")?.name ?? null;
 
+  async function createOwnCode() {
+    if (creatingOwnCode) return;
+    setCreatingOwnCode(true);
+    try {
+      await act(() => api.addPhone(deviceId, "My phone", "walker_user"), "A code for your phone is ready.");
+    } finally {
+      setCreatingOwnCode(false);
+    }
+  }
+
   return (
     <section className={`${walker.card} ${styles.panel}`} aria-labelledby="phones-heading">
       <h2 id="phones-heading" className={walker.cardTitle}>
-        Phones
+        Connect the companion app
       </h2>
+      <p className={walker.meta}>Open <a href="/app">Sophi on the phone</a>, then enter its one-time code below.</p>
       <p className="visually-hidden" role="status" aria-live="polite">
         {status}
       </p>
@@ -124,6 +136,11 @@ export function PhonesPanel({ api, deviceId }: { api: OwnerPhonesApi; deviceId: 
           {list.invites.map((i) => (
             <Code key={i.invite_id} invite={i} />
           ))}
+          {!list.members.some((m) => m.role === "walker_user") && !list.invites.some((i) => i.role === "walker_user") ? (
+            <button type="button" className="button button-primary" disabled={creatingOwnCode} onClick={() => void createOwnCode()}>
+              {creatingOwnCode ? "Getting code…" : "Get code for my phone"}
+            </button>
+          ) : null}
           <AddPhone add={(name, role) => act(() => api.addPhone(deviceId, name, role), `A code for ${name} is ready.`)} />
         </>
       ) : null}
@@ -141,7 +158,7 @@ function Code({ invite }: { invite: CircleInvite }) {
   return (
     <div role="group" aria-label={`Code for ${invite.name}: ${invite.code.split("").join(" ")}`}>
       <p className={walker.codeLabel}>
-        Code for {invite.name} ({phoneRoleWord(invite.role === "family" ? "caregiver" : invite.role).toLowerCase()})
+        Companion app code for {invite.name} ({phoneRoleWord(invite.role === "family" ? "caregiver" : invite.role).toLowerCase()})
       </p>
       <p className={styles.code} aria-hidden="true">
         {formatCode(invite.code)}
