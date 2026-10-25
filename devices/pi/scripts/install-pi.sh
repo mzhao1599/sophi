@@ -74,7 +74,9 @@ if (( screen )); then
 fi
 
 id -u steady >/dev/null 2>&1 || useradd --system --home-dir /var/lib/steady-walker --shell /usr/sbin/nologin steady
-for group in audio dialout gpio; do
+# The live camera is optional: without ffmpeg, WALKER_CAMERA_DEVICE just logs that it can't start.
+command -v ffmpeg >/dev/null || echo "Note: ffmpeg is missing; the live camera (WALKER_CAMERA_DEVICE) needs it. Install with: sudo apt install ffmpeg" >&2
+for group in audio dialout gpio video; do
   if getent group "$group" >/dev/null; then usermod -aG "$group" steady; else echo "Note: no '$group' group on this system." >&2; fi
 done
 
