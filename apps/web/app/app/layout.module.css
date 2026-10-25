@@ -1,0 +1,15 @@
+/*
+ * The two-phone app inside the iPhone's safe area. With viewport-fit=cover (layout.tsx) the page reaches the
+ * screen's edges, so this keeps the header clear of the notch or Dynamic Island and the last button clear of
+ * the home indicator and the rounded corners, in portrait and landscape. The padding shows the body's paper.
+ * Every inset is 0 in a browser tab and on a phone without them, so nothing moves there.
+ */
+.safe {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+}
+
+/* The app's root (PhoneApp's outer div) fills the screen; less the insets here, so a short screen never scrolls. */
+.safe > div {
+  min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
