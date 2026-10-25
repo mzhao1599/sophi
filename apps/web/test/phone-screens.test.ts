@@ -99,7 +99,7 @@ describe("Rose's phone (simple mode)", () => {
   it("people nearby: tagged Sample in the heading, with the line, and no actions", async () => {
     const html = await rose("nearby");
     expect(html).toMatch(/<h1[^>]*>People nearby <span[^>]*>Sample<\/span><\/h1>/);
-    expect(text(html)).toContain("Sample people for the demo. This list does not use GPS or anyone's real location.");
+    expect(text(html)).toContain("Sample people and places on a real street map. Nothing here uses GPS or anyone's real location.");
     expect(text(html)).toContain("Step-free places");
     expect(text(html)).not.toContain("Caretakers nearby");
     expect(buttons(html).map((b) => b.name)).toEqual(["Back"]);
@@ -153,7 +153,7 @@ describe("Maya's phone (caretaker)", () => {
     const html = await maya("nearby");
     expect(html).toMatch(/<h1[^>]*>Nearby <span[^>]*>Sample<\/span><\/h1>/);
     expect(text(html)).toContain("Caretakers nearby");
-    expect(text(html)).toContain("Sample people for the demo. This list does not use GPS or anyone's real location.");
+    expect(text(html)).toContain("Sample people and places on a real street map. Nothing here uses GPS or anyone's real location.");
   });
 });
 
