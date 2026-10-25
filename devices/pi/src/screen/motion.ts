@@ -82,6 +82,8 @@ export function motionContent(motion: ScreenMotion): { safety: ScreenContent | n
     return { safety: { state: "motion_fault", faults, confirm: s.confirm_target ? targetView(s.confirm_target) : null }, pending: null };
   }
   if (s.active) {
+    if ((s.active.kind === "lift.move" || s.active.kind === "lift.home") && s.active.initiated_by === "talk")
+      return { safety: null, pending: null };
     const lift = s.active.kind === "lift.home" || s.active.kind === "lift.move" ? s.active : null;
     const direction = lift ? directionOf(motion, s.active.target_id, lift) : "move";
     return {
@@ -114,9 +116,11 @@ export function endedBetween(prev: MotionState | null, next: MotionState): Motio
   const last = next.last_command;
   if (!last || last.command_id === prev.last_command?.command_id) return null;
   if (prev.active && next.active?.command_id !== prev.active.command_id) {
+    if ((prev.active.kind === "lift.move" || prev.active.kind === "lift.home") && prev.active.initiated_by === "talk") return null;
     if (last.command_id !== prev.active.command_id) return null;
     if (last.outcome === "completed") return { state: "motion_holding", outcome: "completed", refusal: null };
-    if (last.outcome === "stopped") return { state: "motion_holding", outcome: "stopped", refusal: null };
+    // A stop returns to the clock, route, or conversation already underneath motion.
+    if (last.outcome === "stopped") return null;
     return null;
   }
   const target = prev.confirm_target;

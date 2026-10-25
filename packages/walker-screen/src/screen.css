@@ -398,7 +398,9 @@
 
 /* ---- Walking directions (navigation.ts has the height and width budget) ---- */
 
-/* Navigation uses the whole display for nearby map detail. Instructions and controls sit on cards above it. */
+/* Navigation draws the map under the whole display. The strip, the next thing to do, End route and the distance
+ * left sit on cards over it, in navigation.ts's budget (the strip along the top; the right column for the next
+ * thing and the band; the left column's foot for the distance left), at the sizes every screen uses. */
 .ws-screen[data-layout="navigating"] {
   display: block;
   padding: 0;
@@ -407,39 +409,39 @@
 .ws-screen[data-layout="navigating"] > .ws-strip {
   position: absolute;
   z-index: 2;
-  top: 12px;
-  left: 16px;
-  padding: 8px 12px;
-  border: 3px solid var(--ws-control-edge);
-  border-radius: 16px;
+  top: 6px;
+  left: var(--ws-edge);
+  right: var(--ws-edge);
+  box-sizing: border-box;
+  min-height: 50px;
+  padding: 0 12px;
+  border: 2px solid var(--ws-control-edge);
+  border-radius: 12px;
   background: var(--ws-card);
+  line-height: 1.1;
 }
 
+/* The right column: from under the strip down to the band, less 6 px gaps. */
 .ws-screen[data-layout="navigating"] > .ws-one {
   position: absolute;
   z-index: 2;
-  top: 12px;
-  right: 16px;
+  top: 62px;
+  right: var(--ws-edge);
   box-sizing: border-box;
-  width: 310px;
-  max-height: 280px;
-  padding: 12px;
-  border: 3px solid var(--ws-control-edge);
+  width: calc(800px - 2 * var(--ws-edge) - var(--ws-nav-col) - 16px);
+  height: calc(480px - 62px - 12px - var(--ws-button));
+  padding: 2px 12px;
+  border: 2px solid var(--ws-control-edge);
   border-radius: 20px;
   background: var(--ws-card);
-  justify-content: flex-start;
-  gap: 6px;
 }
 
+/* End route is an ordinary band button (20 mm, its own card edge), at the right column's foot. */
 .ws-screen[data-layout="navigating"] > .ws-band {
   position: absolute;
   z-index: 2;
-  right: 16px;
-  bottom: 16px;
-  padding: 8px;
-  border: 3px solid var(--ws-control-edge);
-  border-radius: 20px;
-  background: var(--ws-card);
+  right: var(--ws-edge);
+  bottom: 6px;
   grid-template-columns: auto;
   min-height: 0;
 }
@@ -449,30 +451,21 @@
   display: none;
 }
 
+/* A spoken lift move: Stop lift joins End route in the band, at the same 20 mm, and the distance card makes room. */
+.ws-screen[data-layout="navigating"][data-lift-moving="true"] > .ws-band {
+  grid-template-columns: auto auto;
+}
+
+.ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-left {
+  display: flex;
+}
+
+.ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-nav-info {
+  max-width: calc(800px - 2 * var(--ws-edge) - 2 * var(--ws-button) - 12px - 8px);
+}
+
 .ws-screen[data-layout="navigating"] .ws-band[data-tall="true"] {
   min-height: 0;
-}
-
-.ws-screen[data-layout="navigating"] .ws-band .ws-button {
-  width: auto;
-  min-width: 110px;
-  height: 48px;
-  border-radius: 12px;
-  font-size: 18px;
-  white-space: nowrap;
-}
-
-.ws-screen[data-layout="navigating"] .ws-main[data-size="nav"] {
-  font-size: 36px;
-}
-
-.ws-screen[data-layout="navigating"] .ws-turn-arrow {
-  width: 68px;
-  height: 68px;
-}
-
-.ws-screen[data-layout="navigating"] .ws-line[data-size="body"] {
-  font-size: 24px;
 }
 
 .ws-main[data-size="nav"] {
@@ -569,10 +562,14 @@
 
 .ws-screen[data-layout="navigating"] .ws-nav-info {
   position: absolute;
-  left: 16px;
-  bottom: 16px;
-  padding: 8px 12px;
-  border: 3px solid var(--ws-control-edge);
+  left: var(--ws-edge);
+  bottom: 6px;
+  box-sizing: border-box;
+  /* As wide as its lines, up to End route: the space under the right column's card is free. */
+  width: max-content;
+  max-width: calc(800px - 2 * var(--ws-edge) - var(--ws-button) - 8px);
+  padding: 2px 12px;
+  border: 2px solid var(--ws-control-edge);
   border-radius: 16px;
   background: var(--ws-card);
 }
@@ -662,12 +659,16 @@
 }
 
 .ws-screen[data-layout="navigating"] .ws-map-tag {
-  top: 76px;
-  left: 16px;
+  top: 62px;
+  left: var(--ws-edge);
 }
 
+/* Under the Simulated tag, at the left column's top, where no card covers the map. */
 .ws-screen[data-layout="navigating"] .ws-map-credit {
-  bottom: 112px;
+  top: 120px;
+  right: auto;
+  bottom: auto;
+  left: var(--ws-edge);
 }
 
 .ws-map-credit {

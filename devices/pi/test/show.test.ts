@@ -212,8 +212,8 @@ describe("SH5: the sensors card stays current", () => {
   const sensors: ShowCard = {
     view: "sensors",
     zones: [
-      { zone: "front_left", distance: { status: "measured", mm: 800 }, simulated: true },
-      { zone: "front_right", distance: { status: "measured", mm: 900 }, simulated: true },
+      { zone: "front_left", distance: { status: "measured", mm: 1300 }, simulated: true },
+      { zone: "front_right", distance: { status: "measured", mm: 1400 }, simulated: true },
     ],
   };
   const zone = (name: string, mm: number | null, at: number) => ({ zone: name, mm, quality: mm === null ? ("invalid" as const) : ("valid" as const), simulated: true, receivedMono: at });
@@ -229,22 +229,22 @@ describe("SH5: the sensors card stays current", () => {
   it("rebuilt from each reading at most every SCREEN_ZONES_MIN_MS; a steady reading sends nothing new", async () => {
     const { clock, m, states, card } = machine();
     m.seed({ link: "online" });
-    m.zones([zone("front_left", 803, 0), zone("front_right", 899, 0)]);
+    m.zones([zone("front_left", 1303, 0), zone("front_right", 1399, 0)]);
     await flush();
     m.show(sensors);
     await flush();
-    expect(card().zones.map((z) => z.distance)).toEqual([{ status: "measured", mm: 800 }, { status: "measured", mm: 900 }]);
+    expect(card().zones.map((z) => z.distance)).toEqual([{ status: "measured", mm: 1300 }, { status: "measured", mm: 1400 }]);
     const before = states.length;
     for (let t = 100; t <= 1000; t += 100) {
       await clock.advance(100);
-      m.zones([zone("front_left", 801, t), zone("front_right", 902, t)]);
+      m.zones([zone("front_left", 1301, t), zone("front_right", 1402, t)]);
     }
     await flush();
     expect(states.length).toBe(before); // rounds to the same 10 mm: no new revision
     await clock.advance(100);
-    m.zones([zone("front_left", 600, 1100), zone("front_right", 902, 1100)]);
+    m.zones([zone("front_left", 1100, 1100), zone("front_right", 1402, 1100)]);
     await clock.advance(SCREEN_ZONES_MIN_MS);
-    expect(card().zones[0]!.distance).toEqual({ status: "measured", mm: 600 });
+    expect(card().zones[0]!.distance).toEqual({ status: "measured", mm: 1100 });
     expect(states.length).toBe(before + 1);
     expect(states.every((s) => ScreenStateSchema.safeParse(s).success)).toBe(true);
   });
@@ -252,14 +252,14 @@ describe("SH5: the sensors card stays current", () => {
   it("a zone a reading leaves out stays as unknown; with no reading at all, every zone turns unknown at ZONE_VALIDITY_MS", async () => {
     const { clock, m, card } = machine();
     m.seed({ link: "online" });
-    m.zones([zone("front_left", 800, 0), zone("front_right", 900, 0)]);
+    m.zones([zone("front_left", 1300, 0), zone("front_right", 1400, 0)]);
     m.show(sensors);
     await flush();
     await clock.advance(SCREEN_ZONES_MIN_MS);
-    m.zones([zone("front_left", 700, SCREEN_ZONES_MIN_MS)]);
+    m.zones([zone("front_left", 1200, SCREEN_ZONES_MIN_MS)]);
     await clock.advance(SCREEN_ZONES_MIN_MS);
     expect(card().zones).toEqual([
-      { zone: "front_left", distance: { status: "measured", mm: 700 }, simulated: true },
+      { zone: "front_left", distance: { status: "measured", mm: 1200 }, simulated: true },
       { zone: "front_right", distance: { status: "unknown" }, simulated: true },
     ]);
     // No reading since SCREEN_ZONES_MIN_MS: front_left stops counting ZONE_VALIDITY_MS after it.

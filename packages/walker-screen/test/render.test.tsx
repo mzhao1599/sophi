@@ -18,7 +18,8 @@ describe("WalkerScreenView", () => {
       if (view.right) expect(html, f.name).toContain(`>${view.right}<`);
       // The hold control is drawn exactly when the view has one.
       expect(html.includes("ws-hold"), f.name).toBe(view.hold !== null);
-      expect(html.includes(">Bench mode<"), f.name).toBe(f.state.strip.bench_mode && !f.state.strip.simulator);
+      // No "Bench mode" tag in the strip: motion screens say "No hardware stop" instead.
+      expect(html.includes(">Bench mode<"), f.name).toBe(false);
     }
   });
 

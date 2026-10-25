@@ -185,7 +185,7 @@ describe("S12: serial writes", () => {
   });
 });
 
-it("C12: a zone flickering between near and invalid cues every 3 s, not every second", async () => {
+it("C12: a zone flickering between near and invalid cues every 1.5 s, not every second", async () => {
   const clock = new FakeClock();
   let sounds = 0;
   const at: number[] = [];
@@ -213,8 +213,8 @@ it("C12: a zone flickering between near and invalid cues every 3 s, not every se
     ]);
     await clock.advance(100);
   }
-  expect(at).toEqual([0, 3000, 6000, 9000]);
-  expect(sounds).toBe(4);
+  expect(at).toEqual([0, 1600, 3200, 4800, 6400, 8000, 9600]);
+  expect(sounds).toBe(7);
 });
 
 it("W5: the Pi speaker empties its private temp folder at startup", () => {
@@ -303,12 +303,12 @@ describe("second review", () => {
     return { policy, at };
   }
 
-  it("C12: near, clear, invalid, near is a new entry (cues after the 1 s gap, not 3 s)", async () => {
+  it("C12: near, clear, invalid, near is a new entry (cues after the 1 s gap, not 1.5 s)", async () => {
     const clock = new FakeClock();
     const { policy, at } = soundPolicy(clock, true);
     policy.evaluate([zone(clock, 300)]);
     await clock.advance(100);
-    policy.evaluate([zone(clock, 900)]);
+    policy.evaluate([zone(clock, 1000)]);
     await clock.advance(100);
     policy.evaluate([zone(clock, null)]);
     await clock.advance(1000);

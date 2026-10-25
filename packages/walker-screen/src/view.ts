@@ -22,7 +22,7 @@ import {
 import {
   MANEUVER_WORD,
   NAV_ARROW_PX,
-  NAV_SIDE_PX,
+  NAV_TOP_PX,
   PHASE_WORDS,
   detailLines,
   distanceWords,
@@ -30,6 +30,7 @@ import {
   minutesLeftWords,
   navColumns,
   navMap,
+  navMapHeight,
   phaseLine,
   streetForLine,
   turnWordPx,
@@ -835,6 +836,9 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
     announce = `${main}.`;
   }
   const fitted = guiding ? { px: turnWordPx(main, textSize), wraps: false } : phaseLine(main, textSize);
+  // The map fills the screen; her dot goes in the middle of the left column, between the strip and the distance left.
+  const infoLines = info.reduce((n, l) => n + Math.min(l.maxLines ?? 1, detailLines(l.text, textSize)), 0);
+  const focus = { x: 16 + left / 2, y: NAV_TOP_PX + navMapHeight(infoLines) / 2 };
   return {
     key: `navigating:${content.phase}:${content.instruction}`,
     main: { text: main, size: "nav" },
@@ -848,7 +852,7 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
       arrowPx: NAV_ARROW_PX[textSize],
       mainPx: fitted.px,
       mainWraps: fitted.wraps,
-      map: navMap(content.map, 800, 480, 480, true),
+      map: navMap(content.map, 800, 480, 480, true, focus),
       simulated: content.simulated,
       info,
     },
@@ -1177,7 +1181,9 @@ function myScreen(view: Extract<ScreenContent, { state: "my_screen" }>["view"], 
 export function screenView(state: ScreenState, settings: ScreenSettings = state.settings): ScreenView {
   const s = scene(state.screen, settings, state);
   const clock = state.strip.clock ? clockWords(state.strip.clock.local_time) : null;
-  const left = s.left ?? null;
+  // Keep existing choices visible; the left handle remains a Stop even on a full-button screen.
+  const stopOnScreen = state.lift_moving && s.left?.kind !== "button" && (s.center?.buttons?.length ?? 0) < MAX_BUTTONS;
+  const left = stopOnScreen ? { kind: "button" as const, button: button("stop_lift", "Stop lift", { sublabel: "Left handle" }) } : (s.left ?? null);
   const center = { lines: s.center?.lines ?? [], buttons: s.center?.buttons ?? [] };
   const hold = s.hold ?? null;
   const buttons = (left?.kind === "button" ? 1 : 0) + center.buttons.length + (hold ? 1 : 0);

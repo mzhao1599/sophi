@@ -206,7 +206,7 @@ describe("a caretaker waiting for the family", () => {
 describe("the owner's Phones panel", () => {
   it("starts by loading, inside a labelled section", () => {
     const html = renderToStaticMarkup(createElement(PhonesPanel, { api: createDemoCircle().owner(), deviceId: newId() }));
-    expect(html).toMatch(/<h2 id="phones-heading"[^>]*>Phones<\/h2>/);
+    expect(html).toMatch(/<h2 id="phones-heading"[^>]*>Connect the companion app<\/h2>/);
     expect(text(html)).toContain("Loading the phones.");
   });
 });

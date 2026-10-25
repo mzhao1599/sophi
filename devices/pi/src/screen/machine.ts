@@ -25,8 +25,8 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  *
  * Priority, highest first (the screen design, section 2, and the contract's ScreenContent comment):
  *   1. obstacle: a zone is near (the cue policy's thresholds and hysteresis), and for a short tail after
- *   2. motion she must know about now: something moving (and that any handle button stops it, or that letting
- *      go of the lift stops it), or a latched motion fault (with its clearing target, if one is pending)
+ *   2. motion she must know about now: something moving, or a newly latched motion fault. A new Talk turn,
+ *      answer, route, help request, message, or card dismisses the fault page without clearing the fault.
  *   3. what she is doing: listening (Talk held), a card Sophi pulled up for her (`showing`, with the answer's
  *      captions under it), thinking (her turn is with Sophi), then answering (captions). A card never shows
  *      while help does (3b): help comes first, and the card waits under it until its time runs out.
@@ -43,9 +43,9 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  *   9. offline, or not set up (unpaired, or the server no longer knows this walker)
  *  10. ambient: the clock, and the alerts in force
  * Why motion sits where it does: an obstacle is the walker's first job, about her body in the next second.
- * A running motion or a fault is next because it is about motors moving near her now: the screen must keep
- * saying what moves and how to stop it, above anything of hers still on screen (any handle press stops it,
- * and her own screens come back underneath once it has). Her own Talk turn comes before a pending target: a
+ * A running arm motion is next because it is about motors moving near her now. A spoken lift move keeps the
+ * current screen with a Stop lift control. A fault page yields to a new screen interaction while the fault
+ * remains latched in the motion coordinator. Her own Talk turn comes before a pending target: a
  * target only waits (30 s) and nothing moves until a handle Confirm press, while her question is happening
  * now; and a Talk press withdraws a pending target (the coordinator's rule), so her turn doesn't hide one a
  * Confirm press could answer. (A target the terminal prepares during her turn is said aloud at once but shown
@@ -136,6 +136,8 @@ export interface ScreenModel {
   obstacle: ScreenObstacle | null;
   /** The motion coordinator's latest state, or null when there is none (no arms or lift on this walker). */
   motion: ScreenMotion | null;
+  /** A fault remains in motion state, but a newer screen interaction can dismiss its page. */
+  dismissedFaultKey?: string | null;
   /** Done, Stopped or Not started after a motion, until `untilMono`. */
   motionEnded: { content: MotionHolding; untilMono: number } | null;
   /** The caretaker's message being read aloud, or read last. */
@@ -221,6 +223,8 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
     const staleAt = model.motion.atMono + SCREEN_MOTION_STALE_MS;
     if (now < staleAt) {
       motion = motionContent(model.motion);
+      if (motion.safety?.state === "motion_fault" && model.dismissedFaultKey === model.motion.state.faults.map((fault) => fault.code).join(","))
+        motion.safety = null;
       soonest.push(staleAt);
     }
   }
@@ -259,7 +263,8 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   else doing = answering;
 
   let under: ScreenContent;
-  if (motion.safety) under = motion.safety;
+  if (motion.safety?.state === "motion_fault" && (doing || model.help || model.navigation)) under = doing ?? model.help ?? model.navigation!;
+  else if (motion.safety) under = motion.safety;
   else if (doing) under = doing;
   else if (model.help) under = model.help;
   else if (motion.pending) under = motion.pending;
@@ -320,6 +325,7 @@ export class ScreenMachine {
     done: null,
     obstacle: null,
     motion: null,
+    dismissedFaultKey: null,
     motionEnded: null,
     message: null,
     companionCode: null,
@@ -366,6 +372,7 @@ export class ScreenMachine {
     this.model.talk = talk;
     // A new question replaces the last answer and any Done: after listening, the screen goes back underneath.
     if (talk === "recording") {
+      this.dismissFaultPage();
       this.model.answer = null;
       this.model.done = null;
       this.model.message = null;
@@ -380,6 +387,7 @@ export class ScreenMachine {
   }
 
   answer(answer: { id: number; heard: string | null; reply: string; source: ScreenAnswer["source"] }): void {
+    this.dismissFaultPage();
     this.model.answer = { ...answer, startedMono: this.deps.clock.monotonic(), spokenMono: null };
     this.changed();
   }
@@ -395,6 +403,7 @@ export class ScreenMachine {
    * press does), so the countdown shows from its first second; a request arriving from a poll drops nothing.
    */
   help(screen: HelpScreen | null): void {
+    if (screen) this.dismissFaultPage();
     const gesture = (h: HelpScreen | null) => h?.state === "help_hold" || h?.state === "help_countdown";
     if (gesture(screen) && !gesture(this.model.help)) {
       this.model.answer = null;
@@ -407,6 +416,7 @@ export class ScreenMachine {
 
   /** A caretaker's message, as the walker starts reading it aloud (a new one, or heard again). */
   message(message: { id: number; message_id: string; from_name: string; text: string }): void {
+    this.dismissFaultPage();
     this.model.message = { ...message, spokenMono: null };
     this.changed();
   }
@@ -429,6 +439,7 @@ export class ScreenMachine {
    * (the map moves); the page's scene, and what a screen reader hears, change only with the instruction.
    */
   navigation(view: NavigatingScreen | null): void {
+    if (view) this.dismissFaultPage();
     this.model.navigation = view;
     this.changed();
   }
@@ -438,6 +449,7 @@ export class ScreenMachine {
    * this one. A sensors card takes each zone's latest reading from here on, so it stays current.
    */
   show(card: ShowCard): void {
+    this.dismissFaultPage();
     const now = this.deps.clock.monotonic();
     const zones = card.view === "sensors"
       ? card.zones.map((z) => this.latestZones.get(z.zone) ? this.showZone(this.latestZones.get(z.zone)!, now) : { zone: z.zone, mm: z.distance.status === "measured" ? z.distance.mm : null, simulated: z.simulated, untilMono: now + ZONE_VALIDITY_MS })
@@ -510,7 +522,16 @@ export class ScreenMachine {
     const ended = endedBetween(before && now - before.atMono < SCREEN_MOTION_STALE_MS ? before.state : null, state);
     if (ended) this.model.motionEnded = { content: ended, untilMono: now + SCREEN_DONE_MS };
     this.model.motion = { state, atMono: now, directions: directions as ReadonlyMap<string, ScreenHoldDirection> };
+    const key = state.mode === "fault" ? state.faults.map((fault) => fault.code).join(",") : null;
+    if (key !== null && key !== this.model.dismissedFaultKey && (this.model.talk !== "idle" || this.model.navigation || this.model.help || this.model.showing))
+      this.model.dismissedFaultKey = key;
+    if (key === null) this.model.dismissedFaultKey = null;
     this.changed();
+  }
+
+  private dismissFaultPage(): void {
+    const motion = this.model.motion?.state;
+    if (motion?.mode === "fault") this.model.dismissedFaultKey = motion.faults.map((fault) => fault.code).join(",");
   }
 
   /**
@@ -595,15 +616,17 @@ export class ScreenMachine {
         if (ends !== null && now >= ends) this.model.showing = null;
       }
       const { content, nextAt } = pickScreen(this.model, now, settings);
+      const active = this.model.motion?.state.active;
+      const liftMoving = !!(this.model.motion && now - this.model.motion.atMono < SCREEN_MOTION_STALE_MS && active?.kind === "lift.move" && active.initiated_by === "talk");
       const local = this.deps.localTime();
       // Bench mode is fixed when the coordinator starts, so the last state says it even once it is stale.
       const strip = { link: this.model.link, simulator: this.deps.simulator, bench_mode: this.model.motion?.state.bench_mode ?? false, clock: local ? { local_time: local } : null };
       // The strip's clock shows minutes only, so seconds never cause a redraw.
-      const key = JSON.stringify([content, settings, { ...strip, clock: local?.slice(0, 16) ?? null }]);
+      const key = JSON.stringify([content, settings, liftMoving, { ...strip, clock: local?.slice(0, 16) ?? null }]);
       if (key !== this.lastKey) {
         this.lastKey = key;
         this.revision += 1;
-        this.last = { v: 1, revision: this.revision, screen: content, settings, strip };
+        this.last = { v: 1, revision: this.revision, screen: content, lift_moving: liftMoving, settings, strip };
         this.deps.onState(this.last);
       }
       this.schedule(now, nextAt, local !== null);

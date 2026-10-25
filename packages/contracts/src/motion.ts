@@ -6,21 +6,21 @@ import { z } from "zod";
  * Some limits remain placeholders until a measured bench record in hardware/ replaces them.
  * docs/subsystems/manipulation.md explains the rules in plain words.
  *
- * THE RULE: motors start only when a person at the walker acts, and the lift moves only while a person holds
- * its control.
- * - Starting any motion (and every other non-stop command) needs a handle Confirm press on the ONE pending
+ * THE RULE: motors start only when a person at the walker acts. A locally dictated lift move is a separate,
+ * explicitly bounded path: the Pi owns its lease, validates the cloud's offer, and keeps Stop available.
+ * - Starting other motion (and every other non-stop command) needs a handle Confirm press on the ONE pending
  *   Confirm target, which the walker shows and says in the Pi's own words (`ConfirmTargetSchema`). The press
  *   counts only if the Pi saw that button released for the whole CONFIRM_ARM_DELAY_MS before it, all after the
  *   target appeared, with no hello, seq gap or loss from that hand module since (`confirmPressVerdict`). A
  *   skill or teleop then runs on after that one press until it ends or anything stops it.
- * - Holding the lift needs the screen's hold control (`HoldSourceSchema`), refreshed at least every
+ * - The Confirm-based lift path needs the screen's hold control (`HoldSourceSchema`), refreshed at least every
  *   HOLD_CONTROL_REFRESH_MS and released by any of SCREEN_HOLD_RELEASE_EVENTS. A handle button is not a hold
  *   source: a serial hand module reports edges, so a lost `released` line or a hung board would keep the lift
  *   moving.
- * - The terminal (SSH, scripts, coding agents), the walker's screen, the cloud's id-only offers and the Pi's
- *   own follow-ups can only PREPARE a command, which becomes the pending Confirm target. The screen also
- *   holds the lift. Anyone local can always STOP. Nothing but a handle Confirm press ever starts motion, and
- *   nothing but the screen's hold control ever holds the lift.
+ * - The terminal (SSH, scripts, coding agents), the walker's screen, and the Pi's own follow-ups can only
+ *   PREPARE a Confirm target. A cloud lift offer from a completed local Talk turn may start a lift move only
+ *   after the Pi computes its target and rechecks live limits and interlocks. The Pi refreshes that request's
+ *   heartbeat until it finishes or is stopped; a stalled Pi or lost link ends the lease. Anyone local can STOP.
  *
  * Also:
  * - The Pi's motion coordinator is the only thing that commands a servo or the lift, and it builds every
@@ -1013,12 +1013,14 @@ export const StopSourceSchema = z.enum(["handle_press", "walker_screen", "operat
 export type StopSource = z.infer<typeof StopSourceSchema>;
 
 /**
- * What holds a running lift motion: only the screen's hold control for now. A handle button may be added
+ * What holds a running lift motion: the screen's hold control for confirmed commands, or Pi heartbeats
+ * for a move requested with the local Talk control. The latter ends on explicit Stop, timeout, fault, or
+ * lost communication. A handle button may be added
  * only when (a) the hand firmware sends a "still held" refresh at least every HOLD_CONTROL_REFRESH_MS, and a
  * seq gap, an error line or a missed refresh counts as released; or (b) for the Pi's own GPIO buttons, their
  * level is read every control tick (not from gpiomon's edges).
  */
-export const HoldSourceSchema = z.enum(["screen_hold_control"]);
+export const HoldSourceSchema = z.enum(["screen_hold_control", "local_voice_request"]);
 export type HoldSource = z.infer<typeof HoldSourceSchema>;
 
 /** A spoken request may name any millimetre amount within the rail's nominal length.
@@ -1027,8 +1029,9 @@ export const LIFT_VOICE_TRIAL_MAX_MM = 800;
 export const LiftRelativeMmSchema = z.number().int().min(-LIFT_VOICE_TRIAL_MAX_MM).max(LIFT_VOICE_TRIAL_MAX_MM).refine((mm) => mm !== 0);
 
 /**
- * Cloud requests are offers, never start commands or hold leases. A relative lift offer carries only a bounded
- * displacement; the Pi computes the target from its stored position and checks installed limits locally.
+ * Cloud requests are offers, never motor commands or hold leases. A relative lift offer carries only a bounded
+ * displacement; the Pi may act on one only within the completed local Talk turn that requested it, after it
+ * computes the target from stored position and checks installed limits locally.
  */
 export const MotionOfferRequestSchema = z.strictObject({
   target: z.discriminatedUnion("kind", [actionSchema("skill.run"), actionSchema("arm.go_to_pose"), z.strictObject({ kind: z.literal("lift.preset"), preset: LiftPresetSchema }), z.strictObject({ kind: z.literal("lift.relative"), delta_mm: LiftRelativeMmSchema })]),
@@ -1698,14 +1701,15 @@ export type LiftState = z.infer<typeof LiftStateSchema>;
 
 const activeBase = { command_id: z.uuid(), target_id: z.uuid(), started_at: time };
 /**
- * A lift motion while it runs: `running` while the screen's hold control is held (`hold_source`), `stopping`
- * while it ramps down after a release or a stop. A stopping or finished lift request never resumes. The
- * screen says "Keep holding" while running.
+ * A lift motion while it runs: `running` while its lease is current (`hold_source`), `stopping`
+ * after a release, stop, or loss. A stopping or finished request never resumes.
  */
 const liftActive = {
   ...activeBase,
   phase: z.enum(["running", "stopping"]),
   hold_source: HoldSourceSchema.nullable(),
+  /** Present for a lift request initiated by a local Talk turn, even while stopping. */
+  initiated_by: z.literal("talk").optional(),
 };
 export const ActiveMotionSchema = z
   .discriminatedUnion("kind", [

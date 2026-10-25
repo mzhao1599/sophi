@@ -97,6 +97,8 @@ interface Request {
   phase: "queued" | "sent" | "running" | "stopping";
   /** The hold went (or a stop came): it is never named in a heartbeat again. */
   released: boolean;
+  /** A spoken local request is kept alive by Pi heartbeats until completion or explicit stop. */
+  lease: "screen" | "voice";
   /** The lift acked it accepted: only then can a status that doesn't name it mean it ended unseen. */
   acked: boolean;
   sentAt: number | null;
@@ -121,7 +123,7 @@ const MOVING_STATES = new Set(["moving", "homing", "stopping"]);
 
 /**
  * The Pi side of the lift (packages/contracts/src/lift-serial.ts, rules 1 to 10; motion.ts for the policy).
- * SIMULATED ONLY so far: tested against `src/sim/fakeLift.ts`, never against the lift board. The motion
+ * The Pi client has also talked to the assembled lift board. The motion
  * coordinator (src/motion/coordinator.ts) drives it: README.md, "Wired into the coordinator".
  *
  * The motion coordinator owns Confirm targets and presses, faults and the motion state; this client owns the
@@ -129,10 +131,10 @@ const MOVING_STATES = new Set(["moving", "homing", "stopping"]);
  * `tick(now)` (every MOTION_CONTROL_PERIOD_MS), and only that writes heartbeats and commands, so a stuck loop
  * stops the heartbeat and the lift's own watchdog stops the lift. `stop()` and `disable()` write at once
  * (and again from the next tick if the port was busy). AGENTS.md rule 8 for the lift:
- *   - Authorization and user initiation: a home or move starts only from `start`, which the coordinator calls
- *     after a handle Confirm press on that lift target; `start` re-checks the preconditions (`liftVerdict`).
- *   - Hold-to-run: each heartbeat names the request (the hold lease) only while the screen's hold control was
- *     refreshed within HOLD_CONTROL_REFRESH_MS; once it lapses or a stop comes, the request is never named again.
+ *   - Authorization and user initiation: `start` is called after Confirm for the screen-hold flow, or after
+ *     a completed local Talk turn and validated lift offer for the voice flow; it re-checks preconditions.
+ *   - Lease: a screen-hold request requires refresh within HOLD_CONTROL_REFRESH_MS; a spoken move is named
+ *     by the Pi's control-loop heartbeat until stopped, completed, faulted or timed out.
  *   - Range, speed and deadline: soft limits from the configuration (and the firmware's own, which must match:
  *     `lift_config_mismatch`); speed the lower of the configuration's and MOTION_LIMITS'; a deadline of
  *     LIFT_HOMING_TIMEOUT_MS or motionTimeoutMs(distance / speed), then `lift.stop` and `motion_timeout`.
@@ -221,8 +223,9 @@ export class LiftClient implements LiftLineHandler {
     action: Extract<LiftAction, { kind: LiftMotionKind }>,
     inputs: LiftCheckInputs,
     nowMono: number,
+    lease: "screen" | "voice" = "screen",
   ): { ok: true; requestId: string } | { ok: false; refusal: MotionRefusal } {
-    const refusal = this.verdict(action, inputs, "start", nowMono);
+    const refusal = liftVerdict({ ...this.view(nowMono), held: lease === "voice" || this.holdFresh(nowMono) }, action, inputs, "start");
     if (refusal) return { ok: false, refusal };
     const id = this.nextId();
     this.request = {
@@ -232,6 +235,7 @@ export class LiftClient implements LiftLineHandler {
       speed_mm_s: action.kind === "lift.move" ? liftMoveSpeed(this.deps.setup.config, this.deps.bench) : null,
       phase: "queued",
       released: false,
+      lease,
       acked: false,
       sentAt: null,
       deadline: null,
@@ -286,7 +290,7 @@ export class LiftClient implements LiftLineHandler {
     }
     const request = this.request;
     if (request) {
-      const held = this.holdFresh(nowMono);
+      const held = request.lease === "voice" ? !request.released : this.holdFresh(nowMono);
       if (request.phase === "queued" && (!held || !this.canHeartbeat())) {
         this.end(request, "refused", { reason: "not_held" });
       } else if (!request.released && !held) {
@@ -674,7 +678,7 @@ export class LiftClient implements LiftLineHandler {
       if (due || this.heartbeatNow || starting) {
         heartbeat = true;
         // THE LEASE: the request is named only while the person holds the screen's control (checked this tick).
-        const lease = request && !request.released && this.holdFresh(now) ? request.id : null;
+        const lease = request && !request.released && (request.lease === "voice" || this.holdFresh(now)) ? request.id : null;
         lines.push({ type: "lift.heartbeat", module_id: this.moduleId, hold_request_id: lease });
       }
       if (command && request) {

@@ -1323,6 +1323,8 @@ export const ScreenStateSchema = z.strictObject({
   /** Goes up by one with every state the Pi sends since it started; presses and "shown" name it. */
   revision: z.int().min(0),
   screen: ScreenContentSchema,
+  /** Pi-owned motion overlay; the clock, navigation, and Talk screens remain usable. */
+  lift_moving: z.boolean().optional(),
   settings: AppliedScreenSettingsSchema,
   strip: StatusStripSchema,
 });
@@ -1368,6 +1370,7 @@ export const ScreenActionSchema = z.enum([
   "end_route",
   /** On `navigating`: say the next instruction again, like a Confirm press with nothing to confirm. */
   "repeat_direction",
+  "stop_lift",
 ]);
 export type ScreenAction = z.infer<typeof ScreenActionSchema>;
 
