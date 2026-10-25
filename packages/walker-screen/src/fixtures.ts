@@ -69,6 +69,28 @@ const BASES: Base[] = [
   { name: "model-offer", screen: { state: "model_offer", proposal_id: uuid(50), from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"] } },
   { name: "obstacle-simulated", screen: { state: "obstacle", zone: "front_left", distance: { status: "measured", mm: 300 }, simulated: true }, strip: { simulator: true } },
   { name: "obstacle-unknown", screen: { state: "obstacle", zone: "front_right", distance: { status: "unknown" }, simulated: false } },
+  {
+    // Illustrative points by Lake Merritt, Oakland, not a recorded walk.
+    name: "navigating",
+    screen: {
+      state: "navigating",
+      destination: "Lake Merritt Boating Center",
+      phase: "guiding",
+      instruction: "Turn left onto Lenox Avenue.",
+      maneuver: "left",
+      street: "Lenox Avenue",
+      to_step_m: 30,
+      remaining_m: 740,
+      remaining_min: 10,
+      simulated: true,
+      map: {
+        position: [37.8094, -122.2575],
+        route: [[37.8094, -122.2575], [37.8091, -122.2575], [37.8089, -122.2582], [37.8051, -122.2579]],
+        step_at: [37.8091, -122.2575],
+        destination_at: [37.8051, -122.2579],
+      },
+    },
+  },
   { name: "offline", screen: { state: "offline" }, strip: { link: "offline" } },
   { name: "not-set-up", screen: { state: "not_set_up" }, strip: { link: "unpaired", clock: null } },
   { name: "done-alerts", screen: { state: "done", result: { kind: "alerts", cues: ["vibration", "sound", "spoken"] }, change_back: false } },

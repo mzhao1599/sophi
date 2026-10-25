@@ -1,4 +1,4 @@
-import type { Cue, MotionState, ProposalView, ScreenStateName } from "@walker/contracts";
+import type { Cue, MotionState, NavigatingScreen, ProposalView, ScreenAction, ScreenStateName } from "@walker/contracts";
 import type { ScreenHoldEvent } from "./screen/server";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
@@ -21,8 +21,11 @@ export interface ButtonEvent {
 export type TalkState = "idle" | "recording" | "waiting";
 export type LinkState = "unpaired" | "connecting" | "online" | "offline" | "unauthorized";
 export type CueName = "listening" | "done" | "error" | "nothing_to_confirm" | "obstacle";
-/** What a spoken line was: a model or fake-cloud reply, or one of the Pi's own fixed lines. */
-export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message";
+/**
+ * What a spoken line was: a model or fake-cloud reply, or one of the Pi's own fixed lines. `guidance` is a
+ * walking-directions line (street and place names): never recorded for the page or the server, logged by length.
+ */
+export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message" | "guidance";
 
 export interface BusEvents {
   button: ButtonEvent;
@@ -56,6 +59,16 @@ export interface BusEvents {
   circleMessage: { id: number; message_id: string; from_name: string; text: string };
   /** That message finished playing, or was stopped. */
   circleMessageSpoken: { id: number };
+  /**
+   * The route in progress as the screen draws it (the Navigator's view), or null when no route is active. It
+   * holds coordinates and a place name: never log it, never send it to the server or a model.
+   */
+  navigation: { view: NavigatingScreen | null };
+  /**
+   * A press on the walker screen (POST /screen/press, validated by the screen server), with the state that was on
+   * screen when it was drawn. The service acts on `end_route` and `repeat_direction` while a route is on.
+   */
+  screenPress: { action: ScreenAction; revision: number; state: ScreenStateName | null };
   /** The open proposal changed (another id, or none). A heartbeat repeating the same one sends nothing. */
   offer: { proposal: ProposalView | null };
   /**

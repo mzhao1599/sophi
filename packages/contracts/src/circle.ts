@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CueListSchema, PartViewSchema, SpeechSchema } from "./walker";
+import { CueListSchema, InstructionSchema, ManeuverSchema, NavigationPhaseSchema, PartViewSchema, PlaceNameSchema, SpeechSchema } from "./walker";
 import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
 import { MotionFaultCodeSchema, MotionRefusalSchema, confirmPrompt } from "./motion";
 
@@ -971,11 +971,52 @@ const motionStates = [
     .refine((f) => new Set(f.faults).size === f.faults.length, { message: "Each fault appears once.", path: ["faults"] }),
 ] as const;
 
+// ---- Walking directions on the walker screen (added 2026-10-24, docs/subsystems/navigation.md) ----
+//
+// The Pi's Navigator decides everything: the words, the distances and the map's points. The screen only draws
+// them. The coordinates stay on the Pi: this contract is served on 127.0.0.1 only, never sent to the server.
+
+/** [latitude, longitude] in degrees. */
+export const LatLonSchema = z.tuple([z.number().min(-90).max(90), z.number().min(-180).max(180)]);
+export type LatLon = z.infer<typeof LatLonSchema>;
+
+/** At most this many route points go to the screen: the route ahead of her, thinned by the Pi. */
+export const NAVIGATION_MAP_POINTS = 200;
+
+export const NavigatingScreenSchema = z.strictObject({
+  state: z.literal("navigating"),
+  destination: PlaceNameSchema,
+  phase: NavigationPhaseSchema,
+  /** The whole sentence, for a screen reader and the long form ("Turn left onto Lenox Avenue."). */
+  instruction: InstructionSchema,
+  /** The short form the screen draws large: an arrow and a word ("Left"), with the street under it. */
+  maneuver: ManeuverSchema,
+  /** The street or path name to turn onto; null when the way has no name ("the path" in speech). */
+  street: z.string().trim().min(1).max(60).nullable(),
+  /** Metres to that instruction's point, rounded to 10 by the Pi; null when there is no position. */
+  to_step_m: z.int().min(0).max(100_000).nullable(),
+  remaining_m: z.int().min(0).max(100_000),
+  remaining_min: z.int().min(0).max(1_000),
+  /** The position is the simulated one (`walker simulate`, or WALKER_GPS_SIMULATED on the Pi): a dashed Simulated tag. */
+  simulated: z.boolean(),
+  map: z.strictObject({
+    /** Her position; null when there is none (phase `no_position` before any fix). */
+    position: LatLonSchema.nullable(),
+    /** The route ahead of her, from her snapped position to the end. */
+    route: z.array(LatLonSchema).min(2).max(NAVIGATION_MAP_POINTS),
+    /** The next instruction's point; null when the next thing is arriving. */
+    step_at: LatLonSchema.nullable(),
+    destination_at: LatLonSchema,
+  }),
+});
+export type NavigatingScreen = z.infer<typeof NavigatingScreenSchema>;
+
 /**
  * The one thing on screen, in the Pi's priority order: an obstacle first; then a running motion or a latched
  * motion fault; then her own Talk (listening, thinking, answering); then a pending motion Confirm target; then
  * today's model offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message
- * notice; then the clock. (The motion states and their place, added 2026-10-24, are explained in the Pi's
+ * notice; then a route in progress (`navigating`, which also stands above `offline`: guidance runs on the Pi);
+ * then the clock. (The motion states and their place, added 2026-10-24, are explained in the Pi's
  * `pickScreen`.) An offer that arrives by heartbeat (typed on the owner's page) while a circle item is on screen
  * waits behind it; only an offer from her own Talk turn takes over. Confirm during an obstacle settles
  * nothing. An interruption returns to the screen she was on, with a new revision (the item's gate starts again).
@@ -1056,6 +1097,7 @@ export const ScreenContentSchema = z.discriminatedUnion("state", [
     from_name: CircleNameSchema,
     text: CircleMessageSchema.shape.text,
   }),
+  NavigatingScreenSchema,
   z.strictObject({ state: z.literal("offline") }),
   z.strictObject({ state: z.literal("not_set_up") }),
   z.strictObject({
@@ -1137,6 +1179,10 @@ export const ScreenActionSchema = z.enum([
   "remove",
   "keep",
   "done",
+  /** On `navigating`: end the route, like "Stop the directions". */
+  "end_route",
+  /** On `navigating`: say the next instruction again, like a Confirm press with nothing to confirm. */
+  "repeat_direction",
 ]);
 export type ScreenAction = z.infer<typeof ScreenActionSchema>;
 

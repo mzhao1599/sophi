@@ -487,7 +487,10 @@ export class WalkerService {
         const prior = reply.tool_results ?? [];
         if (step === WALKER_MAX_TOOL_CALLS) throw new Error("Tool loop limit reached.");
         if (step === 0) this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
-        const text = tool === "get_distance" ? null : await this.runLocationTool(tool, turn.abort.signal);
+        // This walker doesn't send `navigation: true` yet, so a server never offers it the route tools.
+        const text = tool === "get_distance" ? null
+          : tool === "get_location" || tool === "get_weather" ? await this.runLocationTool(tool, turn.abort.signal)
+          : "This walker can't give walking directions yet.";
         if (this.turn !== turn) return;
         const heard = reply.turn.heard?.trim();
         if (!heard) throw new Error("Tool continuation needs a transcript.");

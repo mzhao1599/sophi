@@ -85,8 +85,13 @@ export async function startWalkerScreen(options: WalkerScreenOptions): Promise<W
           log.info("walker screen drawn", { revision: shown.revision, state: sent.state, ms: Math.round(clock.monotonic() - sent.mono) });
         }
       },
-      // The walker's own screens have no buttons that act yet ("My screen" comes with the circle piece).
-      onPress: (press) => log.info("walker screen press not acted on (not built yet)", { action: press.action, revision: press.revision }),
+      // Presses go on the bus with the state that revision drew. Only the route's End route and Repeat act so
+      // far (the service listens); "My screen" comes with the circle piece.
+      onPress: (press) => {
+        const state = sentAt.get(press.revision)?.state ?? null;
+        log.info("walker screen press", { action: press.action, revision: press.revision, state });
+        options.bus.emit("screenPress", { action: press.action, revision: press.revision, state });
+      },
       // The lift's hold control, stamped on receipt: the motion coordinator maps it to the lift's hold lease.
       monotonic: () => clock.monotonic(),
       onHold: (hold) => options.bus.emit("screenHold", hold),

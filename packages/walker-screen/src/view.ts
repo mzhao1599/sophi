@@ -417,6 +417,13 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         center: { lines: [detail("Press Confirm to hear it again.")] },
         announce: `${content.from_name} says: ${content.text}`,
       };
+    case "navigating":
+      // Words only for now; the map and the End route and Repeat buttons are the screen piece of navigation.
+      return {
+        key: `navigating:${content.phase}:${content.instruction}`,
+        main: { text: content.instruction, size: "body" },
+        lines: [{ text: `${content.remaining_m} m to go`, size: "detail", simulated: content.simulated }],
+      };
     case "offline":
       // TODO(circle piece): add back the "My screen" button here and on the clock once the Pi acts on it. A
       // control that does nothing is never shown (AGENTS.md: never present something unbuilt as working).
