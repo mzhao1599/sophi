@@ -341,7 +341,7 @@ export class WalkerService {
       .filter((e) => Date.parse(e.at) >= historySince);
     await this.store.recordHeartbeat(
       device.device_id,
-      storable({ at: now.toISOString(), service_version: request.service_version, manifest: request.manifest, snapshot: request.snapshot, location: request.location, events }),
+      storable({ at: now.toISOString(), service_version: request.service_version, manifest: request.manifest, snapshot: request.snapshot, location: request.location, route: request.route, events }),
     );
     await this.sweep(now);
     const [configuration, proposal, latest] = await Promise.all([

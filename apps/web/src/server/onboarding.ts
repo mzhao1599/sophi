@@ -36,7 +36,7 @@ const globalForStore = globalThis as unknown as { __walkerStoreBackend?: StoreBa
 function storeBackend(): StoreBackend {
   return (globalForStore.__walkerStoreBackend ??= storeBackendFromEnv(process.env));
 }
-// ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY turns on the onboarding agent;
+// ANTHROPIC_API_KEY turns on the onboarding agent unless ONBOARDING_ENGINE=deterministic;
 // otherwise the deterministic engine runs. These variables and the Supabase secret key are read here,
 // on the server, and never sent to the browser.
 const engine = engineFromEnv(process.env);

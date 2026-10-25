@@ -3584,12 +3584,100 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 30000
+            },
+            "simulated": {
+              "type": "boolean"
             }
           },
           "required": [
             "latitude",
             "longitude",
             "age_ms"
+          ],
+          "additionalProperties": false
+        },
+        "route": {
+          "type": "object",
+          "properties": {
+            "destination": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+            },
+            "phase": {
+              "type": "string",
+              "enum": [
+                "guiding",
+                "rerouting",
+                "off_route",
+                "no_position",
+                "arrived"
+              ]
+            },
+            "remaining_m": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "remaining_min": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "ahead": {
+              "minItems": 2,
+              "maxItems": 200,
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "destination_point": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "simulated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "destination",
+            "phase",
+            "remaining_m",
+            "remaining_min",
+            "ahead",
+            "destination_point",
+            "simulated"
           ],
           "additionalProperties": false
         },
@@ -4586,6 +4674,92 @@
         "to_next_m",
         "remaining_m",
         "remaining_min",
+        "simulated"
+      ],
+      "additionalProperties": false
+    },
+    "SharedRouteSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "guiding",
+            "rerouting",
+            "off_route",
+            "no_position",
+            "arrived"
+          ]
+        },
+        "remaining_m": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "remaining_min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "ahead": {
+          "minItems": 2,
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "destination_point": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "simulated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "destination",
+        "phase",
+        "remaining_m",
+        "remaining_min",
+        "ahead",
+        "destination_point",
         "simulated"
       ],
       "additionalProperties": false

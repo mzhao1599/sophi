@@ -1,0 +1,83 @@
+/*
+ * CareWalk: where she is, at the top of a caretaker's Walker screen. Built like the stage sample (Sample.module.css):
+ * a short status line, a big headline, the map, then the time left. Sizes in rem so they follow the phone's text
+ * size; no motion.
+ */
+
+.walk {
+  display: grid;
+  gap: 14px;
+}
+
+.head {
+  display: grid;
+  gap: 4px;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--live);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.live[data-phase="off_route"],
+.live[data-phase="no_position"] {
+  color: var(--text-body);
+}
+
+.liveDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.map {
+  height: min(24rem, 55dvh);
+  min-height: 15rem;
+}
+
+.eta {
+  display: grid;
+  gap: 4px;
+  padding: 16px 20px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 22px;
+  background: var(--card-solid);
+  box-shadow: var(--shadow-tile);
+}
+
+.etaBig {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.etaLeft {
+  color: var(--text-body);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.etaTo {
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+.etaMeta {
+  color: var(--text-meta);
+  font-size: 0.9375rem;
+}

@@ -18,6 +18,7 @@ import { CameraSharing, CameraWatchingLine } from "./CameraCard";
 import { HelpBanner, HelpIcon, RoseHelp } from "./HelpScreens";
 import { NearbySample } from "./NearbySample";
 import styles from "./Phone.module.css";
+import chat from "./RoseMessages.module.css";
 
 export type RoseScreen = "home" | "help" | "walker" | "messages" | "nearby";
 
@@ -191,7 +192,7 @@ function MyWalker({ home, api, refresh, announce }: { home: PhoneMember; api: Ph
       <p className={styles.bigBody}>{alertsSentence(w.alerts)}</p>
       <section className={styles.card} aria-labelledby="location-sharing-title">
         <h2 id="location-sharing-title" className={styles.cardTitle}>Location sharing</h2>
-        <p>Only approved caretakers can see your walker's latest GPS position. Sharing starts off. You can turn it off at any time; that erases the saved position.</p>
+        <p>Only approved caretakers can see your walker's latest GPS position, and the walking route you're on. Sharing starts off. You can turn it off at any time; that erases the saved position and route.</p>
         <p>{w.location_sharing_enabled ? "Sharing is on." : "Sharing is off."}</p>
         <button type="button" className={styles.primary} aria-pressed={w.location_sharing_enabled === true} disabled={changing} onClick={() => void changeSharing()}>
           {changing ? "Changing…" : w.location_sharing_enabled ? "Stop sharing my location" : "Share my location with approved caretakers"}
@@ -215,8 +216,21 @@ function Messages({ home, api, refresh, announce }: { home: PhoneMember; api: Ph
   // A retry after a failure reuses the same id, so the server never stores a reply twice.
   const retryIds = useRef<Partial<Record<PresetReplyId, string>>>({});
 
-  const newest = incoming(home.messages)[0];
-  const earlier = [...home.messages].reverse().filter((m) => m.message_id !== newest?.message_id);
+  const fromMaya = incoming(home.messages).length > 0;
+  // The thread as the server sends it, oldest first, so the newest sits last, just above her replies.
+  const thread = home.messages;
+
+  // On open, scroll so her replies' end is in view with the newest message just above them, and never past
+  // that message's top. Instant (no smooth scroll), so nothing moves under reduced motion. A passive effect,
+  // so it runs after RosePhone's layout effect moves focus to the heading. Again once the page knows the
+  // phone can speak, since "Tap to hear it" makes her messages taller (that happens once, right after open).
+  const last = useRef<HTMLLIElement>(null);
+  const end = useRef<HTMLElement>(null);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+    const top = last.current?.getBoundingClientRect().top;
+    if (top !== undefined && top < 0) last.current?.scrollIntoView({ block: "start" });
+  }, [canSpeak]);
 
   function hear(text: string) {
     try {
@@ -254,35 +268,59 @@ function Messages({ home, api, refresh, announce }: { home: PhoneMember; api: Ph
         {maya ? `Messages with ${maya.name}` : "Messages"}
       </h1>
       {!maya ? <p className={styles.bigBody}>No one is linked to message yet.</p> : null}
-      {maya && !newest ? <p className={styles.bigBody}>No messages from {maya.name} yet.</p> : null}
-      {newest ? (
-        canSpeak ? (
-          <button type="button" className={styles.message} onClick={() => hear(spokenMessage(newest))}>
-            <span className={styles.messageFrom}>{newest.from_name}</span>
-            <span className={styles.messageText}>{newest.text}</span>
-            <span className={styles.hear}>
-              <SpeakerIcon />
-              Tap to hear it
-            </span>
-          </button>
-        ) : (
-          <div className={styles.message}>
-            <span className={styles.messageFrom}>{newest.from_name}</span>
-            <span className={styles.messageText}>{newest.text}</span>
-          </div>
-        )
+      {maya && !fromMaya ? <p className={styles.bigBody}>No messages from {maya.name} yet.</p> : null}
+      {maya && fromMaya ? (
+        // The walker reads each new message a caretaker sends her aloud (docs/interfaces.md, "Her incoming
+        // messages, read aloud"), but not ones already there when it starts, so this says "new".
+        <p className={chat.note}>
+          <SpeakerIcon />
+          Your walker reads {maya.name}&apos;s new messages aloud.
+        </p>
+      ) : null}
+      {thread.length > 0 ? (
+        <ol className={chat.thread} aria-label="Messages, newest last">
+          {thread.map((m, i) => {
+            // Who said it, in words, for a screen reader: "Maya said: Lunch is in the fridge. Tap to hear it".
+            // The spaces between the parts are for that name; the grid layout doesn't draw them.
+            const words = (
+              <>
+                <span className={chat.who}>
+                  {m.mine ? "You" : m.from_name}
+                  <span className="visually-hidden"> said:</span>
+                </span>{" "}
+                <span className={chat.text}>{m.text}</span>
+              </>
+            );
+            return (
+              <li key={m.message_id} ref={i === thread.length - 1 ? last : undefined} className={chat.item} data-mine={m.mine || undefined}>
+                {/* Before the page knows the phone can speak, her message is text, not a button that does nothing. */}
+                {!m.mine && canSpeak ? (
+                  <button type="button" className={chat.bubble} onClick={() => hear(spokenMessage(m))}>
+                    {words}{" "}
+                    <span className={chat.hear}>
+                      <SpeakerIcon />
+                      Tap to hear it
+                    </span>
+                  </button>
+                ) : (
+                  <div className={chat.bubble}>{words}</div>
+                )}
+              </li>
+            );
+          })}
+        </ol>
       ) : null}
       {maya ? (
-        <section className={styles.screen} aria-labelledby="reply-heading">
-          <h2 id="reply-heading" className={styles.h2}>
+        <section ref={end} className={chat.replies} aria-labelledby="reply-heading">
+          <h2 id="reply-heading" className={chat.repliesTitle}>
             Reply to {maya.name}
           </h2>
-          <ul className={styles.replies}>
+          <ul className={chat.replyList}>
             {PRESET_ORDER.map((p) => (
               <li key={p}>
                 <button
                   type="button"
-                  className={styles.reply}
+                  className={chat.reply}
                   aria-disabled={send?.status === "sending" || undefined}
                   onClick={() => void reply(p)}
                 >
@@ -294,20 +332,6 @@ function Messages({ home, api, refresh, announce }: { home: PhoneMember; api: Ph
           {send && send.status !== "sending" ? (
             <p className={send.status === "failed" ? styles.alert : styles.lasting}>{send.line}</p>
           ) : null}
-        </section>
-      ) : null}
-      {earlier.length > 0 ? (
-        <section className={styles.screen} aria-labelledby="earlier-heading">
-          <h2 id="earlier-heading" className={styles.h2}>
-            Earlier
-          </h2>
-          <ul className={styles.earlier}>
-            {earlier.map((m) => (
-              <li key={m.message_id}>
-                <span className={styles.who}>{m.mine ? "You" : m.from_name}:</span> {m.text}
-              </li>
-            ))}
-          </ul>
         </section>
       ) : null}
     </section>

@@ -1,4 +1,4 @@
-import { NAVIGATION_MAP_POINTS, type LatLon, type NavigatingScreen, type NavigationPhase, type RouteSummary } from "@walker/contracts";
+import { NAVIGATION_MAP_POINTS, SHARED_ROUTE_POINTS, type LatLon, type NavigatingScreen, type NavigationPhase, type RouteSummary, type SharedRoute } from "@walker/contracts";
 import type { Cancel, Clock } from "../clock";
 import {
   NAV_AHEAD_M,
@@ -174,6 +174,25 @@ export class Navigator {
       remaining_m: view.remaining_m,
       remaining_min: view.remaining_min,
       simulated: this.deps.simulated,
+    };
+  }
+
+  /**
+   * The route in progress for her caretakers' map (added 2026-10-25), or null. The service sends it only while
+   * she shares her location, the same opt-in as the fix itself.
+   */
+  shared(): SharedRoute | null {
+    const route = this.route;
+    if (!route) return null;
+    const view = this.view(route);
+    return {
+      destination: view.destination,
+      phase: view.phase,
+      remaining_m: view.remaining_m,
+      remaining_min: view.remaining_min,
+      ahead: lineAhead(route.line, this.progress, SHARED_ROUTE_POINTS),
+      destination_point: view.map.destination_at,
+      simulated: view.simulated,
     };
   }
 

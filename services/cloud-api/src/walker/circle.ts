@@ -374,7 +374,9 @@ export class CircleService {
         parts: member.role === "caregiver" ? partViews(device, configuration, online) : null,
         battery: "not_measured",
         // Sharing counts only while her own phone is in: if turning it off failed when her phone left, it stays hidden.
-        ...(device.location_sharing_enabled && herPhoneIn ? { location_sharing_enabled: true, location: visibleLocation(device, member.role, online, now) } : {}),
+        ...(device.location_sharing_enabled && herPhoneIn
+          ? { location_sharing_enabled: true, location: visibleLocation(device, member.role, online, now), route: visibleRoute(device, member.role, online, now) }
+          : {}),
       },
       people: circle.members.filter((m) => m.state === "member").map(person),
       messages: messages.map((m) => messageView(m, member.member_id, names)),
@@ -420,11 +422,25 @@ function person(m: CircleMemberRecord): PhonePerson {
   return { member_id: m.member_id, name: m.name, role: m.role };
 }
 
-function visibleLocation(device: DeviceRecord, role: CircleMemberRecord["role"], online: boolean, now: Date): PhoneWalkerView["location"] {
+/** Her shared fix for a caretaker, with its age in seconds, or null (her own phone, sharing off, offline, stale). */
+function sharedFix(device: DeviceRecord, role: CircleMemberRecord["role"], online: boolean, now: Date) {
   if (role !== "caregiver" || !online || !device.location_sharing_enabled || !device.location || !device.location_received_at) return null;
   const age = now.getTime() - Date.parse(device.location_received_at);
   if (!Number.isFinite(age) || age < 0 || age > LOCATION_FIX_MAX_AGE_MS) return null;
-  return { ...device.location, age_seconds: Math.floor(age / 1_000) };
+  return { fix: device.location, age_seconds: Math.floor(age / 1_000) };
+}
+
+function visibleLocation(device: DeviceRecord, role: CircleMemberRecord["role"], online: boolean, now: Date): PhoneWalkerView["location"] {
+  const shared = sharedFix(device, role, online, now);
+  if (!shared) return null;
+  const { latitude, longitude, simulated } = shared.fix;
+  return { latitude, longitude, age_seconds: shared.age_seconds, ...(simulated ? { simulated: true } : {}) };
+}
+
+/** The route she's on, under the same rules as her fix (it was stored with it). */
+function visibleRoute(device: DeviceRecord, role: CircleMemberRecord["role"], online: boolean, now: Date): PhoneWalkerView["route"] {
+  const shared = sharedFix(device, role, online, now);
+  return shared?.fix.route ? { ...shared.fix.route, age_seconds: shared.age_seconds } : null;
 }
 
 function messageView(m: CircleMessageRecord, me: string, names: Map<string, string>): PhoneMessageView {

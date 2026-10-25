@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import "leaflet/dist/leaflet.css";
 import { PRESET_ORDER, PRESET_REPLIES } from "@/lib/phoneApi";
 import { PRODUCT_NAME } from "@/lib/brand";
-import { useReducedMotion } from "@/lib/motion";
-import { SAMPLE_DESTINATION, SAMPLE_DESTINATION_SHORT, SAMPLE_THREAD, SAMPLE_WALK, type SamplePoint } from "@/lib/sampleScreens";
+import { SAMPLE_DESTINATION, SAMPLE_DESTINATION_SHORT, SAMPLE_THREAD, SAMPLE_WALK } from "@/lib/sampleScreens";
+import { RouteMap } from "./RouteMap";
 import { WalkerMark } from "./WalkerMark";
 import phone from "./Phone.module.css";
 import styles from "./Sample.module.css";
@@ -111,90 +109,17 @@ function SpeakerIcon() {
   );
 }
 
-// OpenStreetMap's own tiles, as on the app's other maps (NearbyMap): no key, light use only, with its
-// attribution. Drawn at 70% over the paper so the route stands out; Sample.module.css inverts them in dark mode.
-const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-/**
- * The sample route on a real street map, fixed in place: no dragging, zooming or keys, since nobody touches
- * it on stage. The part she has walked is a quiet grey line, the part ahead a bold green one, with her dot
- * where they meet and a pin at the Boating Center. The tiles are for the sample's fixed area, so no one's
- * position is sent. The words under the map say the same for a screen reader.
- */
 function WalkMap() {
-  const box = useRef<HTMLDivElement>(null);
-  const reduce = useReducedMotion();
-
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    let cancelled = false;
-    let cleanup = () => {};
-    void import("leaflet").then(({ default: L }) => {
-      if (cancelled) return;
-      const map = L.map(el, {
-        zoomControl: false,
-        dragging: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
-        boxZoom: false,
-        touchZoom: false,
-        keyboard: false,
-        // Quarter steps, so the route fills the map (Sample.module.css hides the seams this leaves between tiles).
-        zoomSnap: 0.25,
-        fadeAnimation: !reduce,
-        zoomAnimation: false,
-      });
-      L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19, opacity: 0.7 }).addTo(map);
-      map.attributionControl.setPrefix(false);
-
-      const line = (pts: readonly SamplePoint[], className: string) =>
-        L.polyline(pts.map(([a, b]) => [a, b] as [number, number]), { className, interactive: false, lineCap: "round", lineJoin: "round" }).addTo(map);
-      line(SAMPLE_WALK.behind, styles.routeBehind!);
-      line(SAMPLE_WALK.ahead, styles.routeCasing!);
-      line(SAMPLE_WALK.ahead, styles.routeAhead!);
-
-      const pin = (at: SamplePoint, html: string, size: [number, number], anchor: [number, number]) =>
-        L.marker([at[0], at[1]], {
-          icon: L.divIcon({ html, className: styles.pinBox, iconSize: size, iconAnchor: anchor }),
-          interactive: false,
-          keyboard: false,
-        }).addTo(map);
-      pin(SAMPLE_WALK.start, `<span class="${styles.startDot}"></span>`, [14, 14], [7, 7]);
-      pin(SAMPLE_WALK.end, `<span class="${styles.endPin}"><span class="${styles.endLabel}">${SAMPLE_DESTINATION_SHORT}</span></span>`, [0, 0], [0, 0]);
-      pin(SAMPLE_WALK.at, `<span class="${styles.her}"><span class="${styles.herDot}"></span><span class="${styles.herLabel}">Rose</span></span>`, [0, 0], [0, 0]);
-
-      const fit = () =>
-        map.fitBounds(L.latLngBounds(SAMPLE_WALK.behind.concat(SAMPLE_WALK.ahead).map(([a, b]) => [a, b] as [number, number])), {
-          // Room for Rose's label above her dot and the Boating Center's below its pin.
-          paddingTopLeft: [48, 56],
-          paddingBottomRight: [48, 76],
-        });
-      fit();
-      const watch = new ResizeObserver(() => {
-        map.invalidateSize();
-        fit();
-      });
-      watch.observe(el);
-      cleanup = () => {
-        watch.disconnect();
-        map.remove();
-      };
-    });
-    return () => {
-      cancelled = true;
-      cleanup();
-    };
-  }, [reduce]);
-
   return (
-    <figure className={styles.mapFigure}>
-      <div ref={box} className={styles.map} aria-hidden="true" />
-      <figcaption className="visually-hidden">
-        Sample map by Lake Merritt, Oakland: Rose&apos;s route to the {SAMPLE_DESTINATION}, with the part she has walked and her
-        position, {SAMPLE_WALK.leftM} metres before the end.
-      </figcaption>
-    </figure>
+    <RouteMap
+      className={styles.mapFigure}
+      at={SAMPLE_WALK.at}
+      herName="Rose"
+      behind={SAMPLE_WALK.behind}
+      ahead={SAMPLE_WALK.ahead}
+      start={SAMPLE_WALK.start}
+      end={{ at: SAMPLE_WALK.end, label: SAMPLE_DESTINATION_SHORT }}
+      caption={`Sample map by Lake Merritt, Oakland: Rose's route to the ${SAMPLE_DESTINATION}, with the part she has walked and her position, ${SAMPLE_WALK.leftM} metres before the end.`}
+    />
   );
 }

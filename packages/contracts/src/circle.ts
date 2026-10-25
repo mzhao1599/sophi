@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CueListSchema, HELP_COUNTDOWN_MS, HelpClosedHowSchema, HelpViewSchema, InstructionSchema, ManeuverSchema, NavigationPhaseSchema, PartViewSchema, PlaceNameSchema, SpeechSchema } from "./walker";
+import { CueListSchema, HELP_COUNTDOWN_MS, HelpClosedHowSchema, HelpViewSchema, InstructionSchema, ManeuverSchema, NavigationPhaseSchema, PartViewSchema, PlaceNameSchema, SharedRouteSchema, SpeechSchema } from "./walker";
 import { ModuleIdSchema } from "./catalog";
 import { ModuleHealthSchema } from "./device";
 import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
@@ -630,7 +630,7 @@ export type OwnerPhonesResponse = z.infer<typeof OwnerPhonesResponseSchema>;
  */
 export function caregiverConsentLine(caregiverName: string, walkerUserName: string | null): string {
   const who = walkerUserName ?? "The person who uses this walker";
-  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), be told when ${walkerUserName ? "she asks" : "they ask"} for help, see a recent GPS position only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on.`;
+  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), be told when ${walkerUserName ? "she asks" : "they ask"} for help, see a recent GPS position and any walking route in progress only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on.`;
 }
 
 /** POST /api/v1/walkers/{id}/circle/joins/{member_id}: the owner approves a waiting caretaker. Declining is DELETE on the member. */
@@ -722,8 +722,24 @@ export const PhoneWalkerViewSchema = z.strictObject({
   parts: z.array(PartViewSchema).max(32).nullable(),
   /** No walker measures its battery yet: the app says "Battery: not measured on this walker". */
   battery: z.literal("not_measured"),
-  /** Caregiver only; null when off, stale, offline or no fix. Never shown on the walker user's phone. */
-  location: z.strictObject({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), age_seconds: z.int().min(0).max(60) }).nullable().optional(),
+  /**
+   * Caregiver only; null when off, stale, offline or no fix. Never shown on the walker user's phone.
+   * `simulated` (added 2026-10-25): the simulator's walk, which the phone labels Simulated.
+   */
+  location: z
+    .strictObject({
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+      age_seconds: z.int().min(0).max(60),
+      simulated: z.boolean().optional(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * Caregiver only, added 2026-10-25: the walking route she's on (SharedRouteSchema) with how old it is, under
+   * the same rules as `location` (sharing on, online, recent). null with no route; absent on an older server.
+   */
+  route: SharedRouteSchema.extend({ age_seconds: z.int().min(0).max(60) }).nullable().optional(),
   /** The walker user may see the toggle state. A caregiver may see it, but cannot change it. */
   location_sharing_enabled: z.boolean().optional(),
 });

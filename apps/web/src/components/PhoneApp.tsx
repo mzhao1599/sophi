@@ -24,11 +24,11 @@ const HEADING = "app-heading";
 export function PhoneApp({ preview = null, previewOptions = {} }: { preview?: PhoneRole | null; previewOptions?: PreviewOptions }) {
   const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : { ...createPhoneApi(), camera: createCameraApi() }));
   const [circle, setCircle] = useState<DemoCircle | null>(null);
-  const { caretakers, location } = previewOptions;
+  const { caretakers, location, route } = previewOptions;
   useEffect(() => {
     if (!preview) return;
     let live = true;
-    void createPreviewPhone(preview, { caretakers, location }).then((p) => {
+    void createPreviewPhone(preview, { caretakers, location, route }).then((p) => {
       if (!live) return;
       setApi(p.api);
       setCircle(p.circle);
@@ -36,7 +36,7 @@ export function PhoneApp({ preview = null, previewOptions = {} }: { preview?: Ph
     return () => {
       live = false;
     };
-  }, [preview, caretakers, location]);
+  }, [preview, caretakers, location, route]);
 
   return (
     <div className={styles.root}>

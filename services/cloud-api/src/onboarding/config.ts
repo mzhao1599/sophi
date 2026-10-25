@@ -15,7 +15,7 @@ export const AGENT_PROVIDER_NAMES: Record<AgentProvider, { model: string; compan
 /** The notice's clause for the agent: who reads the answers and who may keep them, under its own terms. */
 export function agentNoticeClause(provider: AgentProvider): string {
   const { model, company } = AGENT_PROVIDER_NAMES[provider];
-  return `${model} reads them to choose each question, and ${company} may keep a copy`;
+  return `${model} reads your answers to choose each question, and ${company} may keep a copy`;
 }
 
 /** The model's short name, for the note under a reply it worded ("Read by Claude"). */
@@ -25,12 +25,19 @@ export function agentModelName(_provider: AgentProvider): string {
 
 type AgentChoice = { provider: AgentProvider; apiKey: string } | { problem: string } | null;
 
+/** The key, or undefined when it is empty or "none" (the walker assistant reads it the same way). */
+function apiKeyFrom(env: Record<string, string | undefined>): string | undefined {
+  const value = env.ANTHROPIC_API_KEY?.trim();
+  return value && value.toLowerCase() !== "none" ? value : undefined;
+}
+
 /** The agent the environment asks for, or why it can't run, or null for the deterministic engine. */
 function chooseAgent(env: Record<string, string | undefined>): AgentChoice {
-  const choice = env.ONBOARDING_ENGINE?.trim() || "deterministic";
+  const apiKey = apiKeyFrom(env);
+  // Unset: the agent when there is a key, the fixed questions when there isn't, with no warning either way.
+  const choice = env.ONBOARDING_ENGINE?.trim() || (apiKey ? "agent" : "deterministic");
   if (choice === "deterministic") return null;
   if (choice !== "agent") return { problem: `ONBOARDING_ENGINE=${JSON.stringify(choice)} isn't "deterministic" or "agent"` };
-  const apiKey = env.ANTHROPIC_API_KEY?.trim() || undefined;
   if (!apiKey) return { problem: "ONBOARDING_ENGINE=agent but ANTHROPIC_API_KEY isn't set" };
   return { provider: "anthropic", apiKey };
 }
@@ -38,8 +45,10 @@ function chooseAgent(env: Record<string, string | undefined>): AgentChoice {
 /**
  * Chooses the onboarding engine from the server's environment:
  *
- * - ONBOARDING_ENGINE: `deterministic` (the default) or `agent`.
- * - ANTHROPIC_API_KEY: the agent's key. Without it the deterministic engine runs, exactly as before.
+ * - ANTHROPIC_API_KEY: the agent's key, the same one the walker assistant uses. With it the agent runs;
+ *   without it (or set to "none") the deterministic engine runs, exactly as before.
+ * - ONBOARDING_ENGINE: optional. `deterministic` forces the fixed questions even with a key; `agent`
+ *   warns when there's no key. Any other value warns and runs the fixed questions.
  * - ONBOARDING_AGENT_MODEL: optional Claude model override.
  */
 export function engineFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void = console.warn): TurnEngine {

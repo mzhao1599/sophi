@@ -5,6 +5,7 @@ import { PhoneApiError, type PhoneApi, type PhoneMember } from "@/lib/phoneApi";
 import { BATTERY_LINE, counterLine, newCountLine, newId, presenceWord, sendError, unseen, walkerTitle, walkerUserOf } from "@/lib/phoneView";
 import { cueWord, partRows } from "@/lib/walkerView";
 import { CameraWatch } from "./CameraCard";
+import { CareWalk } from "./CareWalk";
 import { MayaHelpCard } from "./HelpScreens";
 import { NearbySample } from "./NearbySample";
 import styles from "./Phone.module.css";
@@ -15,7 +16,7 @@ const HEADING = "maya-heading";
 
 /**
  * The caretaker's phone: whether her walker is online, its part health and the alerts in force; messages
- * with her phone; and the sample of people nearby. A recent GPS position appears only while she has opted
+ * with her phone; and the sample of people nearby. A recent GPS position (and the route she's on, CareWalk) appears only while she has opted
  * in on her own phone. There is no "suggest a change" here: the server has no route for one yet. A request for
  * help from her leads the app, above the sections, while it is open and for 5 minutes after it closed.
  */
@@ -98,6 +99,7 @@ function WalkerStatus({ home, api, announce }: { home: PhoneMember; api: PhoneAp
         </p>
         {w.simulator ? <p className={styles.meta}>This walker is the simulator running on a computer, not a Pi.</p> : null}
       </div>
+      <CareWalk walker={w} herName={walkerUserOf(home)?.name ?? "She"} />
       {api.camera ? <CameraWatch camera={api.camera} herName={walkerUserOf(home)?.name ?? "Her"} announce={announce} /> : null}
       <section className={styles.card} aria-labelledby="alerts-title">
         <h2 id="alerts-title" className={styles.cardTitle}>
@@ -121,7 +123,8 @@ function WalkerStatus({ home, api, announce }: { home: PhoneMember; api: PhoneAp
               <li key={r.key} className={styles.listRow}>
                 <span className={styles.rowName}>
                   {r.name}
-                  {r.simulated ? <span className={styles.tag}>Simulated</span> : null}
+                  {/* A simulator walker says Simulator once, above. */}
+                  {r.simulated && !w.simulator ? <span className={styles.tag}>Simulated</span> : null}
                 </span>
                 <span>{r.healthWord}</span>
               </li>

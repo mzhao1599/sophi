@@ -64,6 +64,8 @@ import {
   type CircleMessage,
   type ScreenState,
   type SuggestionItem,
+  SHARED_ROUTE_POINTS,
+  SharedRouteSchema,
 } from "../src";
 
 const T0 = "2026-10-24T19:00:00.000Z";
@@ -477,7 +479,7 @@ describe("the two-phone app", () => {
     bad(ApproveJoinRequestSchema, { consent: { walker_user_agreed: false } });
     bad(ApproveJoinRequestSchema, {});
     expect(caregiverConsentLine("Maya", "Rose")).toBe(
-      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her (the walker reads Maya's messages aloud), be told when she asks for help, see a recent GPS position only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on.",
+      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her (the walker reads Maya's messages aloud), be told when she asks for help, see a recent GPS position and any walking route in progress only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on.",
     );
     expect(caregiverConsentLine("Maya", null)).toMatch(/^The person who uses this walker agreed that Maya/);
   });
@@ -514,6 +516,30 @@ describe("the two-phone app", () => {
     const times = JSON.stringify(z.toJSONSchema(PhoneHomeResponseSchema, { unrepresentable: "any" })).match(/"[a-z_]*_at"/g);
     expect(times).toEqual(['"expires_at"', '"expires_at"']);
     bad(PhoneHomeResponseSchema, { ...home, help: undefined });
+  });
+
+  it("gives a caretaker the shared route, at most SHARED_ROUTE_POINTS points, and an old phone view still parses", () => {
+    const home = { membership: "member", me: maya, walker: { ...walker, parts: [part] }, people: [rose, maya], messages: [msg], help: null };
+    const route = {
+      destination: "Lake Merritt Boating Center",
+      phase: "guiding",
+      remaining_m: 300,
+      remaining_min: 6,
+      ahead: [[37.807, -122.2573], [37.8051, -122.2578]],
+      destination_point: [37.8051, -122.2578],
+      simulated: true,
+      age_seconds: 3,
+    };
+    const shared = { ...home, walker: { ...home.walker, location_sharing_enabled: true, location: { latitude: 37.807, longitude: -122.2573, age_seconds: 3, simulated: true }, route } };
+    ok(PhoneHomeResponseSchema, shared);
+    ok(PhoneHomeResponseSchema, { ...shared, walker: { ...shared.walker, route: null } });
+    ok(PhoneHomeResponseSchema, home);
+    bad(PhoneHomeResponseSchema, { ...shared, walker: { ...shared.walker, route: { ...route, ahead: [[37.807, -122.2573]] } } });
+    bad(PhoneHomeResponseSchema, { ...shared, walker: { ...shared.walker, route: { ...route, ahead: Array(SHARED_ROUTE_POINTS + 1).fill([37.8, -122.2]) } } });
+    bad(PhoneHomeResponseSchema, { ...shared, walker: { ...shared.walker, route: { ...route, age_seconds: 61 } } });
+    const { age_seconds: _a, ...beat } = route;
+    ok(SharedRouteSchema, beat);
+    bad(SharedRouteSchema, { ...beat, next: "Turn left." });
   });
 
   it("lists the owner's phones, codes and waiting caretakers", () => {

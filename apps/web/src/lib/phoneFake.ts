@@ -15,6 +15,7 @@ import {
   type HelpSource,
   type HelpView,
   type PartView,
+  type SharedRoute,
 } from "@walker/contracts";
 import {
   PRESET_REPLIES,
@@ -31,6 +32,7 @@ import {
   type PresetReplyId,
 } from "./phoneApi";
 import { SAMPLE_AREA } from "./nearbySample";
+import { SAMPLE_DESTINATION, SAMPLE_WALK } from "./sampleScreens";
 import { newId } from "./phoneView";
 
 /**
@@ -106,6 +108,8 @@ export interface DemoCircle {
   advance(ms: number): void;
   /** A fresh GPS fix for her walker, shown to caretakers only while her sharing is on. Null clears it. */
   setLocation(at: { latitude: number; longitude: number } | null): void;
+  /** The route she's on, shared with the fix (only while sharing is on and there's a fix). */
+  setRoute(route: SharedRoute | null): void;
 }
 
 const STATUS: Partial<Record<PhoneFailure, number>> = {
@@ -145,6 +149,7 @@ export function createDemoCircle(): DemoCircle {
   const walker = { walker_name: "My walker", online: true, simulator: false, alerts: ["sound", "spoken"] as Cue[] };
   let locationSharing = false;
   let fix: { latitude: number; longitude: number } | null = null;
+  let route: SharedRoute | null = null;
   let helps: StoredHelp[] = [];
   let pending: PhoneFailure | null = null;
   let count = 0;
@@ -243,7 +248,13 @@ export function createDemoCircle(): DemoCircle {
         alerts: [...walker.alerts],
         parts: m.role === "caregiver" ? PARTS(walker.online, walker.simulator) : null,
         battery: "not_measured",
-        ...(locationSharing ? { location_sharing_enabled: true, location: m.role === "caregiver" && fix ? { ...fix, age_seconds: 12 } : null } : {}),
+        ...(locationSharing
+          ? {
+              location_sharing_enabled: true,
+              location: m.role === "caregiver" && fix ? { ...fix, age_seconds: 12, ...(walker.simulator ? { simulated: true } : {}) } : null,
+              route: m.role === "caregiver" && fix && route ? { ...route, age_seconds: 12 } : null,
+            }
+          : {}),
       },
       people,
       messages: messages.filter((x) => x.from_member_id === m.member_id || x.to_member_id === m.member_id).map((x) => view(x, m)),
@@ -406,6 +417,7 @@ export function createDemoCircle(): DemoCircle {
     },
     advance: (ms) => void (skew += ms),
     setLocation: (at) => void (fix = at),
+    setRoute: (r) => void (route = r),
   };
   return circle;
 }
@@ -414,6 +426,8 @@ export function createDemoCircle(): DemoCircle {
 export interface PreviewOptions {
   caretakers?: number;
   location?: boolean;
+  /** With `location`: she's on the sample's route to the Boating Center. */
+  route?: boolean;
 }
 
 /** The preview's made-up fix: the sample's starting point by Lake Merritt, never anyone's real position. */
@@ -442,7 +456,18 @@ export async function createPreviewPhone(role: PhoneRole, options: PreviewOption
   }
   if (options.location) {
     await rose.setLocationSharing(true);
-    circle.setLocation(PREVIEW_FIX);
+    circle.setLocation(options.route ? { latitude: SAMPLE_WALK.at[0], longitude: SAMPLE_WALK.at[1] } : PREVIEW_FIX);
+    if (options.route) {
+      circle.setRoute({
+        destination: SAMPLE_DESTINATION,
+        phase: "guiding",
+        remaining_m: SAMPLE_WALK.leftM,
+        remaining_min: SAMPLE_WALK.leftMin,
+        ahead: SAMPLE_WALK.ahead.map(([a, b]) => [a, b] as [number, number]),
+        destination_point: [SAMPLE_WALK.end[0], SAMPLE_WALK.end[1]],
+        simulated: true,
+      });
+    }
   }
   const home = await rose.home();
   const mayaId = home.membership === "member" ? home.people.find((p) => p.role === "caregiver")?.member_id : undefined;
