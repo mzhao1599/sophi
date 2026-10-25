@@ -207,7 +207,8 @@ export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: t
  * 2026-10-24). The model picks only the view's name; the Pi builds every word and number on the card from its
  * own data, so a model reply can never put text of its own on her screen. `weather`: current conditions near
  * her (GPS, then Open-Meteo, as `get_weather`). `location`: the nearest address (GPS, then the reverse
- * geocoder, as `get_location`). `sensors`: each obstacle zone's distance, live, unknown when not measured.
+ * geocoder, as `get_location`). `sensors`: each obstacle zone's distance, live, unknown when not measured (the walker no longer offers it,
+ * 2026-10-24: zone names and centimetres read as jargon to her; sensor questions are answered aloud).
  * `message`: her newest caretaker message (its words never go to the model). `parts`: the walker's parts and
  * their health, simulated ones marked.
  */

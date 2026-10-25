@@ -9,9 +9,13 @@ import type { WeatherReading } from "./weather";
  * model gets back. The result never carries a caretaker message's words or any coordinates.
  */
 
-/** What the walker has right now, for the turn request's `screen.views`. */
-export function showViews(has: { gps: boolean; sensors: boolean; message: boolean }): ShowView[] {
-  return [...(has.gps ? (["weather", "location"] as const) : []), ...(has.sensors ? (["sensors"] as const) : []), ...(has.message ? (["message"] as const) : []), "parts"];
+/**
+ * What the walker has right now, for the turn request's `screen.views`. Never `sensors` (2026-10-24): "Front left
+ * · 30 cm" means nothing to the person it's for, so sensor questions are answered aloud (`get_distance`) and the
+ * obstacle alerts stay as they are. The card code stays, unused, until it can say something plainer.
+ */
+export function showViews(has: { gps: boolean; message: boolean }): ShowView[] {
+  return [...(has.gps ? (["weather", "location"] as const) : []), ...(has.message ? (["message"] as const) : []), "parts"];
 }
 
 /** A card to draw and the result text for the model, or no card and the text saying why. */

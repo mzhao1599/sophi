@@ -12,7 +12,7 @@ She holds Talk and asks Sophi to pull something up on the walker's screen. Sophi
 | --- | --- | --- |
 | "Show me the weather." | `weather` | One GPS fix, then Open-Meteo, from the Pi (as `get_weather`). Big temperature, the conditions, the wind, "Weather data from Open-Meteo". |
 | "Show me where I am." | `location` | One GPS fix, then the reverse geocoder, from the Pi (as `get_location`). The nearest address in large type. No coordinates on screen. |
-| "Show me what the sensors see." | `sensors` | The obstacle zones' latest readings, kept current while the card is up. A zone that isn't measured says so; nothing ever reads "clear". |
+| "Show me what the sensors see." | `sensors` | **Not offered (2026-10-24).** "Front left · 30 cm" means nothing to the person the walker is for, so the walker doesn't list this view and Sophi answers sensor questions aloud with `get_distance`, as before. The card is still in the contract and the screen package, unused. |
 | "Show me Maya's message again." | `message` | Her newest caretaker message, held on the Pi. Its words never go to the model. |
 | "What's connected? Show me." | `parts` | The Pi's own capability manifest: each part, its health, simulated parts marked. |
 
