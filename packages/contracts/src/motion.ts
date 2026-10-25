@@ -2,8 +2,8 @@ import { z } from "zod";
 
 /**
  * Motion contract, version 2 (MOTION_CONTRACT_VERSION): Sophi's two SO-101 arms (followers and their leaders) and the vertical lift.
- * PROPOSED, NOT BUILT. Nothing on the Pi, the ESP32s or the cloud reads these schemas yet, and no value here
- * has been measured: every limit below is a placeholder until a bench record in hardware/ replaces it.
+ * Implemented in Pi, cloud and ESP32 source; the assembled lift has not yet moved through the Pi.
+ * Some limits remain placeholders until a measured bench record in hardware/ replaces them.
  * docs/subsystems/manipulation.md explains the rules in plain words.
  *
  * THE RULE: motors start only when a person at the walker acts, and the lift moves only while a person holds
@@ -31,10 +31,10 @@ import { z } from "zod";
  *   step (PUL) signal; it may also cut the lift's motor power only once the drop test passed or a brake is
  *   fitted. Its normally closed stop-sense contact is read edge-triggered by the Pi and separately by the lift
  *   ESP32; either latches `stop_circuit_opened` on any press, and afterwards the lift must home again. Without
- *   a wired stop-sense input, all arm motion is refused unless the Pi was started in bench mode
- *   (MOTION_BENCH_ENV). The lift never moves without it, bench mode or not: both the Pi's stop-sense and the
- *   lift ESP32's must be wired (`no_hardware_stop`). For the lift, bench mode waives only the installation
- *   checks (guards, drop test), and its lower limits apply (`lift_over_limits`).
+ *   a wired stop-sense input, arm motion needs bench mode (MOTION_BENCH_ENV). Normal lift motion requires
+ *   both stop-sense inputs. The explicit `WALKER_LIFT_UNSWITCHED_DEMO=1` Pi setting plus a matching ESP32
+ *   demo image permits a supervised bench lift move with no switches, using a journaled position estimate.
+ *   Bench limits and hold-to-run still apply. This demo mode has not yet moved the assembled lift.
  * - Any new handle press (Talk or Confirm) after motion started is a `motion.stop`; the press that started
  *   it, held or released, is not. A bounce that looks like a new press also stops (fail-safe). A handle
  *   `pressed` line can be lost on the serial link; the hardware stop is the backstop for that.
@@ -248,6 +248,12 @@ export type NamedPose = z.infer<typeof NamedPoseSchema>;
 
 /** The TB6600-type driver's microstep settings (set on its DIP switches). */
 export const LiftMicrostepsSchema = z.literal([1, 2, 4, 8, 16, 32]);
+
+/** Named lift requests only. The no-switch demo uses a journaled estimated origin; production needs a measured home. */
+export const LiftPresetSchema = z.enum(["ground", "up"]);
+export type LiftPreset = z.infer<typeof LiftPresetSchema>;
+/** Requested demo positions: 700 mm apart. Physical travel and step scale remain unverified. */
+export const LIFT_PRESET_HEIGHTS_MM: Readonly<Record<LiftPreset, number>> = { ground: 5, up: 705 };
 
 /**
  * Hard ceilings no lift configuration may exceed, whatever is measured later; the configuration's own limits
@@ -1016,11 +1022,11 @@ export const HoldSourceSchema = z.enum(["screen_hold_control"]);
 export type HoldSource = z.infer<typeof HoldSourceSchema>;
 
 /**
- * The most the cloud (or a model) may ever send about motion, later: which local skill or pose to offer, by
- * id. No words: the Pi drops the request if the id isn't one it has, and writes the Confirm target itself.
+ * The cloud may request only a local skill, pose, or named lift preset. It cannot send millimetres, speed,
+ * a start command, or a hold lease. The Pi validates the request and writes the Confirm target itself.
  */
 export const MotionOfferRequestSchema = z.strictObject({
-  target: z.discriminatedUnion("kind", [actionSchema("skill.run"), actionSchema("arm.go_to_pose")]),
+  target: z.discriminatedUnion("kind", [actionSchema("skill.run"), actionSchema("arm.go_to_pose"), z.strictObject({ kind: z.literal("lift.preset"), preset: LiftPresetSchema })]),
 });
 
 // ---- Commands and their policy ----
@@ -1201,7 +1207,7 @@ export const MOTION_COMMAND_POLICY: Readonly<Record<MotionCommandKind, MotionCom
     ends_in: "ready with the lift homed at LIFT_HOMING_BACKOFF_MM; on release or stop, ready and unhomed; on fault, fault.",
   },
   "lift.move": {
-    prepared_by: LOCAL,
+    prepared_by: ["walker_screen", "operator_cli", "offer"],
     stopped_by: [],
     moves: true,
     needs_park: true,

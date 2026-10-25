@@ -21,6 +21,7 @@ import {
   GRIPPER_HOLD_TORQUE_PCT,
   LIFT_AT_HEIGHT_TOLERANCE_MM,
   LIFT_HEARTBEAT_INTERVAL_MS,
+  LIFT_PRESET_HEIGHTS_MM,
   MAX_GOAL_LEAD_DEG,
   MOTION_COMMAND_POLICY,
   MOTION_CONTRACT_VERSION,
@@ -827,6 +828,16 @@ export class MotionCoordinator {
       return null;
     }
     const target = parsed.data.target;
+    if (target.kind === "lift.preset") {
+      const height = LIFT_PRESET_HEIGHTS_MM[target.preset];
+      const title = target.preset === "up" ? "Raise the lift to the upper preset" : "Lower the lift to the ground preset";
+      const result = this.prepare({ kind: "lift.move", target_mm: height }, "offer", title, null);
+      if (!result.ok || result.request.state !== "waiting_confirm") {
+        this.deps.log.info("lift preset offer dropped", { preset: target.preset, reason: result.ok ? (result.request.refusal ?? "refused") : result.error });
+        return null;
+      }
+      return this.pending?.target ?? null;
+    }
     if (target.kind === "skill.run") {
       const load = this.deps.files.readSkill(target.skill_id);
       if (load.kind === "missing") {
@@ -1350,7 +1361,8 @@ export class MotionCoordinator {
     if (this.active) return "moving";
     if (this.starting || this.calibration) return "disabled";
     if (this.deps.stopSense.reading() === "not_wired" && !this.deps.bench) return "disabled";
-    if (!this.slots.some((s) => s.role === "follower" && s.link)) return "disabled";
+    if (!this.slots.some((s) => s.role === "follower" && s.link) &&
+        !this.lift?.state(this.deps.clock.monotonic()).connected) return "disabled";
     return "ready";
   }
 
