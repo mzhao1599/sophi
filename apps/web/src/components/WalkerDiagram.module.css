@@ -616,6 +616,14 @@ button.hotspot:hover,
   font-size: 13px;
 }
 
+/* The live page's drawing can be much narrower than its column, so each label column also takes the
+ * empty space beside the drawing (100cqw is the figure, 100% the drawing) and wraps less. */
+@container walker (min-width: 560px) {
+  .figure[data-variant="live"] .spot {
+    width: calc(19.4% + (100cqw - 100%) / 2);
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   button.hotspot:hover {
     filter: brightness(1.12);

@@ -28,6 +28,7 @@ import {
   pairCommand,
   partRows,
   presence,
+  spreadLabels,
   proposalOutcome,
   readingOrder,
   secondsLeft,
@@ -130,6 +131,17 @@ describe("parts", () => {
     expect(drawn.get("perception.tof")).toEqual({ draw: "degraded", name: "Obstacle sensors", words: "Healthy, Simulated; Degraded", simulated: true });
     // A single part's words leave "Simulated" to its chip.
     expect(drawnParts(partRows(status().parts)).get("perception.tof")?.words).toBe("Healthy");
+  });
+
+  it("moves the drawing's labels apart only as far as needed, keeping their order", () => {
+    // Room for both where they want to be: unchanged.
+    expect(spreadLabels([{ want: 64, size: 40 }, { want: 140, size: 40 }], 0, 380)).toEqual([64, 140]);
+    // Hand controls and a tall Location sharing: the lower one moves down until they touch.
+    expect(spreadLabels([{ want: 64, size: 60 }, { want: 140, size: 100 }], 0, 380)).toEqual([64, 144]);
+    // Pushed past the bottom: the stack moves back up, and none rises above the top.
+    expect(spreadLabels([{ want: 20, size: 60 }, { want: 300, size: 100 }, { want: 340, size: 100 }], 0, 380)).toEqual([30, 230, 330]);
+    // Too tall to fit at all: still no overlap, and the lowest runs past the bottom.
+    expect(spreadLabels([{ want: 340, size: 200 }, { want: 64, size: 200 }], 0, 380)).toEqual([300, 100]);
   });
 
   it("draws solid green only for a real, healthy part", () => {

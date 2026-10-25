@@ -3,7 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ModuleId } from "@walker/contracts";
 import { useReducedMotion } from "@/lib/motion";
-import { drawnParts, type DrawState, type PartRow } from "@/lib/walkerView";
+import { drawnParts, spreadLabels, type DrawState, type PartRow } from "@/lib/walkerView";
 import {
   DRAW_W,
   FRAME_END,
@@ -74,11 +74,41 @@ export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption
   const delayOf = (id: ModuleId) => (settled ? 0 : id === "base.walker" ? FRAME_END : (plan[id]?.delay ?? FRAME_END));
   const shown = SPOTS.filter((s) => state.has(s.id));
 
+  // Each label starts level with its part. The drawing can be as short as 240px while a label with its
+  // states runs to several lines, so measure the labels and move them apart until none overlap; the
+  // leader lines follow. Again whenever the drawing or a label changes size.
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const spotEls = useRef(new Map<ModuleId, HTMLDivElement>());
+  const [labelY, setLabelY] = useState<Partial<Record<ModuleId, number>>>({});
+  const shownIds = shown.map((s) => s.id).join();
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ids = shownIds.split(",");
+    const place = () => {
+      if (canvas.offsetHeight === 0) return;
+      const unit = H / canvas.offsetHeight;
+      const next: Partial<Record<ModuleId, number>> = {};
+      for (const side of ["left", "right"] as const) {
+        const spots = SPOTS.filter((s) => s.side === side && ids.includes(s.id));
+        const at = spreadLabels(spots.map((s) => ({ want: s.labelY, size: (spotEls.current.get(s.id)?.offsetHeight ?? 0) * unit })), 0, H);
+        spots.forEach((s, i) => (next[s.id] = at[i]));
+      }
+      setLabelY((was) => (Object.keys(next).every((id) => Math.abs((was[id as ModuleId] ?? -1) - next[id as ModuleId]!) < 0.05) ? was : next));
+    };
+    place();
+    const watch = new ResizeObserver(place);
+    watch.observe(canvas);
+    spotEls.current.forEach((el) => watch.observe(el));
+    return () => watch.disconnect();
+  }, [shownIds]);
+  const placed = shown.map((s) => ({ ...s, labelY: labelY[s.id] ?? s.labelY }));
+
   return (
     <figure className={styles.figure} data-variant="live" data-live={live || undefined}>
-      <div className={styles.canvas}>
+      <div ref={canvasRef} className={styles.canvas}>
         <svg className={styles.leaders} viewBox={`${-SIDE} 0 ${WIDE_W} ${H}`} aria-hidden="true" focusable="false">
-          {shown.map((s) => (
+          {placed.map((s) => (
             <g key={s.id} className={styles.leader} data-state={state.get(s.id)}>
               <path d={leader(s)} pathLength={1} style={{ animationDelay: `${delayOf(s.id)}s` }} />
               <circle cx={s.anchor[0]} cy={s.anchor[1]} r="2.5" style={{ animationDelay: `${delayOf(s.id)}s` }} />
@@ -116,8 +146,17 @@ export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption
           )}
         </svg>
 
-        {shown.map((s) => (
-          <div key={s.id} className={styles.spot} data-side={s.side} style={{ ...spotStyle(s), "--label-delay": `${delayOf(s.id)}s` } as React.CSSProperties}>
+        {placed.map((s) => (
+          <div
+            key={s.id}
+            ref={(el) => {
+              if (el) spotEls.current.set(s.id, el);
+              else spotEls.current.delete(s.id);
+            }}
+            className={styles.spot}
+            data-side={s.side}
+            style={{ ...spotStyle(s), "--label-delay": `${delayOf(s.id)}s` } as React.CSSProperties}
+          >
             <span className={styles.hotspot} data-state={state.get(s.id)} aria-hidden="true">
               <svg className={styles.dot} viewBox="0 0 16 16" aria-hidden="true" focusable="false" data-state={state.get(s.id)}>
                 <circle cx="8" cy="8" r="5.5" />

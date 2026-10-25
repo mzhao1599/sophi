@@ -128,6 +128,32 @@ export function drawnParts(rows: readonly PartRow[]): Map<ModuleId, DrawnPart> {
   );
 }
 
+/**
+ * Where to centre one side's labels on the drawing so no two overlap. Each label wants to sit level with
+ * its part (`want`) and is `size` tall, both in drawing units. Labels keep their order and move apart
+ * only as far as needed: down first, then back up from `bottom`, then down again from `top`. If they
+ * can't all fit, the last pass wins, so they still never overlap and the lowest runs past `bottom`.
+ */
+export function spreadLabels(labels: readonly { want: number; size: number }[], top: number, bottom: number): number[] {
+  const order = labels.map((_, i) => i).sort((a, b) => labels[a]!.want - labels[b]!.want);
+  const at = labels.map((l) => l.want);
+  const down = () => {
+    let edge = top;
+    for (const i of order) {
+      at[i] = Math.max(at[i]!, edge + labels[i]!.size / 2);
+      edge = at[i]! + labels[i]!.size / 2;
+    }
+  };
+  down();
+  let edge = bottom;
+  for (const i of [...order].reverse()) {
+    at[i] = Math.min(at[i]!, edge - labels[i]!.size / 2);
+    edge = at[i]! - labels[i]!.size / 2;
+  }
+  down();
+  return at;
+}
+
 /** What the drawing shows, in words, for screen readers. */
 export function drawingCaption(rows: readonly PartRow[]): string {
   if (rows.length === 0) return "The walker's frame. No parts reported yet.";
