@@ -98,14 +98,15 @@ export type Config = __Infer<typeof Config>;
 export const HelpRequest = __t.object("HelpRequest", {
   helpId: __t.string(),
   deviceId: __t.string(),
-  clientHelpId: __t.string(),
+  clientHelpIds: __t.string(),
   source: __t.string(),
-  told: __t.string(),
+  sentTo: __t.string(),
+  shownTo: __t.string(),
   coming: __t.string(),
   createdAt: __t.string(),
   closedAt: __t.option(__t.string()),
   closedHow: __t.option(__t.string()),
-  closedByName: __t.option(__t.string()),
+  closedBy: __t.option(__t.string()),
   rev: __t.u64(),
   seq: __t.u64(),
 });

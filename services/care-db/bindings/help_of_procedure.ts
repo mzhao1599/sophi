@@ -13,5 +13,6 @@ import {
 export const params = {
   deviceId: __t.string(),
   now: __t.string(),
+  shownTo: __t.string(),
 };
 export const returnType = __t.string()
