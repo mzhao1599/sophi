@@ -28,6 +28,7 @@ import {
   JOINT_RANGE_MARGIN_DEG,
   JointCalibrationSchema,
   LIFT_HEARTBEAT_INTERVAL_MS,
+  LIFT_PRESET_HEIGHTS_MM,
   LIFT_HOLD_LEASE_MS,
   LIFT_HOMING_BACKOFF_MM,
   LIFT_HOMING_FAST_MM_S,
@@ -83,6 +84,7 @@ import {
   confirmPrompt,
   degreesToTicks,
   isPreparerAllowed,
+  offerKeepsToPresets,
   jointRangeDegrees,
   jointsOutsideCalibration,
   liftInstallationAllowsMotion,
@@ -495,8 +497,13 @@ describe("Confirm targets", () => {
     expect(ok(ConfirmTargetSchema, target({ shown_mono_ms: -1 }))).toBe(false);
   });
 
-  it("may be prepared only by whoever the action's policy names; the cloud only offers skills and poses", () => {
+  it("may be prepared only by whoever the action's policy names; the cloud offers skills, poses and lift presets", () => {
+    // A lift move from an offer goes only to a named preset's height, never a height the cloud chose.
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: 300 } }))).toBe(false);
+    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_PRESET_HEIGHTS_MM.up } }))).toBe(true);
+    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up" } })).toBe(true);
+    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up", target_mm: 300 } })).toBe(false);
+    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.move", target_mm: 300 } })).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "fault.clear" } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "walker_local", action: { kind: "skill.run", skill_id: "tray_pick_handover" } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "cloud" }))).toBe(false);
@@ -581,7 +588,8 @@ describe("motion commands", () => {
   it.each(CONFIRMED_KINDS.flatMap((kind) => PreparerSchema.options.map((by) => [kind, by] as const)))(
     "%s prepared by %s is allowed only when its policy says so",
     (kind, by) => {
-      expect(ok(MotionCommandSchema, { ...commands[kind], prepared_by: by })).toBe(isPreparerAllowed(kind, by));
+      const command = { ...commands[kind], prepared_by: by };
+      expect(ok(MotionCommandSchema, command)).toBe(isPreparerAllowed(kind, by) && offerKeepsToPresets(command, by));
     },
   );
 
@@ -645,9 +653,11 @@ describe("command policy (AGENTS.md rule 8)", () => {
     }
   });
 
-  it("lets the cloud's offers name only taught skills and poses, and the Pi's own follow-up only let go", () => {
+  it("lets the cloud's offers name only taught skills, poses and lift presets, and the Pi's own follow-up only let go", () => {
     const by = (who: "offer" | "walker_local") => CONFIRMED_KINDS.filter((k) => isPreparerAllowed(k, who)).sort();
-    expect(by("offer")).toEqual(["arm.go_to_pose", "skill.run"]);
+    // lift.move from an offer: only to a preset (offerKeepsToPresets), still behind Confirm and the hold control.
+    expect(by("offer")).toEqual(["arm.go_to_pose", "lift.move", "skill.run"]);
+    expect(MOTION_COMMAND_POLICY["lift.move"]).toMatchObject({ hold_to_run: true, needs_park: true });
     expect(by("walker_local")).toEqual(["gripper.release"]);
   });
 

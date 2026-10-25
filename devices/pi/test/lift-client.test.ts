@@ -213,6 +213,26 @@ describe("lift client: the port", () => {
     hand.hang();
   });
 
+  it("L1: the shared ToF and lift board's port carries both: lift lines go to the lift client, zones stay a module", async () => {
+    const clock = new FakeClock();
+    const log = captureLogger();
+    const modules = new ModuleManager({ clock, log, bus: new Bus() });
+    const seen: string[] = [];
+    modules.setLiftHandler({ liftLine: (_l, m) => seen.push(m.type), liftLineRefused: () => seen.push("refused"), liftPortClosed: () => {} });
+    const port = new SimulatedPort("sim:tof-lift");
+    const tof = new SimulatedTof(port, "tof-front-01", clock);
+    modules.attach(port);
+    tof.start();
+    await flush();
+    port.sendLine({ v: 1, type: "lift.hello", module_id: "lift-01", seq: 99, firmware_version: "t", uptime_ms: 5, config: SIM_LIFT_CONFIG, stop_sense: "wired" });
+    await clock.advance(300);
+    await flush();
+    expect(seen).toEqual(["lift.hello"]);
+    expect(modules.modules().map((m) => m.instanceId)).toEqual(["tof-front-01"]);
+    expect(log.lines.some((l) => l.includes("serial line refused"))).toBe(false);
+    tof.hang();
+  });
+
   it("L1: with no lift client, a lift port beside three boards: they stay ok, the lift isn't a module, and it gets only throttled hello.requests", async () => {
     const clock = new FakeClock();
     const log = captureLogger();
