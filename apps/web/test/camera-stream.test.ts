@@ -33,16 +33,20 @@ describe("live camera stream reader", () => {
   const stream = concat(frames.map((f, i) => cameraPart(f, i * 40)));
 
   it("reads every frame however the stream is split", () => {
+    // One cheap comparison per split point and a single assertion: a deep toEqual per cut took about 1 s here
+    // and timed out on CI's runner. Every split point is still checked.
+    const expected = JSON.stringify([
+      [1, "camera", 0, Buffer.from(frames[0]!.bytes).toString("hex")],
+      [2, "test_pattern", 40, Buffer.from(frames[1]!.bytes).toString("hex")],
+      [3, "camera", 80, Buffer.from(frames[2]!.bytes).toString("hex")],
+    ]);
+    const wrong: number[] = [];
     for (let cut = 1; cut < stream.length; cut++) {
       const reader = new LiveFrameReader();
       const got = [...reader.push(stream.slice(0, cut)), ...reader.push(stream.slice(cut))];
-      expect(got.map((g) => [g.seq, g.source, g.ageMs])).toEqual([
-        [1, "camera", 0],
-        [2, "test_pattern", 40],
-        [3, "camera", 80],
-      ]);
-      expect(got.map((g) => g.jpeg)).toEqual(frames.map((f) => f.bytes));
+      if (JSON.stringify(got.map((g) => [g.seq, g.source, g.ageMs, Buffer.from(g.jpeg).toString("hex")])) !== expected) wrong.push(cut);
     }
+    expect(wrong).toEqual([]);
   });
 
   it("reads byte by byte", () => {
