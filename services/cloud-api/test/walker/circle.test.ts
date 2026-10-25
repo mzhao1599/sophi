@@ -12,10 +12,11 @@ import {
   type PhoneHomeResponse,
 } from "@walker/contracts";
 import { CIRCLE_SWEEP_EVERY_MS, CircleService, WalkerService, isCircleError, isWalkerError, type MemberCaller, type MessageEvent, type OwnerCaller } from "../../src";
-import { Clock, SKIP_POSTGRES, manifest, memoryHarness, postgresHarness, snapshot, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
+import { Clock, SKIP_POSTGRES, SKIP_SPACETIME, manifest, memoryHarness, postgresHarness, snapshot, spacetimeHarness, spacetimeTestServer, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
 
 /**
- * The two-phone circle (circle.ts, "The two-phone app"), against the in-memory store and Postgres.
+ * The two-phone circle (circle.ts, "The two-phone app"), against the in-memory store, Postgres, and SpacetimeDB
+ * (SpacetimeCircleStore over the care-db module, with the walker's own rows in memory).
  * Expected, written before the run:
  * - her own phone is in on the code alone; a caretaker waits for the owner's approval, which lapses after 5 minutes;
  * - owner routes need the owner's own walker; member calls need a known cookie;
@@ -415,5 +416,14 @@ if (walkerTestDatabaseUrl) {
 } else {
   describe.skip(SKIP_POSTGRES, () => {
     it("needs a local cluster", () => {});
+  });
+}
+
+if (spacetimeTestServer) {
+  const server = spacetimeTestServer;
+  describeCircle("spacetime", () => spacetimeHarness(server));
+} else {
+  describe.skip(SKIP_SPACETIME, () => {
+    it("needs a local spacetime server", () => {});
   });
 }

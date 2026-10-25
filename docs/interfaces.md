@@ -120,6 +120,36 @@ The walker's Bearer credential works on none of these, the owner cookie only on 
 - **Deletion is real.** Expired messages and codes, and joins lapsed a day ago, are deleted from storage by the walker's own sweep (at server start and with heartbeats and page reads, at most once a minute per server process), not only hidden from views.
 - **At the venue, run the demo phones on cellular.** Phones behind one public address share the wrong-code lockout (5 wrong codes lock both for 10 minutes), and on Postgres two joins from one address at the same moment get `429 rate_limited` for the second. Off Render every caller shares one lockout, as pairing does.
 
+### The care circle on SpacetimeDB (added 2026-10-24)
+
+When the server has the four `SPACETIME_*` settings below, the circle's state lives in a SpacetimeDB database (`sophi-care`, the TypeScript module in [`services/care-db`](../services/care-db/README.md)) instead of in Postgres or memory: the phones, the one-time codes, caretakers waiting for approval, the messages, and the wrong-code tries. Every change to it is one SpacetimeDB transaction, and the phones and the owner's page get each change pushed to them over a WebSocket the moment it is committed, instead of asking the server every 2 or 3 seconds. Without those settings nothing changes: the circle stays in Postgres or memory, as above.
+
+**Who calls what.**
+
+- **Sophi's server keeps every route above, unchanged.** It still checks the cookies, the request shapes, the consent ticks, and who may send what (`CircleService`). Its `CircleStore` becomes `SpacetimeCircleStore`, which calls one SpacetimeDB procedure per store step over HTTP (`POST <uri>/v1/database/<db>/call/<procedure>`). Each procedure is one transaction with the same rules as the memory and Postgres stores, and returns its result as JSON. Expected outcomes (a wrong code, a full circle, a message already cleared) come back as results, never as errors, because an error thrown inside a procedure answers `500`.
+- **What stays with the walker:** the walker's own rows (pairing, heartbeats, configurations, turns) stay in Postgres. So does the GPS sharing setting and fix, because the heartbeat reads them. When her phone is removed, or replaced on approval, SpacetimeDB reports it and the server turns sharing off. When the owner forgets a walker, the server deletes its circle in SpacetimeDB after Postgres.
+- **The phones and the owner's page** each ask the server for a short-lived token (`POST /circle/live` with the `walker_member` cookie; `POST /walkers/{id}/circle/live` with the `walker_owner` cookie), connect to SpacetimeDB with it, and subscribe to their views. They still send through the server's routes. The live part replaces polling for the circle: a phone renders its people and messages from its views, and refreshes from `GET /circle` when its membership changes or every 10 seconds for the walker's status (online, alerts, parts, GPS). The owner's page refreshes its list the moment its views change.
+
+**Proof of identity: JWTs signed by Sophi's server.** The server signs ES256 JWTs with `SPACETIME_JWT_PRIVATE_KEY` and publishes the public key as an OpenID issuer at `<SPACETIME_ISSUER>/.well-known/openid-configuration` and `/.well-known/jwks.json`. SpacetimeDB fetches those and checks each token's signature; the module checks the issuer and the audience (`sophi-care`) against its `config` row, and the subject:
+
+| Subject | Who | Lifetime | What it can do |
+| --- | --- | --- | --- |
+| `sophi-server` | the server itself | 1 hour, renewed by the server | call the procedures; it never opens a WebSocket |
+| `member:<member_id>` | one phone, waiting or in | 1 hour; the phone asks for a new one when it reconnects | subscribe to `my_membership`, `my_people`, `my_messages` |
+| `owner:<device_id>` | the owner's page for one walker | 1 hour, as above | subscribe to `owner_members`, `owner_invites` |
+
+A connection without such a token is refused. A token stays valid until it expires even after its phone is removed, but the views read the membership on every change, so a removed phone's views empty at once.
+
+**The views.** The tables are private: no client can subscribe to them. Each view finds the caller's subject from the `session` row that `clientConnected` wrote for its identity, and returns only that caller's circle. `my_membership` is this phone's own row (it changes from `waiting` to `member` the moment the owner approves). `my_people` and `my_messages` are empty until the phone is in, and never include cleared messages. No view returns the cookie hash, the invite digits, or another walker's rows. Expired rows leave the views when the sweep deletes them (the server's sweep, and the module's own every minute), so one may show for up to a minute after its time.
+
+**Settings** (server only): `SPACETIME_URI` (such as `https://maincloud.spacetimedb.com`), `SPACETIME_DATABASE` (`sophi-care`), `SPACETIME_ISSUER` (the server's public origin, such as `https://steady-walker.onrender.com`), and `SPACETIME_JWT_PRIVATE_KEY` (a P-256 private key, PKCS#8 PEM; a secret, generated by `node scripts/care-db.mjs keygen`). After publishing the module, its publisher runs `configure` once with the issuer and audience; until then nobody can connect or call it.
+
+**Limits of this version.**
+
+- **Two systems, two writes.** A circle change and the walker's GPS setting are in different databases. Turning sharing on checks her membership in SpacetimeDB and then writes Postgres, and checks again after the write, switching sharing back off if her phone was removed in between.
+- **Join lockout keys** are the server's keyed hash of the client address, as before; they are kept in SpacetimeDB for 10 minutes. The Postgres `busy` answer (two joins from one address at once) doesn't exist here, because SpacetimeDB runs transactions one at a time.
+- **Free Maincloud** pauses a database after a week without use; the first connection then wakes it in about a second.
+
 **What it is.** The walker's own screen belongs to the person who walks with it ("Nan" below). Family and caregivers join her circle from a web app on their phones. Family can send short messages and suggest one change at a time to her screen or to Sophi's voice. Nothing reaches her walker until she presses Confirm on it. This proposed screen and messaging system remains separate from the walker assistant. The GPS extension above deliberately adds optional heartbeat fields; deploy the updated Pi before a server that sends `location_sharing_enabled` because the earlier Pi parsed responses strictly.
 
 **The rule everything rests on: only a call made with the walker's device credential can accept a join or a suggestion.** That call comes from the handle's Confirm or the screen's Confirm button, both through the Pi. No owner-cookie or member-cookie route accepts anything, so the rule holds by construction. The cloud piece adds a test that an owner-cookie accept is refused.

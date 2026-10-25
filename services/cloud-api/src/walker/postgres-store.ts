@@ -209,6 +209,16 @@ export class PostgresWalkerStore implements WalkerStore {
     return result.rowCount === 1;
   }
 
+  async writeLocationSharing(deviceId: string, enabled: boolean) {
+    if (!UUID.test(deviceId)) return false;
+    const result = await this.query(
+      "write location sharing",
+      "update walker_devices set location_sharing_enabled = $2, location = null, location_received_at = null where id = $1",
+      [deviceId, enabled],
+    );
+    return result.rowCount === 1;
+  }
+
   async currentConfiguration(deviceId: string) {
     const { rows } = await this.query<ConfigurationRow>(
       "read a configuration",
