@@ -590,6 +590,28 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(r.turn).toMatchObject({ reply: "Putting that on your screen.", answered_by: "fixed", heard: SHOW_ME });
     });
 
+    it("takes a get_distance, get_weather or get_location step with an empty reply on the first call, and still retries one with nothing copied back", async () => {
+      // Claude Haiku left reply empty with get_distance on "Is anything in front of me?" on 5 of 5 live first attempts (2026-10-25).
+      const lines = { get_distance: "I'll check the obstacle sensors now.", get_weather: "I'll check the weather near you now.", get_location: "I'll check your GPS location now." };
+      for (const [name, line] of Object.entries(lines)) {
+        const stub = stubModel({ transcript: "Is anything in front of me?", reply: "", topics: ["other"], tool_call: { name } });
+        const service = serviceWith(stub.model);
+        const w = await walker(service);
+        const r = await service.turn(device(w.credential), w.id, spoken());
+        parses(r);
+        expect(stub.requests).toHaveLength(1);
+        expect(r.tool_call).toEqual({ name });
+        expect(r.turn).toMatchObject({ reply: line, answered_by: "fixed", heard: "Is anything in front of me?" });
+      }
+      const blank = stubModel({ transcript: "", reply: "", topics: ["other"], tool_call: { name: "get_distance" } });
+      const service = serviceWith(blank.model, { ears: { transcribe: async () => "Is anything in front of me?" } });
+      const w = await walker(service);
+      const r = await service.turn(device(w.credential), w.id, spoken());
+      parses(r);
+      expect(blank.requests).toHaveLength(2);
+      expect(r.turn.reply.trim().length).toBeGreaterThan(0);
+    });
+
     it("still retries an empty reply with nothing copied back or no tool, and never answers with an empty line", async () => {
       for (const answer of [{ ...show("weather", ""), reply: "" }, { transcript: SHOW_ME, reply: "", topics: ["other"] }]) {
         const stub = stubModel(answer);

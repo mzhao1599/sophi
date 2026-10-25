@@ -37,22 +37,26 @@ const ModelToolCallSchema = z.union([
   z.strictObject({ name: z.literal("set_lift_height"), preset: LiftPresetSchema }),
 ]);
 
+/** Lookup steps whose spoken line the server always writes itself, so the model may leave `reply` empty. */
+const SERVER_WORDED_LOOKUPS: ReadonlySet<string> = new Set(["show_on_screen", "get_distance", "get_weather", "get_location"]);
+
 export const WalkerReplySchema = z.strictObject({
   /** A copy of the person's words (person_words); the service keeps its own copy, so this only gates show_on_screen. */
   transcript: z.string().trim().max(MAX_TRANSCRIPT),
-  /** Empty only with tool_call ask_for_help or show_on_screen: the server words that step's reply. */
+  /** Empty only with tool_call ask_for_help or a lookup step (SERVER_WORDED_LOOKUPS): the server words that step's reply. */
   reply: z.string().trim().max(MAX_REPLY),
   topics: z.array(TopicSchema).max(6),
   cues_change: z.strictObject({ cues: z.array(CueSchema).min(1).max(4) }).nullable(),
   tool_call: ModelToolCallSchema.nullable().optional(),
 })
   .refine((reply) => !reply.cues_change || !reply.tool_call, "A tool request and a settings offer must be separate steps.")
-  // The server words the spoken line of a show_on_screen step ("Putting that on your screen.") and of
-  // ask_for_help, so the model's reply isn't used there and it often leaves it empty (show_on_screen: 15 of 18
-  // live first attempts, 2026-10-24). Anywhere else, and a show_on_screen step with nothing heard (the step then
-  // isn't taken and the reply would be the answer), a reply is required.
-  .refine((reply) => reply.reply.length > 0 || reply.tool_call?.name === "ask_for_help" || (reply.tool_call?.name === "show_on_screen" && reply.transcript.length > 0), {
-    message: "Write a reply; it may be empty only with tool_call ask_for_help or show_on_screen.",
+  // The server words the spoken line of ask_for_help and of each lookup step ("Putting that on your screen.",
+  // "I'll check the obstacle sensors now."; service.ts LOOKUP_LINE), so the model's reply isn't used there and it
+  // often leaves it empty (show_on_screen: 15 of 18 live first attempts, 2026-10-24; Claude Haiku with get_distance
+  // on "Is anything in front of me?", 5 of 5, 2026-10-25). Anywhere else, and a lookup step with nothing heard (the
+  // step then isn't taken and the reply would be the answer), a reply is required.
+  .refine((reply) => reply.reply.length > 0 || reply.tool_call?.name === "ask_for_help" || (SERVER_WORDED_LOOKUPS.has(reply.tool_call?.name ?? "") && reply.transcript.length > 0), {
+    message: "Write a reply; it may be empty only with tool_call ask_for_help, show_on_screen, get_distance, get_weather or get_location.",
     path: ["reply"],
   });
 export type WalkerReply = z.infer<typeof WalkerReplySchema>;
@@ -76,7 +80,7 @@ export function walkerReplyJsonSchema(views: readonly ShowView[], offerHelp = fa
     properties: {
       transcript: { type: "string", description: "A copy of person_words." },
       reply: { type: "string", description: `What Sophi says back: at most two short sentences, at most ${MAX_REPLY - 50} characters.${offerHelp ? " Empty only with tool_call ask_for_help, whose reply the server writes." : ""}` },
-      topics: { type: "array", items: { type: "string", enum: TopicSchema.options }, description: "Every topic the question touches." },
+      topics: { type: "array", items: { type: "string", enum: TopicSchema.options }, description: "Every topic the person's question asks about, not every topic your reply mentions." },
       cues_change: {
         anyOf: [
           { type: "null" },
@@ -126,8 +130,8 @@ export function walkerSystemPrompt(directions: "tools" | "page" | "none"): strin
 Rules:
 - Answer only from the JSON context the server sends: this walker's configuration, the parts it reports right now with their health, its obstacle readings, any suggestion waiting for the person's Confirm, and the recent conversation. Never claim a part, a feature or a reading that isn't there. ${directions === "tools" ? "This walker can't steer, call anyone, or fetch anything, but it can give walking directions." : directions === "page" ? PAGE_DIRECTIONS : "This walker cannot navigate, plan routes, steer, call anyone, or fetch anything."} It can request a named lift preset only through the tool below; the Pi decides whether the lift is ready and a person must start and hold its motion locally.
 - At most two short sentences, at most ${MAX_REPLY - 50} characters. Plain spoken words: no lists, markdown, emoji, or internal names such as "perception.tof".
-- Obstacles: when the person asks for distance, proximity or what the obstacle sensors currently read, request tool_call get_distance. The host reads all current ToF zones and writes the answer; do not invent distances in reply. Never say the way is clear or safe: a sensor can miss things. Put "obstacles" in topics.
-- Alerts: the one setting a conversation can change is how obstacle alerts reach the person: vibration (buzzing in the handles), sound (short sounds) or spoken (speech). If they ask to change them, set cues_change to the full new list, changing only the cues they named: "X instead of Y" or "stop Y, use X" swaps Y for X and keeps every other current cue. In one sentence say what you can change, starting with "I can". Never say it is done: nothing changes until they press Confirm, and the server tells them how, so don't mention Confirm yourself. Put "settings" in topics.
+- Obstacles: when the person asks for distance, proximity or what the obstacle sensors currently read, request tool_call get_distance. The host reads all current ToF zones and writes the answer; do not invent distances in reply. Never say the way is clear or safe: a sensor can miss things. Put "obstacles" in topics only for such a question: when they ask what you can do or which parts work, a reply that mentions the sensors is not an obstacle question, so leave "obstacles" out.
+- Alerts: the one setting a conversation can change is how obstacle alerts reach the person: vibration (buzzing in the handles), sound (short sounds) or spoken (speech). If they ask to change them, set cues_change to the full new list, changing only the cues they named: "X instead of Y" or "stop Y, use X" swaps Y for X and keeps every other current cue. This works the same on a typed page turn as by Talk: offer the change either way, and never tell them to use Talk for it. In one sentence say what you can change, starting with "I can". Never say it is done: nothing changes until they press Confirm, and the server tells them how, so don't mention Confirm yourself. Put "settings" in topics.
 - Robot arms, picking up, or fetching: put "arms" in topics; the server answers that part.
 - Lift: only when the person presently asks to move the lift, request set_lift_height and put "lift" in topics. Map "table height", "raise it", or "upper height" to preset "up"; map "low height", "lower it", or "floor height" to preset "ground". These are named demo positions 600 mm apart, not measurements of a table or floor. Ask which height they mean if the request is ambiguous. Never claim the lift moved or is ready. The Pi may refuse the offer until its local checks pass. Do not request this tool for an arm task or from a typed page turn.
 - Parts: say which parts work, and which are degraded or not responding, in plain words. A part with simulated true is a stand-in, not real hardware: never call it working; say it's simulated. But when every part in parts has simulated true and "obstacles" isn't in your topics, the server ends your reply with "${SIMULATED_ALL_PARTS}" itself, so leave that out and don't say it in other words (all simulated, stand-ins, not real hardware): name the parts and their health instead. Put "parts" in topics.
