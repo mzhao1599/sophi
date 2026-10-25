@@ -2,7 +2,7 @@
 
 **For:** whoever builds or demos the assistant's `show_on_screen` tool: the cloud assistant (`services/cloud-api/src/walker/`), the Pi service and its screen state machine (`devices/pi`), the walker screen (`packages/walker-screen`) and the shared contract (`packages/contracts`).
 
-**Status (2026-10-24, design):** the contract below is written and tested. Nothing else is built until this line says so.
+**Status (2026-10-24, design):** the contract below is written and tested. The cloud's part is built and tested against a fake model only (see "The cloud"). Nothing else is built until this line says so.
 
 ## What she can do
 
@@ -34,9 +34,15 @@ All in `packages/contracts`, validated on both sides:
 
 ## The cloud (services/cloud-api)
 
-- The model's JSON schema gains `{name: "show_on_screen", view}` with `view` restricted to the turn's `screen.views`; offered only on a spoken walker turn that carries `screen`. The context gains `screen_views` (the list, or none).
-- System prompt: when she asks to see, show or pull up one of those things on the screen, request `show_on_screen` with that view; never say it is on the screen until the tool result says so; a view not in `screen_views` can't be shown, so say so. A page turn asking for it gets "Please use Talk on the walker for that request."
-- The "I'll check" line for the step is "Putting that on your screen." The loop continues like the other device tools, under the same `client_turn_id` and tool budget.
+**Built and tested (2026-10-24), against a fake model.** Not yet run against Gemini, a Pi or a screen. Code: `src/walker/assistant.ts`, `service.ts` and `hedge.ts`; the expected results are in `test/walker/EXPECTED-turns.md` ("Pulling something up on the walker's screen") and the tests in `test/walker/turn.test.ts`.
+
+- **Offered per turn.** The JSON schema sent to the model is built for each turn (`walkerReplyJsonSchema(views)`). It offers `{name: "show_on_screen", view}`, with `view` limited to that turn's `screen.views`, only on a walker turn that carries `screen`. A walker turn without `screen` (an older Pi, or no screen page connected) and every page turn get the schema without it, so the model is never told about a card the walker can't fill. The backup model gets the same views.
+- **Checked again on the server.** The reply parser accepts the contract's `WalkerToolCallSchema`, so the server sees any view the model names and refuses one the turn didn't list: the fixed line "I can't show that on this walker's screen right now." (rule `show_unavailable`), with no `tool_call`. A page turn that asks for it gets "Please use Talk on the walker for that request." (rule `device_tool_only`), as with the other device tools.
+- **Context.** `screen_views` is the turn's list, or `[]` with no screen and on a page turn.
+- **System prompt.** One rule for every turn: when a spoken walker turn asks to see, show, display or pull up the weather, where they are, what the sensors read, their newest message or the walker's parts on the screen, request `show_on_screen` with that view (instead of `get_weather` or `get_location`), only if it's in `screen_views`, and otherwise say it can't be shown right now. Never say something is on the screen until a `show_on_screen` result says so, then answer from it; a message's words aren't in the result and mustn't be invented; on a page turn, ask her to use Talk. The old rules stay, "clear" and "safe" included.
+- **The step.** The response carries `tool_call: {name: "show_on_screen", view}` (it parses with `WalkerToolCallSchema`) and the line "Putting that on your screen.", taken from one `Record<WalkerToolName, string>` so no tool can fall through to another tool's line. Nothing is stored for the step. The loop then runs like the other device tools: the same `client_turn_id`, the same eight-call budget (`tool_limit` past it).
+- **The answer.** After the result, the model's reply is the final answer, stored and spoken. After a sensors card that reply is used even when tagged `obstacles` (the fixed distance line steps aside, since the card's result is the reading she asked about), and the "clear"/"safe" check still reads it and retries once. After a weather card whose result credits Open-Meteo, the server adds " Weather data from Open-Meteo." when the model left it out, as after `get_weather`.
+- **Spoken continuation.** A continuation (`original_audio: true`) now reads to the model as "spoke while holding Talk", not "typed on the walker", so the model doesn't answer a card's result with "use Talk". The same change is on the `navigation` branch.
 
 ## The Pi (devices/pi)
 
