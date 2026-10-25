@@ -75,7 +75,7 @@ export function sensorsShow(zones: readonly ShowZone[]): ShowOutcome {
 
 /** Her newest message. The result names the sender only: the words stay on the walker and its screen. */
 export function messageShow(message: WalkerIncomingMessage | null): ShowOutcome {
-  if (!message) return notShown("The walker holds no message from her caretakers.");
+  if (!message) return notShown("The walker holds no message from a caretaker.");
   return checked({ view: "message", message_id: message.message_id, from_name: message.from_name, text: message.text }, `Showing the newest message, from ${message.from_name}, on the screen.`);
 }
 

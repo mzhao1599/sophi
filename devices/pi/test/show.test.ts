@@ -320,7 +320,7 @@ describe("SH8: a view that can't be filled shows nothing and says why", () => {
     ["the address lookup fails", (h) => h.looks.place.mockRejectedValue(new Error("Geocoder HTTP 503.")), "location", "I found the GPS receiver, but couldn't look up an address right now."],
     ["no reliable address", (h) => h.looks.place.mockResolvedValue({ text: "I have a GPS fix, but the map does not show a reliable nearby address.", place: null }), "location", "I have a GPS fix, but the map does not show a reliable nearby address."],
     ["no zone heard yet", () => {}, "sensors", "The obstacle sensors haven't reported any zone yet."],
-    ["no message held", () => {}, "message", "The walker holds no message from her caretakers."],
+    ["no message held", () => {}, "message", "The walker holds no message from a caretaker."],
   ];
   for (const [what, arrange, view, why] of cases) {
     it(`${what}: nothing shown, the result says why, the turn goes on`, async () => {
