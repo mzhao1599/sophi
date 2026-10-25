@@ -42,7 +42,7 @@ Same rules as the server, every answer checked against the contract:
 
 ### Asking
 - Tap **Ask for help**: the button says "Asking" and can't be pressed twice; `POST /circle/help` with one `client_help_id`; a retry after a failure reuses the same id.
-- Success: the screen becomes the open status (below) from the server's answer, and the status line announces once "You asked for help. Sent to Maya's phone."
+- Success: the screen becomes the open status (below) from the server's answer, and the status line announces once "You asked for help. Sent to Maya's phone." (or, if Maya's app already had it by then, "You asked for help. It's showing on Maya's phone.")
 - `no_caretaker`: "No caretaker is linked to your walker, so nothing was sent." and the screen refreshes.
 - Network or anything else: "Not sent: can't reach Sophi's server. Try again." (or "Not sent. Try again."), the button back, focus on the button.
 

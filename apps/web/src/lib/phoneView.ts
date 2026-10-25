@@ -301,7 +301,8 @@ export function helpChange(prev: HelpView | null | undefined, next: HelpView | n
     if (!fresh && prev.closed) return null;
     return mine ? herClosedLine(next) : closedForLine(next, meId, her, !!walkerUserOf(home));
   }
-  if (fresh) return mine ? `You asked for help. ${sentLine(next.sent_to)}` : `${her} asked for help ${HOW_WORDS[next.source]}.`;
+  // Her phone: the furthest step already (a caretaker's app may have it before her first home after asking).
+  if (fresh) return mine ? `You asked for help. ${herOpenLine(next)}` : `${her} asked for help ${HOW_WORDS[next.source]}.`;
   const coming = added(prev.coming, next.coming);
   if (coming.length) {
     if (mine) return comingLine(coming);

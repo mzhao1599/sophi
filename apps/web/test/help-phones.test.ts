@@ -283,6 +283,7 @@ describe("the help words", () => {
     expect(helpArrived(null, open)).toBe(true);
     expect(helpArrived(open, { ...open, coming: [mayaMe] })).toBe(false);
     expect(helpChange(null, open, rose)).toBe("You asked for help. Sent to Maya's phone.");
+    expect(helpChange(null, { ...open, shown_to: [mayaMe] }, rose)).toBe("You asked for help. It's showing on Maya's phone.");
     // Her phone hears when a caretaker's app has it; the caretaker's own phone doesn't.
     expect(helpChange(open, { ...open, shown_to: [mayaMe] }, rose)).toBe("It's showing on Maya's phone.");
     expect(helpChange(open, { ...open, shown_to: [mayaMe] }, maya)).toBeNull();
