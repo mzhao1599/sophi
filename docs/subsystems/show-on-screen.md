@@ -20,6 +20,8 @@ The card stays up while Sophi answers, with her reply as a caption line under it
 
 ## Why the model only picks a name
 
+**Companion code (2026-10-25):** the owner creates a ten-minute code for the walker user’s own phone in `/walker`. The Pi receives it in the authenticated device messages poll, keeps it only in memory, and renders it in large type on the physical home screen until it expires or is redeemed. The spoken `companion` screen view can bring up the same code; the tool result says only that it was displayed and never sends the digits to the model. Caregiver invites remain on the owner page. Voice navigation currently covers the implemented read-only screen views; the `My screen` menu and settings are not wired to the Pi yet, so the assistant must not claim it can open or change them by voice.
+
 The model returns `tool_call: {name: "show_on_screen", view: "weather"}`, nothing more. Every word and number on the card is built by the Pi from its own readings and services, so no model output, and no text inside a tool result, can put words of its own on her screen. Same pattern as the walking-directions design: the Pi decides, the screen draws.
 
 ## The shared contract (written first, by the lead)

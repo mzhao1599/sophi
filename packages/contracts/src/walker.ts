@@ -212,7 +212,7 @@ export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: t
  * `message`: her newest caretaker message (its words never go to the model). `parts`: the walker's parts and
  * their health, simulated ones marked.
  */
-export const ShowViewSchema = z.enum(["weather", "location", "sensors", "message", "parts"]);
+export const ShowViewSchema = z.enum(["weather", "location", "sensors", "message", "parts", "companion"]);
 export type ShowView = z.infer<typeof ShowViewSchema>;
 
 /**

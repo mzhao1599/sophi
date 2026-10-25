@@ -14,8 +14,8 @@ import type { WeatherReading } from "./weather";
  * · 30 cm" means nothing to the person it's for, so sensor questions are answered aloud (`get_distance`) and the
  * obstacle alerts stay as they are. The card code stays, unused, until it can say something plainer.
  */
-export function showViews(has: { gps: boolean; message: boolean }): ShowView[] {
-  return [...(has.gps ? (["weather", "location"] as const) : []), ...(has.message ? (["message"] as const) : []), "parts"];
+export function showViews(has: { gps: boolean; message: boolean; companion: boolean }): ShowView[] {
+  return [...(has.gps ? (["weather", "location"] as const) : []), ...(has.message ? (["message"] as const) : []), ...(has.companion ? (["companion"] as const) : []), "parts"];
 }
 
 /** A card to draw and the result text for the model, or no card and the text saying why. */

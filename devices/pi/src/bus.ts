@@ -63,6 +63,8 @@ export interface BusEvents {
   circleMessage: { id: number; message_id: string; from_name: string; text: string };
   /** That message finished playing, or was stopped. */
   circleMessageSpoken: { id: number };
+  /** A short-lived code for the walker user phone. Never log it or send it to the model. */
+  companionCode: { code: string; expires_at: string } | null;
   /**
    * The route in progress as the screen draws it (the Navigator's view), or null when no route is active. It
    * holds coordinates and a place name: never log it, never send it to the server or a model.

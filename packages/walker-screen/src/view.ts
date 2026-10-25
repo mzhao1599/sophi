@@ -503,6 +503,13 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
       return { key: "not_set_up", main: { text: "Not set up yet", size: "main" }, lines: [body("Ask your family to set it up.")] };
     case "ambient": {
       const clock = state.strip.clock ? clockWords(state.strip.clock.local_time) : null;
+      const code = content.companion_code;
+      if (code) return {
+        key: `ambient:companion:${code}`,
+        main: { text: `${code.slice(0, 3)} ${code.slice(3)}`, size: "main" },
+        lines: [body("Connect your companion app"), detail("Enter this code at sophi.work/app")],
+        announce: `Companion app code ${code.split("").join(" ")}. Enter it at sophi dot work slash app.`,
+      };
       const name = settings.greeting_name;
       const lines: ViewLine[] = [];
       if (clock) {
@@ -1075,6 +1082,12 @@ function showingScene(content: ShowingContent, settings: ScreenSettings): Scene 
         lines: [detail(`From ${card.from_name}`), ...caption],
         announce: `${card.from_name} says: ${card.text}`,
       };
+    case "companion":
+      return cardScene(
+        card.code,
+        { main: `${card.code.slice(0, 3)} ${card.code.slice(3)}`, mainSizes: ["main", "message", "title", "small"], layouts: [[body("Connect your companion app"), detail("Enter at sophi.work/app")]], prefer: "main" },
+        `Companion app code ${card.code.split("").join(" ")}.`,
+      );
     case "parts": {
       const parts = [...card.parts]
         .sort((a, b) => partOrder(a) - partOrder(b))

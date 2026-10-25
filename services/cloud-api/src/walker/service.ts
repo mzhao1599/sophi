@@ -658,14 +658,17 @@ export class WalkerService {
   async incomingMessages(caller: DeviceCaller, deviceId: string): Promise<DeviceMessagesResponse> {
     const device = await this.resolve(caller, deviceId);
     const now = this.now();
-    const { members } = await this.store.circleOf(device.device_id, now);
+    const { members, invites } = await this.store.circleOf(device.device_id, now);
+    const ownInvite = invites.filter((i) => i.role === "walker_user" && Date.parse(i.expires_at) > now.getTime()).at(-1);
+    const companion_code = ownInvite ? { code: ownInvite.code, expires_at: ownInvite.expires_at } : null;
     const her = members.find((m) => m.role === "walker_user" && m.state === "member");
-    if (!her) return { messages: [] };
+    if (!her) return { messages: [], companion_code };
     const caretakers = new Map(members.filter((m) => m.role === "caregiver" && m.state === "member").map((m) => [m.member_id, m.name]));
     const toHer = (await this.store.messagesFor(device.device_id, her.member_id, now)).filter(
       (m) => m.to_member_id === her.member_id && caretakers.has(m.from_member_id),
     );
     return DeviceMessagesResponseSchema.parse({
+      companion_code,
       messages: toHer.slice(-WALKER_MESSAGES_KEPT).map((m) => ({ message_id: m.message_id, from_name: caretakers.get(m.from_member_id), text: m.text })),
     });
   }
