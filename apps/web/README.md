@@ -213,6 +213,24 @@ Both are on Render's free plan. The web service spins down after 15 minutes with
 
 If this Mac's network filter blocks the `onrender.com` address (it blocked the new `vercel.app` one), open it on a phone instead.
 
+### The address: sophi.work
+
+The server's main address is **<https://sophi.work>**. It is a custom domain on the same **steady-walker** service, so it serves the same app, database and care circle. **<https://steady-walker.onrender.com>** keeps working as the fallback. Set up and checked on 2026-10-24:
+
+1. `sophi.work` is registered at Porkbun, which also runs its DNS.
+2. In Render, **steady-walker → Settings → Custom Domains → Add Custom Domain**, `sophi.work`. Render added `www.sophi.work` on its own.
+3. In Porkbun's DNS, the parking records came out and two went in: an `ALIAS` on the bare domain to `steady-walker.onrender.com`, and a `CNAME` for `www` to `steady-walker.onrender.com`. (Render also accepts an `A` record to `216.24.57.1` for the bare domain.)
+4. Render verified both names and issued the certificates itself. Until a name is verified there, visiting it gets Cloudflare's "Error 1000: DNS points to prohibited IP" even when the DNS is right, and HTTPS fails the handshake while its certificate is being issued.
+
+Checked: `/api/v1/health` on sophi.work said `{"status":"ok","walker_store":"postgres","care_db":"ok"}`; `/`, `/app`, `/walker` and `/.well-known/openid-configuration` answered `200`; `https://www.sophi.work/` redirects (`301`) to `https://sophi.work/`.
+
+Two things stay on the Render address on purpose:
+
+- **`SPACETIME_ISSUER`** is still `https://steady-walker.onrender.com`. The care-db module was configured with that issuer, so changing it means running `configure` again ([services/care-db](../../services/care-db/README.md#deploying-maincloud-and-render)). Pages served from sophi.work get tokens with that issuer, and they still work.
+- **The Pi** stays paired to `https://steady-walker.onrender.com`, the server URL saved in its credential. Pairing it again against sophi.work isn't needed.
+
+Sign-ins are kept per address: the owner's secret on the walker page and each phone's link are cookies for the exact host they were made on. A walker paired from the page at the Render address shows on that address only, and a phone linked there is not linked at sophi.work. To move the demo to sophi.work, pair the walker again from `https://sophi.work/walker` (the Pi's command still uses `--server https://steady-walker.onrender.com`) and link the phones again there; then keep every page on that one address.
+
 **Moved repository.** The code's home is now **mzhao1599/sophi**. The Render services were first created from an earlier private repository, which is frozen and gets no new commits. So in Render, connect **steady-walker** (and the Blueprint, if Render shows it separately) to **mzhao1599/sophi**, branch **main**. Then check two things: the latest deploy names a commit that exists in sophi, and `/api/v1/health` still says `"status":"ok","walker_store":"postgres"`. The database is not tied to a repository, so it stays as it is.
 
 ### After that

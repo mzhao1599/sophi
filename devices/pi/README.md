@@ -395,7 +395,7 @@ node devices/pi/dist/walker.mjs simulate --server http://localhost:3008 --state 
 
 ### The network: Ethernet first, Wi-Fi as a backup
 
-The walker needs the internet for the assistant; its offline lines and obstacle cues work without it. The walker page is on Render (<https://steady-walker.onrender.com>), so any computer with a browser can show it, on any network.
+The walker needs the internet for the assistant; its offline lines and obstacle cues work without it. The walker page is on Render at <https://sophi.work> (the same server is also at <https://steady-walker.onrender.com>, which is the address the Pi is paired to), so any computer with a browser can show it, on any network.
 
 **At Cal Hacks: Ethernet.** Cal Hacks prohibits personal hotspots, routers and other broadcasting equipment in the venue, and says it can detect them; never unplug its access points or switches. There's a hardline switch every 3 tables: request a cable in the Cal Hacks app, then pick it up at the Hardware Checkout window. The Pi 5 has its own gigabit Ethernet port, so no adapter is needed. On Raspberry Pi OS Lite trixie, NetworkManager is expected to bring up `eth0` with DHCP by itself, with no setup; this hasn't been run on our Pi yet. Check: `nmcli device` shows `eth0` as `connected`, and `ip -4 addr show eth0` shows an address. When Ethernet and Wi-Fi are both connected, NetworkManager's default route metrics (100 for Ethernet, 600 for Wi-Fi) are expected to send traffic over Ethernet; not checked on the Pi.
 
