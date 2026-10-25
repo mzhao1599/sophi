@@ -1,4 +1,4 @@
-import { CIRCLE_MESSAGE_MAX, type Cue } from "@walker/contracts";
+import { CIRCLE_MESSAGE_MAX, helpNames, type Cue, type HelpPerson, type HelpSource, type HelpView } from "@walker/contracts";
 import type { PhoneFailure, PhoneMember, PhoneMessage, PhonePerson, PhoneWalker } from "./phoneApi";
 import { cueList } from "./walkerView";
 
@@ -10,8 +10,14 @@ import { cueList } from "./walkerView";
 
 /** How often the app asks the server for news while it's on screen. */
 export const PHONE_POLL_MS = 2_000;
-/** With live updates from SpacetimeDB, the circle comes pushed; this is only for the walker's status (online, alerts, parts, GPS). */
+/**
+ * With live updates from SpacetimeDB, the circle comes pushed; this is only for the walker's status (online, alerts,
+ * parts, GPS). Only when the live rows include help requests (`my_help`): otherwise a request for help could reach
+ * a caretaker's open app 10 s late, so the phone keeps polling every PHONE_POLL_MS.
+ */
 export const PHONE_LIVE_POLL_MS = 10_000;
+
+export const pollEvery = (live: boolean, helpLive: boolean) => (live && helpLive ? PHONE_LIVE_POLL_MS : PHONE_POLL_MS);
 
 /** A random v4 UUID. `crypto.randomUUID` exists only on https pages, and a phone on the venue's LAN may be on plain http. */
 export function newId(): string {
@@ -152,3 +158,161 @@ export function ownerError(code: PhoneFailure): string {
       return "Sophi's server couldn't do that just now. Try again.";
   }
 }
+
+// ---- Asking for help (docs/subsystems/help.md; expected results in test/help-phones.EXPECTED.md) ----
+//
+// The phones say "asked for help", never "SOS", "emergency" or "alarm"; the only 911 is the "Call 911" link. With no
+// push notifications, nothing says anyone "has been told": a request is sent to the caretakers' phones, and shows
+// on one once its app has received it (`shown_to`). "You" is decided by member id, never by name.
+
+export { helpNames };
+
+type People = readonly HelpPerson[];
+const nameList = (people: People) => helpNames(people.map((p) => p.name));
+const one = <T,>(list: readonly T[], single: string, many: string) => (list.length === 1 ? single : many);
+
+/** "Maya's phone" / "Maya and Ana's phones": the walker's words. */
+const phonesOf = (people: People) => `${nameList(people)}'s ${one(people, "phone", "phones")}`;
+
+/** The approved caretakers' names, in joining order: who her phone would ask now. */
+export const caretakerNames = (home: PhoneMember) => home.people.filter((p) => p.role === "caregiver").map((p) => p.name);
+
+/** "Sent to Maya's phone." */
+export const sentLine = (sentTo: People) => `Sent to ${phonesOf(sentTo)}.`;
+/** "It's showing on Maya's phone." */
+export const shownLine = (shownTo: People) => `It's showing on ${phonesOf(shownTo)}.`;
+/** "Maya is on the way." / "Maya and Ana are on the way." */
+export const comingLine = (coming: People) => `${nameList(coming)} ${one(coming, "is", "are")} on the way.`;
+
+/** How long ago she asked, from the server's age: "just now", "1 minute ago", "5 minutes ago", "1 hour ago". */
+export function agoWords(ageSeconds: number): string {
+  if (ageSeconds < 60) return "just now";
+  const minutes = Math.floor(ageSeconds / 60);
+  if (minutes < 60) return minutes === 1 ? "1 minute ago" : `${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+}
+
+export const HOW_WORDS: Readonly<Record<HelpSource, string>> = {
+  handles: "from her walker",
+  voice: "by asking Sophi",
+  phone: "from her phone",
+};
+
+export const NO_CARETAKER = "No caretaker is linked to your walker.";
+
+// Her phone.
+
+/** The Get help tile's second line. */
+export function helpTileLine(home: PhoneMember): string {
+  if (home.help && !home.help.closed) return "Open: see who's coming";
+  const names = caretakerNames(home);
+  return names.length ? `Ask ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`}` : "No caretaker linked";
+}
+
+/** The furthest step so far, for her banner: on the way, else showing, else sent. */
+export const herOpenLine = (h: HelpView) => (h.coming.length ? comingLine(h.coming) : h.shown_to.length ? shownLine(h.shown_to) : sentLine(h.sent_to));
+
+/** How it closed, on her phone. */
+export function herClosedLine(h: HelpView): string {
+  if (!h.closed) return "";
+  if (h.closed.how === "okay") return `You said you're okay. ${phonesOf(h.sent_to)} will show it.`;
+  if (h.closed.how === "with_her") return `${h.closed.by?.name ?? "A caretaker"} says they're with you.`;
+  return "Your request for help has ended.";
+}
+
+/** "It goes to Maya's phone." / "It goes to Maya and Ana's phones." */
+export const goesToLine = (names: readonly string[]) => `It goes to ${helpNames(names)}'s ${names.length === 1 ? "phone" : "phones"}. Sophi doesn't call 911.`;
+
+/** Whether her location is shared, from her own walker view. */
+export function herLocationLine(home: PhoneMember): string {
+  const names = helpNames(caretakerNames(home));
+  return home.walker.location_sharing_enabled
+    ? `Location sharing is on, so ${names} can see your walker's latest GPS position.`
+    : `Location sharing is off, so ${names} won't see where you are.`;
+}
+
+export function helpSendError(code: PhoneFailure): string {
+  switch (code) {
+    case "no_caretaker":
+      return `${NO_CARETAKER.slice(0, -1)}, so nothing was sent.`;
+    case "network":
+      return "Not sent: can't reach Sophi's server. Try again.";
+    default:
+      return "Not sent. Try again.";
+  }
+}
+
+// A caretaker's phone.
+
+/** Her name for the caretaker's card: her phone's name, or the walker's own when her phone isn't linked. */
+export const herName = (home: PhoneMember) => walkerUserOf(home)?.name ?? home.walker.walker_name;
+
+/** "From her walker, just now." */
+export const askedHowLine = (h: HelpView) => {
+  const how = HOW_WORDS[h.source];
+  return `${how.charAt(0).toUpperCase()}${how.slice(1)}, ${agoWords(h.age_seconds)}.`;
+};
+
+const isMe = (meId: string) => (p: HelpPerson) => p.member_id === meId;
+
+/** Who else it went to, as this caretaker's phone sees it. */
+export function sentOthersLine(h: HelpView, meId: string): string {
+  const others = h.sent_to.filter((p) => !isMe(meId)(p));
+  if (others.length === h.sent_to.length) return `It went to ${phonesOf(h.sent_to)}.`;
+  return others.length ? `It also went to ${phonesOf(others)}.` : "It went only to your phone.";
+}
+
+/** Who is coming, this phone as "You". */
+export function comingForLine(h: HelpView, meId: string): string {
+  if (h.coming.length === 0) return "Nobody has said they're on the way yet.";
+  const names = h.coming.map((p) => (isMe(meId)(p) ? "You" : p.name));
+  if (names.length === 1 && names[0] === "You") return "You're on the way.";
+  return `${helpNames(names)} ${one(names, "is", "are")} on the way.`;
+}
+
+/** How it closed, on a caretaker's phone. */
+export function closedForLine(h: HelpView, meId: string, her: string, herKnown = true): string {
+  if (!h.closed) return "";
+  const by = h.closed.by;
+  // With no phone of hers in, `her` is the walker's own name, which can't say she.
+  if (h.closed.how === "okay") return by ? `${her} says she's okay.` : herKnown ? `${her} said she's okay on her walker.` : "She said she's okay on the walker.";
+  if (h.closed.how === "with_her") return by && isMe(meId)(by) ? `You're with ${her}.` : `${by?.name ?? "A caretaker"} is with ${her}.`;
+  return `${her}'s request for help has ended.`;
+}
+
+/** The tab title while a request is open on a caretaker's phone. */
+export const helpTitle = (her: string) => `${her} asked for help · Sophi`;
+
+const added = (prev: People, next: People) => next.filter((p) => !prev.some((q) => q.member_id === p.member_id));
+
+/**
+ * The one line the live region says when the help request changed since the last home: a new request, on her phone
+ * a phone newly showing it, a new phone coming, a close. Null when nothing it announces changed, and on the first
+ * home (`prev` undefined): never on load.
+ */
+export function helpChange(prev: HelpView | null | undefined, next: HelpView | null, home: PhoneMember): string | null {
+  if (prev === undefined || !next) return null;
+  const meId = home.me.member_id;
+  const mine = home.me.role === "walker_user";
+  const her = herName(home);
+  const fresh = !prev || prev.help_id !== next.help_id;
+  if (next.closed) {
+    if (!fresh && prev.closed) return null;
+    return mine ? herClosedLine(next) : closedForLine(next, meId, her, !!walkerUserOf(home));
+  }
+  if (fresh) return mine ? `You asked for help. ${sentLine(next.sent_to)}` : `${her} asked for help ${HOW_WORDS[next.source]}.`;
+  const coming = added(prev.coming, next.coming);
+  if (coming.length) {
+    if (mine) return comingLine(coming);
+    const names = coming.map((p) => (isMe(meId)(p) ? "You" : p.name));
+    return names.length === 1 && names[0] === "You" ? "You're on the way." : `${helpNames(names)} ${one(names, "is", "are")} on the way.`;
+  }
+  const shown = added(prev.shown_to, next.shown_to);
+  if (mine && shown.length) return shownLine(shown);
+  return null;
+}
+
+/** A new open request arrived since the last home (not on load): the caretaker's phone plays its tone. */
+export const helpArrived = (prev: HelpView | null | undefined, next: HelpView | null) =>
+  prev !== undefined && !!next && !next.closed && (!prev || prev.help_id !== next.help_id);

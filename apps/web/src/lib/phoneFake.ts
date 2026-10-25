@@ -3,9 +3,17 @@ import {
   CircleInviteSchema,
   CircleMemberSchema,
   CircleNameSchema,
+  HELP_CLOSED_SHOWN_MS,
+  HELP_OPEN_MAX_MS,
+  HELP_RETENTION_MS,
+  HelpViewSchema,
   OwnerPhonesResponseSchema,
   PHONE_JOIN_TTL_MS,
   type Cue,
+  type HelpClosedHow,
+  type HelpPerson,
+  type HelpSource,
+  type HelpView,
   type PartView,
 } from "@walker/contracts";
 import {
@@ -22,6 +30,7 @@ import {
   type PhoneRole,
   type PresetReplyId,
 } from "./phoneApi";
+import { SAMPLE_AREA } from "./nearbySample";
 import { newId } from "./phoneView";
 
 /**
@@ -56,6 +65,19 @@ interface StoredMessage {
   text: string;
 }
 
+interface StoredHelp {
+  help_id: string;
+  /** Who asked with which client id: her phone's member id, or "walker". */
+  asked_by: string;
+  client_help_id: string;
+  source: HelpSource;
+  asked_at: number;
+  sent_to: HelpPerson[];
+  shown_to: HelpPerson[];
+  coming: HelpPerson[];
+  closed: { how: HelpClosedHow; by: HelpPerson | null; at: number } | null;
+}
+
 export interface DemoCircle {
   /** A new phone with no cookie. */
   phone(): PhoneApi;
@@ -74,6 +96,16 @@ export interface DemoCircle {
   remove(name: string): void;
   /** How many requests were made, so a test can tell a path ran. */
   calls(): number;
+  /** Her walker asks for help (both handles held, or by voice after the countdown). `no_caretaker` fails as the server would. */
+  walkerAsks(source: "handles" | "voice"): HelpView;
+  /** A caretaker, by name, answers the open request: "I'm on my way" or "I'm with Rose". */
+  caretakerAnswers(name: string, answer: "coming" | "with_her"): HelpView;
+  /** Confirm pressed twice on her walker: closes the open request `okay`, by her phone (null without one). */
+  walkerOkay(): HelpView;
+  /** Moves the fake's clock on: ages, the hour after which a request expires, and the 24-hour deletion. */
+  advance(ms: number): void;
+  /** A fresh GPS fix for her walker, shown to caretakers only while her sharing is on. Null clears it. */
+  setLocation(at: { latitude: number; longitude: number } | null): void;
 }
 
 const STATUS: Partial<Record<PhoneFailure, number>> = {
@@ -86,11 +118,13 @@ const STATUS: Partial<Record<PhoneFailure, number>> = {
   message_limit: 409,
   invite_locked: 429,
   unavailable: 503,
+  no_caretaker: 409,
+  help_closed: 409,
   network: 0,
 };
 
-function fail(code: PhoneFailure): never {
-  throw new PhoneApiError(code, `Fake: ${code}`, STATUS[code] ?? 400);
+function fail(code: PhoneFailure, help?: HelpView): never {
+  throw new PhoneApiError(code, `Fake: ${code}`, STATUS[code] ?? 400, help);
 }
 
 const PARTS = (online: boolean, simulator: boolean): PartView[] =>
@@ -110,8 +144,81 @@ export function createDemoCircle(): DemoCircle {
   let messages: StoredMessage[] = [];
   const walker = { walker_name: "My walker", online: true, simulator: false, alerts: ["sound", "spoken"] as Cue[] };
   let locationSharing = false;
+  let fix: { latitude: number; longitude: number } | null = null;
+  let helps: StoredHelp[] = [];
   let pending: PhoneFailure | null = null;
   let count = 0;
+  // The fake's clock: the real one plus whatever a test or the preview moved it on.
+  let skew = 0;
+  const now = () => Date.now() + skew;
+
+  /** The server's sweep, as of now: an open request an hour old expires; any request 24 hours old is gone. */
+  function sweep() {
+    const t = now();
+    helps = helps.filter((h) => t - h.asked_at < HELP_RETENTION_MS);
+    for (const h of helps) {
+      if (!h.closed && t - h.asked_at >= HELP_OPEN_MAX_MS) h.closed = { how: "expired", by: null, at: h.asked_at + HELP_OPEN_MAX_MS };
+    }
+  }
+
+  const openHelp = () => (sweep(), helps.find((h) => !h.closed));
+
+  function helpView(h: StoredHelp): HelpView {
+    return HelpViewSchema.parse({
+      help_id: h.help_id,
+      source: h.source,
+      age_seconds: Math.floor((now() - h.asked_at) / 1_000),
+      sent_to: h.sent_to.map((p) => ({ ...p })),
+      shown_to: h.shown_to.map((p) => ({ ...p })),
+      coming: h.coming.map((p) => ({ ...p })),
+      closed: h.closed ? { how: h.closed.how, by: h.closed.by ? { ...h.closed.by } : null } : null,
+    });
+  }
+
+  /**
+   * What every member's home carries: the open request, or the newest closed within HELP_CLOSED_SHOWN_MS, or null.
+   * A caretaker's home that carries the open request adds that phone to `shown_to`, as the server does.
+   */
+  function shownHelp(m: Member): HelpView | null {
+    const open = openHelp();
+    if (open) {
+      if (m.role === "caregiver" && !open.shown_to.some((p) => p.member_id === m.member_id)) open.shown_to.push(person(m));
+      return helpView(open);
+    }
+    const t = now();
+    const closed = helps.filter((h) => h.closed && t - h.closed.at < HELP_CLOSED_SHOWN_MS).sort((a, b) => b.closed!.at - a.closed!.at)[0];
+    return closed ? helpView(closed) : null;
+  }
+
+  function ask(askedBy: string, clientId: string, source: HelpSource): HelpView {
+    sweep();
+    const again = helps.find((h) => h.asked_by === askedBy && h.client_help_id === clientId);
+    if (again) return helpView(again);
+    const open = openHelp();
+    if (open) return helpView(open);
+    const sentTo = members.filter((p) => p.approved && p.role === "caregiver").map(person);
+    if (sentTo.length === 0) fail("no_caretaker");
+    const h: StoredHelp = { help_id: newId(), asked_by: askedBy, client_help_id: clientId, source, asked_at: now(), sent_to: sentTo, shown_to: [], coming: [], closed: null };
+    helps.push(h);
+    return helpView(h);
+  }
+
+  const person = (m: Pick<Member, "member_id" | "name">): HelpPerson => ({ member_id: m.member_id, name: m.name });
+
+  /** `m` null: her walker's own Confirm with no phone of hers in. */
+  function answer(helpId: string | null, m: Member | null, act: "coming" | "okay"): HelpView {
+    sweep();
+    const h = helpId ? helps.find((x) => x.help_id === helpId) : helps.find((x) => !x.closed);
+    if (!h) fail("not_found");
+    if (h.closed) fail("help_closed", helpView(h));
+    if (act === "coming") {
+      if (m?.role !== "caregiver") fail("not_allowed");
+      if (!h.coming.some((p) => p.member_id === m.member_id)) h.coming.push(person(m));
+    } else {
+      h.closed = { how: m?.role === "caregiver" ? "with_her" : "okay", by: m ? person(m) : null, at: now() };
+    }
+    return helpView(h);
+  }
 
   function take() {
     count += 1;
@@ -131,11 +238,16 @@ export function createDemoCircle(): DemoCircle {
     return PhoneHomeSchema.parse({
       membership: "member",
       me: { member_id: m.member_id, name: m.name, role: m.role },
-      walker: { ...walker, alerts: [...walker.alerts], parts: m.role === "caregiver" ? PARTS(walker.online, walker.simulator) : null, battery: "not_measured", ...(locationSharing ? { location_sharing_enabled: true, location: null } : {}) },
+      walker: {
+        ...walker,
+        alerts: [...walker.alerts],
+        parts: m.role === "caregiver" ? PARTS(walker.online, walker.simulator) : null,
+        battery: "not_measured",
+        ...(locationSharing ? { location_sharing_enabled: true, location: m.role === "caregiver" && fix ? { ...fix, age_seconds: 12 } : null } : {}),
+      },
       people,
       messages: messages.filter((x) => x.from_member_id === m.member_id || x.to_member_id === m.member_id).map((x) => view(x, m)),
-      // Placeholder until the phones piece fakes help requests (docs/subsystems/help.md).
-      help: null,
+      help: shownHelp(m),
     });
   }
 
@@ -188,6 +300,8 @@ export function createDemoCircle(): DemoCircle {
           take();
           if (approvedMe().role !== "walker_user") fail("not_allowed");
           locationSharing = enabled;
+          // Turning sharing off erases the last fix, as on the server.
+          if (!enabled) fix = null;
           return enabled;
         },
         async join(code) {
@@ -216,6 +330,20 @@ export function createDemoCircle(): DemoCircle {
           if (m.role !== "walker_user") fail("not_allowed");
           if (!members.some((p) => p.member_id === to && p.approved && p.role === "caregiver")) fail("not_found");
           return store(m, clientId, to, PRESET_REPLIES[preset]);
+        },
+        async askForHelp(clientId) {
+          take();
+          const m = approvedMe();
+          if (m.role !== "walker_user") fail("not_allowed");
+          return ask(m.member_id, clientId, "phone");
+        },
+        async helpComing(helpId) {
+          take();
+          return answer(helpId, approvedMe(), "coming");
+        },
+        async helpOkay(helpId) {
+          take();
+          return answer(helpId, approvedMe(), "okay");
         },
       };
     },
@@ -266,25 +394,58 @@ export function createDemoCircle(): DemoCircle {
       for (const m of members.filter((p) => p.name === name)) removeMember(m.member_id);
     },
     calls: () => count,
+    walkerAsks: (source) => ask("walker", newId(), source),
+    caretakerAnswers(name, act) {
+      const m = members.find((p) => p.name === name && p.approved && p.role === "caregiver");
+      if (!m) fail("not_found");
+      return answer(null, m, act === "coming" ? "coming" : "okay");
+    },
+    walkerOkay() {
+      const her = members.find((p) => p.approved && p.role === "walker_user");
+      return answer(null, her ?? null, "okay");
+    },
+    advance: (ms) => void (skew += ms),
+    setLocation: (at) => void (fix = at),
   };
   return circle;
 }
 
+/** What `?preview=` can set up: how many caretakers (0 to 2; Maya's own preview has at least her), and a shared GPS fix. */
+export interface PreviewOptions {
+  caretakers?: number;
+  location?: boolean;
+}
+
+/** The preview's made-up fix: the sample's starting point by Lake Merritt, never anyone's real position. */
+export const PREVIEW_FIX = { latitude: SAMPLE_AREA.start[0], longitude: SAMPLE_AREA.start[1] };
+
 /**
- * The preview phone for `?preview=rose` or `?preview=maya`: a circle with Rose's phone and Maya's, and one
- * message each way, seen from one of them. Sample data; the app shows "Preview" on every screen with it.
+ * The preview phone for `?preview=rose` or `?preview=maya`: a circle with Rose's phone and Maya's (and Ana's,
+ * with `caretakers: 2`), and one message each way, seen from one of them. Sample data; the app shows "Preview"
+ * on every screen with it, and its preview controls drive the circle (the walker asks, a caretaker answers).
  */
-export async function createPreviewPhone(role: PhoneRole): Promise<{ api: PhoneApi; circle: DemoCircle }> {
+export async function createPreviewPhone(role: PhoneRole, options: PreviewOptions = {}): Promise<{ api: PhoneApi; circle: DemoCircle }> {
+  const caretakers = Math.min(2, Math.max(role === "caregiver" ? 1 : 0, options.caretakers ?? 1));
   const circle = createDemoCircle();
   circle.setSimulator(true);
   const rose = circle.phone();
   const maya = circle.phone();
   await rose.join(circle.addPhone("Rose", "walker_user"));
-  await maya.join(circle.addPhone("Maya", "caregiver"));
-  circle.approve("Maya");
-  await maya.sendText(newId(), "Lunch is in the fridge.");
+  if (caretakers >= 1) {
+    await maya.join(circle.addPhone("Maya", "caregiver"));
+    circle.approve("Maya");
+    await maya.sendText(newId(), "Lunch is in the fridge.");
+  }
+  if (caretakers >= 2) {
+    await circle.phone().join(circle.addPhone("Ana", "caregiver"));
+    circle.approve("Ana");
+  }
+  if (options.location) {
+    await rose.setLocationSharing(true);
+    circle.setLocation(PREVIEW_FIX);
+  }
   const home = await rose.home();
-  const mayaId = home.membership === "member" ? home.people.find((p) => p.role === "caregiver")!.member_id : "";
-  await rose.sendPreset(newId(), "okay", mayaId);
+  const mayaId = home.membership === "member" ? home.people.find((p) => p.role === "caregiver")?.member_id : undefined;
+  if (mayaId) await rose.sendPreset(newId(), "okay", mayaId);
   return { api: role === "walker_user" ? rose : maya, circle };
 }
