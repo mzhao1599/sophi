@@ -394,8 +394,8 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
       // Talk was let go and the answer hasn't come: words only, nothing that moves (no spinner, no dots).
       return { key: "thinking", main: { text: "One moment", size: "main" }, lines: [body("Your question is with Sophi.")] };
     case "answering": {
-      // The same names as the /walker page (apps/web/src/lib/walkerView.ts). The walker's model is Gemini.
-      const source = content.source === "model" ? "Answered by Gemini" : content.source === "fixed" ? "Answered by the fixed replies" : "On the walker, offline reply";
+      // The same names as the /walker page (apps/web/src/lib/walkerView.ts). The walker's model is Claude.
+      const source = content.source === "model" ? "Answered by Claude" : content.source === "fixed" ? "Answered by the fixed replies" : "On the walker, offline reply";
       const mapCredit = content.reply.startsWith("Your GPS puts you near ") ? detail("Map data © OpenStreetMap contributors") : null;
       if (!settings.captions) return { key: "answering", main: { text: "Sophi is answering", size: "main" }, lines: [detail(source)], center: { lines: mapCredit ? [mapCredit] : [] } };
       const pages = captionPages(content.reply, textSize);

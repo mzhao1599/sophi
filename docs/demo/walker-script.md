@@ -13,11 +13,11 @@ This is the script for showing the always-on walker assistant to judges at Cal H
 The onboarding demo's script is [script.md](script.md); it stays the source for Wren's lines and the website setup. Sponsor-track framing is in [tracks.md](tracks.md).
 
 **What is real today** (2026-10-24):
-- the walker assistant's server on Render, with pairing, heartbeats, the assistant turn on Google's Gemini (a main model and a faster backup), offers and Confirm, on Postgres. Since 2026-10-24 the server, not the model, writes the spoken answer to an obstacle question, from the readings the walker sent;
+- the walker assistant's server on Render, with pairing, heartbeats, the assistant turn on Anthropic's Claude (Claude Haiku 5.5, with Claude Opus 5.5 as the backup), with Cartesia transcribing each Talk clip first (switched 2026-10-25, not yet rehearsed), offers and Confirm, on Postgres. Since 2026-10-24 the server, not the model, writes the spoken answer to an obstacle question, from the readings the walker sent;
 - the "Your walker" page, with its "Behind the scenes" panel and, since 2026-10-24, a "Phones" card;
 - the Pi service, rehearsed as the simulator on a Mac on 2026-10-23 (the results below, from before the screen, the phones, the arms and the server-written obstacle answer);
 - the real walker so far:
-  - a Raspberry Pi 5 running the walker service with a real USB microphone and USB soundbar. On 2026-10-23 one real spoken turn ran on it: "What can you help me with?", answered by Gemini about 4 seconds after Talk was let go and heard through the soundbar in Cartesia's voice ([what each Pi step showed](../../devices/pi/README.md#set-up-the-pi));
+  - a Raspberry Pi 5 running the walker service with a real USB microphone and USB soundbar. On 2026-10-23 one real spoken turn ran on it: "What can you help me with?", answered by the server's earlier model (before Claude) about 4 seconds after Talk was let go and heard through the soundbar in Cartesia's voice ([what each Pi step showed](../../devices/pi/README.md#set-up-the-pi));
   - on 2026-10-24: the Pi ran from the walker's battery through its 5 V converter (power draw not measured; the Pi reset when a third USB hub, or the GPS straight into the Pi, was plugged in, cause not found). Both hand boards (`hand-right-01`, `hand-left-01`) said hello and were healthy, "Sophi is on." played, Talk on the right handle gave two answered turns, and the left handle gave the Confirm press cue. Pressing Confirm to answer an offer hasn't been tried on the Pi. After a full power cycle the handles' USB ports took about six minutes to open ([hardware record](../../hardware/current-build.md));
   - the paired Pi asked the server for Cartesia's voice for its own lines and got audio back (2026-10-24); nobody has listened to it yet.
 
@@ -46,7 +46,7 @@ Nothing in this script presents a simulated or planned part as working.
 | Beat | Presenter does | The walker says or does | The page | The walker's screen † |
 | --- | --- | --- | --- | --- |
 | 1. Boot | Starts the walker | "Sophi is on." | Online, each part with its health and "Simulated", the "Simulator" badge, alerts "Applied" | The clock and the alerts in force; "Online" in the strip |
-| 2. Ask | Holds Talk: "What can you help me with?" | Answers out loud | "You said (as heard by Gemini)", the reply, "In the walker's own voice" | "Listening", "One moment", then the reply as captions, "Answered by Gemini" |
+| 2. Ask | Holds Talk: "What can you help me with?" | Answers out loud | "You said (as heard by Cartesia)", the reply, "In Cartesia's voice" | "Listening", "One moment", then the reply as captions, "Answered by Claude" |
 | 3. Obstacles | Hand in front of the sensor, then asks "Is anything in front of me?" | Buzzes the handle at once (local) †, then reads the distances, written by the server, with "These readings are simulated." † | Front left about 30 cm, "Simulated"; the reply "Answered by the fixed replies" † | "Something close", "Front left · 30 cm", "Simulated"; then the captions |
 | 4. Change a setting | Asks "Stop buzzing me, use short sounds instead.", then presses Confirm | "I can switch your alerts from buzzing to short sounds. Press Confirm to do it.", then "Done. Obstacle alerts now use short sounds." † A hand in front now gives the short sound, no buzz † | The offer card, then "Version 2", "Short sounds", "Applied" | "Short sounds?", "Confirm" over the left handle, then "Done" |
 | 5. Arms (only with no arms fitted) | Asks "Can you pick up my keys?" | "This walker doesn't have robot arms, so I can't pick things up or move things." † | The same line, "Answered by the fixed replies" | The captions, "Answered by the fixed replies" |
@@ -90,12 +90,12 @@ The reply's text reaches the walker 1.9 to 4.6 seconds after you let go on the s
 1. Talk: **"What can you help me with?"**
 2. The walker answers out loud. Rehearsed answers, in the model's own words, for example: "I can check obstacle readings, report on your walker's parts, or change how you receive alerts."
 3. Point at the page:
-   - "You said (as heard by Gemini)" and your words;
+   - "You said (as heard by Cartesia)" and your words;
    - the reply;
    - "In the walker's own voice" under it, or "In Cartesia's voice"† when the server has a Cartesia key (it has had one on Render since 2026-10-23).
-4. **The screen** †: "Listening" and "Let go of Talk when you're done." while Talk is held; "One moment" and "Your question is with Sophi." until the answer comes (nothing on it moves); then the reply as captions, paged at sentence ends ("1 of 2"), with "You said: …" and "Answered by Gemini".
+4. **The screen** †: "Listening" and "Let go of Talk when you're done." while Talk is held; "One moment" and "Your question is with Sophi." until the answer comes (nothing on it moves); then the reply as captions, paged at sentence ends ("1 of 2"), with "You said: …" and "Answered by Claude".
 
-> "Gemini heard that and wrote the answer. The page and the walker's screen both show it, so voice is never the only way to follow it."
+> "Cartesia turned my voice into words and Claude wrote the answer. The page and the walker's screen both show it, so voice is never the only way to follow it."
 
 ### Beat 3. Obstacles (0:35 to 1:00)
 
@@ -110,7 +110,7 @@ The reply's text reaches the walker 1.9 to 4.6 seconds after you let go on the s
 
    "The obstacle sensors read front left: 30 centimetres, just now; front right: 150 centimetres, just now. These readings are simulated."
 
-   - Gemini only decides that this is a question about the sensors. The numbers, the zones and "just now" are written by the server from the walker's readings, never by the model.
+   - Claude only decides that this is a question about the sensors. The numbers, the zones and "just now" are written by the server from the walker's readings, never by the model.
    - A zone without a fresh, valid reading is read out as "no current reading", never as clear. With no readings at all it says "I don't have any obstacle sensor readings right now."
    - "These readings are simulated." comes when every reading is from a simulated sensor; "Some readings are simulated." when only some are.
    - The age is "just now" under a second, then whole seconds ("3 seconds ago").
@@ -311,9 +311,9 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 
 > "Her position goes only to the map services, straight from the walker. Our server and the model get the place's name and how far, never where she is. And the turn-by-turn voice runs on the walker, so it keeps going without the internet."
 
-**If Sophi says "I can't answer that right now"** (Gemini ran past the server's 8 seconds; it happened on 2 of 6 route questions in the live check before the fix below, and route questions take two model steps, 7 to 10.4 seconds in all), say "It took too long that time" and ask again. Never say it worked.
+**If Sophi says "I can't answer that right now"** (the model ran past the server's 8 seconds; with the earlier model it happened on 2 of 6 route questions in the live check before the fix below, and route questions take two model steps, 7 to 10.4 seconds in all), say "It took too long that time" and ask again. Never say it worked.
 
-**Live check (2026-10-24, the Mac simulator against a local production build on Gemini, live OpenStreetMap services, synthetic spoken clips):** "Where am I right now?", "Can you walk me to the Lake Merritt Boating Center?", "How much farther is it?" and "Please stop the directions." passed 3 of 3 runs in a row, each answer as written above in Gemini's own words ("You have about 740 meters left, which will take around 10 minutes. Your position is currently simulated."). Two later route questions timed out; one cause was a retry when the model's discarded "I'll check" words said "safe", fixed in the same change, and one more run after the fix started the route and ended it with a tap on End route. Not yet with Cartesia's voice, on the real Pi or on Render.
+**Live check (2026-10-24, the Mac simulator against a local production build on the server's earlier model, before Claude; not yet rerun with Claude; live OpenStreetMap services, synthetic spoken clips):** "Where am I right now?", "Can you walk me to the Lake Merritt Boating Center?", "How much farther is it?" and "Please stop the directions." passed 3 of 3 runs in a row, each answer as written above in the model's own words ("You have about 740 meters left, which will take around 10 minutes. Your position is currently simulated."). Two later route questions timed out; one cause was a retry when the model's discarded "I'll check" words said "safe", fixed in the same change, and one more run after the fix started the route and ended it with a tap on End route. Not yet with Cartesia's voice, on the real Pi or on Render.
 
 **Honesty lines:** the position is simulated indoors, and the screen and the first spoken line both say so; the route is OpenStreetMap's walking route and can include steps or curbs; the walker never steers, it only speaks.
 
@@ -329,7 +329,7 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 
 ## The spoken lines
 
-Only the presenter speaks to the walker: the Gemini key is on the free tier, which is for scripted, made-up lines (see the honesty lines). Judges type on the page instead. Every alternate below for beats 2, 4 and 5 ran once in the 2026-10-23 rehearsal (two extra runs) and gave the same results. Beat 3's answer has been server-written since then, so its lines are † until rehearsed again.
+Only the presenter speaks to the walker: Cartesia now hears the voice clip, and its terms allow it to train on what it receives, so only scripted, made-up lines go to it (see the honesty lines). Judges type on the page instead. Every alternate below for beats 2, 4 and 5 ran once in the 2026-10-23 rehearsal (two extra runs) and gave the same results. Beat 3's answer has been server-written since then, so its lines are † until rehearsed again.
 
 | Beat | Line | Alternates | Must come back |
 | --- | --- | --- | --- |
@@ -346,7 +346,7 @@ Only the presenter speaks to the walker: the Gemini key is on the free tier, whi
 - "Are any of your parts not real hardware?"
 - "Is anything in front of me?" (answered with the server's distance line †)
 
-The notice above the box says where typed words go: Gemini, which may keep a copy; Cartesia, for the text of spoken replies; and that each message is deleted an hour after it's sent. Point at it before a judge types. Location and weather questions only work by Talk on the walker; typed, Sophi asks you to use Talk.
+The notice above the box says where typed words go: Anthropic's Claude, which may keep a copy; Cartesia, for the text of spoken replies; and that each message is deleted an hour after it's sent. Point at it before a judge types. Location and weather questions only work by Talk on the walker; typed, Sophi asks you to use Talk.
 
 ## Honesty lines
 
@@ -354,8 +354,8 @@ Say these when they come up, in these words or close to them.
 
 - **Asking for help:** "Sophi doesn't call 911 and doesn't detect falls. When Rose asks, it goes to her caretaker's phone, and the walker only says it's showing there once her app has it. There are no push notifications yet, so the app has to be open."
 - **What's simulated:** "This is the simulator on a laptop. Every part marked Simulated is a stand-in, and the page says Simulator for the whole walker." On the real Pi: "The Pi, its buttons, microphone and speaker are real. Anything still marked Simulated is a stand-in."
-- **Who hears and who speaks:** "Google's Gemini hears my voice and writes the answer. Cartesia speaks it, and only Sophi's reply text goes to Cartesia, never my voice. Without Cartesia, the walker speaks with its own voice, and the page says which."
-- **Why judges type:** "Our Gemini key is on the free tier, which is for scripted, made-up lines, and Cartesia's terms allow it to train on what it receives, so only I speak to it. You can type on the page; the notice says where typed words go."
+- **Who hears and who speaks:** "Cartesia turns my voice into words, and Anthropic's Claude writes the answer from those words. Cartesia speaks it too. Without Cartesia, the walker can't hear me and speaks with its own voice, and the page says which."
+- **Why judges type:** "Cartesia hears the voice, and its terms allow it to train on what it receives, so only I speak to it, with scripted, made-up lines. You can type on the page; the notice says where typed words go."
 - **What it can change:** "The model can only offer one change: how alerts reach you. Nothing changes until a person presses Confirm, and the offer expires after a minute. Voice can't confirm."
 - **Obstacles:** "The buzz is a proximity cue from the walker itself, not collision avoidance. The spoken distances are the walker's own readings, written out by the server. A missing or old reading is 'no current reading', never clear."
 - **The walker's screen:** "The screen shows what the walker is doing and the same words it says. So far it has run in the simulator, not on this panel" (until it has been rehearsed on the panel).
@@ -363,7 +363,7 @@ Say these when they come up, in these words or close to them.
 - **Location (only if it's in the demo):** "Location sharing starts off, and only Rose's phone can turn it on. When it's on, the walker's latest GPS position goes to our server and to Maya's phone, and asking the walker where you are or about the weather sends one position to OpenStreetMap's or Open-Meteo's service. The GPS often has no fix indoors."
 - **Motion:** "The arms move only when a person at the walker presses Confirm on a handle; the model, the phones and the website can't start them, and any handle press stops them." With no hardware stop wired: "There's no hardware stop yet, so they run in bench mode, and the screen says so." Before the arms have run on hardware: "The arm code is built and tested on simulated servos; it hasn't run on these arms yet." The lift, until it passed 3 of 3 on the walker: "The lift's code is built and tested against a simulated lift board; it hasn't moved this lift yet." With the lift in: "The lift moves only while a finger is on its control, after a Confirm press at the walker, with the arms folded, and never without the hardware stop."
 - **Numbers:** only our own timings, and say they're ours (the rehearsal results below). On the real Pi there is one timed turn so far (about 4 seconds from letting go of Talk to the answer arriving); nothing else on the hardware is timed.
-- **What's kept:** "Voice clips are sent to Gemini for one answer and dropped; Sophi never stores them. Google's free tier may keep what it receives. The words and replies are deleted from Sophi after an hour, or at once with Forget this walker. Messages between the phones are deleted after a day."
+- **What's kept:** "Voice clips are sent to Cartesia to be turned into words and then dropped; Sophi never stores them. Cartesia may keep what it receives. The words and replies are deleted from Sophi after an hour, or at once with Forget this walker. Messages between the phones are deleted after a day."
 - **It's not Wren's walker:** if this follows the onboarding demo, "Wren's setup has voice off; this is a walker set up with voice on."
 
 ## Judge Q&A
@@ -371,16 +371,16 @@ Say these when they come up, in these words or close to them.
 **1. Is it always listening?** No. Nothing records until Talk is pressed, and it stops at release, or after 15 seconds. There's no wake word. The model never speaks unprompted; the walker's own lines (it's on, offline, back online, pair me again, the arms' Confirm prompts) are fixed and written in the Pi's code. A paired Pi asks the server to say them in Cartesia's voice, and says them in its own voice when that fails.
 
 **2. What happens to my voice?**
-- The clip goes to Google's Gemini with that one question, is held in memory for the turn, and is then dropped. Sophi never stores or logs it.
+- The clip goes to Cartesia to be transcribed, is held in memory for the turn, and is then dropped. Sophi never stores or logs it. Anthropic gets the words, never the clip.
 - The transcript and the reply are kept for an hour, so the page can show the conversation. "Forget this walker" deletes them at once.
-- Typed words go to Gemini too. A reply the walker speaks goes to Cartesia as text when the server has a Cartesia key; replies to typed questions on the page aren't spoken, so they don't.
+- Typed words go to Claude too. A reply the walker speaks goes to Cartesia as text when the server has a Cartesia key; replies to typed questions on the page aren't spoken, so they don't.
 - On the free tiers, Google and Cartesia may use what they receive, so only scripted, made-up lines go to them.
 
 **3. Why does it need Confirm?** A model's answer is never authority to change the walker. The model may offer one change, and the server checks it against fixed rules: a cue the walker can deliver, and never turning obstacle alerts off. The server writes the offer's words from the change itself. The change happens only when a person presses Confirm, by the offer's id, within a minute. The first answer wins. A second Confirm sees it's already done.
 
 **4. What if the internet goes down?** The buttons and obstacle cues keep working on the walker. It says it's offline and answers Talk with a local line built from its current settings. It catches up when the network returns, and the page then shows everything it said. Measured on the simulator, with its own network switch, which fails requests at once: the walker counted itself offline 5.2 to 7.3 seconds after the cut and answered Talk at once. Once offline it retries after 10 seconds and then every 15 seconds, so it's back within about 15 seconds of the network returning (7.1 to 7.6 seconds in the rehearsal, by where the switch fell in that wait).
 
-**5. What if the model is slow or fails?** A turn has 8 seconds on the server. Two Gemini models are asked at once, and the faster backup answers if the main one hasn't within 4.5 seconds (see question 8). If the models fail, or the main one refuses, a fixed answer built from the walker's status is used, and the page marks it "Answered by the fixed replies". If the server's answer doesn't arrive within 10 seconds, the walker gives up, counts itself offline and says its offline line. Some answers are fixed on purpose: the arms question, and since 2026-10-24 the obstacle readings, which the server writes from the walker's own numbers.
+**5. What if the model is slow or fails?** A turn has 8 seconds on the server. Two Claude models are asked at once, and the backup answers if the main one hasn't within 4.5 seconds (see question 8). Before the model, Cartesia has at most 2.5 seconds to transcribe a clip; if it can't, Sophi says it can't hear and suggests typing on the page. If the models fail, or the main one refuses, a fixed answer built from the walker's status is used, and the page marks it "Answered by the fixed replies". If the server's answer doesn't arrive within 10 seconds, the walker gives up, counts itself offline and says its offline line. Some answers are fixed on purpose: the arms question, and since 2026-10-24 the obstacle readings, which the server writes from the walker's own numbers.
 
 **6. Can it move?** The arms can, but only from a handle Confirm press at the walker, and the conversation can't start them.
 - The model can't move anything. It can't even ask: the cloud may at most offer a taught skill or pose by its id, nothing sends such an offer yet, and even then it would only become a Confirm target.
@@ -393,7 +393,7 @@ Say these when they come up, in these words or close to them.
 
 **7. How fast is it?** These are our timings from the rehearsal below, on a laptop with the simulator: from releasing Talk to the reply's text arriving, 1.9 to 4.6 seconds, with a median of 2.7 seconds, over 16 spoken turns; 2 of them took over 4 seconds. The walker then has to say it: the Pi writes the whole line with its own voice before playing it, so the time until it's heard is longer, and we haven't measured it. The target in our design is 4 seconds to the start of a spoken answer. On the real Pi, one timed turn so far: 3.96 seconds from letting go of Talk to the answer arriving from Render (2026-10-23); one turn isn't a timing range.
 
-**8. Which models?** Google's Gemini hears the clip and writes the answer in one call. The server asks two Gemini models at once: `gemini-3.7-flash`, whose answer is used when it comes within 4.5 seconds, and the faster `gemini-3.6-flash` as a backup for the rest. In our live tests on 2026-10-23 the backup answered 26 of 210 turns at a 5-second switch-over and 12 of 60 at 4.5 seconds, and every answer it gave that was used was right. The page says "Gemini" for both. Cartesia's text-to-speech (`sonic-3.6`, a stock voice; no one's voice is cloned) speaks it; the server has had a key since 2026-10-23. If Cartesia's audio doesn't come, the walker speaks with its own voice (Piper on the Pi).
+**8. Which models?** Cartesia's speech-to-text (`ink-whisper`) turns the clip into words, then Anthropic's Claude writes the answer. The server asks two Claude models at once: Claude Haiku 5.5, whose answer is used when it comes within 4.5 seconds, and Claude Opus 5.5 as a backup for the rest. How fast each is on these turns, and how often the backup answers, hasn't been measured yet, so don't quote a number. The page says "Claude" for both. Cartesia's text-to-speech (`sonic-3.6`, a stock voice; no one's voice is cloned) speaks it; the server has had a key since 2026-10-23. If Cartesia's audio doesn't come, the walker speaks with its own voice (Piper on the Pi).
 
 **9. Who can see the page?** The browser that paired the walker, through a cookie; there are no accounts yet. A walker is paired with a one-time 6-digit code that lasts 10 minutes. The walker gets its own key, and the server keeps only a hash of it. Five wrong codes lock pairing for 10 minutes. A phone gets in with its own one-time code from that page, and a caretaker's phone only after the page approves it.
 
@@ -415,7 +415,7 @@ The walker is paired, on and "Online"; the page is open.
 
 **0:10 to 0:25**
 
-1. Talk: "What can you help me with?" Point at "You said (as heard by Gemini)" and the reply.
+1. Talk: "What can you help me with?" Point at "You said (as heard by Cartesia)" and the reply.
 
 **0:25 to 0:50**
 
@@ -463,13 +463,13 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
    Postgres 17 from Homebrew (`brew install postgresql@17`, if `/opt/homebrew/opt/postgresql@17/bin/initdb` doesn't exist), and `ffmpeg` for the Mac microphone (`brew install ffmpeg`).
 
    **As run in the rehearsal:** these commands as written, except that the database and the walker's state were in a scratch folder, the walker heard recorded clips (`--mic-file`, step 7) instead of the Mac's microphone, and `--out <a scratch folder>` kept its speech files. Run step 7 once with your own voice before judges arrive.
-2. **Settings.** `apps/web/.env.local` needs `GEMINI_API_KEY`. Check the names without showing values:
+2. **Settings.** `apps/web/.env.local` needs `ANTHROPIC_API_KEY` and `CARTESIA_API_KEY` (Cartesia now hears Talk clips too). Check the names without showing values:
 
    ```bash
    sed 's/=.*//' apps/web/.env.local
    ```
 
-   No `CARTESIA_API_KEY` means the walker speaks with its own voice. The page then says "In the walker's own voice", and you should say so.
+   No `CARTESIA_API_KEY` means a Talk press gets "I can't hear you right now…" and the walker speaks with its own voice. Typed questions on the page still work. Don't run the spoken beats without it.
 3. **A throwaway database** (once). The folder path must be short, or Postgres can't create its socket; with `unix_socket_directories=''` it listens on TCP only. From a shell without a locale (an agent's shell), put `LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8` in front of `initdb` and `pg_ctl`:
 
    ```bash
@@ -530,7 +530,7 @@ Everything runs on one laptop: the web app as a production build on port 3009, a
 
 Needs Max. On the night of 2026-10-23 the Pi steps ran up to one spoken turn: OS, Node, the service, pairing with Render, the USB mic and soundbar, Piper, and one ESP32 hand board for Talk ([what each showed](../../devices/pi/README.md#set-up-the-pi)). On 2026-10-24 both hand boards ran with it, and Talk gave answered turns. Not yet run on the Pi: Confirm on an offer, an obstacle board, the screen, the arms, and the six beats in order.
 
-1. **Render** (Max, once): follow [Deploy on Render](../../apps/web/README.md#deploy-on-render). Paste `GEMINI_API_KEY`, and `CARTESIA_API_KEY` if there is one (or `none`). Check that `/api/v1/health` on <https://sophi.work> (the fallback is the Render address, <https://steady-walker.onrender.com>) says `{"status":"ok","walker_store":"postgres"}`. If this Mac's network filter blocks `onrender.com`, open the page on a phone or iPad.
+1. **Render** (Max, once): follow [Deploy on Render](../../apps/web/README.md#deploy-on-render). Paste `ANTHROPIC_API_KEY` and `CARTESIA_API_KEY` (without Cartesia, `none` works but Talk can't be heard). Check that `/api/v1/health` on <https://sophi.work> (the fallback is the Render address, <https://steady-walker.onrender.com>) says `{"status":"ok","walker_store":"postgres"}`. If this Mac's network filter blocks `onrender.com`, open the page on a phone or iPad.
 2. **The Pi** (Max): follow the Pi checklist in [devices/pi/README.md](../../devices/pi/README.md#set-up-the-pi):
    - OS and Node 22;
    - Talk on the right hand board and Confirm on the left, or Talk on GPIO17 and Confirm on GPIO27 declared with `WALKER_GPIO_BUTTONS=wired`;
@@ -557,7 +557,7 @@ Needs Max. On the night of 2026-10-23 the Pi steps ran up to one spoken turn: OS
    - **Reaching the Pi:** venue networks often keep devices from reaching each other, so SSH from the laptop may not work there. Fallbacks are in [the Pi's network notes](../../devices/pi/README.md#the-network-ethernet-first-wi-fi-as-a-backup). Segment 8 needs a terminal on the Pi, so settle this before planning on it.
 4. **Pair:** open `/walker` on <https://sophi.work>, press "Get a pairing code", and on the Pi run the pair command from the Pi checklist with `--server https://steady-walker.onrender.com` (the Pi stays on the Render address; both reach the same server). The page switches to the walker. On a sleeping free server the first request can take a minute: the Pi wakes it before using the code.
 5. **Obstacle sensors and hand boards:** both hand boards (`hand-right-01` for Talk, `hand-left-01` for Confirm) ran with the Pi on 2026-10-24: right Talk gave answered turns and the left handle gave the Confirm press cue. Confirm answering an offer hasn't been tried. The obstacle board hasn't run. If no sensor board is connected, the page shows "No obstacle sensors reporting." In that case skip beat 3, and in beat 4 say the cue change is saved for when the sensors are fitted. After a full power cycle, if Talk does nothing, wait: the handles took about six minutes to connect on 2026-10-24 (`journalctl -u steady-walker -b` shows `module said hello` when they're in).
-6. **Cartesia,** only with a key: the page says "In Cartesia's voice"† under spoken replies. Its terms (read 2026-10-23) allow training on inputs unless agreed otherwise, so the same scripted-lines-only rule as Gemini's free tier applies.
+6. **Cartesia,** only with a key: the page says "In Cartesia's voice"† under spoken replies. Its terms (read 2026-10-23) allow training on inputs unless agreed otherwise, so only scripted lines go to it, and since 2026-10-25 that includes the voice clip itself.
 7. **Run it once** on the venue network: all six beats, including the Ethernet cable out at the Pi and back in. Time beat 6 (the offline line after unplugging, and "I'm back online." after plugging in); neither is measured.
 8. **Card on the walker:** "Only the presenter speaks to this walker. Type on the page instead; it says where typed words go."
 9. **`walker check`** before each session, with the service stopped for the boards and arms: `sudo node /opt/steady-walker/walker.mjs check` ([what it checks](../../devices/pi/README.md#check-the-walker-first-walker-check)). It only reads: it never moves an arm or the lift. It hasn't run on the Pi yet, so its first run there is itself a check of the check.
@@ -610,16 +610,18 @@ After a passed set, take the † off the lines you saw and heard, with the date,
 - #43, the contract: `answered_by` is `fixed` whenever a fixed reply replaced the model's, as the server does.
 
 **Found in this rehearsal,** each with an owner:
-1. **Server: an age in milliseconds, read aloud. Fixed** (branch `claude/walker-turn-wording`). One of five obstacle answers said "…at 30 centimetres from 44 milliseconds ago." The others said "just now", "right now" or "less than a second ago". The model was shown each reading's age in milliseconds. Now it's shown the age already worded as it should be said (`reading_age`: "just now" under a second, then whole seconds such as "3 seconds ago"). Measured live on Gemini, typed "Is anything in front of me?" on an all-simulated walker: before, 1 of 5 answers said milliseconds (44 ms readings); after, 0 of 5 at 44 ms, all saying "just now", and 0 of 3 at 3.2 s, all saying "3 seconds ago". Since 2026-10-24 the server writes the whole obstacle answer itself, with the same wording for the age.
-2. **Server: the simulated line repeated the model. Fixed** (same branch). All four "which parts…" answers already said every part is simulated before the server added "All of this walker's parts are simulated." The rule is structured and can't see the words. Now the policy tells the model the server adds that line itself (when every part is simulated and the question isn't about obstacles), so it leaves it out; the server's rule is unchanged and still the guarantee. Measured live on Gemini, typed "Which of your parts are simulated?", "Are any of your parts not real hardware?" and "Which parts of my walker are working right now?": before, 5 of 5 answers said every part is simulated before the server's line; after, 0 of 5, each naming the parts and their health ("…are healthy.") followed by the server's line.
+1. **Server: an age in milliseconds, read aloud. Fixed** (branch `claude/walker-turn-wording`). One of five obstacle answers said "…at 30 centimetres from 44 milliseconds ago." The others said "just now", "right now" or "less than a second ago". The model was shown each reading's age in milliseconds. Now it's shown the age already worded as it should be said (`reading_age`: "just now" under a second, then whole seconds such as "3 seconds ago"). Measured live on the earlier model (before Claude), typed "Is anything in front of me?" on an all-simulated walker: before, 1 of 5 answers said milliseconds (44 ms readings); after, 0 of 5 at 44 ms, all saying "just now", and 0 of 3 at 3.2 s, all saying "3 seconds ago". Since 2026-10-24 the server writes the whole obstacle answer itself, with the same wording for the age.
+2. **Server: the simulated line repeated the model. Fixed** (same branch). All four "which parts…" answers already said every part is simulated before the server added "All of this walker's parts are simulated." The rule is structured and can't see the words. Now the policy tells the model the server adds that line itself (when every part is simulated and the question isn't about obstacles), so it leaves it out; the server's rule is unchanged and still the guarantee. Measured live on the earlier model (before Claude), typed "Which of your parts are simulated?", "Are any of your parts not real hardware?" and "Which parts of my walker are working right now?": before, 5 of 5 answers said every part is simulated before the server's line; after, 0 of 5, each naming the parts and their health ("…are healthy.") followed by the server's line.
 3. **Page: two announcements in the wrong order.** Now that "Applied" comes within half a second, it lands in the same poll as the offer's closing, and the live region reads "Your walker applied the new alerts. Confirmed. Switching your alerts to …". Smallest fix: in `useWalkerPage.ts`'s `applyList`, put the offer's closing line before the walker's other news. Owner: the page (this script's author). **Fixed** on branch `claude/walker-page-announce-order`: `applyList` now reads any connection line first, then the offer's closing, then the walker's news (`readingOrder` in `walkerView.ts`), so it reads "Confirmed. Switching your alerts to … Your walker applied the new alerts." Not yet re-rehearsed with the simulator.
 4. **Page Confirm, by design:** after the page's Confirm, "Applied" took about 6 seconds, because the walker hears of it with its next report (every 5 seconds). The script says to keep talking; no change needed.
 
 ## Rehearsal results
 
+These runs used the server's model before the switch to Claude on 2026-10-25, which heard the clip itself. Nothing below has been rerun with Cartesia's speech-to-text and Claude yet.
+
 **Date:** 2026-10-23, 05:31 to 05:39 PDT (five runs; times from the simulator's logs). These runs came before the rename on 2026-10-23, so the boot line they checked was "Steady is on."; it is now "Sophi is on.". They also came before the walker's screen, the phones, the arms, and the server-written obstacle answer (beat 3 then had the model's own words), so none of those is checked here. **Code:** `main` at `37a691c`, as merged, with no patches: the server (#31, #39, #44), the page (#34), the Pi service (#36, #45) and the contract (#43). **Setup:**
 - a production build of `apps/web` on port 3009, with a throwaway Postgres 17 (Homebrew) on port 55433 as `DATABASE_URL`;
-- Max's Gemini key from `apps/web/.env.local`, and no Cartesia key, so every spoken reply was offered "In the walker's own voice";
+- Max's key for the model the server used then, from `apps/web/.env.local`, and no Cartesia key, so every spoken reply was offered "In the walker's own voice";
 - the walker simulator, bundled from `37a691c`, paired from the page each run, talking to the server directly, with beat 6 cut by its own `o` key;
 - a headless Chromium at 1440 by 900 driving the page by keyboard;
 - a terminal driver pressing the simulator's keys, holding Talk for 1.5 s from "mic open".
@@ -643,7 +645,7 @@ Spoken beats give the time from releasing Talk to the reply's text arriving on t
 
 **What each beat checked, every run:**
 - **Boot:** "Sophi is on." 0.1 to 0.2 s after start; the page "Online" in about 1.5 s; every part "Healthy" and "Simulated", including "Walker and coordinator"; alerts "Version 1", "Applied".
-- **Ask:** "You said (as heard by Gemini)" with the exact words, answered by the model, "In the walker's own voice".
+- **Ask:** "You said (as heard by …)" naming the model then, with the exact words, answered by the model, "In the walker's own voice".
 - **Obstacles:**
   - the handle buzz within 0.1 s of the hand;
   - when the page was read 6.5 s after the hand, it showed "Front left 30 cm" "Simulated", measured 2.9 to 4.5 s earlier;

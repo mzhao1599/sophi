@@ -1,14 +1,13 @@
 import { Pool } from "pg";
 import type { WalkerModel } from "@walker/contracts";
-import { DEFAULT_AGENT_MODEL as DEFAULT_CLAUDE_MODEL, createAnthropicModel } from "../onboarding/anthropic";
-import { DEFAULT_GEMINI_MODEL, createGeminiModel, geminiModelName, thinkingFor } from "../onboarding/gemini";
+import { createAnthropicModel } from "../onboarding/anthropic";
 import { ActivityLog } from "./activity";
 import { WALKER_TIMEOUT_MS, createWalkerAssistant, type WalkerAssistant } from "./assistant";
 import { createHedgedAssistant } from "./hedge";
 import { CareDbClient, careDbConfigFromEnv, type CareDbConfig } from "./care-db";
 import { PostgresWalkerStore } from "./postgres-store";
 import { SpacetimeCircleStore } from "./spacetime-store";
-import { createCartesiaVoice, type WalkerVoice } from "./speech";
+import { createCartesiaEars, createCartesiaVoice, type WalkerEars, type WalkerVoice } from "./speech";
 import { MemoryWalkerStore, type WalkerStore } from "./store";
 
 /** Where walkers are kept, chosen by walkerBackendFromEnv. */
@@ -52,27 +51,20 @@ function baseBackendFromEnv(env: Record<string, string | undefined>, warn: (mess
   return { kind: "memory", store: new MemoryWalkerStore() };
 }
 
-/** The walker assistant's own model; onboarding keeps DEFAULT_GEMINI_MODEL. */
-export const WALKER_DEFAULT_MODEL = DEFAULT_GEMINI_MODEL;
-
 /**
- * The backup model's thinking setting: "minimal" on the models measured to accept it (checked live
- * 2026-10-23; gemini-3.7-flash rejects it), otherwise onboarding's thinkingFor. The main model keeps
- * thinkingFor, as before the backup.
+ * The walker's main model: Claude Haiku 5.5, the fastest Claude, because a spoken reply has a few seconds.
+ * Onboarding keeps its own model (onboarding/anthropic.ts).
  */
-export function backupThinkingFor(model: string): Record<string, unknown> | null {
-  if (/^gemini-3\.6-flash$|^gemini-3\.5-flash-lite$/.test(model)) return { thinkingLevel: "minimal" };
-  return thinkingFor(model);
-}
+export const WALKER_DEFAULT_MODEL = "claude-haiku-5-5";
 
-/** The backup model, asked alongside the main one (see hedge.ts); measured live 2026-10-23. */
-export const WALKER_BACKUP_MODEL = "gemini-3.6-flash";
-/** How long the main model has before the backup's answer is used: the most switching with no bad answer used in the live sweep, leaving the voice its 3 s. */
+/** The backup model, asked alongside the main one (see hedge.ts): Claude Opus 5.5. */
+export const WALKER_BACKUP_MODEL = "claude-opus-5-5";
+/** How long the main model has before the backup's answer is used, leaving the voice its 3 s of the 8 s turn. */
 export const WALKER_BACKUP_AFTER_MS = 4_500;
 
 export interface WalkerModels {
   main: string;
-  /** null: no backup, one model as before. */
+  /** null: no backup, one model. */
   backup: string | null;
   backupAfterMs: number;
 }
@@ -84,10 +76,10 @@ export interface WalkerModels {
  */
 export function walkerModelsFromEnv(env: Record<string, string | undefined>): WalkerModels {
   const rawMain = env.WALKER_AGENT_MODEL?.trim();
-  // "none" leaves the main model at its default, as it always has.
-  const main = geminiModelName(rawMain && rawMain.toLowerCase() !== "none" ? rawMain : WALKER_DEFAULT_MODEL);
+  // "none" leaves the main model at its default.
+  const main = rawMain && rawMain.toLowerCase() !== "none" ? rawMain : WALKER_DEFAULT_MODEL;
   const rawBackup = env.WALKER_BACKUP_MODEL?.trim() || WALKER_BACKUP_MODEL;
-  const backup = rawBackup.toLowerCase() === "none" ? null : geminiModelName(rawBackup);
+  const backup = rawBackup.toLowerCase() === "none" ? null : rawBackup;
   const rawAfter = env.WALKER_BACKUP_AFTER_MS?.trim();
   const after = rawAfter ? Number(rawAfter) : NaN;
   const backupAfterMs = Number.isInteger(after) && after >= 0 && after <= WALKER_TIMEOUT_MS ? after : WALKER_BACKUP_AFTER_MS;
@@ -96,15 +88,10 @@ export function walkerModelsFromEnv(env: Record<string, string | undefined>): Wa
 
 /** The walker assistant for these models: one model, or the main one with its backup. */
 export function createWalkerAssistantFor(apiKey: string, models: WalkerModels, fetch?: typeof globalThis.fetch): WalkerAssistant {
-  const main = createWalkerAssistant({ model: createGeminiModel({ apiKey, model: models.main, fetch }), name: models.main, provider: "gemini" });
+  const main = createWalkerAssistant({ model: createAnthropicModel({ apiKey, model: models.main, fetch }), name: models.main, provider: "claude" });
   if (!models.backup) return main;
-  const backup = createWalkerAssistant({ model: createGeminiModel({ apiKey, model: models.backup, thinking: backupThinkingFor(models.backup), fetch }), name: models.backup, provider: "gemini" });
+  const backup = createWalkerAssistant({ model: createAnthropicModel({ apiKey, model: models.backup, fetch }), name: models.backup, provider: "claude" });
   return createHedgedAssistant({ main, backup, backupAfterMs: models.backupAfterMs });
-}
-
-/** Claude for typed walker turns: one model, no backup, the same prompt, rules and deadline as Gemini's. */
-export function createClaudeWalkerAssistant(apiKey: string, model: string = DEFAULT_CLAUDE_MODEL, fetch?: typeof globalThis.fetch): WalkerAssistant {
-  return createWalkerAssistant({ model: createAnthropicModel({ apiKey, model, fetch }), name: model, provider: "claude" });
 }
 
 const setting = (env: Record<string, string | undefined>, name: string) => {
@@ -112,49 +99,36 @@ const setting = (env: Record<string, string | undefined>, name: string) => {
   return value && value.toLowerCase() !== "none" ? value : undefined;
 };
 
-/**
- * Claude for typed turns, when ANTHROPIC_API_KEY is set and WALKER_TYPED_PROVIDER isn't "gemini";
- * WALKER_TYPED_MODEL overrides the model (default: onboarding's Claude default). null: typed turns go
- * to Gemini like spoken ones. Spoken turns always stay on Gemini, which hears the clip itself.
- */
-export function walkerTypedAssistantFromEnv(env: Record<string, string | undefined>): WalkerAssistant | null {
-  const key = setting(env, "ANTHROPIC_API_KEY");
-  if (!key || env.WALKER_TYPED_PROVIDER?.trim().toLowerCase() === "gemini") return null;
-  return createClaudeWalkerAssistant(key, setting(env, "WALKER_TYPED_MODEL"));
-}
-
-/** Who reads typed turns with this environment, for the page's notice: Claude, Gemini, or no model (fixed replies). */
-export function walkerTypedModelFromEnv(env: Record<string, string | undefined>): WalkerModel | null {
-  if (walkerTypedAssistantFromEnv(env)) return "claude";
-  return setting(env, "GEMINI_API_KEY") ? "gemini" : null;
+/** Who answers walker turns with this environment, for the page's notice: Claude, or no model (fixed replies). */
+export function walkerModelFromEnv(env: Record<string, string | undefined>): WalkerModel | null {
+  return setting(env, "ANTHROPIC_API_KEY") ? "claude" : null;
 }
 
 export interface WalkerAgent {
-  /** Spoken turns, and typed ones when `typed` is null: Gemini. */
+  /** Every turn, typed or spoken: Claude. null: fixed replies. */
   assistant: WalkerAssistant | null;
-  /** Typed turns: Claude, or null to use `assistant`. */
-  typed: WalkerAssistant | null;
+  /** Turns a Talk clip into words before Claude reads them: Cartesia. null: spoken turns get a fixed line. */
+  ears: WalkerEars | null;
   voice: WalkerVoice | null;
 }
 
 /**
- * The walker assistant's model and voice from the server's environment:
+ * The walker assistant's model, hearing and voice from the server's environment:
  *
- * - GEMINI_API_KEY: spoken turns always use Gemini, whatever ONBOARDING_AGENT_PROVIDER says, because
- *   they need audio input. The models come from walkerModelsFromEnv: the main one
+ * - ANTHROPIC_API_KEY: Claude answers every turn. The models come from walkerModelsFromEnv: the main one
  *   (WALKER_DEFAULT_MODEL) and a backup asked alongside it (WALKER_BACKUP_MODEL); onboarding's model is
- *   set separately. Without the key every spoken turn gets a fixed line, marked as such.
- * - ANTHROPIC_API_KEY: typed turns use Claude (walkerTypedAssistantFromEnv). Without it they use Gemini.
- * - CARTESIA_API_KEY: Sophi's spoken voice (CARTESIA_VOICE_ID optionally picks another stock voice).
- *   Without it (or set to "none"), the walker speaks replies with its own voice.
+ *   set separately. Without the key every turn gets a fixed line, marked as such.
+ * - CARTESIA_API_KEY: Cartesia hears spoken turns (speech-to-text, then Claude reads the words) and gives
+ *   Sophi's spoken voice (CARTESIA_VOICE_ID optionally picks another stock voice). Without it (or set to
+ *   "none"), a Talk press gets a fixed "can't hear" line and the walker speaks replies with its own voice.
  */
 export function walkerAgentFromEnv(env: Record<string, string | undefined>): WalkerAgent {
   const set = (name: string) => setting(env, name);
-  const gemini = set("GEMINI_API_KEY");
+  const anthropic = set("ANTHROPIC_API_KEY");
   const cartesia = set("CARTESIA_API_KEY");
   return {
-    assistant: gemini ? createWalkerAssistantFor(gemini, walkerModelsFromEnv(env)) : null,
-    typed: walkerTypedAssistantFromEnv(env),
+    assistant: anthropic ? createWalkerAssistantFor(anthropic, walkerModelsFromEnv(env)) : null,
+    ears: cartesia ? createCartesiaEars({ apiKey: cartesia }) : null,
     voice: cartesia ? createCartesiaVoice({ apiKey: cartesia, voiceId: set("CARTESIA_VOICE_ID") }) : null,
   };
 }

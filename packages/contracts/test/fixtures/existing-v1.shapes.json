@@ -2608,7 +2608,7 @@
                         "type": "string",
                         "enum": [
                           "typed",
-                          "gemini"
+                          "cartesia"
                         ]
                       },
                       {
@@ -4716,6 +4716,7 @@
               "stage": {
                 "type": "string",
                 "enum": [
+                  "transcribing",
                   "hearing",
                   "voicing"
                 ]
@@ -4725,8 +4726,7 @@
                   {
                     "type": "string",
                     "enum": [
-                      "claude",
-                      "gemini"
+                      "claude"
                     ]
                   },
                   {
@@ -4793,8 +4793,7 @@
                   {
                     "type": "string",
                     "enum": [
-                      "claude",
-                      "gemini"
+                      "claude"
                     ]
                   },
                   {
@@ -4803,6 +4802,18 @@
                 ]
               },
               "model_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transcribe_ms": {
                 "anyOf": [
                   {
                     "type": "integer",
@@ -5746,7 +5757,7 @@
                           "type": "string",
                           "enum": [
                             "typed",
-                            "gemini"
+                            "cartesia"
                           ]
                         },
                         {
@@ -5905,6 +5916,7 @@
                     "stage": {
                       "type": "string",
                       "enum": [
+                        "transcribing",
                         "hearing",
                         "voicing"
                       ]
@@ -5914,8 +5926,7 @@
                         {
                           "type": "string",
                           "enum": [
-                            "claude",
-                            "gemini"
+                            "claude"
                           ]
                         },
                         {
@@ -5982,8 +5993,7 @@
                         {
                           "type": "string",
                           "enum": [
-                            "claude",
-                            "gemini"
+                            "claude"
                           ]
                         },
                         {
@@ -5992,6 +6002,18 @@
                       ]
                     },
                     "model_ms": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "transcribe_ms": {
                       "anyOf": [
                         {
                           "type": "integer",
@@ -6094,8 +6116,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
       "enum": [
-        "claude",
-        "gemini"
+        "claude"
       ]
     },
     "WalkerResponseSchema": {
@@ -6490,7 +6511,7 @@
                         "type": "string",
                         "enum": [
                           "typed",
-                          "gemini"
+                          "cartesia"
                         ]
                       },
                       {
@@ -6994,7 +7015,7 @@
                     "type": "string",
                     "enum": [
                       "typed",
-                      "gemini"
+                      "cartesia"
                     ]
                   },
                   {
@@ -7245,6 +7266,7 @@
         "stage": {
           "type": "string",
           "enum": [
+            "transcribing",
             "hearing",
             "voicing"
           ]
@@ -7254,8 +7276,7 @@
             {
               "type": "string",
               "enum": [
-                "claude",
-                "gemini"
+                "claude"
               ]
             },
             {
@@ -7314,7 +7335,7 @@
                   "type": "string",
                   "enum": [
                     "typed",
-                    "gemini"
+                    "cartesia"
                   ]
                 },
                 {
@@ -7892,7 +7913,7 @@
                         "type": "string",
                         "enum": [
                           "typed",
-                          "gemini"
+                          "cartesia"
                         ]
                       },
                       {
@@ -8205,8 +8226,7 @@
             {
               "type": "string",
               "enum": [
-                "claude",
-                "gemini"
+                "claude"
               ]
             },
             {
@@ -8215,6 +8235,18 @@
           ]
         },
         "model_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transcribe_ms": {
           "anyOf": [
             {
               "type": "integer",
@@ -8335,7 +8367,7 @@
               "type": "string",
               "enum": [
                 "typed",
-                "gemini"
+                "cartesia"
               ]
             },
             {

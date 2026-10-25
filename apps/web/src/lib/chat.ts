@@ -31,8 +31,8 @@ export const SKIP_REST_REPLY = "Show me my walker";
 
 /**
  * The one line under the text box that says where answers go, who else reads them, and what to leave
- * out. Sending the first answer starts on it. `agentNotice` is the agent's clause ("Google's Gemini
- * reads them to choose each question, and Google may keep a copy"), null with the fixed questions.
+ * out. Sending the first answer starts on it. `agentNotice` is the agent's clause ("Anthropic's Claude
+ * reads them to choose each question, and Anthropic may keep a copy"), null with the fixed questions.
  */
 export function noticeLine(agentNotice: string | null, signedIn: boolean): string {
   const where = signedIn ? "Your answers are saved to your account." : "Your answers are kept temporarily for this setup.";

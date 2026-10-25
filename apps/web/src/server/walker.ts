@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
-import { WalkerService, isWalkerError, sharedWalkerActivity, sharedWalkerAgent, sharedWalkerBackend, walkerTypedModelFromEnv, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
+import { WalkerService, isWalkerError, sharedWalkerActivity, sharedWalkerAgent, sharedWalkerBackend, walkerModelFromEnv, type DeviceCaller, type OwnerCaller } from "@walker/cloud-api";
 import { WALKER_ERROR_STATUS, type HelpView, type ProposalView, type WalkerError, type WalkerErrorCode, type WalkerModel } from "@walker/contracts";
 import type { z } from "zod";
 
@@ -28,13 +28,13 @@ export const MAX_TURN_BODY_BYTES = 800_000;
  */
 export function walkerService(): WalkerService {
   const backend = sharedWalkerBackend();
-  const { assistant, typed, voice } = sharedWalkerAgent();
-  return new WalkerService(backend.store, { blocked: backend.blocked, assistant, typed, voice, activity: sharedWalkerActivity() });
+  const { assistant, ears, voice } = sharedWalkerAgent();
+  return new WalkerService(backend.store, { blocked: backend.blocked, assistant, ears, voice, activity: sharedWalkerActivity() });
 }
 
-/** Who reads typed walker turns on this server (Claude, Gemini, or null for fixed replies), for the page's notice. */
+/** Who answers walker turns on this server (Claude, or null for fixed replies), for the page's notice. */
 export function walkerTypedModel(env: Record<string, string | undefined> = process.env): WalkerModel | null {
-  return walkerTypedModelFromEnv(env);
+  return walkerModelFromEnv(env);
 }
 
 export function ownerCaller(request: NextRequest): OwnerCaller {

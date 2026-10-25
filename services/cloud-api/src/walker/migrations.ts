@@ -215,4 +215,15 @@ create index walker_help_device on walker_help_requests (device_id, created_at);
 create index walker_help_created on walker_help_requests (created_at);
 `,
   },
+  {
+    id: "0006_walker_heard_by_cartesia",
+    sql: `
+-- Spoken turns are now transcribed by Cartesia and answered by Claude, so heard_by says 'cartesia'. Turns heard
+-- the old way are deleted rather than relabelled (who heard them is a fact); turns are kept only an hour anyway
+-- (WALKER_HISTORY_RETENTION_MS), so this removes at most the last hour's spoken turns.
+delete from walker_turns where heard_by = 'gemini';
+alter table walker_turns drop constraint walker_turns_heard_by_check;
+alter table walker_turns add constraint walker_turns_heard_by_check check (heard_by in ('typed', 'cartesia'));
+`,
+  },
 ];

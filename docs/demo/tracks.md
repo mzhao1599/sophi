@@ -4,21 +4,20 @@ This page is for the presenter and for whoever writes the Devpost submission. Fo
 
 **Status, 2026-10-24.**
 - **Real today:** the onboarding website (conversation, the walker drawing, "Your walker", save, and an order in Stripe's test mode), and the walker assistant's server on Render (<https://sophi.work>, also at <https://steady-walker.onrender.com>), checked end to end on 2026-10-23, including a reply in Cartesia's voice.
-- **Built and rehearsed on the walker simulator:** the walker's six beats ([walker-script.md](walker-script.md)) with the "Your walker" live page. Its "Behind the scenes" panel was checked on 2026-10-23 against a local production build with the simulator and live Gemini and Cartesia: every time it drew matched the server's own record.
-- **On the real walker so far:** a Raspberry Pi 5 running the walker service with a USB microphone, a USB soundbar and Piper. On 2026-10-23 one real spoken turn ran on it ("What can you help me with?", answered by Gemini 3.96 seconds after Talk was let go, heard through the soundbar in Cartesia's voice), and Max felt the handle buzz on a Talk press. On 2026-10-24 both hand boards said hello to the Pi and it logged "Sophi is on."; nobody has yet pressed both buttons to check which is Talk and which is Confirm. Not yet run on the walker: Confirm, an obstacle board, the six beats in order, and the venue's Ethernet.
+- **Built and rehearsed on the walker simulator:** the walker's six beats ([walker-script.md](walker-script.md)) with the "Your walker" live page. Its "Behind the scenes" panel was checked on 2026-10-23 against a local production build with the simulator, a live model (the server's earlier one, before Claude) and Cartesia: every time it drew matched the server's own record.
+- **On the real walker so far:** a Raspberry Pi 5 running the walker service with a USB microphone, a USB soundbar and Piper. On 2026-10-23 one real spoken turn ran on it ("What can you help me with?", answered by the server's earlier model 3.96 seconds after Talk was let go, heard through the soundbar in Cartesia's voice), and Max felt the handle buzz on a Talk press. On 2026-10-24 both hand boards said hello to the Pi and it logged "Sophi is on."; nobody has yet pressed both buttons to check which is Talk and which is Confirm. Not yet run on the walker: Confirm, an obstacle board, the six beats in order, and the venue's Ethernet.
 - **Built during the event, not yet on the walker:** the walker's 5-inch screen (simulator only), the two-phone app (live on Render, tested in a headless browser, not yet on real iPhones), `walker check` (fakes only), the arm servo driver (no servo yet), the arm and lift motion safety contract, and, merged on 2026-10-24, the Pi's motion coordinator for the arms and the lift (taught skills, "Let go?", the screen's hold control) and the lift's firmware. The coordinator is tested only against simulated servos and a simulated lift board, and the firmware only on a computer. Nothing has moved a real arm or the lift. Each is in [Built during the event](#built-during-the-event) with how far it was tested.
 
 Nothing below presents a planned part as working; each cut that needs a planned or untested part says so.
 
-**Which tracks, and why.** The sponsor-track analysis (2026-10-23) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and MLH's "Best Use of Gemini API". On 2026-10-24 Max asked to enter as many more as fit cheaply; [More entries](#more-entries-added-2026-10-24) adds five Cal Hacks prizes, four more MLH categories and Meta's track, and says why the rest are skipped.
+**Which tracks, and why.** The sponsor-track analysis (2026-10-23) ranked four tracks plus one free entry: Microsoft's "Built for the Real World" (and its Customer Impact Award), Visa's "Reimagining Shopping", Cartesia's voice track, Anthropic's track, and a free MLH entry for Google's model API, dropped on 2026-10-25 when Sophi moved all its model work to Claude. On 2026-10-24 Max asked to enter as many more as fit cheaply; [More entries](#more-entries-added-2026-10-24) adds five Cal Hacks prizes, four more MLH categories and Meta's track, and says why the rest are skipped.
 
 | Entry | Cost | Section |
 | --- | --- | --- |
 | Microsoft: Built for the Real World, and its Customer Impact Award | In the plan | [Microsoft](#microsoft-built-for-the-real-world) |
 | Visa: Reimagining Shopping | In the plan | [Visa](#visa-reimagining-shopping) |
 | Cartesia | In the plan; a key and that day's check | [Cartesia](#cartesia-best-use-of-cartesia-only-with-a-key-and-heard-working-that-day) |
-| Anthropic | In the plan; a Claude key and a rehearsal | [Anthropic](#anthropic-only-with-a-claude-key) |
-| MLH: Best Use of Gemini API | Free | [MLH Gemini](#mlh-best-use-of-gemini-api-free-entry) |
+| Anthropic | In the plan; a Claude key and a rehearsal | [Anthropic](#anthropic) |
 | Cal Hacks: Best Hardware Hack | Free | [Hardware](#cal-hacks-best-hardware-hack-free) |
 | Cal Hacks: Best People-First Hack | Free | [People-First](#cal-hacks-best-people-first-hack-free) |
 | Cal Hacks: Most Technically Complex Hack | Free | [Technically Complex](#cal-hacks-most-technically-complex-hack-free) |
@@ -39,7 +38,7 @@ Nothing below presents a planned part as working; each cut that needs a planned 
 
 For the Devpost text. Cal Hacks runs October 23 to 25, 2026. Everything here was merged to `main` on 2026-10-23 or later; #59 and #60 were merged that morning (10:40 and 11:04 PDT), and the rest from 22:42 PDT that night. Check them against the official start of hacking before posting, and move anything merged before it into the "before the event" line. Each item says how far it was tested. Render deploys `main` automatically, so every merged PR below is deployed there; the server's health check carries no version, so that is from the auto-deploy, plus the circle route seen live after #68.
 
-- **A backup model for the walker assistant** (#59). Two Gemini models are asked at once, and the faster one answers when the main one is slow; measured numbers are in [the MLH section](#mlh-best-use-of-gemini-api-free-entry). Deployed by Render's auto-deploy of `main`; measured locally on real Gemini, without voice, and not measured on Render or the Pi.
+- **A backup model for the walker assistant** (#59). Two models are asked at once, and the backup answers when the main one is slow. Built and measured locally with the server's earlier models, without voice; since 2026-10-25 the pair is Claude Haiku 5.5 and Claude Opus 5.5, not yet measured. Deployed by Render's auto-deploy of `main`, not measured on Render or the Pi.
 - **Sophi never says the way is "clear" or "safe"** (#60). The server checks every reply in the model's own words and retries one that says it. Same testing as above.
 - **The name Sophi, "A physical augmentation walker."** (#61), on the website, the walker page, the walker's spoken lines and the model prompts.
 - **The venue network plan** (#62): the Pi on the venue's Ethernet, since Cal Hacks bans hotspots, and the offline beat done by unplugging the cable at the Pi. Written down; not yet run on the Pi.
@@ -81,7 +80,7 @@ Before the event (2026-10-23 to the morning of 2026-10-23): the website and its 
 
 **Three things to add to the pitch (the weak criteria):**
 
-1. **Customer understanding.** Talk to one person who knows walkers: someone who uses one, a physical or occupational therapist, or a family caregiver. Ask first whether they agree to be quoted and how they'd like to be named (a first name, a role, or not at all). Show them the website, let them type their own answers if they want to (only on the deterministic engine or a paid model key, never on the free Gemini key), and ask:
+1. **Customer understanding.** Talk to one person who knows walkers: someone who uses one, a physical or occupational therapist, or a family caregiver. Ask first whether they agree to be quoted and how they'd like to be named (a first name, a role, or not at all). Show them the website, let them type their own answers if they want to (only on the deterministic engine, or on Claude once Anthropic's data terms are checked), and ask:
    - "Do these questions make sense for someone choosing a walker?"
    - "What would you want it to ask that it doesn't?"
    - "Which of these parts would you never want, and why?"
@@ -94,24 +93,16 @@ Before the event (2026-10-23 to the morning of 2026-10-23): the website and its 
    | Not done yet | | | | |
 
 2. **Measured usefulness.** Say only measured numbers, each with when and how it was measured.
-   - Measured on 2026-10-23 (rehearsal, `main` at `daea268`): across 39 Gemini turns of Wren's lines, no fallbacks, 1.8 to 3.6 seconds a turn, median 2.3 seconds.
-   - Measured on 2026-10-23 (one run of the committed rehearsal, `main` at `0388a5d`, while this laptop was under heavy load from other builds): 13 Gemini turns, all 3 paths passed, no fallbacks, 2.9 to 7.6 seconds a turn, median 3.7 seconds. The time is measured in-process, so local load inflates it; this run isn't a fair speed figure.
-   - Re-measure on the day, with nothing else running, using `REHEARSE_PROVIDER=gemini pnpm --filter @walker/cloud-api rehearse` (see "Rehearse on a model" below). If turns take more than about 5 seconds, follow the script's "The agent is slow" fallback.
-   - To measure at the venue: time three people who haven't seen Sophi setting up a walker on the website without help, from the first keypress to "Your walker". Say who they were ("three hackers at the venue, not walker users"). Record each time below; never round up a sample this small into a claim.
-
-     | Date | Person (no names) | Engine | Time to "Your walker" | Turns | Needed help? |
-     | --- | --- | --- | --- | --- | --- |
-     | Not done yet | | | | | |
-
-   - On the walker: the always-on design measures "Talk released to the answer starting" (target 4 seconds). On the simulator (2026-10-23, [walker-script.md](walker-script.md#rehearsal-results)): Talk released to the reply's text, 1.9 to 4.6 seconds, median 2.7, over 16 spoken turns (on `main` at `37a691c`). Say "on the simulator" when quoting it. On the real Pi, one turn so far: 3.96 seconds from letting go of Talk to the answer arriving (2026-10-23, before the backup model); one turn isn't a range.
-   - The backup model's effect on the walker's slowest turns (the slowest went from 8.0 to 5.0 seconds in local tests) is in [the MLH section](#mlh-best-use-of-gemini-api-free-entry), with how it was measured.
+   - Measured on 2026-10-24 (rehearsal, real Claude Opus 5.5, laptop only): 39 model turns of Wren's lines, no fallbacks, 1.9 to 5.1 seconds a turn, median 2.5 seconds.
+- Re-measure on the day, with nothing else running, using `REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse` (see "Rehearse on a model" below). If turns take more than about 5 seconds, follow the script's "The agent is slow" fallback.
+- The backup model cut the walker's slowest turn from 8.0 to 5.0 seconds in local tests with the earlier models; with Claude Haiku 5.5 and Claude Opus 5.5 it hasn't been measured yet.
 
 3. **Path to production (15 seconds, in the close).** "What's built: continuous integration on every change, a live deploy, row-level security on saved setups, device authentication and versioned settings for the walker, a fallback for every model turn, a backup model when the main one is slow, and a written motion safety contract before any motor moves. What isn't: bench validation of the hardware, testing with walker users, a paid model tier for real people's words, and a regulatory review we haven't started."
 
 **The 2-minute cut (the care loop):**
 
 1. **0:00 to 0:37, setting it up:** the onboarding [60-second cut](script.md#the-60-second-cut) from 0:00 to 0:37: Wren's line, the walker drawing itself, Skip and "Show My Walker", and "You said" in the obstacle sensors' panel.
-2. **0:37 to 1:10, the walker every day after:** the bridge line ("This is the walker every day after. It isn't Wren's: this one is Rose's, set up with voice on. Rose is made up too."), then the walker's [beat 4](walker-script.md#beat-4-change-a-setting-100-to-135): a spoken request, Sophi's offer, the Confirm press, "Applied". Point at "Behind the scenes": Gemini, the rule, "Offer written by the server".
+2. **0:37 to 1:10, the walker every day after:** the bridge line ("This is the walker every day after. It isn't Wren's: this one is Rose's, set up with voice on. Rose is made up too."), then the walker's [beat 4](walker-script.md#beat-4-change-a-setting-100-to-135): a spoken request, Sophi's offer, the Confirm press, "Applied". Point at "Behind the scenes": Claude, the rule, "Offer written by the server".
 3. **1:10 to 1:40, the two phones,** both on cellular. Before judges arrive, link Rose's phone; just before the cut, have Maya's phone enter its code, so it shows "Waiting for the family to approve" (a waiting join lapses after 5 minutes). On the walker page's Phones card, tick the consent line ("Rose agreed that Maya can see…") and press Approve; Maya's phone opens. Maya sends "Dinner at six. I'll get you."; Rose's tile shows "1 new message", she taps it and her phone reads it aloud; she taps "I'm okay", and it appears in Maya's thread. "Rose's phone has three big tiles and no typing; to change her alerts, she asks Sophi on the walker. Maya got in only after the family ticked what Rose agreed to, and she sees whether the walker is on and how its alerts work, never what Rose says to Sophi."
 4. **1:40 to 2:00:** the path-to-production line above.
 
@@ -145,16 +136,17 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 
 ### Sophi and Cartesia (the README section for Cartesia's judges)
 
-**What Cartesia does in Sophi:** it is Sophi's speaking voice on the walker. Hold Talk and ask a question; Google's Gemini hears the clip and writes the answer; the server sends only the answer's text to Cartesia's text-to-speech and returns the audio with the answer; the walker plays it. The page notes under each reply which voice spoke it: "In Cartesia's voice" or "In the walker's own voice". Its "Behind the scenes" panel shows the voice step as "Sent in Cartesia's voice" with the time the server measured for it.
+**What Cartesia does in Sophi:** it is Sophi's ears and voice on the walker. Hold Talk and ask a question; Cartesia's speech-to-text turns the clip into words; Anthropic's Claude writes the answer from those words; the server sends the answer's text to Cartesia's text-to-speech and returns the audio with the answer; the walker plays it. (Speech-to-text was added on 2026-10-25 and hasn't been run live yet.) The page notes under each reply which voice spoke it: "In Cartesia's voice" or "In the walker's own voice". Its "Behind the scenes" panel shows the voice step as "Sent in Cartesia's voice" with the time the server measured for it.
 
 **Setup:**
 
 1. Create a Cartesia account and an API key. When creating the account, file Cartesia's training opt-out (see "Max's steps" below).
-2. Put the key in the server's environment as `CARTESIA_API_KEY`: on Render, **steady-walker → Environment** (the Blueprint in [`render.yaml`](../../render.yaml) asks for it); for a local server, `apps/web/.env.local`. Never in the repository, a commit or chat. Empty or `none` means no key: the walker then speaks with its own voice. `CARTESIA_VOICE_ID` may name another stock voice.
+2. Put the key in the server's environment as `CARTESIA_API_KEY`: on Render, **steady-walker → Environment** (the Blueprint in [`render.yaml`](../../render.yaml) asks for it); for a local server, `apps/web/.env.local`. Never in the repository, a commit or chat. Empty or `none` means no key: a Talk press then gets a fixed "I can't hear you right now" line, and the walker speaks with its own voice. `CARTESIA_VOICE_ID` may name another stock voice.
 3. Restart the server, pair a walker (or run the Pi service's simulator against the server: [devices/pi](../../devices/pi/README.md)), hold Talk and ask "What can you help me with?". The page shows "In Cartesia's voice" under the reply, and the server's log line for the turn says `voiced_by=cartesia` with the voice's time in `voice_ms`.
 
 **Cartesia features used** (checked against [Cartesia's API reference](https://docs.cartesia.ai/api-reference/tts/bytes) on 2026-10-23; code in [`speech.ts`](../../services/cloud-api/src/walker/speech.ts)):
 
+- Speech-to-text, model `ink-whisper`, through `POST https://api.cartesia.ai/stt` with `Cartesia-Version: 2026-08-14` ([reference](https://docs.cartesia.ai/api-reference/stt/transcribe), read 2026-10-25), at most 2.5 seconds a clip. Built and tested with stubs; not yet run live.
 - Sonic text-to-speech, model `sonic-3.6`, through `POST https://api.cartesia.ai/tts/bytes` with `Cartesia-Version: 2026-10-23`.
 - A stock English voice, "Skylar" (`language: "en"`), one Cartesia recommends for voice agents. No voice is cloned.
 - WAV output at 16 kHz, mono, 16-bit PCM: what the walker's player takes. The server checks the header before sending it on.
@@ -167,26 +159,26 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 - Heard live through the deployed server on 2026-10-23 (a spoken question answered in Cartesia's voice, 4.1 s end to end; two replies made in 0.9 and 1.3 s), and on the real Pi's soundbar for one turn the same night. The six demo beats haven't run on the real Pi, and "In Cartesia's voice" on the page hasn't been recorded as seen.
 - On the simulator, without Cartesia, the reply's text reached the walker 1.9 to 4.6 seconds after Talk was released (median 2.7 seconds over 16 spoken turns; [walker-script.md](walker-script.md#rehearsal-results)). Cartesia's time, at most 3 seconds, comes on top of the server's part of that. The one real Pi turn took 3.96 seconds including Cartesia's time.
 - The whole reply is made before it plays (the bytes endpoint, not streaming), so Cartesia's time adds to the wait after Talk is released. Streaming over Cartesia's WebSocket would start sooner; it isn't built.
-- Captions on the walker's screen (built 2026-10-24) have run only in the simulator under headless Chromium, not on the Pi or the panel, and with the simulator's fake server, so "You said" and "Answered by Gemini" on the screen have been drawn only from example states so far.
+- Captions on the walker's screen (built 2026-10-24) have run only in the simulator under headless Chromium, not on the Pi or the panel, and with the simulator's fake server, so "You said" and "Answered by …" on the screen have been drawn only from example states so far.
 - English and one stock voice only.
 - Needs the internet; offline, the walker uses its own voice.
-- Data: Cartesia's terms (date reference normalized to October 23, 2026; revision date not reverified) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Only Sophi's reply text is sent (it can repeat some of the person's words), never the voice clip. Until those terms allow real people's words, only scripted, made-up lines go through it.
+- Data: Cartesia's terms (date reference normalized to October 23, 2026; revision date not reverified) let Cartesia use inputs and outputs to train its models unless the account opts out, state no retention period, and offer zero data retention only on enterprise plans. Since 2026-10-25 the voice clip goes to it too, for speech-to-text, along with Sophi's reply text. Until those terms allow real people's words and voices, only scripted, made-up lines go through it.
 
 ### Notice wording
 
-- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types, when the server has a Claude key: "What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker." Without a Claude key it names only Gemini, as before.
-- **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. What's said goes to Google's Gemini, and Sophi's replies are spoken by Cartesia from their text; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
-- **Said aloud at the Talk beat:** "Sophi's answer is in Cartesia's voice. Only the answer's text goes to Cartesia, never the speaker's voice."
+- **The "Your walker" page** ([`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types who gets the words: Anthropic's Claude for what's typed and said, Cartesia for the voice clip and the text of spoken replies, that both may keep a copy, not to type names or health details, and that each message is deleted after an hour or with Forget this walker. Copy its exact words from the page before quoting it here.
+- **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. Cartesia turns what's said into words and speaks Sophi's replies, and Anthropic's Claude writes the answers; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
+- **Said aloud at the Talk beat:** "Cartesia hears the question and speaks Sophi's answer; Claude writes it."
 
 ### The 2-minute cut
 
 Demo first, then the why. The beats and their exact lines are in the walker script, [`walker-script.md`](walker-script.md); this cut uses four of them.
 
 1. **0:00 to 0:15, boot:** the walker says "Sophi is on." (in Cartesia's voice once the Pi's request for it is checked live, otherwise in its own voice; check which on the day), and the page shows "Online" with each part's health.
-2. **0:15 to 0:40, ask:** Talk: "What can you help me with?" The answer comes back out loud in Cartesia's voice (in the model's own words), and the page shows "You said (as heard by Gemini)", the reply, and "In Cartesia's voice". Say the line about where the text goes. Only if the walker's screen has been rehearsed on the panel that day (so far it has run only in the simulator): point at it as it goes "Listening", "One moment", then the reply as captions.
+2. **0:15 to 0:40, ask:** Talk: "What can you help me with?" The answer comes back out loud in Cartesia's voice (in the model's own words), and the page shows "You said (as heard by Cartesia)", the reply, and "In Cartesia's voice". Say the line about where the text goes. Only if the walker's screen has been rehearsed on the panel that day (so far it has run only in the simulator): point at it as it goes "Listening", "One moment", then the reply as captions.
 3. **0:40 to 1:15, change a setting:** Talk: "Stop buzzing me, use short sounds instead." Sophi says "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." (the server writes this line from the change itself). Press Confirm on the walker. It says "Done. Obstacle alerts now use short sounds.", and the page's alerts change to "Version 2", "Short sounds" and then "Applied" (2 to 9 seconds after Confirm in the rehearsal; keep talking meanwhile).
 4. **1:15 to 1:35, offline:** unplug the walker's Ethernet cable at the Pi's end (never at the venue's switch; the walker's Wi-Fi backup must be off, see the walker script's setup B, step 3), and plug it back in to return. After about 6 to 10 seconds (on the simulator; unplugging hasn't been timed) the walker says, once, "I'm offline right now. Your short-sound alerts still work.", in its own voice, and a Talk press then gets the same line at once. "Cartesia speaks when it can; the walker never goes silent." On the simulator, cutting the network needs the walker script's setup checklist.
-5. **1:35 to 2:00, why and how:** "Your hands are on the handles, so voice is how you ask. Push to talk, never a listening microphone. Gemini hears, Cartesia speaks, the walker's own voice covers offline, and every word is on the page too, for anyone who can't hear it."
+5. **1:35 to 2:00, why and how:** "Your hands are on the handles, so voice is how you ask. Push to talk, never a listening microphone. Cartesia hears and speaks, Claude answers, the walker's own voice covers offline, and every word is on the page too, for anyone who can't hear it."
 
 **Max's steps:**
 
@@ -195,7 +187,7 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 - Check the plan's terms. A third-party guide says the free plan is for personal, non-commercial use.
 - Then run the cut once that day before mentioning Cartesia.
 
-## Anthropic (only with a Claude key)
+## Anthropic
 
 **What the judges score:** a named community, a real problem ("you have lived it, or you talked to someone who has"), it works ("one thing done well and usable on Monday"), and thoughtful use of Claude ("Claude does something that matters to the solution, and you know where it could go wrong for the people using it").
 
@@ -203,46 +195,23 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 
 **What Claude does in Sophi:** the onboarding agent was built for Claude first (`services/cloud-api/src/onboarding/anthropic.ts`: Claude Opus 5.5 at low effort, one structured-output call per turn, the server-side refusal fallback on). It reads the person's words as a fixed list of needs, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement. It never picks a module.
 
-Since 2026-10-24 Claude also answers questions typed to the walker on the "Your walker" page (`services/cloud-api/src/walker/config.ts`, `walkerTypedAssistantFromEnv`), under the same rules as Gemini: the server words every offer, only a Confirm press changes the walker, and "clear" or "safe" in a reply is retried. Spoken questions stay on Gemini, which hears the clip itself; Claude's API takes no audio. "Behind the scenes" names the model that ran each turn, from the server's own record.
+Since 2026-10-25 Claude answers every walker question too, typed or spoken (`services/cloud-api/src/walker/config.ts`): Claude Haiku 5.5, with Claude Opus 5.5 asked alongside as the backup. A spoken question reaches it as Cartesia's transcript, since Claude's API takes no audio. The server words every offer, only a Confirm press changes the walker, and "clear" or "safe" in a reply is retried. "Behind the scenes" names the model that ran each turn, from the server's own record.
 
 **Where it could go wrong, and what Sophi does about it:** the model could misread a need (each part's panel quotes the words it came from, and every switch stays with the person); it could fail or be slow (a 15-second deadline, then the fixed questions, with a note saying so); it could be steered by what someone types (her words are passed as data, and fixed rules choose modules); and people's words leave the laptop (the notice names who reads them before anyone types).
 
 **Status:** the key went into `apps/web/.env.local` on 2026-10-24. The first live run failed every turn in about 0.2 seconds: the adapter sent the beta header `server-side-fallback-2026-10-23`, which the API rejects. `fallbacks: "default"` needs `server-side-fallback-2026-07-01`, which fixed it. Measured on 2026-10-24 (rehearsal, real Claude Opus 5.5, laptop only): 3 runs, 9 of 9 paths passed, 39 model turns, no fallbacks, 1.9 to 5.1 seconds a turn, median 2.5 seconds. Steps 3 and 4 below haven't been done yet, and it hasn't run on Render.
 
-**Typed walker turns on Claude, measured 2026-10-24** (the live walker suite, `WALKER_LIVE=1 WALKER_LIVE_MODES=text pnpm --filter @walker/cloud-api walker-live`, typed lines sent through the page as people type them, real Claude Opus 5.5, laptop only, no voice): 3 runs of beats 2 to 5 plus three fresh wordings and the all-parts-simulated check, every check passed, 15 turns all answered by Claude, 1.7 to 3.8 seconds a turn, median 2.2 seconds; one turn needed its one retry. Beat 3 typed on the page is answered by the server from the sensors ("The obstacle sensors read front: 64 centimetres…"), not in the model's words, by design. Then the whole suite, typed and spoken together (`WALKER_LIVE=1 pnpm --filter @walker/cloud-api walker-live`, same day, laptop only, synthetic voice from `say`, no Cartesia): every check passed on 3 runs of each. Typed on Claude: 15 turns, 1.8 to 2.9 seconds. Spoken on Gemini: 15 turns, 2.0 to 8.1 seconds; the slow ones are the obstacle questions, which take two server requests (Gemini asks for get_distance, the walker continues, Gemini answers from the reading: 5.9 to 8.1 seconds for both together, in-process times), and one of them was answered by the backup model. All 30 turns: median 2.3 seconds. Not yet run on Render, the Pi or the page in a browser.
+**The walker on Haiku and Opus (2026-10-25):** typed turns, 3 runs plus fresh wordings, 15 of 15 checks passed, median 2.1 seconds, 0.8 to 4.3 seconds, the Opus backup used on none (details in `services/cloud-api/README.md`). Spoken turns through Cartesia's speech-to-text are not yet measured. The numbers below are from 2026-10-24, when typed walker turns ran on Claude Opus 5.5 alone and spoken ones on the server's earlier model.
 
-**To switch the demo to Claude (Max pastes the key):**
-1. Put `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_PROVIDER=anthropic` and `ONBOARDING_ENGINE=agent` in `apps/web/.env.local`.
-2. Rehearse: `REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse`. It must pass every path on all 3 runs with every reply from the model, as Gemini did.
+**Typed walker turns on Claude, measured 2026-10-24** (the live walker suite, `WALKER_LIVE=1 WALKER_LIVE_MODES=text pnpm --filter @walker/cloud-api walker-live`, typed lines sent through the page as people type them, real Claude Opus 5.5, laptop only, no voice): 3 runs of beats 2 to 5 plus three fresh wordings and the all-parts-simulated check, every check passed, 15 turns all answered by Claude, 1.7 to 3.8 seconds a turn, median 2.2 seconds; one turn needed its one retry. Beat 3 typed on the page is answered by the server from the sensors ("The obstacle sensors read front: 64 centimetres…"), not in the model's words, by design. Then the whole suite, typed and spoken together (`WALKER_LIVE=1 pnpm --filter @walker/cloud-api walker-live`, same day, laptop only, synthetic voice from `say`, no Cartesia): every check passed on 3 runs of each. Typed on Claude: 15 turns, 1.8 to 2.9 seconds. Spoken on the earlier model: 15 turns, 2.0 to 8.1 seconds; the slow ones are the obstacle questions, which take two server requests (the model asks for get_distance, the walker continues, the model answers from the reading: 5.9 to 8.1 seconds for both together, in-process times), and one of them was answered by the backup model. All 30 turns: median 2.3 seconds. Not yet run on Render, the Pi or the page in a browser.
+
+**Before mentioning Claude in the demo:**
+1. Put `ANTHROPIC_API_KEY` and `ONBOARDING_ENGINE=agent` in `apps/web/.env.local` (and `ANTHROPIC_API_KEY` on Render for the walker).
+2. Rehearse: `REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse`. It must pass every path on all 3 runs with every reply from the model.
 3. Rebuild and start as in the script's setup checklist. The notice must name "Anthropic's Claude", and each reply must say "Read by Claude". Mention Claude only after that check.
 4. Check Anthropic's current commercial terms on retention and training, and update judge Q&A 1 and 2 in the script to match.
 
 **The 2-minute cut:** the Microsoft cut, with the named community in the first sentence and the "where it could go wrong" answer in place of the path-to-production line.
-
-## MLH: Best Use of Gemini API (free entry)
-
-**Where Gemini runs:**
-- **Onboarding,** on the demo laptop today: `gemini-3.7-flash` (low thinking) reads her words and words each question.
-- **The walker assistant:** one call hears the spoken clip and writes the answer. Two models are asked at the same moment: `gemini-3.7-flash` (low thinking), whose answer is used if it comes within 4.5 seconds, and `gemini-3.6-flash` (minimal thinking), about 2.5 times faster. After 4.5 seconds the first usable answer wins; if 3.7 fails early, 3.6's answer is used at once. Once one is picked, the other request is cancelled. Everything after the model is unchanged: the server words every offer, and only a Confirm press changes the walker, so a wrong answer can't change the walker by itself.
-- **Never "clear" or "safe":** a sensor can miss things, so every reply in the model's own words is checked for "clear" or "safe" in any form, even in a denial. A reply that says it gets one retry with a note naming the rule (never the person's words), and a second one gets the fixed line.
-
-**Measured** (#59 and #60, 2026-10-23, real Gemini, the walker live suite run locally without voice; deployed to Render by its auto-deploy of `main`, but not measured on Render or the Pi):
-
-| | 3.7 alone, 120 turns | With 3.6 as backup (5 s switch-over, the prototype), 210 turns |
-| --- | --- | --- |
-| Median | 3.07 s | 3.09 s |
-| 90th percentile | 5.80 s | 5.00 s |
-| Slowest | 8.0 s (a timeout) | 5.0 s |
-| Fixed fallback lines | 1 | 0 |
-
-- 3.6's answer was used on 26 of the 210 turns, all correct, including one real 3.7 timeout. It named the right alert change on 56 of 56 alert-change turns.
-- The built version, at 4.5 seconds: 60 of 60 turns passed over two runs, the slowest 4.51 seconds; 3.6 answered 12 of them, all correct.
-- The "clear or safe" check: the demo's lines needed no retries (30 of 30 with the backup). On leading questions ("Is the way ahead clear?", "Is it safe to walk forward?"), with the backup on, 10 of 12 were retried; 11 ended in a clean answer (3.9 to 5.8 seconds) and 1 in the fixed line at the 8-second limit.
-- What it costs: twice the Gemini calls on every turn. A word list can't catch every way of saying "clear"; the prompt asks for the rest.
-
-**What to show** (30 seconds, inside any walker cut): the "Behind the scenes" panel on the walker page draws each turn's Gemini step with the time the person actually waited. It says "Gemini" for both models, which is true; the server's log names the one that answered.
-
-Pick the category on Devpost and say where Gemini is used. Keep the free-tier rule: only scripted, made-up lines go to the free key.
 
 ## More entries (added 2026-10-24)
 
@@ -274,7 +243,7 @@ Max asked to enter as many tracks as fit cheaply. Each entry below reuses a cut 
 **Why Sophi fits:** it spans four kinds of computer, each with a clear job: ESP32 firmware (controls, sensors, haptic cues), the Pi service (coordinating devices, enforcing motion limits), the cloud server (the agent and the conversation) and the website (onboarding and setup).
 
 **What to say, each with how far it was tested** (from [Built during the event](#built-during-the-event)):
-- The walker assistant hears a spoken clip with Gemini and answers in Cartesia's voice, with a backup model that cut the slowest turn from 8.0 to 5.0 seconds in local tests.
+- The walker assistant turns a spoken clip into words with Cartesia, answers with Claude (a main model and a backup asked alongside), and speaks in Cartesia's voice.
 - The model is never motor authority. It can only offer an action by its id; the Pi writes the words and starts motion only on a Confirm press at the handle; the lift moves only while someone holds the screen's hold control.
 - A Feetech servo driver checked byte for byte against Feetech's own SDK on 122 operations; a motion coordinator that acts only on what it read back from a servo; lift firmware that stops 300 ms after the Pi's heartbeat stops. All tested against simulated hardware only.
 - A versioned contract package (`packages/contracts/`) that every component is tested against.
@@ -291,7 +260,7 @@ Most Creative Hack: a long shot. Enter only if entries are free. The pitch line:
 
 **What it asks:** "utilize publicly available Generative AI APIs (like those from OpenAI, Anthropic, Hugging Face, Llama, IBM Watson, or Google Gemini) to develop a unique and functional application". Prize: assorted MLH prizes.
 
-**What to say:** the same facts as [MLH Gemini](#mlh-best-use-of-gemini-api-free-entry): Gemini reads her words in onboarding and hears the walker's spoken clips, with a backup model; Cartesia's generative voice speaks the replies (once that day's check passes); and the model only offers, while fixed rules and a Confirm press decide. Name Claude only after it has run live, as in the Anthropic section.
+**What to say:** Claude reads her words in onboarding and answers the walker's questions, with a backup model; Cartesia turns her spoken clips into words and its generative voice speaks the replies (once that day's check passes); and the model only offers, while fixed rules and a Confirm press decide. Say only what has run live that day, as in the Anthropic and Cartesia sections.
 
 ### MLH: Commit Fellowship (free, plus a form)
 
@@ -352,6 +321,7 @@ Their criteria say "Coming soon!". Check them at the event. For Armadin's Best S
 ### Skipped, and why
 
 - **A sponsor's product would have to become core, which means new work off the demo path:** Creao's AI-First Disruptor and Team Empowerment (criteria only on Creao's community page), Convex, Moss, Bitdeer AI, Factory (Droid must "do real work in the running product"), Fetch.ai, Apify and Bright Data (live public web data must be essential), Atlassian (both its tracks require building "a Forge app for one or more Atlassian products", per its rules document, read 2026-10-24), and MLH's Tiger Data, Vultr, Snowflake, Backboard, Auth0, DigitalOcean and MongoDB Atlas.
+- **Dropped on 2026-10-25:** MLH's Best Use of Gemini API. Sophi no longer uses Gemini; Claude does all its model work.
 - **Conflicts with the plan:** MLH's ElevenLabs (Sophi's voice is Cartesia, entered above; a second voice provider just for a prize would muddy that entry) and MLH's Presage (camera-based heart rate, breathing and emotion: sensitive health data that Sophi's consent rules keep out, and not on the demo path).
 - **Finance, payments or crypto, which Sophi isn't:** Hyphenate, CRS, Capital One's Nessie, Coinbase's x402, MLH's Solana.
 - **Requires a tool used to build the project, which Sophi wasn't built with:** Mana, Notability, Figma in the Workflow, SpaceXAI (built with Cursor, using Grok's Imagine or Voice API), and MLH's SpaceXSI A-Team raffle (Cursor and Grok Bot in the workflow).
@@ -359,4 +329,4 @@ Their criteria say "Coming soon!". Check them at the event. For Armadin's Best S
 
 ## Rehearse on a model
 
-`pnpm --filter @walker/cloud-api rehearse` runs Wren's lines through the real onboarding service in memory on the script's three paths (full, 3-minute, 60-second). Without `REHEARSE_PROVIDER` it runs the fixed questions only, which also run in CI on every change. With `REHEARSE_PROVIDER=gemini` or `anthropic` it also runs the model 3 times (`REHEARSE_RUNS` changes that), reading the key from the environment or from `apps/web/.env.local`, never printing it, and prints each turn, its time, and a summary such as "15 model turns, 0 fallbacks, 1.8 to 3.6 s, median 2.3 s". A path passes only if the topics come in the script's order, the right parts light after every line, the final walker matches, voice isn't suggested, the arms are "worth considering", and no turn fell back.
+`pnpm --filter @walker/cloud-api rehearse` runs Wren's lines through the real onboarding service in memory on the script's three paths (full, 3-minute, 60-second). Without `REHEARSE_PROVIDER` it runs the fixed questions only, which also run in CI on every change. With `REHEARSE_PROVIDER=anthropic` it also runs the model 3 times (`REHEARSE_RUNS` changes that), reading the key from the environment or from `apps/web/.env.local`, never printing it, and prints each turn, its time, and a summary such as "15 model turns, 0 fallbacks, 1.9 to 5.1 s, median 2.5 s". A path passes only if the topics come in the script's order, the right parts light after every line, the final walker matches, voice isn't suggested, the arms are "worth considering", and no turn fell back.

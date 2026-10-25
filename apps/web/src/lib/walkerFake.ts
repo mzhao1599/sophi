@@ -48,7 +48,7 @@ export interface FakeWalkerControls {
   /** Unplugs (or plugs back) the obstacle sensors. */
   setSensorsPlugged(plugged: boolean): void;
   /**
-   * A Talk press on the walker with these words (as if Gemini heard them from a clip): in flight while
+   * A Talk press on the walker with these words (as if Cartesia heard them from a clip): in flight while
    * "hearing" and "voicing", then saved with a trace. False while the walker is offline (it answers on its own then).
    */
   walkerTalks(words: string): boolean;
@@ -264,18 +264,26 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
   }
 
   /**
-   * One turn as the server runs it: in flight while the model "hears" (and, for a walker clip, while the
-   * voice is made), then saved with its trace. The times are the fake's own pauses, measured.
+   * One turn as the server runs it: for a walker clip, in flight while Cartesia "transcribes" it; then while the
+   * model "hears" (and, for a clip, while the voice is made); then saved with its trace. The times are the fake's
+   * own pauses, measured.
    */
   async function runTurn(w: FakeWalker, clientTurnId: string, words: string, source: "walker" | "page") {
     const audio = source === "walker";
     const accepted = now();
     const clip_ms = audio ? Math.min(15_000, 900 + words.length * 45) : null;
-    const flight: WalkerTurnInFlight = { client_turn_id: clientTurnId, input: audio ? "audio" : "text", since: iso(accepted), clip_ms, stage: "hearing" };
+    const flight: WalkerTurnInFlight = { client_turn_id: clientTurnId, input: audio ? "audio" : "text", since: iso(accepted), clip_ms, stage: audio ? "transcribing" : "hearing", model: "claude" };
     w.inFlight.push(flight);
     try {
-      await pause(jitter(audio ? 1_600 : 800));
-      const model_ms = now() - accepted;
+      let transcribe_ms: number | null = null;
+      if (audio) {
+        await pause(jitter(500));
+        transcribe_ms = now() - accepted;
+        flight.stage = "hearing";
+      }
+      const asked = now();
+      await pause(jitter(audio ? 1_100 : 800));
+      const model_ms = now() - asked;
       const r = reply(w, words);
       let voice_ms: number | null = null;
       if (audio) {
@@ -294,7 +302,7 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
         client_turn_id: clientTurnId,
         source,
         heard: words.trim(),
-        heard_by: audio ? "gemini" : "typed",
+        heard_by: audio ? "cartesia" : "typed",
         reply: r.reply,
         answered_by: r.answered_by,
         voiced_by: audio ? "cartesia" : null,
@@ -308,7 +316,9 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
         input: flight.input,
         clip_ms,
         model_ran: true,
+        model: "claude",
         model_ms,
+        transcribe_ms,
         rule: r.rule,
         answered_by: r.answered_by,
         proposal_opened: r.proposal !== null,

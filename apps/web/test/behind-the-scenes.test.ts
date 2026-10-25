@@ -26,7 +26,7 @@ function turn(over: Partial<WalkerTurnView> = {}): WalkerTurnView {
     client_turn_id: id(201),
     source: "walker",
     heard: "What can you help me with?",
-    heard_by: "gemini",
+    heard_by: "cartesia",
     reply: "I can read your obstacle sensors.",
     answered_by: "model",
     voiced_by: "cartesia",
@@ -43,7 +43,9 @@ function trace(over: Partial<WalkerTurnTrace> = {}): WalkerTurnTrace {
     input: "audio",
     clip_ms: 2_400,
     model_ran: true,
+    model: "claude",
     model_ms: 2_140,
+    transcribe_ms: 420,
     rule: null,
     answered_by: "model",
     proposal_opened: false,
@@ -55,7 +57,7 @@ function trace(over: Partial<WalkerTurnTrace> = {}): WalkerTurnTrace {
 }
 
 function flight(over: Partial<WalkerTurnInFlight> = {}): WalkerTurnInFlight {
-  return { client_turn_id: id(202), input: "audio", since: iso(T0 + 5_000), clip_ms: 1_800, stage: "hearing", ...over };
+  return { client_turn_id: id(202), input: "audio", since: iso(T0 + 5_000), clip_ms: 1_800, stage: "transcribing", model: "claude", ...over };
 }
 
 function proposal(over: Partial<ProposalView> = {}): ProposalView {
@@ -105,20 +107,22 @@ function build(over: Partial<BehindInput> = {}) {
 const rows = (v: ReturnType<typeof build>) => v.stages.map((s) => `${s.label} | ${s.figure} | ${s.state}`);
 
 describe("behind the scenes: a finished turn with a trace", () => {
-  it("draws a spoken turn: clip, Gemini's time, its own words, the reply and Cartesia's voice", () => {
+  it("draws a spoken turn: clip, Cartesia's transcript, Claude's time, its own words, the reply and Cartesia's voice", () => {
     const v = build();
     expect([v.key, v.title, v.timing, v.totalMs]).toEqual([id(201), "Latest turn", "measured", 3_100]);
     expect(rows(v)).toEqual([
       "Walker sent | 2.4 s of audio | done",
-      "Gemini | 2.1 s | done",
-      "Rules | Gemini's own words | done",
+      "Cartesia | 420 ms | done",
+      "Claude | 2.1 s | done",
+      "Rules | Claude's own words | done",
       "Reply | Text sent to the walker | done",
       "Voice | Sent in Cartesia's voice, 810 ms | done",
     ]);
     expect(v.stages.map((s) => s.sentence)).toEqual([
       "The walker sent 2.4 seconds of audio.",
-      "Gemini heard the clip and wrote an answer in 2.1 seconds.",
-      "Rules: Gemini's own words.",
+      "Cartesia wrote down the clip in 420 milliseconds.",
+      "Claude read what was said and wrote an answer in 2.1 seconds.",
+      "Rules: Claude's own words.",
       "Reply: Text sent to the walker.",
       "The reply was sent in Cartesia's voice, made in 810 milliseconds.",
     ]);
@@ -126,15 +130,30 @@ describe("behind the scenes: a finished turn with a trace", () => {
 
   it("draws a typed page turn with no voice station", () => {
     const s = status({ turns: [turn({ source: "page", heard_by: "typed", voiced_by: null })] });
-    const v = build({ status: s, activity: activity({ traces: [trace({ input: "text", clip_ms: null, voiced_by: null, voice_ms: null, model_ms: 640 })] }) });
+    const v = build({ status: s, activity: activity({ traces: [trace({ input: "text", clip_ms: null, transcribe_ms: null, voiced_by: null, voice_ms: null, model_ms: 640 })] }) });
     expect(rows(v)).toEqual([
       "Page sent | typed | done",
-      "Gemini | 640 ms | done",
-      "Rules | Gemini's own words | done",
+      "Claude | 640 ms | done",
+      "Rules | Claude's own words | done",
       "Reply | Text sent to this page | done",
     ]);
     expect(v.stages[0]!.sentence).toBe("This page sent a typed question.");
-    expect(v.stages[1]!.sentence).toBe("Gemini read the question and wrote an answer in 640 milliseconds.");
+    expect(v.stages[1]!.sentence).toBe("Claude read the question and wrote an answer in 640 milliseconds.");
+  });
+
+  it("names no model when a trace from an older server doesn't say which ran", () => {
+    const v = build({ activity: activity({ traces: [trace({ model: undefined, transcribe_ms: undefined })] }) });
+    expect(rows(v).slice(1, 3)).toEqual(["The model | 2.1 s | done", "Rules | The model's own words | done"]);
+  });
+
+  it("says when Cartesia made out no words or gave no transcript, and draws no model station", () => {
+    const unheard = (rule: string, ms: number | null) => build({ activity: activity({ traces: [trace({ rule, transcribe_ms: ms, model_ran: false, model_ms: null, answered_by: "fixed" })] }) });
+    const none = unheard("not_heard", 380);
+    expect(rows(none).slice(1, 3)).toEqual(["Cartesia | No words, 380 ms | done", "Rules | Fixed line: no words heard | done"]);
+    expect(none.stages[1]!.sentence).toBe("Cartesia made out no words in 380 milliseconds.");
+    expect(rows(unheard("cant_hear", 2_500)).slice(1, 3)).toEqual(["Cartesia | No transcript after 2.5 s | done", "Rules | Fixed line: couldn't hear the clip | done"]);
+    // No Cartesia key: the server never asked it, so there is no Cartesia station.
+    expect(unheard("cant_hear", null).stages.map((s) => s.id)).toEqual(["sent", "rules", "reply", "voice"]);
   });
 
   it("names Claude when the trace says Claude read a typed question, failures included", () => {
@@ -154,15 +173,15 @@ describe("behind the scenes: a finished turn with a trace", () => {
     expect(words).not.toMatch(/spoke|played|buzzed|heard by her/i);
   });
 
-  it("draws no Gemini station when no model ran", () => {
+  it("draws no Claude station when no model ran", () => {
     const v = build({ activity: activity({ traces: [trace({ model_ran: false, model_ms: null, rule: "no_model", answered_by: "fixed" })] }) });
-    expect(v.stages.map((s) => s.id)).toEqual(["sent", "rules", "reply", "voice"]);
-    expect(v.stages[1]!.figure).toBe("Fixed reply");
+    expect(v.stages.map((s) => s.id)).toEqual(["sent", "transcribe", "rules", "reply", "voice"]);
+    expect(v.stages[2]!.figure).toBe("Fixed reply");
   });
 
   it("words every rule code in plain English", () => {
     expect(
-      ["arms", "cues_alerts_off", "cues_unchanged", "cues_undeliverable", "cues_empty", "cues_duplicate", "offline", "timeout", "model_error", "refusal", "invalid_reply", "no_model", "something_new"].map(
+      ["arms", "cues_alerts_off", "cues_unchanged", "cues_undeliverable", "cues_empty", "cues_duplicate", "offline", "not_heard", "cant_hear", "timeout", "model_error", "refusal", "invalid_reply", "no_model", "something_new"].map(
         (r) => ruleWords(r, false),
       ),
     ).toEqual([
@@ -173,6 +192,8 @@ describe("behind the scenes: a finished turn with a trace", () => {
       "Refused: not a valid change",
       "Refused: not a valid change",
       "Refused: walker offline",
+      "Fixed line: no words heard",
+      "Fixed line: couldn't hear the clip",
       "Fixed reply",
       "Fixed reply",
       "Fixed reply",
@@ -180,18 +201,18 @@ describe("behind the scenes: a finished turn with a trace", () => {
       "Fixed reply",
       "Fixed reply (something_new)",
     ]);
-    expect([ruleWords(null, false), ruleWords(null, true)]).toEqual(["Gemini's own words", "Change allowed"]);
+    expect([ruleWords(null, false), ruleWords(null, true)]).toEqual(["Claude's own words", "Change allowed"]);
   });
 
-  it("draws the arms rule as a fixed line after Gemini's own step", () => {
+  it("draws the arms rule as a fixed line after Claude's own step", () => {
     const v = build({ activity: activity({ traces: [trace({ rule: "arms", answered_by: "fixed" })] }) });
-    expect(rows(v).slice(1, 3)).toEqual(["Gemini | 2.1 s | done", "Rules | Fixed line: no robot arms | done"]);
+    expect(rows(v).slice(2, 4)).toEqual(["Claude | 2.1 s | done", "Rules | Fixed line: no robot arms | done"]);
   });
 
   it("says how a model call failed, with its time", () => {
-    const at = (rule: string, ms: number | null) => build({ activity: activity({ traces: [trace({ rule, model_ms: ms, answered_by: "fixed" })] }) }).stages[1]!;
-    expect(at("timeout", 8_000)).toMatchObject({ figure: "timed out after 8.0 s", sentence: "Gemini timed out after 8 seconds." });
-    expect(at("model_error", 1_200)).toMatchObject({ figure: "failed after 1.2 s", sentence: "Gemini failed after 1.2 seconds." });
+    const at = (rule: string, ms: number | null) => build({ activity: activity({ traces: [trace({ rule, model_ms: ms, answered_by: "fixed" })] }) }).stages[2]!;
+    expect(at("timeout", 8_000)).toMatchObject({ figure: "timed out after 8.0 s", sentence: "Claude timed out after 8 seconds." });
+    expect(at("model_error", 1_200)).toMatchObject({ figure: "failed after 1.2 s", sentence: "Claude failed after 1.2 seconds." });
     expect(at("refusal", 900).figure).toBe("declined to answer");
     expect(at("invalid_reply", 3_000).figure).toBe("gave no usable reply");
   });
@@ -202,7 +223,7 @@ describe("behind the scenes: an offer, Confirm, recorded and applied", () => {
   const stagesOf = (s: WalkerStatusView, card: ProposalCard | null = null, nowMs = T0 + 6_000) => rows(build({ status: s, activity: activity({ traces: [offered] }), card, nowMs }));
 
   it("shows the server-written offer, then waits for Confirm while it's open", () => {
-    expect(stagesOf(status({ open_proposal: proposal() })).slice(2)).toEqual([
+    expect(stagesOf(status({ open_proposal: proposal() })).slice(3)).toEqual([
       "Rules | Change allowed | done",
       "Reply | Offer written by the server | done",
       "Voice | Sent in Cartesia's voice, 810 ms | done",
@@ -215,7 +236,7 @@ describe("behind the scenes: an offer, Confirm, recorded and applied", () => {
     const card: ProposalCard = { proposal: confirmed, outcome: "Confirmed.", closedAfter: id(101) };
     const v2 = { version: 2, ...WALKER_SETUP, cues: ["spoken", "sound"] as const, created_at: iso(T0 + 4_000) };
     const waiting = stagesOf(status({ configuration: { ...v2, cues: [...v2.cues] }, applied_configuration_version: 1 }), card);
-    expect(waiting.slice(5)).toEqual([
+    expect(waiting.slice(6)).toEqual([
       "Offer | Confirmed | done",
       "Confirm | Button press, not voice | done",
       "Recorded v2 | Saved on the server | done",
@@ -228,7 +249,7 @@ describe("behind the scenes: an offer, Confirm, recorded and applied", () => {
   it("reads a Confirm made on the walker from the configuration, as the card does", () => {
     const card: ProposalCard = { proposal: proposal(), outcome: null, closedAfter: null };
     const s = status({ configuration: { version: 2, ...WALKER_SETUP, cues: ["spoken", "sound"], created_at: iso(T0 + 4_000) }, applied_configuration_version: 2 });
-    expect(stagesOf(s, card).slice(5)).toEqual([
+    expect(stagesOf(s, card).slice(6)).toEqual([
       "Offer | Confirmed | done",
       "Confirm | Button press, not voice | done",
       "Recorded v2 | Saved on the server | done",
@@ -251,15 +272,21 @@ describe("behind the scenes: an offer, Confirm, recorded and applied", () => {
 });
 
 describe("behind the scenes: in flight", () => {
-  it("hearing: the clip, then a live station waiting for Gemini", () => {
+  it("transcribing: the clip, then a live station waiting for Cartesia's transcript", () => {
     const v = build({ activity: activity({ in_flight: [flight()] }) });
     expect([v.key, v.title, v.timing]).toEqual([id(202), "Turn in progress", "measured"]);
-    expect(rows(v)).toEqual(["Walker sent | 1.8 s of audio | done", "Hearing | Waiting for Gemini… | live"]);
+    expect(rows(v)).toEqual(["Walker sent | 1.8 s of audio | done", "Hearing | Waiting for Cartesia… | live"]);
+    expect(v.stages.map((s) => s.id)).toEqual(["sent", "transcribe"]);
   });
 
-  it("voicing: hearing done, then a live station waiting for Cartesia, with the same station ids the trace will use", () => {
+  it("hearing: a clip's words waiting for Claude", () => {
+    const v = build({ activity: activity({ in_flight: [flight({ stage: "hearing" })] }) });
+    expect(rows(v)).toEqual(["Walker sent | 1.8 s of audio | done", "Reading | Waiting for Claude… | live"]);
+  });
+
+  it("voicing: reading done, then a live station waiting for Cartesia, with the same station ids the trace will use", () => {
     const v = build({ activity: activity({ in_flight: [flight({ stage: "voicing" })] }) });
-    expect(rows(v)).toEqual(["Walker sent | 1.8 s of audio | done", "Hearing | Done | done", "Voice | Waiting for Cartesia… | live"]);
+    expect(rows(v)).toEqual(["Walker sent | 1.8 s of audio | done", "Reading | Done | done", "Voice | Waiting for Cartesia… | live"]);
     expect(v.stages.map((s) => s.id)).toEqual(["sent", "model", "voice"]);
   });
 
@@ -279,7 +306,7 @@ describe("behind the scenes: in flight", () => {
   });
 
   it("reading: a typed question waiting for Claude, named before the answer comes", () => {
-    const v = build({ ownTurnId: id(202), activity: activity({ in_flight: [flight({ input: "text", clip_ms: null, model: "claude" })] }) });
+    const v = build({ ownTurnId: id(202), activity: activity({ in_flight: [flight({ input: "text", clip_ms: null, stage: "hearing" })] }) });
     expect(rows(v)).toEqual(["Page sent | typed | done", "Reading | Waiting for Claude… | live"]);
     expect(v.stages[1]!.sentence).toBe("The server is waiting for Claude.");
   });
@@ -296,17 +323,18 @@ describe("behind the scenes: without timings", () => {
     expect(v.timing).toBe("none");
     expect(rows(v)).toEqual([
       "Walker sent | audio | done",
-      "Gemini | ran | done",
-      "Rules | Gemini's own words | done",
+      "Cartesia | Wrote down the clip | done",
+      "Claude | ran | done",
+      "Rules | Claude's own words | done",
       "Reply | Text sent to the walker | done",
       "Voice | Sent in Cartesia's voice | done",
     ]);
     expect(v.totalMs).toBeNull();
   });
 
-  it("with no activity, doesn't guess which model read a typed question", () => {
+  it("with no activity, names Claude, the only model, for a typed question it answered", () => {
     const v = build({ activity: undefined, status: status({ turns: [turn({ source: "page", heard_by: "typed", voiced_by: null })] }) });
-    expect(rows(v).slice(1, 3)).toEqual(["The model | ran | done", "Rules | The model's own words | done"]);
+    expect(rows(v).slice(1, 3)).toEqual(["Claude | ran | done", "Rules | Claude's own words | done"]);
   });
 
   it("a fixed reply from status alone says only 'Fixed reply', with no code it can't know", () => {

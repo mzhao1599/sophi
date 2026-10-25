@@ -64,7 +64,7 @@ export function Chat({
   /** The data notice, shown under the box before anything is sent; `describedBy` is its id. */
   notice: string;
   describedBy: string;
-  /** While the agent runs, its short name ("Gemini"): each reply then says who answered it. */
+  /** While the agent runs, its short name ("Claude"): each reply then says who answered it. */
   agentName?: string | null;
 }) {
   const s = o.session;
