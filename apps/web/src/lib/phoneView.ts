@@ -197,7 +197,16 @@ export const HOW_WORDS: Readonly<Record<HelpSource, string>> = {
   handles: "from her walker",
   voice: "by asking Sophi",
   phone: "from her phone",
+  camera: "when its camera saw a possible fall",
 };
+
+/**
+ * Who asked, for a heading: her, or her walker when its fall check asked (`camera`: the walker's guess after a
+ * countdown she didn't stop, never her words, so it never says she asked).
+ */
+export const askedWho = (h: Pick<HelpView, "source">, her: string) => (h.source === "camera" ? `${her}'s walker asked for help` : `${her} asked for help`);
+/** The same on her own phone. */
+export const youAsked = (h: Pick<HelpView, "source">) => (h.source === "camera" ? "Your walker asked for help" : "You asked for help");
 
 export const NO_CARETAKER = "No caretaker is linked to your walker.";
 
@@ -282,7 +291,7 @@ export function closedForLine(h: HelpView, meId: string, her: string, herKnown =
 }
 
 /** The tab title while a request is open on a caretaker's phone. */
-export const helpTitle = (her: string) => `${her} asked for help · Sophi`;
+export const helpTitle = (her: string, h: Pick<HelpView, "source"> = { source: "phone" }) => `${askedWho(h, her)} · Sophi`;
 
 const added = (prev: People, next: People) => next.filter((p) => !prev.some((q) => q.member_id === p.member_id));
 
@@ -302,7 +311,7 @@ export function helpChange(prev: HelpView | null | undefined, next: HelpView | n
     return mine ? herClosedLine(next) : closedForLine(next, meId, her, !!walkerUserOf(home));
   }
   // Her phone: the furthest step already (a caretaker's app may have it before her first home after asking).
-  if (fresh) return mine ? `You asked for help. ${herOpenLine(next)}` : `${her} asked for help ${HOW_WORDS[next.source]}.`;
+  if (fresh) return mine ? `${youAsked(next)}. ${herOpenLine(next)}` : `${askedWho(next, her)} ${HOW_WORDS[next.source]}.`;
   const coming = added(prev.coming, next.coming);
   if (coming.length) {
     if (mine) return comingLine(coming);

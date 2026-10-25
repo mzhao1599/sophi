@@ -47,15 +47,18 @@ export interface HelpDeps {
   newId: () => string;
 }
 
+/** Who started a countdown: her voice (the server's reply), or the fall check (the walker's own line). */
+type CountdownSource = "voice" | "camera";
+
 type Gesture =
   | { kind: "hold"; cancel: Cancel }
-  /** The server's "I'll ask Maya for help in 8 seconds" is playing; the countdown starts when it has played. */
-  | { kind: "reply" }
-  | { kind: "countdown"; left: number; cancel: Cancel };
+  /** The line before the countdown is playing ("I'll ask Maya for help in 8 seconds"); the countdown starts when it has played. */
+  | { kind: "reply"; source: CountdownSource }
+  | { kind: "countdown"; left: number; cancel: Cancel; source: CountdownSource };
 
 type Request =
   | { kind: "idle" }
-  | { kind: "sending"; clientHelpId: string; source: "handles" | "voice"; firstMono: number; retrying: boolean; cancel: Cancel | null }
+  | { kind: "sending"; clientHelpId: string; source: "handles" | CountdownSource; firstMono: number; retrying: boolean; cancel: Cancel | null }
   | { kind: "not_sent"; why: "no_caretaker" | "offline" | "failed"; cancel: Cancel }
   | { kind: "open"; view: HelpView; armedUntil: number | null; cancelArm: Cancel | null; okayInFlight: boolean }
   | { kind: "closed"; view: HelpView; cancel: Cancel };
@@ -190,26 +193,51 @@ export class WalkerHelp {
   voiceAsked(spoken: Promise<void>): void {
     if (this.stopped) return;
     this.endGesture();
-    const gesture: Gesture = { kind: "reply" };
+    const gesture: Gesture = { kind: "reply", source: "voice" };
     this.gesture = gesture;
     this.deps.log.info("help: asked by voice; counting down after the reply");
     this.changed();
     void spoken.then(() => {
       if (this.gesture !== gesture || this.stopped) return;
-      this.tick(Math.ceil(HELP_COUNTDOWN_MS / 1000));
+      this.tick(Math.ceil(HELP_COUNTDOWN_MS / 1000), "voice");
     });
   }
 
-  private tick(left: number): void {
+  // ---- The fall check: the walker's line, then the same countdown ----
+
+  /**
+   * The fall check saw a possible fall (src/fall). Only when help is otherwise quiet: never over her own hold or
+   * countdown, a request being sent, or one already open (she or a caretaker is on it). The walker says
+   * HELP_WORDS.fallSeen, then counts down as for a voice ask, and any handle press stops it. Returns whether the
+   * countdown started.
+   */
+  fallSeen(): boolean {
+    if (this.stopped || this.gesture !== null || this.request.kind === "sending" || this.request.kind === "open") {
+      this.deps.log.info("help: possible fall seen while help is busy; nothing new started");
+      return false;
+    }
+    const gesture: Gesture = { kind: "reply", source: "camera" };
+    this.gesture = gesture;
+    this.deps.cue();
+    this.deps.log.info("help: possible fall seen; counting down after the line");
+    this.changed();
+    void this.deps.say(HELP_WORDS.fallSeen(Math.ceil(HELP_COUNTDOWN_MS / 1000))).then(() => {
+      if (this.gesture !== gesture || this.stopped) return;
+      this.tick(Math.ceil(HELP_COUNTDOWN_MS / 1000), "camera");
+    });
+    return true;
+  }
+
+  private tick(left: number, source: CountdownSource): void {
     if (left <= 0) {
       this.gesture = null;
-      this.ask("voice");
+      this.ask(source);
       return;
     }
     const cancel = this.deps.clock.setTimeout(() => {
-      if (this.gesture?.kind === "countdown" && this.gesture.cancel === cancel) this.tick(left - 1);
+      if (this.gesture?.kind === "countdown" && this.gesture.cancel === cancel) this.tick(left - 1, source);
     }, 1000);
-    this.gesture = { kind: "countdown", left, cancel };
+    this.gesture = { kind: "countdown", left, cancel, source };
     this.changed();
   }
 
@@ -234,7 +262,7 @@ export class WalkerHelp {
 
   // ---- Sending ----
 
-  private ask(source: "handles" | "voice"): void {
+  private ask(source: "handles" | CountdownSource): void {
     if (this.request.kind === "sending") {
       this.deps.log.info("help: already sending; nothing new sent", { source });
       this.changed();

@@ -2,10 +2,11 @@ import type { Clock } from "../clock";
 import { HttpCameraCloud } from "../cloud/client";
 import type { Logger } from "../log";
 import type { StateStore } from "../store";
-import { FfmpegCamera, type CameraSpec } from "./capture";
+import { FallDetector, FallWatch, letterbox, loadMoveNet, readFallSettings, type FallEvent } from "../fall";
+import { CameraLeases, FfmpegCamera, type CameraSpec } from "./capture";
 import { CameraLink } from "./link";
 
-export { FfmpegCamera, ffmpegArgs, type CameraFrame, type CameraSpec, type FrameSource } from "./capture";
+export { CameraLeases, FfmpegCamera, RawFrames, ffmpegArgs, type AnalysisFrame, type AnalysisSpec, type CameraFrame, type CameraSpec, type FrameSource } from "./capture";
 export { CameraLink } from "./link";
 export { JpegSplitter, STANDARD_DHT, withHuffmanTables } from "./jpeg";
 
@@ -34,30 +35,74 @@ export function readCameraSettings(env: NodeJS.ProcessEnv): { kind: "off" } | { 
 }
 
 /**
- * Starts the live camera's link when WALKER_CAMERA_DEVICE is set, else returns null. A setting that can't be
- * read leaves the camera off, logged; it never stops the walker.
+ * Starts the camera when WALKER_CAMERA_DEVICE is set, else returns null: the live camera's link always, and the
+ * fall check too with WALKER_FALL_CHECK=on (src/fall). Both share one ffmpeg through leases: without the fall check
+ * the camera opens only while a caretaker watches; with it, the camera stays on and its pictures are read on the
+ * walker. A setting that can't be read, a missing model or a missing onnxruntime-node leaves that part off, logged;
+ * none of it ever stops the walker.
  */
-export function startCameraLink(options: { env: NodeJS.ProcessEnv; clock: Clock; log: Logger; store: StateStore }): CameraLink | null {
+export async function startCamera(options: {
+  env: NodeJS.ProcessEnv;
+  clock: Clock;
+  log: Logger;
+  store: StateStore;
+  /** A fall was confirmed (only with the fall check on). */
+  onFall?: (event: FallEvent) => void;
+}): Promise<{ stop(): Promise<void> } | null> {
   const { env, clock, log, store } = options;
   const settings = readCameraSettings(env);
-  if (settings.kind === "off") return null;
+  if (settings.kind === "off") {
+    if (readFallSettings(env).kind === "on") log.error("fall check is off: it needs WALKER_CAMERA_DEVICE");
+    return null;
+  }
   if (settings.kind === "error") {
     log.error("camera is off: a camera setting can't be read", { reason: settings.reason });
     return null;
   }
-  const camera = new FfmpegCamera(settings.spec, { clock, log });
+  const spec = settings.spec;
+  const fall = readFallSettings(env);
+  if (fall.kind === "error") log.error("fall check is off: a setting can't be read", { reason: fall.reason });
+  const box = letterbox(spec.width, spec.height);
+  let model = null;
+  if (fall.kind === "on") {
+    try {
+      model = await loadMoveNet(fall.modelPath, box);
+    } catch (error) {
+      log.error("fall check is off: the pose model couldn't load", { error: (error as Error).message });
+    }
+  }
+  const camera = new FfmpegCamera(spec, { clock, log, ...(model && fall.kind === "on" ? { analysis: { box, fps: fall.fps } } : {}) });
+  const leases = new CameraLeases(camera);
   const link = new CameraLink({
     clock,
     log,
-    camera,
+    camera: leases.lease(),
     credential: () => store.readCredential(),
     makeCloud: (credential) => new HttpCameraCloud(credential.server_url, credential.device_id, credential.credential),
   });
   link.start();
-  log.info("camera link started; the camera opens only while a caretaker watches", {
-    source: settings.spec.kind,
-    size: `${settings.spec.width}x${settings.spec.height}`,
-    fps: settings.spec.fps,
+  log.info(model ? "camera link started; the camera stays on for the fall check" : "camera link started; the camera opens only while a caretaker watches", {
+    source: spec.kind,
+    size: `${spec.width}x${spec.height}`,
+    fps: spec.fps,
   });
-  return link;
+  let watch: FallWatch | null = null;
+  if (model) {
+    watch = new FallWatch({
+      clock,
+      log,
+      camera: leases.lease(),
+      onAnalysis: (fn) => camera.onAnalysis(fn),
+      model,
+      detector: new FallDetector({ aspect: spec.width / spec.height }),
+      onFall: (event) => options.onFall?.(event),
+    });
+    watch.start();
+  }
+  return {
+    async stop() {
+      await watch?.stop();
+      await link.stop();
+    },
+  };
 }
