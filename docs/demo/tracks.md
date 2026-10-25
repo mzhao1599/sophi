@@ -171,7 +171,6 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 
 - **The "Your walker" page** ([`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types who gets the words: Anthropic's Claude for what's typed and said, Cartesia for the voice clip and the text of spoken replies, that both may keep a copy, not to type names or health details, and that each message is deleted after an hour or with Forget this walker. Copy its exact words from the page before quoting it here.
 - **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. Cartesia turns what's said into words and speaks Sophi's replies, and Anthropic's Claude writes the answers; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
-- **Under the onboarding text box** (when the server has Cartesia), `VOICE_NOTICE` in [`Chat.tsx`](../../apps/web/src/components/Chat.tsx): "The microphone and Read aloud use Cartesia: it hears what you say and reads replies aloud. Leave out names and health details."
 - **Said aloud at the Talk beat:** "Cartesia hears the question and speaks Sophi's answer; Claude writes it."
 
 ### The 2-minute cut

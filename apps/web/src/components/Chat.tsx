@@ -12,9 +12,6 @@ export interface FocusRequest {
   n: number;
 }
 
-/** Said before anyone speaks or listens: who hears the voice and reads the replies. */
-export const VOICE_NOTICE = "The microphone and Read aloud use Cartesia: it hears what you say and reads replies aloud. Leave out names and health details.";
-
 const userTurns = (s: SessionView | null) => (s ? s.turns.filter((t) => t.role === "user").length : 0);
 
 /**
@@ -298,7 +295,6 @@ export function Chat({
               data-state={v.state}
               aria-label={listening ? "Stop and send what you said" : "Speak your reply"}
               aria-pressed={listening}
-              aria-describedby={`${ids}-voice`}
               aria-disabled={(!listening && !canListen) || undefined}
               onClick={() => {
                 if (listening || canListen) void v.toggleListening();
@@ -332,11 +328,6 @@ export function Chat({
           {notice ? (
             <p id={describedBy} className={styles.notice}>
               {notice}
-            </p>
-          ) : null}
-          {voice ? (
-            <p id={`${ids}-voice`} className={styles.notice}>
-              {VOICE_NOTICE}
             </p>
           ) : null}
           {question ? (

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isWav16kMono, wav16kMonoMs } from "@walker/cloud-api";
 import { downsample, encodeWav } from "@/lib/voice";
 import { resetVoiceBudgetForTests, setOnboardingVoiceForTests, type OnboardingVoice } from "@/server/voice";
-import { VOICE_NOTICE } from "@/components/Chat";
 import * as hear from "../app/api/v1/onboarding/voice/hear/route";
 import * as speak from "../app/api/v1/onboarding/voice/speak/route";
 
@@ -127,12 +126,5 @@ describe("POST /api/v1/onboarding/voice/speak", () => {
     expect(spoken).toEqual([]);
     setOnboardingVoiceForTests(stub({ audio: null }));
     expect((await speak.POST(speakRequest({ text: "Hi" }))).status).toBe(503);
-  });
-});
-
-describe("the voice notice", () => {
-  it("names Cartesia and what it does before anyone speaks", () => {
-    expect(VOICE_NOTICE).toMatch(/Cartesia/);
-    expect(VOICE_NOTICE).toMatch(/names and health details/);
   });
 });
