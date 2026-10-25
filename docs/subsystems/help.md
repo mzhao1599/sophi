@@ -2,7 +2,9 @@
 
 **For:** whoever builds or demos asking for help: the contract (`packages/contracts`), the server and the care database (`services/cloud-api`, `services/care-db`, `apps/web/app/api`), the Pi and its screen (`devices/pi`, `packages/walker-screen`), and the two phones (`apps/web`, `/app`).
 
-**Status (2026-10-24):** the contract is written, with tests: the shared request view, timings and the walker's routes in [`walker.ts`](../../packages/contracts/src/walker.ts) ("Asking for help", plus `can_ask_for_help` and `ask_for_help` on a turn), and the phone routes and the walker screen's states in [`circle.ts`](../../packages/contracts/src/circle.ts). Nothing else is built yet. Update this line as each piece lands.
+**Status (2026-10-24):** the contract is written, with tests: the shared request view, timings and the walker's routes in [`walker.ts`](../../packages/contracts/src/walker.ts) ("Asking for help", plus `can_ask_for_help` and `ask_for_help` on a turn), and the phone routes and the walker screen's states in [`circle.ts`](../../packages/contracts/src/circle.ts). Update this line as each piece lands.
+
+**Walker (built, 2026-10-24, branch `sos-pi`):** the chord with its 250 ms Confirm window and help owning Confirm (the motion coordinator withdraws and refuses targets), the voice countdown, sending with retries, polling, every fixed line below, the walker screen's help states ([`packages/walker-screen`](../../packages/walker-screen/README.md)), the simulator's `h` key, `chord` script verb and fake help routes ([Pi README](../../devices/pi/README.md#how-it-behaves)). Tested with fake clocks and in real time in the simulator against the fake cloud (3 of 3 each for the voice beat and the chord). Not yet run on the real Pi, its buttons or its panel, nor against the real server's help routes. The walker screen's `closed` state carries no `sent_to` names, so "Okay. Maya will see that you're okay." shows on the screen as "Okay" / "They'll see that you're okay." (a proposed contract change: add `sent_to` names to `closed`).
 
 ## What it is
 
@@ -104,8 +106,9 @@ Pi code, never a model's. `{names}` is `helpNames(...)` of the phones' names. Ev
 | No caretaker | "No caretaker's phone is linked to this walker, so nothing was sent." | `not_sent` |
 | Gave up offline | "I couldn't reach the internet, so nothing was sent. Use your phone if you can." | `not_sent` |
 | Other failure | "Something went wrong, so nothing was sent. Use your phone if you can." | `not_sent` |
+| Her second Confirm's `/okay` didn't get through (added with the walker) | "I couldn't reach the internet. Press Confirm twice to try again." | `open` |
 
-**The simulator:** `h` in the terminal runs a whole chord (both down, 2 s, both up), and the `.walk` script gets a matching verb. The fake cloud implements the device routes and can answer as a caretaker would (shown, coming, with her).
+**The simulator:** `h` in the terminal runs a whole chord (both down, 2.5 s, both up, through the simulated hand board), and the `.walk` script's `chord <ms>` verb does the same for any hold. The fake cloud implements the device routes and can answer as a caretaker would (shown, coming, with her).
 
 ## The server's voice path
 

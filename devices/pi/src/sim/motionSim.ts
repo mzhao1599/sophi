@@ -453,7 +453,7 @@ export class MotionSim {
 /** Interactive keys for the motion actions (`walker simulate --arms`). */
 export const MOTION_KEYS: Record<string, string> = {
   s: "stop-switch",
-  h: "hand-unplug",
+  "-": "hand-unplug",
   "1": "torque-on-left",
   "2": "torque-on-right",
   "0": "torque-off-left",
@@ -493,7 +493,7 @@ export const MOTION_KEYS: Record<string, string> = {
   "]": "pose-stowed-right",
 };
 
-export const MOTION_HELP = `Arms (SIMULATED): s stop switch press/release   h unplug/replug the handle   1/2 torque on left/right (then c)
+export const MOTION_HELP = `Arms (SIMULATED): s stop switch press/release   - unplug/replug the handle   1/2 torque on left/right (then c)
       0 torque off left   P left arm to "ready" (then c)   H left to "handover"   O an offer: left to "ready" (then c)
       L teleop left (then c)   M match the left leader to its arm   V move the left leader slowly   J jerk it fast
       S terminal stop   C terminal clear (then c)   F left servo 3 stops answering   B push the left elbow

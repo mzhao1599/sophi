@@ -82,16 +82,16 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     expect(h.client.calls.filter((c) => c.startsWith("answer:"))).toEqual([]);
   });
 
-  it("B25: Confirm while recording is ignored and buzzes error once; the recording carries on", async () => {
+  it("B25/GH3: Confirm while Talk is held is the help chord: no Confirm buzz, the recording is dropped", async () => {
     const h = makeHarness({ withHand: true });
     await boot(h);
     h.hand!.press("talk", "pressed");
     await flush();
     h.hand!.press("confirm", "pressed");
     await flush();
-    expect(handLines(h)).toEqual([`hand-right-01 recording ${TALK_PRESS_HAPTIC_MS}`, `hand-right-01 error ${CONFIRM_PRESS_HAPTIC_MS}`]);
-    expect(h.service.talk).toBe("recording");
-    expect(h.capture.aborts).toBe(0);
+    expect(handLines(h)).toEqual([`hand-right-01 recording ${TALK_PRESS_HAPTIC_MS}`]);
+    expect(h.speaker.cues).toContain("help");
+    expect(h.service.talk).toBe("idle");
   });
 
   it("B25: Confirm offline buzzes error", async () => {

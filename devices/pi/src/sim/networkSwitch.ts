@@ -1,4 +1,4 @@
-import type { AnswerProposalResponse, DeviceMessagesResponse, DeviceSendMessageRequest, DeviceTurnRequest, HeartbeatRequest, HeartbeatResponse, WalkerConfiguration, WalkerTurnResponse } from "@walker/contracts";
+import type { AnswerProposalResponse, DeviceAskForHelpRequest, HelpView, DeviceMessagesResponse, DeviceSendMessageRequest, DeviceTurnRequest, HeartbeatRequest, HeartbeatResponse, WalkerConfiguration, WalkerTurnResponse } from "@walker/contracts";
 import { CloudError, toCloudError, type CloudClient } from "../cloud/client";
 
 /**
@@ -52,5 +52,17 @@ export class SwitchableCloudClient implements CloudClient {
 
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal): Promise<AnswerProposalResponse> {
     return this.gate(signal, () => this.inner.answerProposal(proposalId, answer, signal));
+  }
+
+  askForHelp(body: DeviceAskForHelpRequest, signal: AbortSignal): Promise<HelpView> {
+    return this.gate(signal, () => this.inner.askForHelp(body, signal));
+  }
+
+  helpStatus(signal: AbortSignal): Promise<HelpView | null> {
+    return this.gate(signal, () => this.inner.helpStatus(signal));
+  }
+
+  helpOkay(helpId: string, signal: AbortSignal): Promise<HelpView> {
+    return this.gate(signal, () => this.inner.helpOkay(helpId, signal));
   }
 }

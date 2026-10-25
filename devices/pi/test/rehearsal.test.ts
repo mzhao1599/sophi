@@ -8,6 +8,7 @@ import { withDeadline } from "../src/clock";
 import { LINES } from "../src/notices";
 import { NetworkSwitch, SwitchableCloudClient } from "../src/sim/networkSwitch";
 import { FakeClock, boot, flush, makeHarness, type Harness } from "./support/fakes";
+import { lone } from "./support/fakes";
 
 /** Rows from the demo rehearsal (test/EXPECTED.md, marked "rehearsal"): W8, O11, O12, B22. */
 
@@ -91,7 +92,7 @@ describe("B22: a new configuration is reported at once", () => {
     await boot(h);
     h.fake.script = [{ reply: "Fake cloud: switch?", proposeCues: ["sound"] }];
     await talk(h);
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.service.configuration?.version).toBe(2);
     await h.clock.advance(0);
@@ -130,10 +131,10 @@ describe("O11: the same local line twice within 30 s is spoken both times, sent 
   it("Confirm with nothing open, twice: two sounds, one line on the page", async () => {
     const h = makeHarness();
     await boot(h);
-    h.press("confirm");
+    await lone(h);
     await flush();
     await h.clock.advance(10_000);
-    h.press("confirm");
+    await lone(h);
     await flush();
     await h.clock.advance(5000); // the next heartbeat would carry a second copy, if one were queued
     expect(h.speaker.cues.filter((c) => c === "nothing_to_confirm")).toHaveLength(2);
@@ -143,10 +144,10 @@ describe("O11: the same local line twice within 30 s is spoken both times, sent 
   it("after 30 s the same line is sent again", async () => {
     const h = makeHarness();
     await boot(h);
-    h.press("confirm");
+    await lone(h);
     await flush();
     await h.clock.advance(30_000);
-    h.press("confirm");
+    await lone(h);
     await flush();
     await h.clock.advance(5000);
     expect(h.device()!.events.filter((e) => e.text === LINES.nothingToConfirm)).toHaveLength(2);
@@ -182,10 +183,10 @@ describe("after the review", () => {
   it("O11: a reply between two 'Nothing to confirm.' lines makes the second one new", async () => {
     const h = makeHarness();
     await boot(h);
-    h.press("confirm");
+    await lone(h);
     await flush();
     await talk(h);
-    h.press("confirm");
+    await lone(h);
     await flush();
     await h.clock.advance(5000);
     expect(h.device()!.events.filter((e) => e.text === LINES.nothingToConfirm)).toHaveLength(2);
@@ -194,7 +195,7 @@ describe("after the review", () => {
   it("O11: a Confirm result between two 'Nothing to confirm.' lines (no recording at all) makes the second one new", async () => {
     const h = makeHarness();
     await boot(h);
-    h.press("confirm"); // nothing open
+    await lone(h); // nothing open
     await flush();
     // A proposal opened elsewhere (the page's own turn): the walker learns it from a heartbeat, no recording here.
     const device = h.device()!;
@@ -213,10 +214,10 @@ describe("after the review", () => {
       configuration_version: null,
     });
     await h.clock.advance(5000);
-    h.press("confirm"); // confirms it: "Done. ..."
+    await lone(h); // confirms it: "Done. ..."
     await flush();
     expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);
-    h.press("confirm"); // nothing open again
+    await lone(h); // nothing open again
     await flush();
     await h.clock.advance(5000);
     expect(h.device()!.events.filter((e) => e.text === LINES.nothingToConfirm)).toHaveLength(2);

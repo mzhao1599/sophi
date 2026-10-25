@@ -1,0 +1,44 @@
+# Asking for help by voice, the demo beat, against the FAKE cloud (test/EXPECTED.md, GW1). The "caretaker" is the
+# fake cloud's help keys: a made-up Maya, no real phone. The fake cloud understands no speech: `key +` makes its
+# next turn answer as the server does when the model chooses ask_for_help.
+# Run: node dist/walker.mjs simulate --screen --script test/sim/help-voice.walk
+
+# 1. Boot; the first help poll answers 200, so Talk turns carry can_ask_for_help.
+expect spoke Sophi is on.
+expect link online
+expect heartbeat ok
+wait 3000
+
+# 2. "I've fallen. Please get Maya." The reply, then the countdown from 8.
+key +
+key t
+expect mic open
+wait 1200
+key t
+expect spoke I'll ask Maya for help in 8 seconds. Press any button to stop.
+expect help help_countdown 8
+expect screen help_countdown
+expect help help_countdown 1
+
+# 3. At zero: asked, and sent to Maya's phone.
+expect 12000 spoke Asking for help.
+expect spoke Sent to Maya's phone.
+expect help help open
+expect screen help
+
+# 4. Maya's (fake) app shows it, then she taps "I'm on my way".
+key help-shown
+expect 8000 spoke It's showing on Maya's phone.
+key help-coming
+expect 8000 spoke Maya is on the way.
+expect help help open shown coming
+
+# 5. Confirm twice: she's okay. Then the clock again.
+key c
+expect spoke Press Confirm again to tell Maya you're okay.
+expect help help open shown coming confirm_okay
+key c
+expect spoke Okay. Maya will see that you're okay.
+expect help help closed okay
+expect 15000 help none
+expect screen ambient
