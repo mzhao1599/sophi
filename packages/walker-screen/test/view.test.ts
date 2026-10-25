@@ -17,6 +17,7 @@ import {
 import {
   CAPTION_PAGE_CHARS,
   FIXTURE_STATE_NAMES,
+  HELP_WORDS,
   MIN_FRAGMENT_WORDS,
   PX_PER_MM,
   SAMPLE_REPLY,
@@ -427,5 +428,61 @@ describe("helpers", () => {
   it("shortens at a word with an ellipsis", () => {
     expect(shorten("Is there anything in front of me", 20)).toBe("Is there anything…");
     expect(shorten("short", 20)).toBe("short");
+  });
+});
+
+describe("asking for help (GV rows in devices/pi/test/EXPECTED.md)", () => {
+  const help = (h: Extract<ScreenContent, { state: "help" }>["help"]) => screenView(state({ state: "help", help: h }));
+  const words = (v: ScreenView) => texts(v).join(" | ");
+
+  it("GV2: the hold and the countdown name what to do, with no touch button", () => {
+    const hold = screenView(state({ state: "help_hold" }));
+    expect(words(hold)).toBe("Keep holding | to ask for help. | Let go to stop.");
+    expect(buttons(hold)).toEqual([]);
+    const eight = screenView(state({ state: "help_countdown", seconds_left: 8 }));
+    expect(words(eight)).toBe("8 | Asking for help in 8 seconds. | Press any button to stop.");
+    expect(eight.left).toEqual({ kind: "hint", word: "Stop" });
+    expect(eight.right).toBe("Stop");
+    const one = screenView(state({ state: "help_countdown", seconds_left: 1 }));
+    expect(one.lines[0]!.text).toBe("Asking for help in 1 second.");
+    // GS3: one scene for the whole countdown, so the number changes without a cross-fade.
+    expect(one.sceneKey).toBe(eight.sceneKey);
+  });
+
+  it("GV2: sending, and nothing sent, word for word as spoken", () => {
+    expect(words(help({ phase: "sending", retrying: false }))).toBe("Asking for help");
+    expect(words(help({ phase: "sending", retrying: true }))).toBe("Asking for help | No internet yet. I'll keep trying.");
+    expect(words(help({ phase: "not_sent", why: "no_caretaker" }))).toBe("Not sent | No caretaker's phone is linked to this walker, so nothing was sent.");
+    expect(words(help({ phase: "not_sent", why: "offline" }))).toBe("Not sent | I couldn't reach the internet, so nothing was sent. Use your phone if you can.");
+    expect(words(help({ phase: "not_sent", why: "failed" }))).toBe("Not sent | Something went wrong, so nothing was sent. Use your phone if you can.");
+  });
+
+  it("GV2: open says the newest news and how to say she's okay; armed says press again", () => {
+    const open = (shown: string[], coming: string[], confirm_okay = false) => help({ phase: "open", sent_to: ["Maya", "Sam"], shown_to: shown, coming, confirm_okay });
+    expect(words(open([], []))).toBe("Sent to Maya and Sam's phones | Press Confirm twice to say you're okay.");
+    expect(words(open(["Maya"], []))).toBe("It's showing on Maya's phone | Press Confirm twice to say you're okay.");
+    expect(words(open(["Maya", "Sam"], ["Sam"]))).toBe("Sam is on the way | Press Confirm twice to say you're okay.");
+    expect(open([], []).left).toEqual({ kind: "hint", word: "Confirm" });
+    expect(words(open([], [], true))).toBe("Press Confirm again | to tell Maya and Sam you're okay.");
+    expect(open([], [], true).announce).toBe("Press Confirm again to tell Maya and Sam you're okay.");
+    for (const v of [open([], []), open(["Maya"], ["Maya"], true)]) expect(buttons(v)).toEqual([]);
+  });
+
+  it("GV2: closed, with gender-neutral words", () => {
+    expect(words(help({ phase: "closed", how: "okay", by_name: null }))).toBe("Okay | They'll see that you're okay.");
+    expect(words(help({ phase: "closed", how: "with_her", by_name: "Maya" }))).toBe("Maya says they're with you");
+    expect(words(help({ phase: "closed", how: "expired", by_name: null }))).toBe("Your request for help has ended");
+  });
+
+  it("GV2: the spoken lines (shared with the Pi) are the design's table", () => {
+    expect(HELP_WORDS.sent(["Maya"])).toBe("Sent to Maya's phone.");
+    expect(HELP_WORDS.sent(["Maya", "Sam"])).toBe("Sent to Maya and Sam's phones.");
+    expect(HELP_WORDS.shown("Maya")).toBe("It's showing on Maya's phone.");
+    expect(HELP_WORDS.coming(["Maya"])).toBe("Maya is on the way.");
+    expect(HELP_WORDS.coming(["Maya", "Sam"])).toBe("Maya and Sam are on the way.");
+    expect(HELP_WORDS.armOkay(["Maya"])).toBe("Press Confirm again to tell Maya you're okay.");
+    expect(HELP_WORDS.closedOkay(["Maya"])).toBe("Okay. Maya will see that you're okay.");
+    expect(HELP_WORDS.closedWithHer("Maya")).toBe("Maya says they're with you.");
+    for (const line of [HELP_WORDS.closedWithHer("Maya"), HELP_WORDS.coming(["Maya"])]) expect(line).not.toMatch(/\b(she|he|her|his)\b/);
   });
 });
