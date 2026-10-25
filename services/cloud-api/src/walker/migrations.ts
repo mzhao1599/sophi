@@ -216,7 +216,16 @@ create index walker_help_created on walker_help_requests (created_at);
 `,
   },
   {
-    id: "0006_walker_heard_by_cartesia",
+    id: "0006_walker_help_camera",
+    sql: `
+-- The walker's fall check can ask for help too (source 'camera', docs/subsystems/help.md): the camera's body
+-- points looked like a fall and she didn't stop the countdown.
+alter table walker_help_requests drop constraint walker_help_requests_source_check;
+alter table walker_help_requests add constraint walker_help_requests_source_check check (source in ('handles', 'voice', 'phone', 'camera'));
+`,
+  },
+  {
+    id: "0007_walker_heard_by_cartesia",
     sql: `
 -- Spoken turns are now transcribed by Cartesia and answered by Claude, so heard_by says 'cartesia'. Turns heard
 -- the old way are deleted rather than relabelled (who heard them is a fact); turns are kept only an hour anyway

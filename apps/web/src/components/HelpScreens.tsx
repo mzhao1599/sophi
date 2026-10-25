@@ -5,6 +5,8 @@ import { PhoneApiError, type HelpView, type PhoneApi, type PhoneMember } from "@
 import {
   NO_CARETAKER,
   askedHowLine,
+  askedWho,
+  youAsked,
   agoWords,
   caretakerNames,
   closedForLine,
@@ -90,7 +92,7 @@ export function HelpBanner({ help }: { help: HelpView }) {
         <p className={styles.bigBody}>{herClosedLine(help)}</p>
       ) : (
         <p className={styles.bigBody}>
-          <strong>You asked for help.</strong> {herOpenLine(help)}
+          <strong>{youAsked(help)}.</strong> {herOpenLine(help)}
         </p>
       )}
     </div>
@@ -165,7 +167,7 @@ export function RoseHelp({ home, api, refresh, announce, headingId }: { home: Ph
       return api.askForHelp(clientId.current);
     });
 
-  const title = open ? "You asked for help" : names.length ? `Ask ${helpNames(names)} for help?` : "Get help";
+  const title = open ? youAsked(open) : names.length ? `Ask ${helpNames(names)} for help?` : "Get help";
   return (
     <section ref={box} className={`${styles.screen} ${styles.helpScreen}`} aria-labelledby={headingId}>
       <h1 id={headingId} ref={heading} tabIndex={-1} className={styles.title}>
@@ -300,7 +302,7 @@ export function MayaHelpCard({ home, api, refresh, announce }: { home: PhoneMemb
     <section ref={box} className={styles.helpCard} data-open="true" aria-labelledby="help-card-title">
       <h1 id="help-card-title" ref={heading} tabIndex={-1} className={styles.helpCardTitle}>
         <HelpIcon className={styles.helpMark} />
-        {her} asked for help
+        {askedWho(help, her)}
       </h1>
       <p className={styles.helpLead}>{askedHowLine(help)}</p>
       <p>{sentOthersLine(help, meId)}</p>

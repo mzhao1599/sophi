@@ -1239,6 +1239,12 @@ export class WalkerService {
     void this.say(text, "notice");
   }
 
+  /** The fall check saw a possible fall: help says so and counts down (src/help.ts, `fallSeen`). */
+  fallSeen(): void {
+    if (this.stopped) return;
+    this.help.fallSeen();
+  }
+
   // ---- Cloud link ----
 
   /**

@@ -18,6 +18,22 @@ export interface CameraFrame {
   at: number;
 }
 
+/**
+ * A second picture ffmpeg makes from the same camera for the fall check: `fps` a second, scaled and padded to a
+ * `box.size` square (src/fall/pose.ts, `letterbox`), as raw RGB. Made only while the camera runs.
+ */
+export interface AnalysisSpec {
+  box: { size: number; width: number; height: number; padX: number; padY: number };
+  fps: number;
+}
+
+export interface AnalysisFrame {
+  seq: number;
+  /** box.size * box.size * 3 bytes, RGB, row by row. */
+  rgb: Uint8Array;
+  at: number;
+}
+
 /** What the cloud link needs from a camera: on demand, newest frame only. */
 export interface FrameSource {
   readonly source: CameraSource;
@@ -34,13 +50,21 @@ export const RESTART_MAX_MS = 30_000;
 /** How long `stop()` waits for ffmpeg to exit on SIGTERM before SIGKILL. */
 export const KILL_AFTER_MS = 2_000;
 
-export function ffmpegArgs(spec: CameraSpec): string[] {
+/** The file descriptor ffmpeg writes the analysis picture to (stdin, stdout, stderr, then this). */
+export const ANALYSIS_FD = 3;
+
+export function ffmpegArgs(spec: CameraSpec, analysis?: AnalysisSpec): string[] {
   const size = `${spec.width}x${spec.height}`;
   const head = ["-hide_banner", "-loglevel", "error", "-nostdin"];
-  if (spec.kind === "camera") {
-    return [...head, "-f", "v4l2", "-input_format", "mjpeg", "-video_size", size, "-framerate", String(spec.fps), "-i", spec.device, "-an", "-c:v", "copy", "-f", "mjpeg", "pipe:1"];
-  }
-  return [...head, "-re", "-f", "lavfi", "-i", `testsrc2=size=${size}:rate=${spec.fps}`, "-an", "-pix_fmt", "yuvj420p", "-c:v", "mjpeg", "-q:v", "5", "-f", "mjpeg", "pipe:1"];
+  const out =
+    spec.kind === "camera"
+      ? [...head, "-f", "v4l2", "-input_format", "mjpeg", "-video_size", size, "-framerate", String(spec.fps), "-i", spec.device, "-an", "-c:v", "copy", "-f", "mjpeg", "pipe:1"]
+      : [...head, "-re", "-f", "lavfi", "-i", `testsrc2=size=${size}:rate=${spec.fps}`, "-an", "-pix_fmt", "yuvj420p", "-c:v", "mjpeg", "-q:v", "5", "-f", "mjpeg", "pipe:1"];
+  if (!analysis) return out;
+  // The camera's MJPEG is still copied untouched for the live view; only this second output is decoded.
+  const { box, fps } = analysis;
+  const filter = `fps=${fps},scale=${box.width}:${box.height},pad=${box.size}:${box.size}:${box.padX}:${box.padY}:black`;
+  return [...out, "-an", "-vf", filter, "-pix_fmt", "rgb24", "-f", "rawvideo", `pipe:${ANALYSIS_FD}`];
 }
 
 /**
@@ -56,10 +80,12 @@ export class FfmpegCamera implements FrameSource {
   private restartMs = RESTART_MIN_MS;
   private cancelRestart: Cancel | null = null;
   private readonly listeners = new Set<() => void>();
+  private analysisSeq = 0;
+  private readonly analysisListeners = new Set<(frame: AnalysisFrame) => void>();
 
   constructor(
     private readonly spec: CameraSpec,
-    private readonly deps: { clock: Clock; log: Logger; command?: string; spawnChild?: typeof spawn },
+    private readonly deps: { clock: Clock; log: Logger; command?: string; spawnChild?: typeof spawn; analysis?: AnalysisSpec },
   ) {
     this.source = spec.kind;
   }
@@ -95,10 +121,18 @@ export class FfmpegCamera implements FrameSource {
     return () => this.listeners.delete(fn);
   }
 
+  /** Calls `fn` with each analysis picture (only when made with `analysis`), until the returned function is called. */
+  onAnalysis(fn: (frame: AnalysisFrame) => void): () => void {
+    this.analysisListeners.add(fn);
+    return () => this.analysisListeners.delete(fn);
+  }
+
   private launch() {
     const { clock, log } = this.deps;
     const spawnChild = this.deps.spawnChild ?? spawn;
-    const child = spawnChild(this.deps.command ?? "ffmpeg", ffmpegArgs(this.spec), { stdio: ["ignore", "pipe", "pipe"] });
+    const analysis = this.deps.analysis;
+    const stdio: Array<"ignore" | "pipe"> = analysis ? ["ignore", "pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"];
+    const child = spawnChild(this.deps.command ?? "ffmpeg", ffmpegArgs(this.spec, analysis), { stdio });
     this.child = child;
     const splitter = new JpegSplitter(CAMERA_FRAME_MAX_BYTES, (jpeg) => {
       if (this.child !== child) return;
@@ -109,6 +143,15 @@ export class FfmpegCamera implements FrameSource {
     });
     child.stdout?.on("data", (chunk: Buffer) => splitter.push(chunk));
     child.stderr?.on("data", () => {});
+    if (analysis) {
+      const raw = new RawFrames(analysis.box.size * analysis.box.size * 3, (rgb) => {
+        if (this.child !== child) return;
+        this.analysisSeq += 1;
+        const frame = { seq: this.analysisSeq, rgb, at: clock.monotonic() };
+        for (const fn of [...this.analysisListeners]) fn(frame);
+      });
+      (child.stdio[ANALYSIS_FD] as NodeJS.ReadableStream | null | undefined)?.on("data", (chunk: Buffer) => raw.push(chunk));
+    }
     let ended = false;
     const end = (fields: Record<string, string | number | null>) => {
       if (ended) return;
@@ -128,5 +171,59 @@ export class FfmpegCamera implements FrameSource {
     // A command that can't start emits "error" and may never emit "close"; either one ends this run.
     child.once("error", (error) => end({ code: (error as NodeJS.ErrnoException).code ?? "error" }));
     child.once("close", (code: number | null, signal: NodeJS.Signals | null) => end({ exit: code, signal }));
+  }
+}
+
+/** Cuts ffmpeg's raw video into whole pictures of `size` bytes, whatever the chunking. Keeps no history. */
+export class RawFrames {
+  private parts: Buffer[] = [];
+  private held = 0;
+
+  constructor(
+    private readonly size: number,
+    private readonly onFrame: (rgb: Uint8Array) => void,
+  ) {}
+
+  push(chunk: Buffer): void {
+    this.parts.push(chunk);
+    this.held += chunk.length;
+    if (this.held < this.size) return;
+    let all = Buffer.concat(this.parts, this.held);
+    while (all.length >= this.size) {
+      this.onFrame(new Uint8Array(all.subarray(0, this.size)));
+      all = all.subarray(this.size);
+    }
+    this.parts = all.length ? [all] : [];
+    this.held = all.length;
+  }
+}
+
+/**
+ * One camera, several users: the live link and the fall check each hold a lease, and ffmpeg runs while any lease
+ * is started. A lease's `stop()` stops only that lease. Frames are shared: `latest()` and `onFrame` are the camera's.
+ */
+export class CameraLeases {
+  private readonly started = new Set<object>();
+
+  constructor(private readonly camera: FrameSource) {}
+
+  lease(): FrameSource {
+    const camera = this.camera;
+    const started = this.started;
+    const token = {};
+    return {
+      source: camera.source,
+      start() {
+        const first = started.size === 0;
+        started.add(token);
+        if (first) camera.start();
+      },
+      stop() {
+        if (!started.delete(token)) return;
+        if (started.size === 0) camera.stop();
+      },
+      latest: () => (started.has(token) ? camera.latest() : null),
+      onFrame: (fn) => camera.onFrame(fn),
+    };
   }
 }

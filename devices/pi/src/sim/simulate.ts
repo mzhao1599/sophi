@@ -6,7 +6,7 @@ import { FileCapture, macMicCapture, resolveMicFiles, type AudioCapture } from "
 import { MacFileSpeaker, MacLoudSpeaker, writeCueSounds, type Speaker } from "../audio/speech";
 import { toneWav } from "../audio/wav";
 import { Bus } from "../bus";
-import { startCameraLink } from "../camera";
+import { startCamera } from "../camera";
 import { systemClock, withDeadline } from "../clock";
 import { HttpCloudClient, pairWithServer } from "../cloud/client";
 import { createLogger } from "../log";
@@ -284,7 +284,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   proposalOpen = () => service.hasOpenProposal();
   service.start();
   if (options.camera && !options.server) log.error("--camera needs --server: the fake cloud has no camera routes; the camera stays off");
-  const camera = options.camera && options.server ? startCameraLink({ env: { ...process.env, WALKER_CAMERA_DEVICE: options.camera }, clock, log, store }) : null;
+  const camera = options.camera && options.server ? await startCamera({ env: { ...process.env, WALKER_CAMERA_DEVICE: options.camera }, clock, log, store, onFall: () => service.fallSeen() }) : null;
   if (motion) {
     const started = motion.sim.coordinator.start();
     // After the script runner and the coordinator's listeners exist, so both see the lift's first lines.

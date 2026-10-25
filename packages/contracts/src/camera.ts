@@ -16,6 +16,10 @@ import { CircleNameSchema, MAX_CIRCLE_MEMBERS } from "./circle";
  *    most CAMERA_MAX_FPS. The answer says whether to keep sending; a slow link just drops frames.
  * 3. The caretaker's phone reads `GET /api/v1/circle/camera/live`, a multipart stream of the newest frames.
  *
+ * With the walker's fall check on (WALKER_FALL_CHECK, devices/pi/README.md "Fall check"), the Pi keeps the camera
+ * open to read body points on the walker; nothing more is sent here for that, and frames still go up only while
+ * a caretaker watches.
+ *
  * Retention: none. The server keeps only the newest frame of each walker, in memory, while someone watches; it
  * is dropped when the last viewer stops or sharing turns off, and never written to disk, the database or a log.
  * Sharing itself is in server memory too, so a server restart turns it off (it fails closed).

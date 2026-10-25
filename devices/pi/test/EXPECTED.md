@@ -637,3 +637,32 @@ Mutation checks (run by hand, results in the PR): the screen's hold not routed t
 | CL8 | No credential | Nothing is sent; checked again every 5 s. |
 | CL9 | `stop()` | The open request is aborted and the camera stops; nothing is sent afterwards. |
 | CL10 | Wanted, but the camera gives no frame for 5 s | The camera stops and the link waits again (a wait still wanted starts it again). |
+
+## Fall check (`src/fall/`, added 2026-10-25; synthetic body points and fakes only)
+
+`test/fall.test.ts`. Body points are synthetic (a torso of fixed length at a given centre and lean); the pose model is a fake in the watch rows; times come from the fake clock or are given per picture. No camera, Pi or real model was used for these rows (the real model was checked by hand, see the README). Every threshold is a placeholder.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| FD1 | Points upright, leaning 80 degrees, or unsure | Tilt 0 and 80 degrees in true angles for a 4:3 frame; centre where the torso is; points under the confidence floor read as nobody. |
+| FD2 | A fast drop to lying, then lying still | One report, `dropped_and_down`, once down for FALL_CONFIRM_MS (2.5 s). |
+| FD3 | Sitting down slowly, upright, then seated 20 s | No report. |
+| FD4 | A fast dip, then back upright about where she was | No report. |
+| FD5 | A fast drop out of the bottom of the picture, then nobody | One report, `dropped_out_of_view`. |
+| FD6 | Walking out of the picture sideways at the same height; or nobody from the start | No report. |
+| FD7 | A slow slump to lying, then lying for LYING_CONFIRM_MS (6 s) | One report, `lying`. |
+| FD8 | A fall, lying 30 s, upright less than REARM_MS, then longer, then another fall | One report for the first fall; another only after 5 s upright. |
+| FD9 | A fast drop that ends seated upright (onto a seat) | No report. |
+| FP1 | 640 x 480 and 480 x 640 frames | Fitted inside the 192 square at 192 x 144 (24 px above and below) and 144 x 192 (24 px either side). |
+| FP2 | MoveNet's (y, x, score) | Mapped back to the frame; a point in the border clamps to the edge; a short output throws. |
+| FP3 | Loading with a fake onnxruntime | int32 RGB `[1, 192, 192, 3]` in, the first output read, 17 points out; a wrong-sized picture refused; `close` releases the session. |
+| FP4 | onnxruntime-node missing | Loading fails with "onnxruntime-node isn't installed beside walker.mjs". |
+| FP5 | Settings | Off unless `WALKER_FALL_CHECK=on`; default model path and 5 pictures a second; bad values are errors. |
+| FC1 | ffmpeg with the analysis output | The MJPEG copy's arguments are unchanged; a second output adds `fps=5,scale=192:144,pad=192:192:0:24:black`, RGB, raw, on `pipe:3`. |
+| FC2 | Raw pictures in any chunking | Whole pictures, in order. |
+| FC3 | Two leases | The camera starts once with the first and stops only after the last; a stopped lease sees no frame. |
+| FW1 | Pictures faster than the model | The camera is on while the watch runs; only the newest waiting picture is read next; stop turns the camera off and unsubscribes. |
+| FW2 | A fall in the pictures; a model that always fails | `onFall` once (`dropped_and_down`); a failing model never reports, and its error is logged once. |
+| FH1 | A possible fall with nothing else going on | The help cue, the line "It looks like you may have fallen. I'll ask for help in 8 seconds. Press any button to stop.", then after 8 s one ask with source `camera`, then "Asking for help." and "Sent to Maya's phone.". |
+| FH2 | A handle press during that countdown | Nothing sent; "Okay. I didn't ask anyone." |
+| FH3 | A possible fall while a request is open | Nothing new is started or said. |

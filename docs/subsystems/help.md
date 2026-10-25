@@ -23,7 +23,7 @@ A caretaker's phone shows "Rose asked for help" with how and how long ago, her l
 **What it is not, said the same way everywhere:**
 - Sophi never calls 911 or any emergency number, and sends no SMS. It sends to the caretaker phones in her circle. Both phones show a plain "Call 911" link (`tel:911`) so the person holding the phone can call; the phone's own dialer asks before calling. Never tap it in a demo.
 - There are no push notifications yet: a caretaker's phone shows the request only while the app is open (live, or within its next poll). That is why nothing says "Maya has been told": the walker says "Sent to Maya's phone.", and "It's showing on Maya's phone." only once her app has received it (`shown_to`), which still means the app had it, not that she read it.
-- There is no fall detection: the walker has no motion sensor. Only her own request starts one.
+- Fall detection is only the walker camera's guess (added 2026-10-25, [Pi README, "Fall check"](../../devices/pi/README.md#fall-check-added-2026-10-25-not-yet-run-on-the-pi-or-the-c270); off unless `WALKER_FALL_CHECK=on`, not yet run on the Pi). From the camera's body points, a fast drop followed by staying down starts the same 8 s countdown as a voice ask, after "It looks like you may have fallen. I'll ask for help in 8 seconds. Press any button to stop." Any handle press stops it. It can miss a fall and it can be wrong; never present it as reliable fall detection.
 - It needs the internet. Offline, the walker keeps trying for 2 minutes (`HELP_SEND_RETRY_MS`), then says nothing was sent.
 
 ## The calm-wording rule
@@ -34,7 +34,7 @@ The walker's screen never words anything as an emergency (the [screen's rule](..
 
 Defined once in `walker.ts` (`HelpViewSchema`; it lives there so the walker's error envelope can carry it), the same shape for the walker and every phone. People are named by phone (`{ member_id, name }`), because the owner types names and two caretakers can share one:
 
-- `help_id`, `source` (`handles`, `voice`, `phone`), `age_seconds` (the server's clock; no exact times, like the location fix);
+- `help_id`, `source` (`handles`, `voice`, `phone`, or `camera`: the walker's fall check, after a countdown she didn't stop; the phones say "Rose's walker asked for help when its camera saw a possible fall", never that she asked), `age_seconds` (the server's clock; no exact times, like the location fix);
 - `sent_to`: the approved caretaker phones when she asked, fixed then, in joining order (at least one: with none, the server refuses `409 no_caretaker` and keeps nothing);
 - `shown_to`: caretaker phones whose app received it while it was open (a `GET /api/v1/circle` answer carried it), first first;
 - `coming`: caretakers who answered "I'm on my way", first first;
@@ -46,7 +46,7 @@ Defined once in `walker.ts` (`HelpViewSchema`; it lives there so the walker's er
 
 | Route | Caller | What it does |
 | --- | --- | --- |
-| `POST /api/v1/devices/{id}/help` `{ client_help_id, source: handles \| voice }` | the walker | Ask. → `{ help }` |
+| `POST /api/v1/devices/{id}/help` `{ client_help_id, source: handles \| voice \| camera }` | the walker | Ask. → `{ help }` |
 | `GET /api/v1/devices/{id}/help` | the walker | The open request, or the newest closed within 5 min (`HELP_CLOSED_SHOWN_MS`), or null. Polled after each heartbeat and every 2 s (`HELP_POLL_MS`) while one is open |
 | `POST /api/v1/devices/{id}/help/{help_id}/okay` | the walker | Her second Confirm press: closes it `okay` |
 | `POST /api/v1/circle/help` `{ client_help_id }` | her phone only | Ask (`source: phone`). A caretaker gets `403 not_allowed` |

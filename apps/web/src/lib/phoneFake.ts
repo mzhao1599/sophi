@@ -96,8 +96,8 @@ export interface DemoCircle {
   remove(name: string): void;
   /** How many requests were made, so a test can tell a path ran. */
   calls(): number;
-  /** Her walker asks for help (both handles held, or by voice after the countdown). `no_caretaker` fails as the server would. */
-  walkerAsks(source: "handles" | "voice"): HelpView;
+  /** Her walker asks for help (both handles held, by voice or its fall check after the countdown). `no_caretaker` fails as the server would. */
+  walkerAsks(source: "handles" | "voice" | "camera"): HelpView;
   /** A caretaker, by name, answers the open request: "I'm on my way" or "I'm with Rose". */
   caretakerAnswers(name: string, answer: "coming" | "with_her"): HelpView;
   /** Confirm pressed twice on her walker: closes the open request `okay`, by her phone (null without one). */

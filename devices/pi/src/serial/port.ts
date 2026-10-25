@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { closeSync, constants, createReadStream, openSync, readdirSync, realpathSync, write } from "node:fs";
 import { basename, join } from "node:path";
 import type { Cancel, Clock } from "../clock";
@@ -49,8 +49,8 @@ export function sttyArgs(path: string, platform: NodeJS.Platform = process.platf
   return [platform === "darwin" ? "-f" : "-F", path, String(SERIAL_BAUD), "raw", "-echo", "clocal"];
 }
 
-export function openSerialPort(path: string, log: Logger): SerialConnection {
-  execFileSync("stty", sttyArgs(path), { stdio: "ignore", timeout: 5000 });
+export function openSerialPort(path: string, log: Logger, configured = false): SerialConnection {
+  if (!configured) execFileSync("stty", sttyArgs(path), { stdio: "ignore", timeout: 5000 });
   const fd = openSync(path, constants.O_RDWR | constants.O_NOCTTY);
   // Blocking reads run on libuv's thread pool; the systemd unit raises UV_THREADPOOL_SIZE to cover the ports.
   const input = createReadStream("", { fd, autoClose: false, highWaterMark: 1024 });
@@ -99,7 +99,9 @@ export function openSerialPort(path: string, log: Logger): SerialConnection {
 /** Opens every physical serial port and retries ports that closed, every SERIAL_RESCAN_MS. */
 export class SerialScanner {
   private readonly open = new Set<string>();
+  private readonly pending = new Set<string>();
   private cancel: Cancel | null = null;
+  private running = false;
 
   constructor(
     private readonly deps: {
@@ -114,24 +116,36 @@ export class SerialScanner {
   ) {}
 
   start(): void {
+    this.running = true;
     this.scan();
   }
 
   stop(): void {
+    this.running = false;
     this.cancel?.();
   }
 
   private scan(): void {
     for (const path of listSerialPorts(this.deps.dir, this.deps.excludedPort)) {
-      if (this.open.has(path) || this.deps.exclude?.(path)) continue;
-      try {
-        const conn = openSerialPort(path, this.deps.log);
-        this.open.add(path);
-        conn.onClose(() => this.open.delete(path));
-        this.deps.modules.attach(conn);
-      } catch (error) {
-        this.deps.log.warn("couldn't open serial port", { port: basename(path), error: (error as Error).message });
-      }
+      if (this.open.has(path) || this.pending.has(path) || this.deps.exclude?.(path)) continue;
+      this.pending.add(path);
+      // A stalled USB adapter must not block module heartbeats or voice on the main event loop.
+      execFile("stty", sttyArgs(path), { timeout: 5000 }, (error) => {
+        this.pending.delete(path);
+        if (!this.running) return;
+        if (error) {
+          this.deps.log.warn("couldn't open serial port", { port: basename(path), error: error.message });
+          return;
+        }
+        try {
+          const conn = openSerialPort(path, this.deps.log, true);
+          this.open.add(path);
+          conn.onClose(() => this.open.delete(path));
+          this.deps.modules.attach(conn);
+        } catch (openError) {
+          this.deps.log.warn("couldn't open serial port", { port: basename(path), error: (openError as Error).message });
+        }
+      });
     }
     this.cancel = this.deps.clock.setTimeout(() => this.scan(), SERIAL_RESCAN_MS);
   }
