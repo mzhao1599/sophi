@@ -16,7 +16,6 @@ export const params = {
   kind: __t.string(),
   how: __t.string(),
   memberId: __t.string(),
-  fallbackName: __t.string(),
   now: __t.string(),
 };
 export const returnType = __t.string()
