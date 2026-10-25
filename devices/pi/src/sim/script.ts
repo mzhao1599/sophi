@@ -8,6 +8,7 @@ const FAKE_TOOL_LINES: Record<WalkerToolName, string> = {
   get_weather: "Fake cloud: let me check the weather.",
   start_route: "Fake cloud: let me find that.",
   stop_route: "Fake cloud: stopping the directions.",
+  show_on_screen: "Fake cloud: putting that on your screen.",
 };
 
 /**

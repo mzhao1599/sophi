@@ -15,6 +15,8 @@ import {
   WalkerErrorCodeSchema,
   WalkerStatusViewSchema,
   WalkerTurnResponseSchema,
+  WalkerToolCallSchema,
+  WalkerToolResultSchema,
   LiftPresetSchema,
   WalkerTurnViewSchema,
   checkCuesChange,
@@ -154,6 +156,26 @@ describe("turn requests", () => {
     expect(DeviceTurnRequestSchema.safeParse(turn({ ...clip, mime: "audio/mpeg" })).success).toBe(false);
     expect(DeviceTurnRequestSchema.safeParse(turn({ ...clip, data_base64: "" })).success).toBe(false);
     expect(DeviceTurnRequestSchema.safeParse(turn({ ...clip, data_base64: "UklGR" })).success).toBe(false);
+  });
+});
+
+describe("show_on_screen", () => {
+  const base = { client_turn_id: uuid(1), input: { type: "text", text: "Show me the weather" }, snapshot: null };
+
+  it("lets a walker with a screen list the views it can show now, each once", () => {
+    expect(DeviceTurnRequestSchema.safeParse({ ...base, screen: { views: ["weather", "sensors"] } }).success).toBe(true);
+    expect(DeviceTurnRequestSchema.safeParse(base).success).toBe(true);
+    expect(DeviceTurnRequestSchema.safeParse({ ...base, screen: { views: [] } }).success).toBe(false);
+    expect(DeviceTurnRequestSchema.safeParse({ ...base, screen: { views: ["weather", "weather"] } }).success).toBe(false);
+    expect(DeviceTurnRequestSchema.safeParse({ ...base, screen: { views: ["map"] } }).success).toBe(false);
+  });
+
+  it("asks for a view by name only, never words for the screen", () => {
+    expect(WalkerToolCallSchema.safeParse({ name: "show_on_screen", view: "weather" }).success).toBe(true);
+    expect(WalkerToolCallSchema.safeParse({ name: "show_on_screen" }).success).toBe(false);
+    expect(WalkerToolCallSchema.safeParse({ name: "show_on_screen", view: "weather", text: "Sunny" }).success).toBe(false);
+    expect(WalkerToolCallSchema.safeParse({ name: "get_weather", view: "weather" }).success).toBe(false);
+    expect(WalkerToolResultSchema.safeParse({ name: "show_on_screen", text: "Showing the weather on the screen." }).success).toBe(true);
   });
 });
 

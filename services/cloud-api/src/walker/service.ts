@@ -102,6 +102,7 @@ const LOOKUP_LINE: Record<WalkerToolName, string> = {
   get_distance: "I'll check the obstacle sensors now.",
   start_route: "Let me find that.",
   stop_route: "Stopping the directions.",
+  show_on_screen: "Putting that on your screen.",
 };
 const isRouteTool = (name: string) => (ROUTE_TOOLS as readonly string[]).includes(name);
 /** The model chose ask_for_help on a walker turn that can't ask (an older Pi, or the circle unreachable this turn). */
@@ -453,13 +454,16 @@ export class WalkerService {
     // Only a walker turn that carries `navigation` is offered the route tools, and at most one runs per turn.
     const navigation = source === "walker" && "navigation" in request ? request.navigation : undefined;
     const routeDone = toolResults.some((r) => isRouteTool(r.name));
+    // Only a walker turn that carries `screen` is offered show_on_screen, and only with the views it lists.
+    const screenViews = source === "walker" && "screen" in request ? (request.screen?.views ?? []) : [];
     const assistant = this.assistantFor(request);
-    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, navigation, help) : null;
+    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, navigation, help, screenViews) : null;
 
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
     const tool = toolCall?.name;
     const routeTool = tool !== undefined && isRouteTool(tool);
-    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
+    const unlistedView = toolCall?.name === "show_on_screen" && !screenViews.includes(toolCall.view);
+    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && !unlistedView && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
     if (nextTool) {
       const heard = input.type === "audio" ? result?.ok ? result.reply.transcript.trim() : "" : input.text;
       const line = LOOKUP_LINE[nextTool];
@@ -470,11 +474,12 @@ export class WalkerService {
         proposal: null,
         speech: speech ? { mime: "audio/wav", data_base64: speech } : null,
         status,
-        tool_call: toolCall?.name === "start_route" ? { name: toolCall.name, destination: toolCall.destination } : { name: nextTool },
+        tool_call: toolCall?.name === "start_route" ? { name: toolCall.name, destination: toolCall.destination } : toolCall?.name === "show_on_screen" ? { name: toolCall.name, view: toolCall.view } : { name: nextTool },
         tool_results: toolResults,
       });
     }
-    const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance");
+    // After a card the walker showed (a sensors card included), the model answers from that result.
+    const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance" || r.name === "show_on_screen");
     const motionOffer = source === "walker" && toolCall?.name === "set_lift_height" && !status.open_proposal ? { preset: toolCall.preset } : null;
     const messageRecipient = source === "walker" && toolCall?.name === "send_message" ? recipients.find((r) => r.member_id === toolCall.to_member_id) : undefined;
     const validMessage = messageRecipient && toolCall?.name === "send_message" ? DeviceSendMessageRequestSchema.safeParse({ client_message_id: this.randomId(), to_member_id: messageRecipient.member_id, text: toolCall.text }) : null;
@@ -498,10 +503,12 @@ export class WalkerService {
       ? { reply: `Send to ${messageOffer.to_name}: ${messageOffer.text}. Press Confirm to send.`, answered_by: "model" as const, reason: "message_offer", proposal: null }
       : source === "page" && tool === "get_distance"
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
-      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height" || routeTool)
+      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height" || tool === "show_on_screen" || routeTool)
         ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
       : routeTool && !navigation
         ? { reply: "I can't give walking directions on this walker.", answered_by: "fixed" as const, reason: "route_unavailable", proposal: null }
+      : unlistedView
+        ? { reply: "I can't show that on this walker's screen right now.", answered_by: "fixed" as const, reason: "show_unavailable", proposal: null }
       : tool === "send_message"
         ? { reply: "I couldn't prepare that message. Check that both phones have joined your circle and try again.", answered_by: "fixed" as const, reason: "message_unavailable", proposal: null }
       : unhandledTool
@@ -509,7 +516,7 @@ export class WalkerService {
       : distanceLookup
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
         : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
-    if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => r.name === "get_weather" && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
+    if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => (r.name === "get_weather" || r.name === "show_on_screen") && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
       decided.reply += " Weather data from Open-Meteo.";
     }
     const transcript = input.type === "audio" && result?.ok ? result.reply.transcript.trim() : "";

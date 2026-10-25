@@ -109,12 +109,16 @@ export async function startWalkerScreen(options: WalkerScreenOptions): Promise<W
       tiles,
     });
     if (server) log.info("walker screen page", { url: server.url, map_tiles: tileSettings.mode });
+    // Sophi offers to show something on the screen only while a page is there to draw it.
+    const running = server;
+    if (running) options.service.setScreen({ connected: () => running.clients() > 0 });
   } catch (error) {
     log.warn("walker screen not started; the walker runs without its screen", { error: (error as Error)?.name ?? "unknown" });
   }
   return {
     url: server?.url ?? null,
     stop: async () => {
+      options.service.setScreen(null);
       attached?.detach();
       await server?.close();
     },

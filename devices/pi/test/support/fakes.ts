@@ -10,7 +10,7 @@ import { CLIP_BYTES_PER_MS, CLIP_MAX_PCM_BYTES } from "../../src/constants";
 import type { Logger } from "../../src/log";
 import { formatFields } from "../../src/log";
 import { ModuleManager } from "../../src/serial/modules";
-import { WalkerService } from "../../src/service";
+import { WalkerService, type ServiceDeps } from "../../src/service";
 import type { MapServices } from "../../src/navigation/osm";
 import type { PositionSource } from "../../src/navigation/position";
 import { HELP_CHORD_WINDOW_MS, type Cue } from "@walker/contracts";
@@ -165,10 +165,15 @@ export interface HarnessOptions {
   cues?: Cue[];
   withHand?: boolean;
   withTof?: boolean;
-  /** A position source (the simulated one, or a stub), made on the harness's clock: turns on walking directions. */
-  location?: (clock: FakeClock, log: Logger) => PositionSource;
+  /**
+   * A position source (the simulated one, or a stub): turns on walking directions. Either the source itself, or a
+   * factory that makes it on the harness's clock.
+   */
+  location?: PositionSource | ((clock: FakeClock, log: Logger) => PositionSource);
   /** Map services on the harness's clock (tests use the recorded ones: src/sim/fakeMaps.ts). */
   maps?: (clock: FakeClock) => MapServices;
+  /** The weather and address lookups a fix goes to (fakes: no test reaches the internet). */
+  lookups?: ServiceDeps["lookups"];
 }
 
 /** One walker service on fakes: fake clock, fake mic and speaker, simulated modules and the fake cloud. */
@@ -190,7 +195,7 @@ export function makeHarness(options: HarnessOptions = {}) {
     bus.on(name, (payload) => events.push({ name, payload } as Recorded));
   }
   let ids = 0;
-  const location = options.location?.(clock, log);
+  const location = typeof options.location === "function" ? options.location(clock, log) : options.location;
   const service = new WalkerService({
     clock,
     log,
@@ -205,6 +210,7 @@ export function makeHarness(options: HarnessOptions = {}) {
     ...(options.gpioButtons ? { gpioButtons: options.gpioButtons } : {}),
     ...(location ? { location } : {}),
     ...(options.maps ? { maps: options.maps(clock) } : {}),
+    ...(options.lookups ? { lookups: options.lookups } : {}),
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, "0")}`,
     makeCloud: (file) => {
       const client = new FakeCloudClient(fake, file.device_id, file.credential);

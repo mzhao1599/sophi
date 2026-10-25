@@ -2,8 +2,10 @@ import {
   BENCH_MODE_LABEL,
   FAULT_CLEAR_SENTENCE,
   FAULT_SENTENCES,
+  MODULE_CATALOG,
   REFUSAL_SENTENCES,
   VOICE_CHOICES,
+  getCatalogEntry,
   helpNames,
   holdControlShown,
   type Cue,
@@ -14,6 +16,7 @@ import {
   type ScreenHoldDirection,
   type ScreenSettings,
   type ScreenState,
+  type ShowCard,
   type SuggestionChange,
   type TextSize,
 } from "@walker/contracts";
@@ -56,8 +59,12 @@ export interface ViewButton {
 
 export interface ViewLine {
   text: string;
-  /** `body` grows with her text size; `detail` is the smallest size; `message` is a member's message. */
-  size: "body" | "detail" | "message";
+  /**
+   * `body` grows with her text size; `detail` is the smallest size; `message` is a member's message;
+   * `caption` is Sophi's caption under a card she pulled up: the smallest size, under a hairline, so her words
+   * don't read as the card's.
+   */
+  size: "body" | "detail" | "message" | "caption";
   /** A dashed "Simulated" tag after the text. */
   simulated?: boolean;
   /** Bold (the distance to the next turn). */
@@ -123,7 +130,8 @@ export interface ScreenView {
   strip: { word: string; shape: PresenceShape; time: string | null; simulator: boolean; bench: boolean };
   /**
    * The main fact: at the main size, at body size for captions, or for a long motion title in bold at the body
-   * size (`title`) or the smallest size (`small`).
+   * size (`title`) or the smallest size (`small`). A card Sophi pulled up takes the largest of main, `message`,
+   * `title` and `small` that leaves room for its lines.
    */
   main: { text: string; size: "main" | "body" | "message" | "title" | "small" | "nav" };
   lines: ViewLine[];
@@ -161,6 +169,9 @@ export function listWords(words: readonly string[]): string {
 export function zoneLabel(zone: string): string {
   return capital(zone.replace(/_/g, " "));
 }
+
+/** A zone's distance as the obstacle screen says it: 304 mm reads "30 cm". */
+const centimetres = (mm: number) => `${Math.round(mm / 10)} cm`;
 
 /** Cuts to `max` characters at a word where it can, with an ellipsis, so no line is ever clipped by the page. */
 export function shorten(text: string, max: number): string {
@@ -203,7 +214,22 @@ function wordPieces(sentence: string, budget: number): string[] {
 }
 
 export function captionPages(text: string, textSize: TextSize): string[] {
-  const budget = CAPTION_PAGE_CHARS[textSize];
+  return pagesOf(text, CAPTION_PAGE_CHARS[textSize]);
+}
+
+/**
+ * Caption pages for Sophi's reply while a card she pulled up is on screen (`showing`). The caption is a line
+ * under the card at the smallest size at every text size, so a page is at most two lines of it: 75
+ * characters, whatever her text size. The Pi pages the reply with this, not `captionPages`, while a card is up;
+ * a longer caption is shortened at a word on screen, never clipped.
+ */
+export const SHOWING_CAPTION_CHARS = 75;
+
+export function showingCaptionPages(text: string): string[] {
+  return pagesOf(text, SHOWING_CAPTION_CHARS);
+}
+
+function pagesOf(text: string, budget: number): string[] {
   const sentences = text.trim().replace(/\s+/g, " ").match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g)?.map((s) => s.trim()).filter(Boolean) ?? [];
   const pages: string[] = [];
   let page = "";
@@ -355,7 +381,7 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
   switch (content.state) {
     case "obstacle": {
       const where = zoneLabel(content.zone);
-      const distance = content.distance.status === "measured" ? `${Math.round(content.distance.mm / 10)} cm` : "Unknown";
+      const distance = content.distance.status === "measured" ? centimetres(content.distance.mm) : "Unknown";
       return {
         key: "obstacle",
         main: { text: "Something close", size: "main" },
@@ -471,6 +497,8 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
       };
     case "navigating":
       return navigatingScene(content, textSize);
+    case "showing":
+      return showingScene(content, settings);
     case "offline":
       // TODO(circle piece): add back the "My screen" button here and on the clock once the Pi acts on it. A
       // control that does nothing is never shown (AGENTS.md: never present something unbuilt as working).
@@ -644,7 +672,7 @@ const HOLD_WORD: Record<ScreenHoldDirection, string> = { raise: "Hold to raise",
  * Height left for the one thing (px), from the fixed regions at 800x480: 12 px of padding, the 50 px strip,
  * two 8 px gaps, and the band over the handles (a 147 px button row, or the 48 px handle words).
  */
-const ONE_THING_PX = { buttons: 480 - 12 - 50 - 16 - 147, words: 480 - 12 - 50 - 16 - 48 } as const;
+export const ONE_THING_PX = { buttons: 480 - 12 - 50 - 16 - 147, words: 480 - 12 - 50 - 16 - 48 } as const;
 /** Usable width (px) of a line, less what word wrapping wastes at the end of each line. */
 const WRAP_PX = 690;
 /** Average character width as a share of the font size, measured on Atkinson Hyperlegible Next (bold 0.49, regular 0.44). */
@@ -825,6 +853,248 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
       info,
     },
   };
+}
+
+// ---- Cards Sophi pulls up (`showing`, added 2026-10-24, docs/subsystems/show-on-screen.md) ----
+
+/*
+ * Height budget. A card has no buttons, so the one thing gets ONE_THING_PX.words: 354 px, 350 as drawn (the
+ * fit keeps 4 px spare). Estimated heights below include the 2 px gap after each line; a dashed Simulated tag
+ * makes a smallest-size line 8 px taller. At Largest the main line is 120 px (123 a line), the message size 80
+ * (88 a line), the body 64 (76 a line) and the smallest 40 (48 a line, 94 for two).
+ *
+ * With captions on, a whole caption page is kept free under the card from the moment it appears, so nothing
+ * moves as the pages turn or when the answer ends: two lines of the smallest size under a hairline, 104 px
+ * (SHOWING_CAPTION_CHARS, 75 characters at every size). That leaves the card 246 px. Each card at Largest with
+ * the longest strings the contract allows, and a full caption page (fixtures `showing-*-longest`):
+ *
+ *   weather   -150° at the message size 88, the 40-character conditions 48, "Wind 300 mph" 48,
+ *             "Near you, from GPS" with its tag 56                                        = 240
+ *             (the demo's 64° stays at the main size: 123 + 48 + 48 = 219)
+ *   location  the 120-character address in bold at the smallest size, 4 lines 184, "Near you, from GPS" 56  = 240
+ *   sensors   16 zones with 24-character names: the nearest in bold at the smallest size 46, one zone with
+ *             its tag over two lines 102, "and 15 more, 5 not measured" 48                = 196
+ *   message   the 30-character message at the message size, 2 lines 176, "From Christabelle" 48     = 224
+ *   parts     16 parts: "16 parts" at the message size 88, one part with its tag over two lines 102,
+ *             "and 15 more, 7 simulated" 48                                                = 238
+ *
+ * Between the handles, one line at the smallest size (the band's 48 px): the weather's and the map's credits.
+ * Lists show as many items as fit and count the rest ("and N more"); the main line takes the largest size left.
+ * The estimate is checked by drawing every fixture at 800x480 in Chromium (test/shots.test.tsx).
+ */
+
+type ShowingContent = Extract<ScreenContent, { state: "showing" }>;
+type CardMainSize = "main" | "message" | "title" | "small";
+type PartHealth = Extract<ShowCard, { view: "parts" }>["parts"][number]["health"];
+
+const GPS_LINE = "Near you, from GPS";
+const WEATHER_CREDIT = "Weather data from Open-Meteo";
+const SAMPLE_WEATHER = "Simulated weather, not a forecast";
+/** The address comes from OpenStreetMap's reverse geocoder (Nominatim), whose licence asks for this credit. */
+const OSM_CREDIT = "© OpenStreetMap contributors";
+const NOT_MEASURED = "Not measured";
+/** The widest a distance can read (65535 mm), so a live sensors card is measured the same as its numbers change. */
+const WIDEST_DISTANCE = centimetres(65_535);
+const HEALTH_WORD: Record<PartHealth, string> = { ok: "Working", degraded: "Needs a check", fault: "Not working", unavailable: "Not responding" };
+/** Problems first, then stand-ins, so the parts left under "and N more" are the real, working ones. */
+const PART_ORDER: Record<PartHealth, number> = { fault: 0, unavailable: 1, degraded: 2, ok: 3 };
+const partOrder = (p: { health: PartHealth; simulated: boolean }) => PART_ORDER[p.health] + (p.health === "ok" && !p.simulated ? 1 : 0);
+
+/** A line width (px) up to which a line is taken as one line: the 768 px the text has, less a margin for the estimate. */
+const ONE_LINE_PX = 720;
+/** A dashed "Simulated" tag after a line's text: its words in bold at the smallest size, padding, border and margin. */
+const TAG_PX = 226;
+/** How much taller the tag's border makes a line at the smallest size (the tag is its text's height plus 6 px of border). */
+const TAG_TALLER_PX = 8;
+/** The caption's hairline above it, and the space around it (screen.css). */
+const CAPTION_RULE_PX = 10;
+
+function estimatedLines(text: string, fontPx: number, weight: keyof typeof CHAR_EM, extraPx = 0): number {
+  const width = chars(text) * CHAR_EM[weight] * fontPx + extraPx;
+  return width <= ONE_LINE_PX ? 1 : Math.ceil(width / WRAP_PX);
+}
+
+/** About how tall a main line is at each size; a main-size line over two lines doesn't fit (the screenshot check's rule). */
+function mainPx(text: string, size: ScreenView["main"]["size"], sizes: ScreenSizes): number {
+  // The font size, weight and line height of each main size in screen.css.
+  const style: Record<ScreenView["main"]["size"], [number, keyof typeof CHAR_EM, number]> = {
+    main: [sizes.main, "bold", 1.02],
+    message: [sizes.message, "bold", 1.1],
+    title: [sizes.body, "bold", 1.1],
+    small: [sizes.smallest, "bold", 1.15],
+    body: [sizes.body, "regular", 1.2],
+    // The directions screen fits its turn word itself (navigation.ts, turnWordPx); no card measures it here.
+    nav: [sizes.main, "bold", 1.02],
+  };
+  const [font, weight, lineHeight] = style[size];
+  const lines = estimatedLines(text, font, weight);
+  if (size === "main" && lines > 2) return Infinity;
+  return Math.ceil(lines * font * lineHeight);
+}
+
+interface CardLine extends ViewLine {
+  /** Measured as this text instead, so a card whose numbers change keeps its sizes. */
+  sizeAs?: string;
+}
+
+function cardLinePx(line: CardLine, sizes: ScreenSizes): number {
+  const small = line.size === "detail" || line.size === "caption";
+  const font = small ? sizes.smallest : sizes.body;
+  const taller = (line.simulated && small ? TAG_TALLER_PX : 0) + (line.size === "caption" ? CAPTION_RULE_PX : 0);
+  return 2 + taller + Math.ceil(estimatedLines(line.sizeAs ?? line.text, font, "regular", line.simulated ? TAG_PX : 0) * font * 1.15);
+}
+
+/** The estimated height of a view's one thing (its main line and lines), as the cards are fitted. */
+export function oneThingPx(view: Pick<ScreenView, "main" | "lines" | "sizes">): number {
+  return mainPx(view.main.text, view.main.size, view.sizes) + view.lines.reduce((sum, l) => sum + cardLinePx(l, view.sizes), 0);
+}
+
+interface CardPlan {
+  main: string;
+  /** Measured as this text instead (the sensors card's nearest zone changes as she moves). */
+  mainAs?: string;
+  mainSizes: readonly CardMainSize[];
+  /** The card's lines, in the order she'd want them: each is tried with its body lines, then all at the smallest size. */
+  layouts: readonly (readonly CardLine[])[];
+  /** `main`: the biggest main line first (a temperature, an address); `layout`: the earliest layout first (a list's length). */
+  prefer: "main" | "layout";
+}
+
+/** The first of the card's layouts and main sizes, in its order of preference, that fits above the reserved caption. */
+function fitCard(plan: CardPlan, sizes: ScreenSizes, reservePx: number): { main: ScreenView["main"]; lines: ViewLine[] } {
+  const room = ONE_THING_PX.words - reservePx - 4;
+  const modes = (layout: readonly CardLine[]) => [layout, layout.map((l): CardLine => (l.size === "body" ? { ...l, size: "detail" } : l))];
+  const tries: [CardMainSize, readonly CardLine[]][] =
+    plan.prefer === "main"
+      ? plan.mainSizes.flatMap((m) => plan.layouts.flatMap((layout) => modes(layout).map((lines): [CardMainSize, readonly CardLine[]] => [m, lines])))
+      : plan.layouts.flatMap((layout) => plan.mainSizes.flatMap((m) => modes(layout).map((lines): [CardMainSize, readonly CardLine[]] => [m, lines])));
+  const px = ([m, lines]: [CardMainSize, readonly CardLine[]]) => mainPx(plan.mainAs ?? plan.main, m, sizes) + lines.reduce((sum, l) => sum + cardLinePx(l, sizes), 0);
+  const [size, lines] = tries.find((t) => px(t) <= room) ?? tries[tries.length - 1]!;
+  return { main: { text: plan.main, size }, lines: lines.map(({ sizeAs: _, ...line }) => line) };
+}
+
+/**
+ * A list's layouts: every item, then one fewer each time with "and N more" after them. The line also says how
+ * many of those it hides aren't measured (`unknown`), and how many are simulated unless every item is (then
+ * the shown items' tags already say it), so nothing hidden reads as measured or real.
+ */
+function listLayouts(items: readonly (CardLine & { unknown?: boolean })[]): CardLine[][] {
+  const allSimulated = items.every((i) => i.simulated);
+  const lines = items.map(({ unknown: _, ...line }): CardLine => line);
+  return items.map((_, i) => {
+    const shown = items.length - i;
+    if (shown === items.length) return lines;
+    const hidden = items.slice(shown);
+    const unknown = hidden.filter((h) => h.unknown).length;
+    const simulated = allSimulated ? 0 : hidden.filter((h) => h.simulated).length;
+    return [...lines.slice(0, shown), body(`and ${hidden.length} more${unknown ? `, ${unknown} not measured` : ""}${simulated ? `, ${simulated} simulated` : ""}`)];
+  });
+}
+
+const degrees = (n: number) => `${n < 0 ? `minus ${-n}` : n} ${Math.abs(n) === 1 ? "degree" : "degrees"} Fahrenheit`;
+const miles = (n: number) => `${n} ${n === 1 ? "mile" : "miles"} per hour`;
+const spokenZone = (zone: string) => zone.replace(/_/g, " ");
+
+/**
+ * A card Sophi pulled up. The Pi built every word on it from its own data; this only lays it out. The key and
+ * the announcement name what the card says, never the caption (a new page each few seconds) or, on the
+ * sensors card, the readings (new ones each tenth of a second): a screen reader hears the card once, when it
+ * appears, and again only when it is a different card.
+ */
+function showingScene(content: ShowingContent, settings: ScreenSettings): Scene {
+  const sizes = screenSizes(settings.text_size);
+  // With captions on, room for a whole caption page is kept from the first moment, so the card keeps its sizes
+  // as the pages turn and when the answer ends.
+  const reserve = settings.captions ? cardLinePx({ text: "x".repeat(SHOWING_CAPTION_CHARS), size: "caption" }, sizes) : 0;
+  const caption: ViewLine[] =
+    settings.captions && content.caption
+      ? [{ text: chars(content.caption) <= SHOWING_CAPTION_CHARS ? content.caption : shorten(content.caption, SHOWING_CAPTION_CHARS), size: "caption" }]
+      : [];
+  const card = content.card;
+  const cardScene = (key: string, plan: CardPlan, announce: string, center: ViewLine[] = []): Scene => {
+    const fit = fitCard(plan, sizes, reserve);
+    return { key: `showing:${card.view}:${key}`, main: fit.main, lines: [...fit.lines, ...caption], center: { lines: center }, announce };
+  };
+  switch (card.view) {
+    case "weather": {
+      const conditions = capital(card.conditions);
+      // A simulated card is the simulator's sample weather, not Open-Meteo's: it says so and credits no one.
+      const gps: CardLine[] = card.simulated ? [{ text: SAMPLE_WEATHER, size: "detail", simulated: true }] : [];
+      return cardScene(
+        `${card.temperature_f}:${card.conditions}:${card.wind_mph}:${card.simulated}`,
+        {
+          main: `${card.temperature_f}°`,
+          mainSizes: ["main", "message", "title", "small"],
+          layouts: [
+            [body(conditions), body(`Wind ${card.wind_mph} mph`), ...gps],
+            [body(`${conditions}, wind ${card.wind_mph} mph`), ...gps],
+          ],
+          prefer: "main",
+        },
+        `${degrees(card.temperature_f)}, ${card.conditions}, wind ${miles(card.wind_mph)}. ${card.simulated ? `${SAMPLE_WEATHER}.` : `${WEATHER_CREDIT}.`}`,
+        card.simulated ? [] : [detail(WEATHER_CREDIT)],
+      );
+    }
+    case "location":
+      return cardScene(
+        `${card.place}:${card.simulated}`,
+        { main: card.place, mainSizes: ["main", "message", "title", "small"], layouts: [[{ text: GPS_LINE, size: "detail", simulated: card.simulated }]], prefer: "main" },
+        `${GPS_LINE}: ${card.place}.${card.simulated ? " The location is simulated." : ""}`,
+        [detail(OSM_CREDIT)],
+      );
+    case "sensors": {
+      const zones = card.zones.map((z) => ({ ...z, label: zoneLabel(z.zone) }));
+      const items = zones.map((z) => ({
+        text: `${z.label} · ${z.distance.status === "measured" ? centimetres(z.distance.mm) : NOT_MEASURED}`,
+        sizeAs: `${z.label} · ${NOT_MEASURED}`,
+        size: "body" as const,
+        simulated: z.simulated,
+        unknown: z.distance.status === "unknown",
+      }));
+      // The nearest measured zone, the first of equals. Unknown is never taken as far away, or as clear.
+      const nearest = zones.reduce<(typeof zones)[number] | null>(
+        (best, z) => (z.distance.status === "measured" && (best?.distance.status !== "measured" || z.distance.mm < best.distance.mm) ? z : best),
+        null,
+      );
+      const widest = zones.reduce((a, z) => (chars(z.label) > chars(a) ? z.label : a), "");
+      const simulated = zones.filter((z) => z.simulated);
+      return cardScene(
+        zones.map((z) => `${z.zone}${z.simulated ? "*" : ""}`).join(","),
+        {
+          main: nearest?.distance.status === "measured" ? `${nearest.label} · ${centimetres(nearest.distance.mm)}` : NOT_MEASURED,
+          mainAs: [`${widest} · ${WIDEST_DISTANCE}`, NOT_MEASURED].reduce((a, b) => (chars(b) > chars(a) ? b : a)),
+          mainSizes: ["main", "message", "title", "small"],
+          layouts: listLayouts(items),
+          prefer: "layout",
+        },
+        `Sensor readings on screen, updated as they come: ${listWords(zones.map((z) => spokenZone(z.zone)))}.` +
+          (simulated.length === zones.length ? " Simulated." : simulated.length ? ` Simulated: ${listWords(simulated.map((z) => spokenZone(z.zone)))}.` : ""),
+      );
+    }
+    case "message":
+      // As the message screen, without its Confirm hint: the Pi doesn't replay a message from this card.
+      return {
+        key: `showing:message:${card.message_id}`,
+        main: { text: card.text, size: "message" },
+        lines: [detail(`From ${card.from_name}`), ...caption],
+        announce: `${card.from_name} says: ${card.text}`,
+      };
+    case "parts": {
+      const parts = [...card.parts]
+        .sort((a, b) => partOrder(a) - partOrder(b))
+        .map((p) => ({ ...p, name: getCatalogEntry(MODULE_CATALOG, p.module_id).name, word: HEALTH_WORD[p.health] }));
+      // A simulated part is a stand-in: never called working. Its other health words still show.
+      const standIn = (p: (typeof parts)[number]) => p.simulated && p.health === "ok";
+      const items = parts.map((p): CardLine => ({ text: standIn(p) ? p.name : `${p.name} · ${p.word}`, size: "body", simulated: p.simulated }));
+      const spoken = parts.map((p) => (standIn(p) ? `${p.name}, simulated` : `${p.name}, ${p.word.toLowerCase()}${p.simulated ? ", simulated" : ""}`));
+      const count = `${parts.length} ${parts.length === 1 ? "part" : "parts"}`;
+      return cardScene(
+        parts.map((p) => `${p.module_id}:${p.health}${p.simulated ? "*" : ""}`).join(","),
+        { main: count, mainSizes: ["main", "message", "title", "small"], layouts: listLayouts(items), prefer: "layout" },
+        `${count}: ${spoken.join("; ")}.`,
+      );
+    }
+  }
 }
 
 function myScreen(view: Extract<ScreenContent, { state: "my_screen" }>["view"], settings: ScreenSettings): Scene {

@@ -1,4 +1,4 @@
-import type { Cue, MotionState, NavigatingScreen, ProposalView, ScreenAction, ScreenContent, ScreenStateName } from "@walker/contracts";
+import type { Cue, MotionState, NavigatingScreen, ProposalView, ScreenAction, ScreenContent, ScreenStateName, ShowCard } from "@walker/contracts";
 import type { ScreenHoldEvent } from "./screen/server";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
@@ -73,6 +73,11 @@ export interface BusEvents {
    * screen when it was drawn. The service acts on `end_route` and `repeat_direction` while a route is on.
    */
   screenPress: { action: ScreenAction; revision: number; state: ScreenStateName | null };
+  /**
+   * A card Sophi pulled up for her (`show_on_screen`), built by the Pi from its own data, for the walker screen.
+   * A message card holds someone's words and a location card her address: never log it or send it anywhere else.
+   */
+  show: { card: ShowCard };
   /** The open proposal changed (another id, or none). A heartbeat repeating the same one sends nothing. */
   offer: { proposal: ProposalView | null };
   /**

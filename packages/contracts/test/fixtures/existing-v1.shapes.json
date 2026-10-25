@@ -3218,8 +3218,7 @@
                   "get_location",
                   "get_distance",
                   "get_weather",
-                  "start_route",
-                  "stop_route"
+                  "show_on_screen"
                 ]
               },
               "text": {
@@ -3238,81 +3237,27 @@
         "original_audio": {
           "type": "boolean"
         },
-        "navigation": {
+        "screen": {
           "type": "object",
           "properties": {
-            "route": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "destination": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 100,
-                      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-                    },
-                    "phase": {
-                      "type": "string",
-                      "enum": [
-                        "guiding",
-                        "rerouting",
-                        "off_route",
-                        "no_position",
-                        "arrived"
-                      ]
-                    },
-                    "next": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 120,
-                      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-                    },
-                    "to_next_m": {
-                      "anyOf": [
-                        {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 100000
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "remaining_m": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 100000
-                    },
-                    "remaining_min": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 1000
-                    },
-                    "simulated": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "destination",
-                    "phase",
-                    "next",
-                    "to_next_m",
-                    "remaining_m",
-                    "remaining_min",
-                    "simulated"
-                  ],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "views": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "weather",
+                  "location",
+                  "sensors",
+                  "message",
+                  "parts"
+                ]
+              }
             }
           },
           "required": [
-            "route"
+            "views"
           ],
           "additionalProperties": false
         },
@@ -4122,39 +4067,6 @@
       ],
       "additionalProperties": false
     },
-    "InstructionSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 120,
-      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-    },
-    "ManeuverSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "enum": [
-        "straight",
-        "left",
-        "right",
-        "slight_left",
-        "slight_right",
-        "sharp_left",
-        "sharp_right",
-        "u_turn",
-        "arrive"
-      ]
-    },
-    "NavigationPhaseSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "enum": [
-        "guiding",
-        "rerouting",
-        "off_route",
-        "no_position",
-        "arrived"
-      ]
-    },
     "PageTurnRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -4368,13 +4280,6 @@
       ],
       "additionalProperties": false
     },
-    "PlaceNameSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 100,
-      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-    },
     "ProposalStateSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
@@ -4490,75 +4395,16 @@
       ],
       "additionalProperties": false
     },
-    "RouteDestinationSchema": {
+    "ShowViewSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
-      "minLength": 1,
-      "maxLength": 80,
-      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-    },
-    "RouteSummarySchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "destination": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100,
-          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-        },
-        "phase": {
-          "type": "string",
-          "enum": [
-            "guiding",
-            "rerouting",
-            "off_route",
-            "no_position",
-            "arrived"
-          ]
-        },
-        "next": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120,
-          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-        },
-        "to_next_m": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 100000
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "remaining_m": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100000
-        },
-        "remaining_min": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1000
-        },
-        "simulated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "destination",
-        "phase",
-        "next",
-        "to_next_m",
-        "remaining_m",
-        "remaining_min",
-        "simulated"
-      ],
-      "additionalProperties": false
+      "enum": [
+        "weather",
+        "location",
+        "sensors",
+        "message",
+        "parts"
+      ]
     },
     "SpeechSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7078,8 +6924,7 @@
               "enum": [
                 "get_location",
                 "get_distance",
-                "get_weather",
-                "stop_route"
+                "get_weather"
               ]
             }
           },
@@ -7093,18 +6938,22 @@
           "properties": {
             "name": {
               "type": "string",
-              "const": "start_route"
+              "const": "show_on_screen"
             },
-            "destination": {
+            "view": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 80,
-              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              "enum": [
+                "weather",
+                "location",
+                "sensors",
+                "message",
+                "parts"
+              ]
             }
           },
           "required": [
             "name",
-            "destination"
+            "view"
           ],
           "additionalProperties": false
         }
@@ -7117,8 +6966,7 @@
         "get_location",
         "get_distance",
         "get_weather",
-        "start_route",
-        "stop_route"
+        "show_on_screen"
       ]
     },
     "WalkerToolResultSchema": {
@@ -7131,8 +6979,7 @@
             "get_location",
             "get_distance",
             "get_weather",
-            "start_route",
-            "stop_route"
+            "show_on_screen"
           ]
         },
         "text": {
@@ -7949,8 +7796,7 @@
                   "enum": [
                     "get_location",
                     "get_distance",
-                    "get_weather",
-                    "stop_route"
+                    "get_weather"
                   ]
                 }
               },
@@ -7964,18 +7810,22 @@
               "properties": {
                 "name": {
                   "type": "string",
-                  "const": "start_route"
+                  "const": "show_on_screen"
                 },
-                "destination": {
+                "view": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  "enum": [
+                    "weather",
+                    "location",
+                    "sensors",
+                    "message",
+                    "parts"
+                  ]
                 }
               },
               "required": [
                 "name",
-                "destination"
+                "view"
               ],
               "additionalProperties": false
             }
@@ -7993,8 +7843,7 @@
                   "get_location",
                   "get_distance",
                   "get_weather",
-                  "start_route",
-                  "stop_route"
+                  "show_on_screen"
                 ]
               },
               "text": {

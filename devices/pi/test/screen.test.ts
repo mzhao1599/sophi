@@ -11,7 +11,7 @@ import { lone } from "./support/fakes";
 /** Rows D1 to D9 of test/EXPECTED.md ("The walker screen"). Every time comes from a fake clock. */
 
 const settings = startingSettings(undefined, Date.parse("2026-10-24T02:00:00Z"));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, navigation: null, help: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, navigation: null, help: null };
 const offer = { proposal_id: "11111111-1111-4111-8111-111111111111", from_cues: ["vibration" as const], cues: ["sound" as const] };
 const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, ...model }, now, settings).content.state;
 

@@ -203,6 +203,18 @@ export const VoiceClipSchema = z.strictObject({
 export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: typedText });
 
 /**
+ * What Sophi can pull up on the walker's screen with `show_on_screen` (docs/subsystems/show-on-screen.md, added
+ * 2026-10-24). The model picks only the view's name; the Pi builds every word and number on the card from its
+ * own data, so a model reply can never put text of its own on her screen. `weather`: current conditions near
+ * her (GPS, then Open-Meteo, as `get_weather`). `location`: the nearest address (GPS, then the reverse
+ * geocoder, as `get_location`). `sensors`: each obstacle zone's distance, live, unknown when not measured.
+ * `message`: her newest caretaker message (its words never go to the model). `parts`: the walker's parts and
+ * their health, simulated ones marked.
+ */
+export const ShowViewSchema = z.enum(["weather", "location", "sensors", "message", "parts"]);
+export type ShowView = z.infer<typeof ShowViewSchema>;
+
+/**
  * Walking directions, run on the Pi (docs/subsystems/navigation.md, added 2026-10-24). `start_route` finds the
  * place, plans a walking route and starts the Pi's spoken guidance; `stop_route` ends it. Neither moves a
  * motor. The route in progress reaches the model as `navigation.route` on every device turn, so "How far is
@@ -212,7 +224,7 @@ export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: t
 export const ROUTE_TOOLS = ["start_route", "stop_route"] as const;
 
 /** Tools the Pi runs or the cloud computes; `send_message` is separate (`message_offer`). */
-export const WalkerToolNameSchema = z.enum(["get_location", "get_distance", "get_weather", ...ROUTE_TOOLS]);
+export const WalkerToolNameSchema = z.enum(["get_location", "get_distance", "get_weather", "show_on_screen", ...ROUTE_TOOLS]);
 export type WalkerToolName = z.infer<typeof WalkerToolNameSchema>;
 
 /** The place she asked for, in her words as the model passes them on ("the Lake Merritt Boating Center"). One line. */
@@ -222,6 +234,7 @@ export const RouteDestinationSchema = z.string().trim().min(1).max(80).regex(/^[
 export const WalkerToolCallSchema = z.union([
   z.strictObject({ name: z.enum(["get_location", "get_distance", "get_weather", "stop_route"]) }),
   z.strictObject({ name: z.literal("start_route"), destination: RouteDestinationSchema }),
+  z.strictObject({ name: z.literal("show_on_screen"), view: ShowViewSchema }),
 ]);
 export type WalkerToolCall = z.infer<typeof WalkerToolCallSchema>;
 
@@ -276,6 +289,13 @@ export const DeviceTurnRequestSchema = z.strictObject({
   original_audio: z.boolean().optional(),
   /** Present when the walker can run ROUTE_TOOLS (it has a position source); `route` is null with no route on. Absent on an older Pi. */
   navigation: z.strictObject({ route: RouteSummarySchema.nullable() }).optional(),
+  /**
+   * Present while a screen page is connected to the Pi: the views it can show right now (GPS connected for
+   * `weather` and `location`, obstacle sensors for `sensors`, a message held for `message`). The server offers
+   * `show_on_screen` only with at least one, and only those, so an older Pi (no field) never receives it. Sent
+   * on continuations too.
+   */
+  screen: z.strictObject({ views: z.array(ShowViewSchema).min(1).max(ShowViewSchema.options.length).refine((v) => new Set(v).size === v.length, "Each view appears once.") }).optional(),
   /**
    * This walker can ask for help after a countdown ("Asking for help" below; added 2026-10-24). The server offers
    * the model its `ask_for_help` tool only on a turn that carries it, so an older Pi never gets `ask_for_help`. The

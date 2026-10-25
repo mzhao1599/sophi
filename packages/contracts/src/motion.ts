@@ -1370,6 +1370,15 @@ export function isPreparerAllowed(kind: MotionCommandKind, by: Preparer): boolea
 }
 
 /**
+ * A cloud offer names a lift preset, never a height: a lift move prepared from an offer must go to one of
+ * LIFT_PRESET_HEIGHTS_MM. A person at the walker still presses Confirm and holds the lift's control.
+ */
+export function offerKeepsToPresets(action: { kind: string; target_mm?: number }, by: Preparer): boolean {
+  if (by !== "offer" || action.kind !== "lift.move") return true;
+  return (Object.values(LIFT_PRESET_HEIGHTS_MM) as number[]).includes(action.target_mm ?? Number.NaN);
+}
+
+/**
  * The words a Confirm target shows and says: the Pi's own title, then PARK_PROMPT (or CONFIRM_ONLY_PROMPT). A
  * title already ending in `.`, `?` or `!` keeps its own mark ("Let go? Park the walker…").
  */
@@ -1422,6 +1431,10 @@ export const ConfirmTargetSchema = z
   .refine((t) => isPreparerAllowed(t.action.kind, t.prepared_by), {
     message: "This preparer may not prepare this action.",
     path: ["prepared_by"],
+  })
+  .refine((t) => offerKeepsToPresets(t.action, t.prepared_by), {
+    message: "An offer moves the lift only to a named preset.",
+    path: ["action"],
   })
   .refine((t) => t.prompt === confirmPrompt(t.title, MOTION_COMMAND_POLICY[t.action.kind].needs_park), {
     message: "prompt is confirmPrompt(title).",
@@ -1533,6 +1546,10 @@ export const MotionCommandSchema = z
   .refine((c) => !("prepared_by" in c) || isPreparerAllowed(c.kind, c.prepared_by), {
     message: "This preparer may not prepare this command.",
     path: ["prepared_by"],
+  })
+  .refine((c) => !("prepared_by" in c) || offerKeepsToPresets(c, c.prepared_by), {
+    message: "An offer moves the lift only to a named preset.",
+    path: ["target_mm"],
   })
   .refine(
     (c) => {

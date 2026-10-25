@@ -20,7 +20,7 @@ import {
   CAPTION_PAGE_CHARS,
   DEMO_ROUTE,
   FIXTURE_STATE_NAMES,
-  LONGEST_PLACE,
+  LONGEST_DESTINATION,
   LONGEST_STREET,
   MANEUVER_WORD,
   NAV_ARROW_PX,
@@ -522,12 +522,12 @@ describe("walking directions", () => {
       const street = at({ street: LONGEST_STREET }, size).lines.at(-1)!.text;
       expect([...street].length, size).toBeLessThanOrEqual(bodyChars(size));
       expect(street.endsWith("…"), size).toBe(true);
-      const to = at({ phase: "off_route", destination: LONGEST_PLACE }, size).lines[0]!;
+      const to = at({ phase: "off_route", destination: LONGEST_DESTINATION }, size).lines[0]!;
       expect(to.maxLines).toBe(2);
       expect([...to.text].length, size).toBeLessThanOrEqual(fitChars(navColumns(size).right, 40, 2));
       expect(at({ phase: "off_route" }, size).lines[0]!.text, size).toBe("To Lake Merritt Boating Center");
       // The announcement keeps every word.
-      expect(at({ phase: "arrived", destination: LONGEST_PLACE }, size).announce).toContain(LONGEST_PLACE);
+      expect(at({ phase: "arrived", destination: LONGEST_DESTINATION }, size).announce).toContain(LONGEST_DESTINATION);
     }
   });
 
