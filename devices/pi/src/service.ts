@@ -41,7 +41,7 @@ import { CuePolicy } from "./cues";
 import { WalkerHelp } from "./help";
 import { lookUpPlace, type PlaceReading } from "./location";
 import { currentWeather, type WeatherReading } from "./weather";
-import { locationShow, messageShow, notShown, partsShow, sensorsShow, showViews, weatherShow, type ShowOutcome } from "./show";
+import { locationShow, messageShow, notShown, partsShow, showViews, weatherShow, type ShowOutcome } from "./show";
 import type { Logger } from "./log";
 import { LINES, appliedLine, moduleDownLine, offlineLine } from "./notices";
 import type { ModuleManager } from "./serial/modules";
@@ -697,7 +697,7 @@ export class WalkerService {
   /** The views the walker can show now, only while a page is connected to draw them (DeviceTurnRequest.screen). */
   private screenField(): { screen?: { views: ShowView[] } } {
     if (!this.screenConnected()) return {};
-    return { screen: { views: showViews({ gps: this.deps.location?.connected() ?? false, sensors: this.hasSensors(), message: this.latestMessage !== null }) } };
+    return { screen: { views: showViews({ gps: this.deps.location?.connected() ?? false, message: this.latestMessage !== null }) } };
   }
 
   private screenConnected(): boolean {
@@ -718,15 +718,14 @@ export class WalkerService {
     const simulated = this.deps.location?.simulated ?? false;
     let outcome: ShowOutcome;
     if (!this.screenConnected()) outcome = notShown("The walker's screen isn't connected.");
+    // Never offered (see showViews): a server that asks for it anyway gets nothing on the screen.
+    else if (view === "sensors") outcome = notShown("The walker doesn't show that on its screen.");
     else if (view === "weather") {
       const looked = await this.lookUp("get_weather", signal, this.lookups.weather, true);
       outcome = "reading" in looked ? weatherShow(looked.reading, simulated) : notShown(looked.text);
     } else if (view === "location") {
       const looked = await this.lookUp("get_location", signal, this.lookups.place, true);
       outcome = "reading" in looked ? locationShow(looked.reading, simulated) : notShown(looked.text);
-    } else if (view === "sensors") {
-      const simulatedBy = new Map(this.deps.modules.modules().map((m) => [m.instanceId, m.simulated]));
-      outcome = sensorsShow(this.deps.modules.knownZones().map((z) => ({ zone: z.zone, mm: z.mm, quality: z.quality, fresh: z.fresh, simulated: simulatedBy.get(z.instanceId) ?? false })));
     } else if (view === "message") outcome = messageShow(this.latestMessage);
     else outcome = partsShow(this.manifest());
     if (signal.aborted) throw signal.reason;

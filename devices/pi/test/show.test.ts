@@ -109,13 +109,14 @@ describe("SH1: the turn request says what the walker can show, only while a page
     expect(requests(h)[0]!.screen).toEqual({ views: ["parts"] });
   });
 
-  it("GPS, obstacle sensors and a held message: every view, in order, on the first step and the continuation", async () => {
+  it("GPS, obstacle sensors and a held message: every view but sensors, in order, on the first step and the continuation", async () => {
     const h = showHarness({ tof: true });
     h.fake.sendFromCaretaker(h.device()!.deviceId, "Maya", MESSAGE_WORDS);
     await boot(h);
     await h.clock.advance(0);
     await ask(h, "parts");
-    const all = ["weather", "location", "sensors", "message", "parts"];
+    // Never sensors (2026-10-24): "Front left · 30 cm" means nothing to her; sensor questions are answered aloud.
+    const all = ["weather", "location", "message", "parts"];
     expect(requests(h).map((r) => r.screen?.views)).toEqual([all, all]);
     expect(requests(h)[1]!.tool_results).toBeDefined();
   });
@@ -189,32 +190,17 @@ describe("SH3: location", () => {
 });
 
 describe("SH4: sensors", () => {
-  it("every zone, measured (rounded to 10 mm) only when valid and fresh, unknown otherwise, each with its module's simulated flag", async () => {
+  // The walker no longer offers the sensors card (2026-10-24): "Front left · 30 cm" means nothing to her.
+  it("is never offered, and a server that asks for it anyway gets nothing on the screen", async () => {
     const h = showHarness({ tof: true });
     await boot(h);
     h.tof!.readings = { front_left: { mm: 423 }, front_right: "invalid" };
     await h.clock.advance(200);
-    await ask(h, "sensors");
-    expect(h.cards[0]).toEqual({
-      view: "sensors",
-      zones: [
-        { zone: "front_left", distance: { status: "measured", mm: 420 }, simulated: true },
-        { zone: "front_right", distance: { status: "unknown" }, simulated: true },
-      ],
-    });
-    expect(result(h).text).toBe("Showing the obstacle sensors on the screen, kept current while it is up. Right now: front left 42 centimetres, front right unknown.");
-  });
-
-  it("a sensor that went quiet: its zones read unknown, never clear", async () => {
-    const h = showHarness({ tof: true });
-    await boot(h);
-    await h.clock.advance(200);
-    h.tof!.hang();
-    await h.clock.advance(ZONE_VALIDITY_MS + 100);
-    await ask(h, "sensors");
-    const card = h.cards[0] as Extract<ShowCard, { view: "sensors" }>;
-    expect(card.zones.map((z) => z.distance.status)).toEqual(["unknown", "unknown"]);
-    expect(result(h).text).toContain("front left unknown, front right unknown");
+    h.fake.script.unshift({ show: "sensors", ignoreViews: true });
+    await talk(h);
+    expect(requests(h)[0]!.screen?.views).not.toContain("sensors");
+    expect(h.cards).toEqual([]);
+    expect(result(h).text).toBe("Nothing was shown on the screen. The walker doesn't show that on its screen.");
   });
 });
 
@@ -319,7 +305,6 @@ describe("SH8: a view that can't be filled shows nothing and says why", () => {
     ["the weather lookup fails", (h) => h.looks.weather.mockRejectedValue(new Error("Weather HTTP 503.")), "weather", "I couldn't check the weather right now."],
     ["the address lookup fails", (h) => h.looks.place.mockRejectedValue(new Error("Geocoder HTTP 503.")), "location", "I found the GPS receiver, but couldn't look up an address right now."],
     ["no reliable address", (h) => h.looks.place.mockResolvedValue({ text: "I have a GPS fix, but the map does not show a reliable nearby address.", place: null }), "location", "I have a GPS fix, but the map does not show a reliable nearby address."],
-    ["no zone heard yet", () => {}, "sensors", "The obstacle sensors haven't reported any zone yet."],
     ["no message held", () => {}, "message", "The walker holds no message from a caretaker."],
   ];
   for (const [what, arrange, view, why] of cases) {
@@ -533,8 +518,8 @@ describe("SH13: the fake cloud and the simulator's script", () => {
     h.fake.sendFromCaretaker(h.device()!.deviceId, "Maya", MESSAGE_WORDS);
     await boot(h);
     await h.clock.advance(200);
-    for (const view of ["weather", "location", "sensors", "message", "parts"] as const) await ask(h, view);
-    expect(h.cards.map((c) => c.view)).toEqual(["weather", "location", "sensors", "message", "parts"]);
+    for (const view of ["weather", "location", "message", "parts"] as const) await ask(h, view);
+    expect(h.cards.map((c) => c.view)).toEqual(["weather", "location", "message", "parts"]);
     expect(h.cards.every((c) => ShowCardSchema.safeParse(c).success)).toBe(true);
   });
 
