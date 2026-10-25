@@ -208,9 +208,14 @@ interface PendingTurn {
  * Talk (the design's button map): hold to talk, release to send. The ESP32 handle waits briefly after a
  * release so a quick re-press continues the same recording; after the turn is sent, a press while waiting
  * cancels. A press while a reply is playing stops it and starts listening. The simulator keyboard only
- * presses, so a second press sends. Confirm answers the open proposal by id; with none it plays the
- * "nothing to confirm" sound, or reads her newest message again when she has one. The Pi
- * never judges a proposal's expiry by its own clock: the server says whether it is still open.
+ * presses, so a second press sends. Confirm answers the open proposal by id; with none it reads a caretaker's
+ * message again while it is on screen, else says a route's next instruction again, else reads her newest
+ * message again, else plays the "nothing to confirm" sound. The Pi never judges a proposal's expiry by its own
+ * clock: the server says whether it is still open.
+ *
+ * Walking directions (with a position source): `start_route` and `stop_route` run here, the Navigator follows the
+ * route, and its lines are spoken as `guidance` (never sent to the page or the server) whenever nothing of hers
+ * is using the walker's voice. They keep going offline.
  *
  * Messages: after each heartbeat the walker asks for her newest messages from caretakers and reads each new one
  * aloud once in its own voice ("Message from Maya. …"), waiting while she talks or a message draft awaits Confirm.

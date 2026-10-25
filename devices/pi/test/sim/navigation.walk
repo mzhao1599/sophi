@@ -1,0 +1,69 @@
+# Walking directions against the FAKE cloud (test/EXPECTED.md, "Walking directions", N27). The fake cloud
+# scripts the tool calls (`fake tool ...`), the position is the SIMULATED one (walking at 1.2 m/s times
+# WALKER_SIM_WALK_SPEEDUP, default 3) and the map services are the responses recorded in
+# test/fixtures/navigation/, so the run is offline and repeats. About 5 minutes in real time.
+# Run (from devices/pi): node dist/walker.mjs simulate --script test/sim/navigation.walk
+
+# 1. Boot.
+expect spoke Sophi is on.
+expect link online
+expect heartbeat ok
+
+# 2. "Where am I?": the simulated position says it is simulated.
+fake tool get_location
+key t
+expect mic open
+wait 1200
+key t
+expect spoke Fake cloud: Your simulated GPS puts you near 451 Lee Street, Oakland, California.
+
+# 3. "Take me to the Lake Merritt Boating Center": the route starts (the screen's view is on), the fake
+# cloud's reply carries the walker's result, then the Pi says its own first line.
+fake tool start_route Lake Merritt Boating Center
+key t
+expect mic open
+wait 1200
+key t
+expect spoke Fake cloud: let me find that.
+expect navigation guiding
+expect spoke Fake cloud: Walking directions started to Lake Merritt Boating Center: about 750 meters
+expect spoke Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.
+
+# 4. Walking: the Lenox Avenue turn, ahead of it and at it.
+expect 30000 spoke turn left onto Lenox Avenue.
+expect 30000 spoke Turn left now.
+
+# 5. Confirm with nothing else to confirm says the next instruction again.
+key c
+expect spoke urn left
+absent 1500 cue nothing_to_confirm
+
+# 6. 50 m off the route (to its right, where the route is far): two positions later the walker plans again
+# from there and says the new first instruction.
+gps off_route 50
+expect 10000 spoke You seem to be off the route. Finding the way again.
+expect 10000 spoke Head
+expect navigation guiding
+
+# 7. On to the end: the arrival, then the route ends 20 s later.
+expect 400000 spoke You've arrived near the Lake Merritt Boating Center.
+expect navigation arrived
+expect 30000 navigation none
+
+# 8. A second route, from the start again, ended by "Stop the directions" (`stop_route`).
+gps at 37.8098 -122.2575
+fake tool start_route Lake Merritt Boating Center
+key t
+expect mic open
+wait 1200
+key t
+expect spoke Walking to the Lake Merritt Boating Center
+expect navigation guiding
+fake tool stop_route
+key t
+expect mic open
+wait 1200
+key t
+expect spoke Fake cloud: Stopped the directions to the Lake Merritt Boating Center.
+expect navigation none
+key q

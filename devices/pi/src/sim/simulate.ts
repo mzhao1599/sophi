@@ -57,6 +57,23 @@ export const FAKE_DEMO_TURNS = [
   { reply: "Fake cloud: the robot arms aren't on this walker, so I can't pick that up." },
 ];
 
+/** Runs a script's `gps ...` and `fake ...` steps against the simulated position and the fake cloud. */
+export function scriptCommand(fake: FakeCloud | null, position: SimulatedPosition): (step: CommandStep) => void {
+  return (step) => {
+    if (step.kind === "fake") {
+      if (!fake) throw new Error("fake steps need the fake cloud (no --server)");
+      fake.script.push(step.tool ? { reply: step.reply, tool: step.tool } : { reply: step.reply });
+      return;
+    }
+    const [a = 0, b = 0] = step.numbers;
+    if (step.action === "at") position.at(a, b);
+    else if (step.action === "walk") position.walk(a);
+    else if (step.action === "off_route") position.offRoute(a);
+    else if (step.action === "pause") position.pause();
+    else position.resume();
+  };
+}
+
 const HELP = `Keys: t Talk (press to start, press again to send; a terminal can't see key release)
       c Confirm   n hand in front of the ToF   f nothing in front   i invalid reading
       x ToF stops responding / comes back   o network down / up   g network hangs / up (the walker's own requests)
@@ -329,20 +346,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     }
   };
 
-  // `gps ...` and `fake ...` script steps.
-  const command = (step: CommandStep) => {
-    if (step.kind === "fake") {
-      if (!fake) throw new Error("fake steps need the fake cloud (no --server)");
-      fake.script.push(step.tool ? { reply: step.reply, tool: step.tool } : { reply: step.reply });
-      return;
-    }
-    const [a = 0, b = 0] = step.numbers;
-    if (step.action === "at") position.at(a, b);
-    else if (step.action === "walk") position.walk(a);
-    else if (step.action === "off_route") position.offRoute(a);
-    else if (step.action === "pause") position.pause();
-    else position.resume();
-  };
+  const command = scriptCommand(fake, position);
 
   let restoreTty = () => {};
   if (runner && steps) {
