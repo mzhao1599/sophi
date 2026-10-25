@@ -1,5 +1,4 @@
 import {
-  BENCH_MODE_LABEL,
   FAULT_CLEAR_SENTENCE,
   FAULT_SENTENCES,
   MODULE_CATALOG,
@@ -31,7 +30,6 @@ import {
   minutesLeftWords,
   navColumns,
   navMap,
-  navMapHeight,
   phaseLine,
   streetForLine,
   turnWordPx,
@@ -123,10 +121,7 @@ export interface ScreenView {
   itemId: string | null;
   revision: number;
   settingsVersion: number;
-  /**
-   * `bench`: a dashed "Bench mode" tag (the arms and lift may move with no hardware stop; motion screens say it
-   * in full). Not on the simulator, whose "Simulator" tag takes the room.
-   */
+  /** Whether motion screens show a concise missing-stop warning. */
   strip: { word: string; shape: PresenceShape; time: string | null; simulator: boolean; bench: boolean };
   /**
    * The main fact: at the main size, at body size for captions, or for a long motion title in bold at the body
@@ -714,7 +709,7 @@ export function promptAfterTitle(title: string, prompt: string): string {
 }
 
 /** The bench label, in full, on every motion screen: there is no hardware stop. */
-const benchLine = (bench: boolean): ViewLine[] => (bench ? [detail(BENCH_MODE_LABEL)] : []);
+const benchLine = (bench: boolean): ViewLine[] => (bench ? [detail("No hardware stop")] : []);
 
 type MotionContent = Extract<ScreenContent, { state: "motion_confirm" | "motion_running" | "motion_holding" | "motion_fault" }>;
 
@@ -837,7 +832,6 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
     announce = `${main}.`;
   }
   const fitted = guiding ? { px: turnWordPx(main, textSize), wraps: false } : phaseLine(main, textSize);
-  const infoLines = info.reduce((n, l) => n + Math.min(l.maxLines ?? 1, detailLines(l.text, textSize)), 0);
   return {
     key: `navigating:${content.phase}:${content.instruction}`,
     main: { text: main, size: "nav" },
@@ -850,7 +844,7 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
       arrowPx: NAV_ARROW_PX[textSize],
       mainPx: fitted.px,
       mainWraps: fitted.wraps,
-      map: navMap(content.map, left, NAV_SIDE_PX, navMapHeight(infoLines)),
+      map: navMap(content.map, 800, 480, 480, true),
       simulated: content.simulated,
       info,
     },
@@ -1193,8 +1187,6 @@ export function screenView(state: ScreenState, settings: ScreenSettings = state.
       // The clock screen's main line is the time, so the strip doesn't repeat it there.
       time: state.screen.state === "ambient" ? null : (clock?.time ?? null),
       simulator: strip.simulator,
-      // The strip has room for one tag beside "Connecting" and the time. On the simulator, "Simulator" already
-      // says nothing real moves; the motion screens still say BENCH_MODE_LABEL in full.
       bench: strip.bench_mode && !strip.simulator,
     },
     main: s.main,

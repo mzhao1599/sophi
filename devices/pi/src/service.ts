@@ -722,7 +722,10 @@ export class WalkerService {
         voice: wav ? "server" : "walker",
       });
       if (reply.motion_offer) {
-        const target = this.deps.motion?.requestOffer?.({ target: { kind: "lift.preset", preset: reply.motion_offer.preset } });
+        const offer = reply.motion_offer;
+        const target = this.deps.motion?.requestOffer?.({ target: "preset" in offer
+          ? { kind: "lift.preset", preset: offer.preset }
+          : { kind: "lift.relative", delta_mm: offer.delta_mm } });
         if (!target) this.sayAnswer(reply.turn.heard, "The lift isn't ready for that height yet.", "fixed", "reply");
         return;
       }
