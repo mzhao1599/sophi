@@ -6,6 +6,8 @@ import {
   VOICE_CHOICES,
   holdControlShown,
   type Cue,
+  type Maneuver,
+  type NavigatingScreen,
   type ScreenAction,
   type ScreenContent,
   type ScreenHoldDirection,
@@ -14,6 +16,23 @@ import {
   type SuggestionChange,
   type TextSize,
 } from "@walker/contracts";
+import {
+  MANEUVER_WORD,
+  NAV_ARROW_PX,
+  NAV_SIDE_PX,
+  PHASE_WORDS,
+  detailLines,
+  distanceWords,
+  fitChars,
+  minutesLeftWords,
+  navColumns,
+  navMap,
+  navMapHeight,
+  phaseLine,
+  streetForLine,
+  turnWordPx,
+  type NavMap,
+} from "./navigation";
 import { MAX_BUTTONS, screenSizes, type ScreenSizes } from "./sizes";
 
 /**
@@ -40,6 +59,13 @@ export interface ViewLine {
   size: "body" | "detail" | "message";
   /** A dashed "Simulated" tag after the text. */
   simulated?: boolean;
+  /** Bold (the distance to the next turn). */
+  strong?: boolean;
+  /**
+   * At most this many lines; the page clips anything past them with an ellipsis, a backstop for an unusually
+   * wide name (the view already shortens to fit, and the shots check proves the backstop never fires on a fixture).
+   */
+  maxLines?: number;
 }
 
 export type PresenceShape = "filled" | "hollow" | "dashed";
@@ -55,6 +81,28 @@ export interface ViewHold {
   label: string;
   /** Under the label, with the handle's mark: "and press Confirm" while the target waits for its press. */
   sublabel: string | null;
+}
+
+/**
+ * Walking directions (`navigating`): the map in a left column, and the next thing to do on the right. The view's
+ * `main` is the maneuver word or the phase sentence, drawn at `mainPx`; `lines` are the distance and the street
+ * (or the place); `info` sits under the map. The budget is in navigation.ts.
+ */
+export interface NavView {
+  /** The left column's width, px. */
+  columnPx: number;
+  /** The arrow drawn beside the word while guiding; null for a phase sentence. */
+  turn: Maneuver | null;
+  arrowPx: number;
+  /** The main line's size: the fitted word, or the phase sentence's line. */
+  mainPx: number;
+  /** The phase sentence takes two lines in bold at her body size. */
+  mainWraps: boolean;
+  map: NavMap;
+  /** Her position is the simulated one: a dashed Simulated tag on the map, and a dashed ring on her dot. */
+  simulated: boolean;
+  /** Under the map: the distance and time left. */
+  info: ViewLine[];
 }
 
 export interface ScreenView {
@@ -76,7 +124,7 @@ export interface ScreenView {
    * The main fact: at the main size, at body size for captions, or for a long motion title in bold at the body
    * size (`title`) or the smallest size (`small`).
    */
-  main: { text: string; size: "main" | "body" | "message" | "title" | "small" };
+  main: { text: string; size: "main" | "body" | "message" | "title" | "small" | "nav" };
   lines: ViewLine[];
   /**
    * Over the left handle: the Confirm twin button, a word ("Confirm" when a press answers something, "Stop"
@@ -91,6 +139,8 @@ export interface ScreenView {
   right: "Talk" | "Stop";
   /** What a screen reader hears when the scene changes. */
   announce: string;
+  /** Walking directions' map and layout, on `navigating` only. */
+  nav: NavView | null;
 }
 
 const TEXT_SIZE_WORD: Record<TextSize, string> = { large: "Large", larger: "Larger", largest: "Largest" };
@@ -286,6 +336,7 @@ interface Scene {
   hold?: ViewHold | null;
   right?: ScreenView["right"];
   announce?: string;
+  nav?: NavView;
 }
 
 /**
@@ -418,12 +469,7 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         announce: `${content.from_name} says: ${content.text}`,
       };
     case "navigating":
-      // Words only for now; the map and the End route and Repeat buttons are the screen piece of navigation.
-      return {
-        key: `navigating:${content.phase}:${content.instruction}`,
-        main: { text: content.instruction, size: "body" },
-        lines: [{ text: `${content.remaining_m} m to go`, size: "detail", simulated: content.simulated }],
-      };
+      return navigatingScene(content, textSize);
     case "offline":
       // TODO(circle piece): add back the "My screen" button here and on the clock once the Pi acts on it. A
       // control that does nothing is never shown (AGENTS.md: never present something unbuilt as working).
@@ -598,6 +644,62 @@ function motionScene(content: MotionContent, textSize: TextSize, bench: boolean)
   }
 }
 
+// ---- Walking directions ----
+
+/**
+ * The route in progress. The scene key is the phase and the instruction, so the screen cross-fades (and a screen
+ * reader hears the whole instruction) only when the next thing to do changes, never as the metres count down;
+ * the map and the distances still update with every state. Repeat and End route sit between the handles, and
+ * act on the Pi (the service answers `repeat_direction` and `end_route` presses while a route is on).
+ */
+function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
+  const guiding = content.phase === "guiding";
+  const main = guiding ? MANEUVER_WORD[content.maneuver] : PHASE_WORDS[content.phase as Exclude<NavigatingScreen["phase"], "guiding">];
+  const right = navColumns(textSize).right;
+  const left = navColumns(textSize).left;
+  const sizes = screenSizes(textSize);
+  const lines: ViewLine[] = [];
+  const info: ViewLine[] = [];
+  let announce: string;
+  if (guiding) {
+    if (content.to_step_m !== null) lines.push({ text: content.to_step_m === 0 ? "Now" : `in ${distanceWords(content.to_step_m)}`, size: "body", strong: true });
+    if (content.maneuver === "arrive") {
+      // Arriving is the next thing: the distance beside the arrow says what is left, so the place goes under the map.
+      info.push({ text: shorten(content.destination, fitChars(left, sizes.smallest, 3)), size: "detail", maxLines: 3 });
+    } else {
+      if (content.street) lines.push({ text: streetForLine(content.street, fitChars(right, sizes.body, 1)), size: "body", maxLines: 1 });
+      info.push(detail(`${distanceWords(content.remaining_m)} to go`), detail(minutesLeftWords(content.remaining_min)));
+    }
+    announce = content.instruction;
+  } else if (content.phase === "arrived") {
+    lines.push({ text: shorten(content.destination, fitChars(right, sizes.body, 2)), size: "body", maxLines: 2 });
+    announce = `${main}: ${content.destination}.`;
+  } else {
+    // While the route is being planned again, or can't be, its distances aren't true: only where she is going.
+    lines.push({ text: shorten(`To ${content.destination}`, fitChars(right, sizes.smallest, 2)), size: "detail", maxLines: 2 });
+    announce = `${main}.`;
+  }
+  const fitted = guiding ? { px: turnWordPx(main, textSize), wraps: false } : phaseLine(main, textSize);
+  const infoLines = info.reduce((n, l) => n + Math.min(l.maxLines ?? 1, detailLines(l.text, textSize)), 0);
+  return {
+    key: `navigating:${content.phase}:${content.instruction}`,
+    main: { text: main, size: "nav" },
+    lines,
+    center: { buttons: [button("repeat_direction", "Repeat"), button("end_route", "End route")] },
+    announce,
+    nav: {
+      columnPx: left,
+      turn: guiding ? content.maneuver : null,
+      arrowPx: NAV_ARROW_PX[textSize],
+      mainPx: fitted.px,
+      mainWraps: fitted.wraps,
+      map: navMap(content.map, left, NAV_SIDE_PX, navMapHeight(infoLines)),
+      simulated: content.simulated,
+      info,
+    },
+  };
+}
+
 function myScreen(view: Extract<ScreenContent, { state: "my_screen" }>["view"], settings: ScreenSettings): Scene {
   switch (view.page) {
     case "menu":
@@ -703,5 +805,6 @@ export function screenView(state: ScreenState, settings: ScreenSettings = state.
     hold,
     right: s.right ?? "Talk",
     announce: s.announce ?? [s.main.text, ...lines.map((l) => l.text), ...center.lines.map((l) => l.text)].join(". "),
+    nav: s.nav ?? null,
   };
 }
