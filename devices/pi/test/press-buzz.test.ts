@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SerialHapticPlaySchema } from "@walker/contracts";
-import { CONFIRM_PRESS_HAPTIC_MS, ESP32_TALK_RELEASE_GRACE_MS, TALK_PRESS_HAPTIC_MS } from "../src/constants";
+import { CONFIRM_PRESS_HAPTIC_MS, ESP32_TALK_RELEASE_GRACE_MS, OBSTACLE_HAPTIC_MS, TALK_PRESS_HAPTIC_MS } from "../src/constants";
 import { boot, flush, makeHarness, type Harness } from "./support/fakes";
 
 /** The haptic.play lines the Pi actually wrote to the simulated hand, as "pattern ms". */
@@ -169,6 +169,6 @@ describe("press buzz: the hand that was pressed buzzes", () => {
     h.tof!.readings.front_left = { mm: 300 };
     await h.clock.advance(200);
     expect(h.named("haptic").map((e) => e.pattern)).toEqual(["recording", "near_obstacle"]);
-    expect(handLines(h)).toEqual([`hand-right-01 recording ${TALK_PRESS_HAPTIC_MS}`, "hand-right-01 near_obstacle 400"]);
+    expect(handLines(h)).toEqual([`hand-right-01 recording ${TALK_PRESS_HAPTIC_MS}`, `hand-right-01 near_obstacle ${OBSTACLE_HAPTIC_MS}`]);
   });
 });

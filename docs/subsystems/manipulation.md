@@ -115,7 +115,7 @@ The stop is a **latching (twist-to-release)** switch, wired so it doesn't depend
   - Every arm's torque and position are read afresh, and torque stays off until it is turned on again.
 - **All arm and lift motion is refused unless the stop reads `released`.** With no stop-sense input it reads `not_wired`, and motion is refused with `no_hardware_stop`.
 - **Bench mode.** `WALKER_MOTION_BENCH=no-hardware-stop` in the Pi's local service environment file is the only way to move without a hardware stop. It is read once at start, never set by the cloud, a model, the screen or a command.
-  - Bench mode lowers every speed and torque limit and logs every motion. The screen and page show "Bench mode: no hardware stop".
+  - Bench mode lowers every speed and torque limit and logs every motion. The contract's label is "Bench mode: no hardware stop" (`BENCH_MODE_LABEL`); since 2026-10-25 every motion screen on the walker shows the shorter "No hardware stop", and the status strip has no bench tag.
   - It waives the hardware stop, the hand-control requirement, and the lift's guards and drop-test requirements. It never waives the rule: Confirm to start, a hold to keep the lift moving.
 
 ## Base stationary (decided)

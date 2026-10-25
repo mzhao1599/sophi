@@ -29,6 +29,8 @@ import {
   JointCalibrationSchema,
   LIFT_HEARTBEAT_INTERVAL_MS,
   LIFT_PRESET_HEIGHTS_MM,
+  LIFT_RAIL_LENGTH_MM,
+  LIFT_VOICE_TRIAL_MAX_MM,
   LIFT_HOLD_LEASE_MS,
   LIFT_HOMING_BACKOFF_MM,
   LIFT_HOMING_FAST_MM_S,
@@ -497,13 +499,23 @@ describe("Confirm targets", () => {
     expect(ok(ConfirmTargetSchema, target({ shown_mono_ms: -1 }))).toBe(false);
   });
 
-  it("may be prepared only by whoever the action's policy names; the cloud offers skills, poses and lift presets", () => {
-    // A lift move from an offer goes only to a named preset's height, never a height the cloud chose.
-    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: 300 } }))).toBe(false);
+  it("may be prepared only by whoever the action's policy names; the cloud offers skills, poses, lift presets and bounded relative lift moves", () => {
+    // A lift move from an offer goes to a height on the rail; the Pi computes it and checks the installed soft limits.
+    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: 300 } }))).toBe(true);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_PRESET_HEIGHTS_MM.up } }))).toBe(true);
+    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_RAIL_LENGTH_MM + 1 } }))).toBe(false);
+    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: -1 } }))).toBe(false);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up" } })).toBe(true);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up", target_mm: 300 } })).toBe(false);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.move", target_mm: 300 } })).toBe(false);
+    // A relative offer is a displacement, never a height: whole millimetres, not zero, within LIFT_VOICE_TRIAL_MAX_MM.
+    for (const delta_mm of [20, -20, LIFT_VOICE_TRIAL_MAX_MM, -LIFT_VOICE_TRIAL_MAX_MM]) {
+      expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm } }), String(delta_mm)).toBe(true);
+    }
+    for (const delta_mm of [0, 20.5, LIFT_VOICE_TRIAL_MAX_MM + 1, -LIFT_VOICE_TRIAL_MAX_MM - 1]) {
+      expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm } }), String(delta_mm)).toBe(false);
+    }
+    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: 20, target_mm: 300 } })).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "fault.clear" } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "walker_local", action: { kind: "skill.run", skill_id: "tray_pick_handover" } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "cloud" }))).toBe(false);

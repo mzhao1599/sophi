@@ -36,10 +36,13 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Run even when tests fail, so a red Test step never hides a type or build error.
       - name: Typecheck
+        if: ${{ !cancelled() }}
         run: pnpm typecheck
 
       - name: Build
+        if: ${{ !cancelled() }}
         run: pnpm build
 
   # ESP32 firmware (firmware/). The board builds prove the code compiles against the pinned platform and

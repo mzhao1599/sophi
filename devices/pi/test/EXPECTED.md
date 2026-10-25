@@ -91,7 +91,7 @@ A caretaker's message to her phone, read aloud by the walker (`test/messages.tes
 | N5 | Every OSRM maneuver type and modifier (depart, arrive, turn, new name, continue, end of road, fork, merge, ramps, roundabout, rotary, notification; left, right, slight, sharp, straight, uturn) | Each gets a sentence and a `maneuver` from the contract's list; none contains "clear" or "safe". |
 | N6 | A route over 5 km (*design*), or a place more than 5 km away in a straight line | Refused with "That's about 7 kilometers, farther than I can guide on foot." (the distance rounded); the second without asking the router. |
 | N7 | A map response over 64 KB, past 6 s (fake clock), not JSON, an HTTP error, or OSRM code other than `Ok` | An error (search, route) or "no route" (OSRM `NoRoute`); never a guessed route. |
-| N8 | `start_route` in a spoken turn | Position, search and route within 12 s (*design*, fake clock) in all. Then the tool result names the place, the distance and minutes and the first instruction, and holds no coordinates. Fixed failure lines: no position source or GPS not connected, no fix, place not found, no walking route, too far, past 12 s, a map error. A failure leaves no route on. |
+| N8 | `start_route` in a spoken turn | Position, search and route within 25 s (`ROUTE_TOOL_MS`, *design*, fake clock) in all. Then the tool result names the place, the distance and minutes and the first instruction, and holds no coordinates. Fixed failure lines: no position source or GPS not connected, no fix, place not found, no walking route, too far, past 25 s, a map error. A failure leaves no route on. |
 | N9 | Positions along the recorded route | Snapped to the route; metres to the next step and to the end fall as she walks (progress along the route, not a radius). A sample that jumps 30 m past a turn still says that turn's "now" line, once. |
 | N10 | Each step | "In 30 meters, turn left onto Lenox Avenue." once, when 40 m or less away (*design*); "Turn left now." once, at 8 m or once passed (*design*). The same positions again say nothing more. |
 | N11 | Off the route | One position more than 30 m (*design*) from the route says nothing. Two in a row: "You seem to be off the route. Finding the way again." (phase `rerouting`), a new route from her position, then its first instruction (phase `guiding`). At most once every 20 s and 5 times a route (*design*). If planning fails: "I can't find the way from here." (phase `off_route`), and it tries again at the next window. |
@@ -226,11 +226,11 @@ The walker's side of "Get help" ([docs/subsystems/help.md](../../../docs/subsyst
 
 ## Local cue policy
 
-Near is entered under 750 mm and left over 900 mm (*placeholder*, hysteresis). A zone is fresh for 500 ms after the Pi receives it (*placeholder*), by the Pi's monotonic clock. While a zone stays near, the cue repeats at most every 3 s (*placeholder*); a new entry cues at most once a second across all zones (*placeholder*). Haptic cues are `near_obstacle` for 400 ms (*placeholder*).
+Near is entered under 750 mm and left over 900 mm (*placeholder*, hysteresis). A zone is fresh for 500 ms after the Pi receives it (*placeholder*), by the Pi's monotonic clock. While a zone stays near, the cue repeats at most every 1.5 s (*placeholder*); a new entry cues at most once a second across all zones (*placeholder*). Haptic cues are `near_obstacle` for 1,000 ms (*placeholder*).
 
 | Id | Situation | Expected |
 | --- | --- | --- |
-| C1 | `cues: ["vibration"]`, fresh near zone, healthy haptic hand | One `haptic.play` `near_obstacle` 400 ms to each healthy hand that declared `haptic`. No sound. |
+| C1 | `cues: ["vibration"]`, fresh near zone, healthy haptic hand | One `haptic.play` `near_obstacle` 1,000 ms to each healthy hand that declared `haptic`. No sound. |
 | C2 | `cues: ["sound"]` | The obstacle sound. No haptic. |
 | C3 | Both | Both. |
 | C4 | Stale: the snapshot read 500 ms after the reading | The zone is left out of the snapshot (unknown), never reported clear. |
@@ -240,7 +240,7 @@ Near is entered under 750 mm and left over 900 mm (*placeholder*, hysteresis). A
 | C8 | No configuration fetched yet | Both vibration and sound (nothing is silently dropped). |
 | C9 | `cues: ["vibration"]` but no healthy haptic hand | Falls back to the obstacle sound. *Decision for review.* |
 | C10 | Zones from a module that is `unavailable` | Unknown: no cue. |
-| C12 | A zone that flickers between near and invalid *(review)* | Coming back from unknown within 3 s of its last cue counts as staying near: cues at most every 3 s, not every second. Only if it was near before it went unknown: near, clear, invalid, near is a new entry and cues after the 1 s gap *(review 2)*. |
+| C12 | A zone that flickers between near and invalid *(review)* | Coming back from unknown within 1.5 s of its last cue counts as staying near: cues at most every 1.5 s, not every second. Only if it was near before it went unknown: near, clear, invalid, near is a new entry and cues after the 1 s gap *(review 2)*. |
 | C13 | Vibration chosen, but no haptic actually went out (every hand's port busy) *(review 2)* | The obstacle sound plays instead, so the cue is never silently lost. |
 | C14 | A hand board that can't buzz *(haptic faults, from the firmware's codes)* | A buzz goes only to a hand whose health is `ok`, that declared `haptic`, and whose faults include neither `haptic_missing` nor `haptic_error`. Any other hand is skipped; when none can buzz, the obstacle sound plays instead (C9, C13). The offline line follows the same rule, so it never says "Your vibration alerts still work" when they don't. |
 | C11 | Anything from the cloud | Never causes a cue. Only the confirmed configuration's `cues` list chooses the kind. |

@@ -306,7 +306,9 @@ describe("motion: the arms and the lift", () => {
     expect(asking.left).toEqual({ kind: "hint", word: "Confirm" });
   });
 
-  it("bench mode: a tag in the strip on every screen, and the full label on every motion screen", () => {
+  // The motion screens' short warning (view.ts benchLine); the strip no longer carries a "Bench mode" tag.
+  const BENCH_LINE = "No hardware stop";
+  it('bench mode: "No hardware stop" on every motion screen, and no tag in the strip', () => {
     const motion: ScreenContent[] = [
       { state: "motion_confirm", target: cup, hold: null },
       { state: "motion_confirm", target: raise, hold: "raise" },
@@ -318,17 +320,17 @@ describe("motion: the arms and the lift", () => {
     for (const screen of motion) {
       const v = screenView(state(screen, { strip: benchStrip }));
       expect(v.strip.bench, screen.state).toBe(true);
-      expect(texts(v), screen.state).toContain(BENCH_MODE_LABEL);
-      expect(texts(screenView(state(screen))), screen.state).not.toContain(BENCH_MODE_LABEL);
+      expect(texts(v), screen.state).toContain(BENCH_LINE);
+      expect(texts(screenView(state(screen))), screen.state).not.toContain(BENCH_LINE);
     }
     const ambient = screenView(state({ state: "ambient", alerts: null }, { strip: benchStrip }));
     expect(ambient.strip.bench).toBe(true);
-    expect(texts(ambient)).not.toContain(BENCH_MODE_LABEL);
+    expect(texts(ambient)).not.toContain(BENCH_LINE);
     expect(screenView(state({ state: "listening" }, { strip: benchStrip })).strip).toMatchObject({ time: "7:42", bench: true });
-    // The simulator in bench mode: its "Simulator" tag takes the room; motion screens still say the label.
+    // The simulator in bench mode: its "Simulator" tag takes the room; motion screens still say there is no hardware stop.
     const sim = { ...benchStrip, simulator: true };
     expect(screenView(state({ state: "listening" }, { strip: sim })).strip).toMatchObject({ time: "7:42", simulator: true, bench: false });
-    expect(texts(screenView(state({ state: "motion_running", what: "Bring the cup", lift: null }, { strip: sim })))).toContain(BENCH_MODE_LABEL);
+    expect(texts(screenView(state({ state: "motion_running", what: "Bring the cup", lift: null }, { strip: sim })))).toContain(BENCH_LINE);
   });
 
   it("a long title drops to a smaller bold size so the screen still fits; the words are never cut", () => {
@@ -468,9 +470,9 @@ describe("walking directions", () => {
     const arrived = at({ phase: "arrived", maneuver: "arrive", street: null, to_step_m: 0, remaining_m: 0, remaining_min: 0 });
     expect(texts(arrived)).toEqual(["You've arrived", "Lake Merritt Boating Center"]);
     expect(arrived.announce).toBe("You've arrived: Lake Merritt Boating Center.");
-    // Repeat and End route stay in every phase.
+    // End route stays in every phase; the left handle repeats the instruction.
     for (const phase of ["rerouting", "off_route", "no_position", "arrived"] as const) {
-      expect(buttons(at({ phase })).map((b) => b.action), phase).toEqual(["repeat_direction", "end_route"]);
+      expect(buttons(at({ phase })).map((b) => b.action), phase).toEqual(["end_route"]);
     }
   });
 
