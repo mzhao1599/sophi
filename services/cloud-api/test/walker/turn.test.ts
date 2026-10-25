@@ -147,6 +147,16 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(JSON.stringify(stub.requests.at(-1))).not.toContain(wav(1200).toString("base64"));
     });
 
+    it("tidies a stray brace or doubled full stop out of the model's reply before it's spoken", async () => {
+      const stub = stubModel({ transcript: "Hello", reply: "Hello, I'm Sophi, your walker's assistant..}", topics: [] });
+      const service = serviceWith(stub.model);
+      const w = await walker(service);
+      const r = await service.turn(device(w.credential), w.id, typed("Hello"));
+      parses(r);
+      expect(r.turn).toMatchObject({ reply: "Hello, I'm Sophi, your walker's assistant.", answered_by: "model" });
+      expect(stub.requests).toHaveLength(1);
+    });
+
     it("beat 3: adds that the readings are simulated when the ToF part is, and not when it's real", async () => {
       const stub = stubModel({ reply: "Something is about 64 centimetres in front of you, measured a moment ago.", topics: ["obstacles"] });
       const service = serviceWith(stub.model);
