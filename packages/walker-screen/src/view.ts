@@ -453,6 +453,11 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
     case "motion_holding":
     case "motion_fault":
       return motionScene(content, textSize, state.strip.bench_mode);
+    case "help_hold":
+    case "help_countdown":
+    case "help":
+      // Placeholder until the walker piece draws them (docs/subsystems/help.md); the Pi doesn't send them yet.
+      throw new Error(`The ${content.state} screen isn't drawn yet.`);
   }
 }
 

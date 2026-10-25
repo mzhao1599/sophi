@@ -22,6 +22,7 @@ function roseHome(people = [ROSE, MAYA]): PhoneHome {
     walker: { walker_name: "Rose's walker", online: true, simulator: true, alerts: [], parts: null, battery: "not_measured" },
     people: people.map((id) => ({ member_id: id, name: id === ROSE ? "Rose" : id === MAYA ? "Maya" : "Ana", role: id === ROSE ? "walker_user" : "caregiver" })),
     messages: [],
+    help: null,
   } as PhoneHome;
 }
 

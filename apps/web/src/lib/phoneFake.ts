@@ -134,6 +134,8 @@ export function createDemoCircle(): DemoCircle {
       walker: { ...walker, alerts: [...walker.alerts], parts: m.role === "caregiver" ? PARTS(walker.online, walker.simulator) : null, battery: "not_measured", ...(locationSharing ? { location_sharing_enabled: true, location: null } : {}) },
       people,
       messages: messages.filter((x) => x.from_member_id === m.member_id || x.to_member_id === m.member_id).map((x) => view(x, m)),
+      // Placeholder until the phones piece fakes help requests (docs/subsystems/help.md).
+      help: null,
     });
   }
 

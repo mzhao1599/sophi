@@ -311,6 +311,8 @@ export class CircleService {
       },
       people: circle.members.filter((m) => m.state === "member").map(person),
       messages: messages.map((m) => messageView(m, member.member_id, names)),
+      // Placeholder until the server piece keeps help requests (docs/subsystems/help.md).
+      help: null,
     });
   }
 

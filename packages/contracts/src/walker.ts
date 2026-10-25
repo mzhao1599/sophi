@@ -216,6 +216,11 @@ export const DeviceTurnRequestSchema = z.strictObject({
   /** Present on a continuation. The first step's transcript is sent as text; no audio is replayed. */
   tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
   original_audio: z.boolean().optional(),
+  /**
+   * This walker can ask for help after a countdown (circle.ts, "Asking for help"; added 2026-10-24). The server
+   * offers the model its `ask_for_help` tool only on a turn that carries it, so an older Pi never gets `ask_for_help`.
+   */
+  can_ask_for_help: z.literal(true).optional(),
 }).refine((r) => !r.tool_results || (r.input.type === "text" && r.original_audio !== undefined), { message: "A continuation carries the original question as text.", path: ["tool_results"] });
 export type DeviceTurnRequest = z.infer<typeof DeviceTurnRequestSchema>;
 
@@ -465,6 +470,12 @@ export const WalkerTurnResponseSchema = z
     tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
     /** A draft only. The Pi reads this back and requires a fresh Confirm press before POSTing it. */
     message_offer: z.strictObject({ client_message_id: id, to_member_id: id, to_name: z.string().trim().min(1).max(12), text: z.string().trim().min(1).max(30).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u) }).optional(),
+    /**
+     * She asked for help by voice (the model's `ask_for_help`, only on a turn that carried `can_ask_for_help`). Not a
+     * request yet: the Pi says the reply, counts down HELP_COUNTDOWN_MS that any handle press stops, and only then
+     * POSTs /devices/{id}/help itself. The model never creates one. Added 2026-10-24.
+     */
+    ask_for_help: z.literal(true).optional(),
   })
   // A replayed turn may come back without its audio, so only speech implies Cartesia, not the reverse.
   .refine((r) => r.speech === null || r.turn.voiced_by === "cartesia", {

@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   AddPhoneRequestSchema,
+  DeviceAskForHelpRequestSchema,
+  DeviceHelpStatusResponseSchema,
+  HELP_COUNTDOWN_MS,
+  HELP_RETENTION_MS,
+  HelpResponseSchema,
+  HelpViewSchema,
+  PhoneAskForHelpRequestSchema,
+  ScreenActionSchema,
+  helpNames,
   DeviceMessagesResponseSchema,
   WALKER_MESSAGES_KEPT,
   ApproveJoinRequestSchema,
@@ -465,7 +474,7 @@ describe("the two-phone app", () => {
     bad(ApproveJoinRequestSchema, { consent: { walker_user_agreed: false } });
     bad(ApproveJoinRequestSchema, {});
     expect(caregiverConsentLine("Maya", "Rose")).toBe(
-      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her (the walker reads Maya's messages aloud), and see a recent GPS position only if location sharing is turned on later.",
+      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her (the walker reads Maya's messages aloud), be told when she asks for help, and see a recent GPS position only if location sharing is turned on later.",
     );
     expect(caregiverConsentLine("Maya", null)).toMatch(/^The person who uses this walker agreed that Maya/);
   });
@@ -486,7 +495,7 @@ describe("the two-phone app", () => {
   });
 
   it("gives a caretaker part health and her own phone none, with no times anywhere", () => {
-    const home = { membership: "member", me: rose, walker, people: [rose, maya], messages: [msg] };
+    const home = { membership: "member", me: rose, walker, people: [rose, maya], messages: [msg], help: null };
     ok(PhoneHomeResponseSchema, home);
     ok(PhoneHomeResponseSchema, { ...home, me: maya, walker: { ...walker, parts: [part] } });
     bad(PhoneHomeResponseSchema, { ...home, me: maya });
@@ -501,6 +510,7 @@ describe("the two-phone app", () => {
     // The only time in any phone shape is a waiting join's expiry.
     const times = JSON.stringify(z.toJSONSchema(PhoneHomeResponseSchema, { unrepresentable: "any" })).match(/"[a-z_]*_at"/g);
     expect(times).toEqual(['"expires_at"', '"expires_at"']);
+    bad(PhoneHomeResponseSchema, { ...home, help: undefined });
   });
 
   it("lists the owner's phones, codes and waiting caretakers", () => {
@@ -524,5 +534,73 @@ describe("the walker's incoming messages (GET /devices/{id}/messages)", () => {
     bad(DeviceMessagesResponseSchema, { messages: [message(1, "two\nlines")] });
     bad(DeviceMessagesResponseSchema, { messages: [message(1, "x".repeat(31))] });
     bad(DeviceMessagesResponseSchema, { messages: [{ ...message(1), from_member_id: uuid(9) }] });
+  });
+});
+
+describe("asking for help", () => {
+  const open = { help_id: uuid(40), source: "handles", age_seconds: 12, told: ["Maya"], coming: [], closed: null };
+
+  it("names who was told and who is coming, with an age and no times", () => {
+    ok(HelpViewSchema, open);
+    ok(HelpViewSchema, { ...open, source: "phone", told: ["Maya", "Sam"], coming: ["Sam"] });
+    bad(HelpViewSchema, { ...open, told: [] });
+    bad(HelpViewSchema, { ...open, coming: ["Maya", "Maya"] });
+    bad(HelpViewSchema, { ...open, source: "model" });
+    bad(HelpViewSchema, { ...open, started_at: T0 });
+    bad(HelpViewSchema, { ...open, age_seconds: HELP_RETENTION_MS / 1_000 + 1 });
+    bad(HelpViewSchema, { ...open, location: { latitude: 1, longitude: 2 } });
+    expect(JSON.stringify(z.toJSONSchema(HelpViewSchema, { unrepresentable: "any" }))).not.toMatch(/_at"/);
+  });
+
+  it("names who closed it, except when it expired", () => {
+    ok(HelpViewSchema, { ...open, closed: { how: "okay", by_name: "Rose" } });
+    ok(HelpViewSchema, { ...open, coming: ["Maya"], closed: { how: "with_her", by_name: "Maya" } });
+    ok(HelpViewSchema, { ...open, closed: { how: "expired", by_name: null } });
+    bad(HelpViewSchema, { ...open, closed: { how: "expired", by_name: "Rose" } });
+    bad(HelpViewSchema, { ...open, closed: { how: "okay", by_name: null } });
+  });
+
+  it("lets the walker ask from its handles or by voice, and her phone with an id alone", () => {
+    ok(DeviceAskForHelpRequestSchema, { client_help_id: uuid(41), source: "handles" });
+    ok(DeviceAskForHelpRequestSchema, { client_help_id: uuid(41), source: "voice" });
+    bad(DeviceAskForHelpRequestSchema, { client_help_id: uuid(41), source: "phone" });
+    bad(DeviceAskForHelpRequestSchema, { client_help_id: uuid(41), source: "handles", location: { latitude: 1, longitude: 2 } });
+    ok(PhoneAskForHelpRequestSchema, { client_help_id: uuid(42) });
+    bad(PhoneAskForHelpRequestSchema, { client_help_id: uuid(42), source: "phone" });
+    ok(HelpResponseSchema, { help: open });
+    ok(DeviceHelpStatusResponseSchema, { help: null });
+    ok(DeviceHelpStatusResponseSchema, { help: open });
+  });
+
+  it("answers a closed one with the request as it stands", () => {
+    expect(CIRCLE_ERROR_STATUS.no_caretaker).toBe(409);
+    expect(CIRCLE_ERROR_STATUS.help_closed).toBe(409);
+    ok(CircleErrorSchema, { error: { code: "help_closed", message: "Closed.", trace_id: "t", help: { ...open, closed: { how: "okay", by_name: "Rose" } } } });
+  });
+
+  it("joins names the way the walker says them", () => {
+    expect(helpNames(["Maya"])).toBe("Maya");
+    expect(helpNames(["Maya", "Sam"])).toBe("Maya and Sam");
+    expect(helpNames(["Maya", "Sam", "Lee"])).toBe("Maya, Sam and Lee");
+  });
+
+  it("draws help on the walker screen with no touch control", () => {
+    const state = (screen: unknown) => ({
+      v: 1,
+      revision: 3,
+      screen,
+      settings: { ...settings, pending_local: false },
+      strip: { link: "online", simulator: false, bench_mode: false, clock: null },
+    });
+    ok(ScreenStateSchema, state({ state: "help_hold" }));
+    ok(ScreenStateSchema, state({ state: "help_countdown", seconds_left: HELP_COUNTDOWN_MS / 1_000 }));
+    bad(ScreenStateSchema, state({ state: "help_countdown", seconds_left: 0 }));
+    bad(ScreenStateSchema, state({ state: "help_countdown", seconds_left: HELP_COUNTDOWN_MS / 1_000 + 1 }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "sending", retrying: true } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "not_sent", why: "no_caretaker" } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "open", told: ["Maya"], coming: ["Maya"], confirm_okay: true } }));
+    bad(ScreenStateSchema, state({ state: "help", help: { phase: "open", told: [], coming: [], confirm_okay: false } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya" } }));
+    expect(ScreenActionSchema.options.some((a) => /help|okay/.test(a))).toBe(false);
   });
 });
