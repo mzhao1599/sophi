@@ -9,7 +9,7 @@ import type { LiftSerialMessage } from "@walker/contracts";
 
 type PiCommand = Extract<
   LiftSerialMessage,
-  { type: "lift.heartbeat" | "lift.home" | "lift.move" | "lift.stop" | "lift.enable" | "lift.clear" }
+  { type: "lift.heartbeat" | "lift.home" | "lift.move" | "lift.set_position" | "lift.stop" | "lift.enable" | "lift.clear" }
 >;
 type WithoutEnvelope<T> = T extends unknown ? Omit<T, "v" | "seq"> : never;
 /** A Pi → lift line before the port stamps its `v` and `seq`. (`hello.request` goes through `requestHello`.) */

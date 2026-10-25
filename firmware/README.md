@@ -159,7 +159,7 @@ The build stops if a name isn't snake_case, is over 24 characters, or repeats an
 
 ## One-off lift position reseed
 
-**No-switch demo only.** Support the carriage independently and turn the driver's 12 V off before reseeding. With the walker service stopped, build `WALKER_MODULE_ID=lift-01 WALKER_LIFT_REBASE_MM=<reference-mm> pio run -e lift_tof_rebase`, where the chosen reference is from 5 to 950 mm. Flash that image to the identified combined board, then restore the normal `lift_tof_demo` image before restarting the service. The temporary image writes `valid=false`, the new step count, then `valid=true` in NVS; a write failure leaves the estimate unusable. Check `walker lift status` reports the chosen reference after restoring normal firmware. On 2026-10-25 this process first reseeded 650 mm and later designated the current pose as 100 mm; the Pi reported `ready` at 100.0 mm after the normal image was restored. This is a software reference, not a measured distance from the bottom or a measurement of remaining physical travel. The 5–950 mm software range does not establish physical clearance after an arbitrary rebase. Never run the service with the reseed image installed: it would overwrite the estimate again on each boot.
+**No-switch demo only.** Support the carriage independently and turn the driver's 12 V off before reseeding. With the walker service stopped, build `WALKER_MODULE_ID=lift-01 WALKER_LIFT_REBASE_MM=<reference-mm> pio run -e lift_tof_rebase`, where the chosen reference is from 5 to 950 mm. Flash that image to the identified combined board, then restore the normal `lift_tof_demo` image before restarting the service. The temporary image writes `valid=false`, the new step count, then `valid=true` in NVS; a write failure leaves the estimate unusable. Check `walker lift status` reports the chosen reference after restoring normal firmware. On 2026-10-25 this process reseeded 650 mm, then temporarily 100 mm, then **650 mm** again after the owner corrected the current-pose estimate. The last 650 mm write and restoration of the normal 32-microstep image both passed flash verification; a read-only serial status reported 650.0 mm. This is a software reference, not a measured distance from the bottom or a measurement of remaining physical travel. The 5–950 mm software range does not establish physical clearance after an arbitrary rebase. Never run the service with the reseed image installed: it would overwrite the estimate again on each boot.
 
 ## Supervised lift jog image
 
@@ -218,7 +218,7 @@ The stop is a physical switch that works without the ESP32, the Pi or the cloud:
 
 ### Driver settings (DIP switches) to start with
 
-- **Microsteps: 8** (1,600 pulses a turn, so 320 steps per mm). On the common TB6600 label that is S1 OFF, S2 ON, S3 OFF, but **use the table printed on this unit**. The firmware must be built with the same number (`WALKER_LIFT_MICROSTEPS`), or every height is wrong; `lift.hello` reports it so the Pi can refuse a mismatch.
+- **Current demo calibration:** the image reports 32 microsteps. The owner measured 350 mm of upward travel for a spoken 100 mm upward request with that image. `lift_tof_demo` now multiplies the nominal 1,280 pulses/mm by **2/7**, yielding about 365.7 pulses/mm. The same ratio applies to speed and acceleration. This corrects the measured 3.5× travel error; recheck it with a short observed move. The driver DIP table is still unverified. `lift.hello` reports the microstep setting, while this demo-only calibration is documented here and compiled into the image.
 - **Current:** the lowest setting on the unit's printed table that still lifts the measured load, and never above the motor's 2.0 A. For the decoupled bench steps below, start at the lowest setting. Record it (`driver_current_setting`). The lift's computed thrust is a crushing force (motion.ts), which is why the current stays low and pinch guards are required.
 
 ### Build settings
@@ -227,10 +227,11 @@ Set in `[env:lift]` in `platformio.ini` (or as `-D` flags); the build stops on a
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `WALKER_LIFT_MICROSTEPS` | 8 | The driver's microstep DIP setting: 1, 2, 4, 8, 16 or 32. |
+| `WALKER_LIFT_MICROSTEPS` | 32 | Inferred from the observed fourfold distance mismatch; valid values are 1, 2, 4, 8, 16 or 32. Confirm with a measured short move. |
+| `WALKER_LIFT_SCALE_NUMERATOR` / `WALKER_LIFT_SCALE_DENOMINATOR` | 2 / 7 in `lift_demo`, 1 / 1 otherwise | Multiplies the nominal pulses per mm. The demo value comes from the owner's 100 mm command → 350 mm measured travel. Existing NVS step counts are converted at boot to preserve their software position reference. |
 | `WALKER_LIFT_ENA_ENABLE_LEVEL` | 0 | The GPIO26 level that leaves the driver **enabled** (holding). 0 suits a driver whose ENA is an active-disable input, the usual TB6600: a resetting ESP32 (pin floating) then leaves it holding. Check it (below). If the unit only holds with current through ENA, **rewire, don't rebuild**: an inverter, or a pull-up that keeps ENA enabled while the pin floats. Level 1 builds only together with `WALKER_LIFT_HW_INVERTER=1`, which says that hardware is fitted. |
 | `WALKER_LIFT_HW_INVERTER` | 0 | 1 only when ENA is wired through an inverter or pull-up as above; allows `WALKER_LIFT_ENA_ENABLE_LEVEL=1`. |
-| `WALKER_LIFT_DIR_UP_LEVEL` | 1 | GPIO25 (DIR+) level expected to move the carriage **up** on the current wiring. A commanded 650 → 550 mm move physically raised the carriage to the owner's measured 750 mm with level 0 configured. Recheck a short move after flashing before longer travel. |
+| `WALKER_LIFT_DIR_UP_LEVEL` | 1 | GPIO25 (DIR+) level observed moving the carriage **up** when the owner asked for an upward move. The prior level 0 made a downward request physically move up. |
 | `WALKER_LIFT_STOP_SENSE` | 1 | 1: the stop's second contact is wired to GPIO13. 0 only on a bench without it: `lift.hello` then says `not_wired`, and the Pi refuses motion outside bench mode. |
 | `WALKER_LIFT_DISABLE_SAFE` | 0 | 1 lets `lift.enable` `false` free the motor away from the bottom switch. Set it only after the drop test passed and is recorded in hardware/current-build.md, or with a brake fitted. |
 

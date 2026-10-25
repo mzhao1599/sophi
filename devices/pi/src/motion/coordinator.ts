@@ -968,6 +968,15 @@ export class MotionCoordinator {
     return { ok: true };
   }
 
+  /** A completed local Talk request relabels the stopped demo lift; the ESP32 sends no steps. */
+  async resetSpokenLiftPosition(positionMm: number): Promise<{ ok: true } | { ok: false; refusal: MotionRefusal }> {
+    if (this.stopped || !this.lift) return { ok: false, refusal: "part_missing" };
+    if (this.active || this.pending || this.commandBusy) return { ok: false, refusal: "busy" };
+    const result = await this.lift.resetPosition(positionMm, this.mono());
+    if (result.ok) this.publish(true);
+    return result;
+  }
+
   /** The screen Stop button is effective only for the lift started by Talk. */
   stopSpokenLift(): boolean {
     if (this.active?.kind !== "lift" || !("initiated_by" in this.active.command)) return false;

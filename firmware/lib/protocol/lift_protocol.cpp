@@ -20,7 +20,8 @@ const LiftTypeName kLiftTypeNames[] = {
     {"lift.hello", LiftMessageType::LiftHello},       {"lift.status", LiftMessageType::LiftStatus},
     {"lift.done", LiftMessageType::LiftDone},         {"lift.ack", LiftMessageType::LiftAck},
     {"lift.heartbeat", LiftMessageType::Heartbeat},   {"lift.home", LiftMessageType::Home},
-    {"lift.move", LiftMessageType::Move},             {"lift.stop", LiftMessageType::Stop},
+    {"lift.move", LiftMessageType::Move},             {"lift.set_position", LiftMessageType::SetPosition},
+    {"lift.stop", LiftMessageType::Stop},
     {"lift.enable", LiftMessageType::Enable},         {"lift.clear", LiftMessageType::Clear},
 };
 
@@ -68,21 +69,22 @@ Problem readCommand(const Fields& fields, LiftPiLine* line) {
   }
   uint16_t allowed = kEnvelope | bit(kRequestId);
   if (line->type == LiftMessageType::Move) allowed |= bit(kTargetMm) | bit(kSpeedMmS);
+  if (line->type == LiftMessageType::SetPosition) allowed |= bit(kTargetMm);
   if (line->type == LiftMessageType::Enable) allowed |= bit(kEnabled);
   if (!readLiftEnvelope(fields, allowed, true, line) || !line->has_request_id) return Problem::InvalidField;
 
-  if (line->type == LiftMessageType::Move) {
+  if (line->type == LiftMessageType::Move || line->type == LiftMessageType::SetPosition) {
     double target = 0;
-    double speed = 0;
     // z.number().min(0).max(1000) and z.number().positive().max(50).
     if (!readFinite(fields.values[kTargetMm], &target) || !(target >= 0) || target > kLiftRailLengthMm) {
       return Problem::InvalidField;
     }
-    if (!readFinite(fields.values[kSpeedMmS], &speed) || !(speed > 0) || speed > kLiftSpeedCeilingMmS) {
-      return Problem::InvalidField;
-    }
     line->target_mm = target == 0 ? 0 : target;  // -0 reads as 0
-    line->speed_mm_s = speed;
+    if (line->type == LiftMessageType::Move) {
+      double speed = 0;
+      if (!readFinite(fields.values[kSpeedMmS], &speed) || !(speed > 0) || speed > kLiftSpeedCeilingMmS) return Problem::InvalidField;
+      line->speed_mm_s = speed;
+    }
   }
   if (line->type == LiftMessageType::Enable) {
     const Kind kind = fields.values[kEnabled].kind;
@@ -150,6 +152,7 @@ LiftPiLine parseLiftPiLine(const char* line, size_t length) {
       break;
     case LiftMessageType::Home:
     case LiftMessageType::Move:
+    case LiftMessageType::SetPosition:
     case LiftMessageType::Stop:
     case LiftMessageType::Enable:
     case LiftMessageType::Clear:

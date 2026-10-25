@@ -268,6 +268,8 @@ export const LiftMoveSchema = z.strictObject({
   target_mm: height,
   speed_mm_s: z.number().positive().max(LIFT_SPEED_CEILING_MM_S),
 });
+/** Pi → lift: relabel the stopped demo lift position; no steps are sent. Local Talk request only. */
+export const LiftSetPositionSchema = z.strictObject({ ...command, type: z.literal("lift.set_position"), target_mm: height });
 /** Pi → lift: stop now (ramp down at LIFT_STOP_DECEL_MM_S2) and hold. Always accepted (rule 6). */
 export const LiftStopSchema = z.strictObject({ ...command, type: z.literal("lift.stop") });
 /** Pi → lift: driver enable on (holds the carriage) or off (frees it and clears homed; always accepted, rule 6). */
@@ -286,6 +288,7 @@ export const LiftSerialMessageSchema = z.discriminatedUnion("type", [
   LiftHeartbeatSchema,
   LiftHomeSchema,
   LiftMoveSchema,
+  LiftSetPositionSchema,
   LiftStopSchema,
   LiftEnableSchema,
   LiftClearSchema,
@@ -306,7 +309,7 @@ export const LIFT_SERIAL_MESSAGE_TYPES = LiftSerialMessageSchema.options.map((o)
 /** The lift's own types (all but the shared `hello.request` and `error`). */
 export const LIFT_ONLY_MESSAGE_TYPES = LIFT_SERIAL_MESSAGE_TYPES.filter((t) => t.startsWith("lift."));
 /** Lines the Pi sends to the lift; the rest come from the lift (`error` goes either way). */
-export const LIFT_PI_MESSAGE_TYPES = ["hello.request", "lift.heartbeat", "lift.home", "lift.move", "lift.stop", "lift.enable", "lift.clear"] as const;
+export const LIFT_PI_MESSAGE_TYPES = ["hello.request", "lift.heartbeat", "lift.home", "lift.move", "lift.set_position", "lift.stop", "lift.enable", "lift.clear"] as const;
 
 const knownTypes = new Set<string>(LIFT_SERIAL_MESSAGE_TYPES);
 const utf8 = new TextEncoder();

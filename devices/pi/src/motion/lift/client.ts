@@ -170,6 +170,7 @@ export class LiftClient implements LiftLineHandler {
   private holdAt: number | null = null;
   private holdReleasedAt = -Infinity;
   private request: Request | null = null;
+  private positionReset: { id: string; target: number; sentAt: number | null; resolve: (result: { ok: true } | { ok: false; refusal: MotionRefusal }) => void } | null = null;
   /** Lines to write before the next heartbeat (stops first). */
   private outbox: Array<{ id: string; line: LiftPiLine; kind: Awaiting["kind"]; tries: number }> = [];
   private awaiting = new Map<string, Awaiting>();
@@ -244,8 +245,35 @@ export class LiftClient implements LiftLineHandler {
     return { ok: true, requestId: id };
   }
 
+  /** Explicit local Talk request: relabel the stopped demo lift without sending motor steps. */
+  resetPosition(target: number, now: number): Promise<{ ok: true } | { ok: false; refusal: MotionRefusal }> {
+    const view = this.view(now);
+    const status = this.status;
+    if (!Number.isFinite(target) || target < view.config.soft_min_mm || target > view.config.soft_max_mm)
+      return Promise.resolve({ ok: false, refusal: "out_of_range" });
+    if (!this.deps.unswitchedLiftDemo || !view.heard || !view.fresh || !this.link)
+      return Promise.resolve({ ok: false, refusal: "part_missing" });
+    if (view.configOk !== true || view.liftFaults.length > 0) return Promise.resolve({ ok: false, refusal: "fault_latched" });
+    if (view.busy || this.positionReset || this.outbox.length > 0 || this.awaiting.size > 0 ||
+        !status || (status.state !== "idle" && status.state !== "unhomed"))
+      return Promise.resolve({ ok: false, refusal: "busy" });
+    if (view.statusStop === "pressed") return Promise.resolve({ ok: false, refusal: "stop_pressed" });
+    return new Promise((resolve) => {
+      this.positionReset = { id: this.nextId(), target, sentAt: null, resolve };
+      this.write(now);
+    });
+  }
+
+  private finishPositionReset(result: { ok: true } | { ok: false; refusal: MotionRefusal }): void {
+    const reset = this.positionReset;
+    if (!reset) return;
+    this.positionReset = null;
+    reset.resolve(result);
+  }
+
   /** Stops the lift now: `lift.stop` (always accepted, rule 6). Any running request is never named again. */
   stop(): boolean {
+    this.finishPositionReset({ ok: false, refusal: "busy" });
     const request = this.request;
     if (request) {
       request.released = true;
@@ -310,6 +338,9 @@ export class LiftClient implements LiftLineHandler {
         this.end(request, "no_ack");
       }
     }
+    if (this.positionReset?.sentAt !== null && this.positionReset?.sentAt !== undefined &&
+        nowMono - this.positionReset.sentAt >= LIFT_ACK_TIMEOUT_MS)
+      this.finishPositionReset({ ok: false, refusal: "feedback_stale" });
     this.checkAwaiting(nowMono);
     this.write(nowMono);
   }
@@ -415,6 +446,7 @@ export class LiftClient implements LiftLineHandler {
   liftPortClosed(link: LiftPortLink, reason: string): void {
     if (link !== this.link) return;
     this.deps.log.warn("lift port closed", { port: link.portId, reason });
+    this.finishPositionReset({ ok: false, refusal: "part_missing" });
     this.loseLift("port closed");
     this.link = null;
   }
@@ -495,6 +527,16 @@ export class LiftClient implements LiftLineHandler {
   }
 
   private onAck(ack: Ack): void {
+    if (this.positionReset?.id === ack.request_id) {
+      const reset = this.positionReset;
+      const reported = this.status;
+      this.finishPositionReset(ack.result === "accepted" && reported?.homed === true &&
+        reported.state === "idle" && reported.position_mm !== null &&
+        Math.abs(reported.position_mm - reset.target) < 0.01
+        ? { ok: true }
+        : { ok: false, refusal: ack.reason === "out_of_range" ? "out_of_range" : "feedback_stale" });
+      return;
+    }
     const request = this.request;
     if (request && ack.request_id === request.id) {
       if (ack.result === "accepted") {
@@ -557,6 +599,7 @@ export class LiftClient implements LiftLineHandler {
 
   private liftRebooted(helloLost: boolean): void {
     this.deps.log.warn("the lift restarted", { hello_seen: !helloLost });
+    this.finishPositionReset({ ok: false, refusal: "part_missing" });
     if (this.piHomed) this.emit({ type: "fault", code: "lift_unhomed" });
     this.piHomed = false;
     this.knownFaults.clear();
@@ -578,6 +621,7 @@ export class LiftClient implements LiftLineHandler {
       this.connectedReported = false;
       this.emit({ type: "link", connected: false });
     }
+    this.finishPositionReset({ ok: false, refusal: "part_missing" });
     if (this.request) {
       this.stop(); // best effort: the link may be one-way
       if (this.request) this.end(this.request, "lost");
@@ -606,7 +650,7 @@ export class LiftClient implements LiftLineHandler {
       liftStopSense: this.hello?.stop_sense ?? null,
       statusStop: status?.stop_sense ?? null,
       liftFaults: status ? status.faults : [],
-      busy: this.request !== null || (status !== null && MOVING_STATES.has(status.state)),
+      busy: this.request !== null || this.positionReset !== null || (status !== null && MOVING_STATES.has(status.state)),
       homed: this.piHomed && status?.homed === true,
       bottomPressed: status?.limits.bottom === "pressed",
       held: this.holdFresh(now),
@@ -695,8 +739,14 @@ export class LiftClient implements LiftLineHandler {
         );
       }
     }
+    const reset = this.positionReset;
+    if (reset && reset.sentAt === null && !request && this.canHeartbeat()) {
+      lines.push({ type: "lift.heartbeat", module_id: this.moduleId, hold_request_id: reset.id });
+      lines.push({ type: "lift.set_position", module_id: this.moduleId, request_id: reset.id, target_mm: reset.target });
+    }
     if (lines.length === 0) return;
-    if (!this.link.send(lines)) return; // busy or closed: everything waits for the next tick
+    if (!this.link.send(lines)) return;
+    if (reset && reset.sentAt === null) reset.sentAt = now; // busy or closed: everything waits for the next tick
     this.sent(this.outbox.splice(0), now);
     if (enableId) this.awaiting.set(enableId, { kind: "enable_on", writtenAt: now, tries: 0 });
     if (heartbeat) {

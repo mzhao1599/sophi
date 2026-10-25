@@ -25,6 +25,31 @@ constexpr bool isMicrostepSetting(uint32_t m) { return m == 1 || m == 2 || m == 
 constexpr uint32_t stepsPerMm(uint32_t microsteps) { return kFullStepsPerTurn * microsteps / kScrewLeadMm; }
 static_assert(kFullStepsPerTurn % kScrewLeadMm == 0, "steps per mm must be a whole number");
 
+// Demo calibration is a ratio of commanded steps to the nominal screw calculation. The driver's
+// actual DIP setting is not marked; keep its reported microstep setting separate from this ratio.
+constexpr int64_t roundedDivide(int64_t numerator, int64_t denominator) {
+  return numerator >= 0 ? (numerator + denominator / 2) / denominator
+                        : -((-numerator + denominator / 2) / denominator);
+}
+
+constexpr int64_t calibratedMilliMmToSteps(int64_t milliMm, uint32_t microsteps, uint32_t numerator,
+                                            uint32_t denominator) {
+  return roundedDivide(milliMm * static_cast<int64_t>(stepsPerMm(microsteps)) * numerator,
+                       1000 * static_cast<int64_t>(denominator));
+}
+
+constexpr int64_t calibratedStepsToMilliMm(int64_t steps, uint32_t microsteps, uint32_t numerator,
+                                            uint32_t denominator) {
+  return roundedDivide(steps * 1000 * static_cast<int64_t>(denominator),
+                       static_cast<int64_t>(stepsPerMm(microsteps)) * numerator);
+}
+
+constexpr uint32_t calibratedMilliToStepRate(uint32_t milli, uint32_t microsteps, uint32_t numerator,
+                                               uint32_t denominator) {
+  return static_cast<uint32_t>(roundedDivide(static_cast<int64_t>(milli) * stepsPerMm(microsteps) * numerator,
+                                              1000 * static_cast<int64_t>(denominator)));
+}
+
 // Thousandths of a millimetre to the nearest step.
 constexpr int64_t milliMmToSteps(int64_t milliMm, uint32_t microsteps) {
   const int64_t scaled = milliMm * static_cast<int64_t>(stepsPerMm(microsteps));

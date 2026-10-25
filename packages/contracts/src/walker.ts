@@ -600,7 +600,7 @@ export const WalkerTurnResponseSchema = z
     /** Results already gathered in this unfinished turn; the Pi returns them with the next tool result. */
     tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
     /** A bounded lift offer, delivered only on a newly saved device turn. The Pi may refuse it. */
-    motion_offer: z.union([z.strictObject({ preset: LiftPresetSchema }), z.strictObject({ delta_mm: LiftRelativeMmSchema })]).optional(),
+    motion_offer: z.union([z.strictObject({ preset: LiftPresetSchema }), z.strictObject({ delta_mm: LiftRelativeMmSchema }), z.strictObject({ reference_mm: z.number().min(5).max(950) })]).optional(),
     /** A draft only. The Pi reads this back and requires a fresh Confirm press before POSTing it. */
     message_offer: z.strictObject({ client_message_id: id, to_member_id: id, to_name: z.string().trim().min(1).max(12), text: z.string().trim().min(1).max(30).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u) }).optional(),
     /**

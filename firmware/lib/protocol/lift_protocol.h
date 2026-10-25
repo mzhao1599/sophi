@@ -52,6 +52,7 @@ enum class LiftMessageType : uint8_t {
   Heartbeat,
   Home,
   Move,
+  SetPosition,
   Stop,
   Enable,
   Clear,
@@ -76,7 +77,7 @@ struct LiftPiLine {
   // so the rejection can be acked against it.
   bool has_request_id = false;
   char request_id[kMaxRequestIdLength + 1] = {};
-  // lift.move only, set when valid.
+  // lift.move and lift.set_position target, set when valid.
   double target_mm = 0;
   double speed_mm_s = 0;
   // lift.enable only, set when valid.

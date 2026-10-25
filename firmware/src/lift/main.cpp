@@ -172,6 +172,16 @@ void pumpCombinedSerial(uint32_t now) {
 }
 #endif
 
+bool saveDemoPosition(int32_t steps) {
+  if (!positionStoreOpen || positionStore.putBool("valid", false) != 1) return false;
+  const bool saved = positionStore.putInt("steps", steps) == sizeof(steps) &&
+                     positionStore.putUInt("scale_num", build::kSettings.scale_numerator) == sizeof(uint32_t) &&
+                     positionStore.putUInt("scale_den", build::kSettings.scale_denominator) == sizeof(uint32_t) &&
+                     positionStore.putBool("valid", true) == 1;
+  if (saved) positionDirty = false;
+  return saved;
+}
+
 volatile bool stopTripped = false;
 
 void IRAM_ATTR onStopEdge() { stopTripped = true; }
@@ -218,7 +228,7 @@ void setup() {
   motor.attach(stepper);
 
   static walker::lift::LiftCore lift({WALKER_MODULE_ID, board::kFirmwareVersion}, build::kSettings, output, motor,
-                                     !build::kEstimatedDemo);
+                                     !build::kEstimatedDemo, build::kEstimatedDemo ? saveDemoPosition : nullptr);
   core = &lift;
   core->begin(millis(), bottomPressed(), topPressed(), stopSense());
 #if WALKER_LIFT_WITH_TOF
@@ -240,19 +250,34 @@ void setup() {
     static_assert(WALKER_LIFT_REBASE_MM >= 5 && WALKER_LIFT_REBASE_MM <= 950,
                   "rebase height must fit this demo build's software range");
     if (positionStoreOpen) {
-      const int32_t rebaseSteps = static_cast<int32_t>(walker::lift::milliMmToSteps(
-          static_cast<int64_t>(WALKER_LIFT_REBASE_MM) * 1000, build::kSettings.microsteps));
-      positionStoreOpen = positionStore.putBool("valid", false) == 1 &&
-                          positionStore.putInt("steps", rebaseSteps) == sizeof(rebaseSteps) &&
-                          positionStore.putBool("valid", true) == 1;
+      const int32_t rebaseSteps = static_cast<int32_t>(walker::lift::calibratedMilliMmToSteps(
+          static_cast<int64_t>(WALKER_LIFT_REBASE_MM) * 1000, build::kSettings.microsteps,
+          build::kSettings.scale_numerator, build::kSettings.scale_denominator));
+      positionStoreOpen = saveDemoPosition(rebaseSteps);
       Serial.println(positionStoreOpen ? "LIFT_REBASE_SAVED" : "LIFT_REBASE_FAILED");
     }
 #endif
     if (positionStoreOpen && !positionStore.isKey("steps")) {
       // shortcut: this one-time origin is the owner-confirmed 5 mm physical position; recheck it if the lift is moved by hand.
-      const int32_t initialSteps = static_cast<int32_t>(walker::lift::milliMmToSteps(5000, build::kSettings.microsteps));
-      positionStoreOpen = positionStore.putInt("steps", initialSteps) == sizeof(initialSteps) &&
-                          positionStore.putBool("valid", true) == 1;
+      const int32_t initialSteps = static_cast<int32_t>(walker::lift::calibratedMilliMmToSteps(
+          5000, build::kSettings.microsteps, build::kSettings.scale_numerator, build::kSettings.scale_denominator));
+      positionStoreOpen = saveDemoPosition(initialSteps);
+    }
+    if (positionStoreOpen && positionStore.getBool("valid", false)) {
+      // Translate the saved count when a calibration changes. Preserve the software position reference;
+      // this does not assert that it equals the carriage's physical height.
+      const uint32_t oldNum = positionStore.getUInt("scale_num", 1);
+      const uint32_t oldDen = positionStore.getUInt("scale_den", 1);
+      if (oldNum < 1 || oldNum > 16 || oldDen < 1 || oldDen > 16) {
+        positionStoreOpen = positionStore.putBool("valid", false) == 1;
+      } else if (oldNum != build::kSettings.scale_numerator || oldDen != build::kSettings.scale_denominator) {
+        const int64_t oldMilli = walker::lift::calibratedStepsToMilliMm(
+            positionStore.getInt("steps", -1), build::kSettings.microsteps, oldNum, oldDen);
+        const int32_t converted = static_cast<int32_t>(walker::lift::calibratedMilliMmToSteps(
+            oldMilli, build::kSettings.microsteps, build::kSettings.scale_numerator,
+            build::kSettings.scale_denominator));
+        positionStoreOpen = saveDemoPosition(converted);
+      }
     }
     if (positionStoreOpen && positionStore.getBool("valid", false)) {
       core->assumePosition(positionStore.getInt("steps", -1), millis());

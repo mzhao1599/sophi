@@ -69,13 +69,16 @@ struct LiftSettings {
   // Rule 6: lift.enable false may free the motor away from the bottom switch (WALKER_LIFT_DISABLE_SAFE, set
   // only after a recorded passed drop test or with a brake fitted).
   bool disable_safe;
+  uint32_t scale_numerator = 1;
+  uint32_t scale_denominator = 1;
 };
 
 // The checks LiftConfigSchema makes, plus: the stop ramp is at least as steep as a move's, so a stop never
 // runs past a move's own target; home (LIFT_HOMING_BACKOFF_MM) is inside the soft limits. Usable in a
 // static_assert.
 constexpr bool settingsValid(const LiftSettings& s) {
-  return isMicrostepSetting(s.microsteps) && s.soft_min_milli_mm < s.soft_max_milli_mm &&
+  return isMicrostepSetting(s.microsteps) && s.scale_numerator >= 1 && s.scale_numerator <= 16 &&
+         s.scale_denominator >= 1 && s.scale_denominator <= 16 && s.soft_min_milli_mm < s.soft_max_milli_mm &&
          s.soft_max_milli_mm <= kRailLengthMm * 1000 && s.max_speed_milli_mm_s > 0 &&
          s.max_speed_milli_mm_s <= kSpeedCeilingMmS * 1000 && s.max_accel_milli_mm_s2 > 0 &&
          s.max_accel_milli_mm_s2 <= kAccelCeilingMmS2 * 1000 && s.max_accel_milli_mm_s2 <= kStopDecelMilliMmS2 &&
@@ -111,8 +114,9 @@ struct LiftIdentity {
 
 class LiftCore {
  public:
+  using PositionSaver = bool (*)(int32_t steps);
   LiftCore(const LiftIdentity& identity, const LiftSettings& settings, LineOutput& output, StepperPort& stepper,
-           bool allowHoming = true);
+           bool allowHoming = true, PositionSaver savePosition = nullptr);
 
   // Rule 1: not stepping, unhomed, no fault, driver enabled (holding); then lift.hello (seq 0) and a status.
   // `stop` is the stop-sense reading: Pressed if it read pressed at any moment since the last call (the
@@ -148,6 +152,7 @@ class LiftCore {
   void heartbeat(const LiftPiLine& line, uint32_t now);
   LiftRefusal motionRefusal(const LiftPiLine& command, uint32_t now) const;
   void commandMove(const LiftPiLine& command, uint32_t now);
+  void commandSetPosition(const LiftPiLine& command, uint32_t now);
   void commandHome(const LiftPiLine& command, uint32_t now);
   void commandStop(const LiftPiLine& command, uint32_t now);
   void commandEnable(const LiftPiLine& command, uint32_t now);
@@ -183,12 +188,13 @@ class LiftCore {
 
   LiftStatusLine snapshot(uint32_t now) const;
   uint32_t positionMilliMm() const;
-  int32_t steps(int64_t milliMm) const { return static_cast<int32_t>(milliMmToSteps(milliMm, settings_.microsteps)); }
-  uint32_t rate(uint32_t milli) const { return milliToStepRate(milli, settings_.microsteps); }
+  int32_t steps(int64_t milliMm) const { return static_cast<int32_t>(calibratedMilliMmToSteps(milliMm, settings_.microsteps, settings_.scale_numerator, settings_.scale_denominator)); }
+  uint32_t rate(uint32_t milli) const { return calibratedMilliToStepRate(milli, settings_.microsteps, settings_.scale_numerator, settings_.scale_denominator); }
 
   const LiftIdentity identity_;
   const LiftSettings settings_;
   const bool allowHoming_;
+  const PositionSaver savePosition_;
   LineOutput& output_;
   StepperPort& stepper_;
   LineReader reader_;

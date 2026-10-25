@@ -386,7 +386,7 @@ Firmware sends a hello on boot and on each `hello.request`, then heartbeat/healt
 
 ## Pi ↔ lift ESP32 USB serial (proposed)
 
-**Proposed; the lift firmware is written, not run on hardware:** the lift ESP32 firmware ([`firmware/`](../firmware/README.md#lift-board), env `lift`) implements these lines and is tested on a computer only. The Pi's lift client ([`devices/pi/src/motion/lift/`](../devices/pi/src/motion/lift/README.md)) is written, driven by the Pi's motion coordinator, and tested only against a simulated lift. Every timing is a placeholder. Where to find the details:
+The no-switch `lift_tof_demo` firmware has run on the walker; the switched production `lift` configuration remains unverified on hardware. The Pi client is in use with the demo. See [current build](../hardware/current-build.md) for the measured travel and present limitations. Where to find the details:
 
 - the schemas and the firmware's exact rules (numbered 1 to 10 in its header): [`lift-serial.ts`](../packages/contracts/src/lift-serial.ts)
 - the limits: [`motion.ts`](../packages/contracts/src/motion.ts)
@@ -435,6 +435,7 @@ Example lines (from the fixtures, not captured from a board):
 - **`lift.heartbeat`**, every `LIFT_HEARTBEAT_INTERVAL_MS` (100 ms), from the motion coordinator's control loop. Its `hold_request_id` is the request a person at the walker is holding the screen's hold control for, or null when nobody is.
 - **Commands:**
   - `lift.home` and `lift.move` (`target_mm` from 0 to 1000, `speed_mm_s` up to 50)
+  - `lift.set_position` (`target_mm` from 5 to 950 on this demo): only after an explicit local Talk request to set the **current position reference**. It sends no motor steps. The Pi first verifies the stopped demo lift; the firmware requires a fresh heartbeat naming the request, no activity or fault, and an in-range value. It journals the new count before acknowledging it. It is not a homing measurement and cannot recover physical clearance after lost steps.
   - `lift.stop`
   - `lift.enable`
   - `lift.clear`, sent only for a confirmed local `fault.clear`

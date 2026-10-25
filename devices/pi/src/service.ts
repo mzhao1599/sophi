@@ -98,6 +98,7 @@ export interface ServiceDeps {
     helpActive?(active: boolean): void;
     requestOffer?(raw: unknown): unknown | null;
     startSpokenLift?(raw: unknown): { ok: true } | { ok: false; refusal: string };
+    resetSpokenLiftPosition?(positionMm: number): Promise<{ ok: true } | { ok: false; refusal: string }>;
     stopSpokenLift?(): boolean;
   };
   newId?: () => string;
@@ -725,6 +726,13 @@ export class WalkerService {
       });
       if (reply.motion_offer) {
         const offer = reply.motion_offer;
+        if ("reference_mm" in offer) {
+          const result = await this.deps.motion?.resetSpokenLiftPosition?.(offer.reference_mm);
+          await this.sayAnswer(reply.turn.heard, result?.ok
+            ? `Lift position set to ${offer.reference_mm} millimeters.`
+            : "I couldn't reset the lift position while it is moving or unavailable.", "fixed", "reply");
+          return;
+        }
         const result = this.deps.motion?.startSpokenLift?.({ target: "preset" in offer
           ? { kind: "lift.preset", preset: offer.preset }
           : { kind: "lift.relative", delta_mm: offer.delta_mm } });

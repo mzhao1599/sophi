@@ -10,9 +10,16 @@
 
 // ---- Build settings (platformio.ini [env:lift], or WALKER_LIFT_* flags; see firmware/README.md) ----
 
-// The TB6600's microstep DIP setting. Must match the switches on the driver, or every height is wrong.
+// Inferred from an approximately 4:1 commanded-to-actual travel mismatch with 8 configured.
+// Confirm against a measured short move; the driver's DIP table has not been verified.
 #ifndef WALKER_LIFT_MICROSTEPS
-#define WALKER_LIFT_MICROSTEPS 8
+#define WALKER_LIFT_MICROSTEPS 32
+#endif
+#ifndef WALKER_LIFT_SCALE_NUMERATOR
+#define WALKER_LIFT_SCALE_NUMERATOR 1
+#endif
+#ifndef WALKER_LIFT_SCALE_DENOMINATOR
+#define WALKER_LIFT_SCALE_DENOMINATOR 1
 #endif
 // The GPIO level on ENA+ that leaves the driver ENABLED (holding). Most TB6600-type drivers treat current
 // through the ENA opto as "disable" (free the motor), so with ENA- to GND the default 0 (LOW, no current)
@@ -27,8 +34,8 @@
 #define WALKER_LIFT_HW_INVERTER 0
 #endif
 // The GPIO level on DIR+ expected to move the carriage UP. On 2026-10-25 a commanded 650 -> 550 mm move
-// physically raised the assembled carriage to 750 mm with level 0 configured, so this wiring needs level 1.
-// Recheck with a short observed move after reflashing; there is no physical height sensor.
+// physically raised the assembled carriage to 750 mm with level 0 configured. With level 1, an
+// owner-commanded upward move physically went up. There is no physical height sensor.
 #ifndef WALKER_LIFT_DIR_UP_LEVEL
 #define WALKER_LIFT_DIR_UP_LEVEL 1
 #endif
@@ -97,7 +104,8 @@ constexpr bool kEstimatedDemo = WALKER_LIFT_ESTIMATED_DEMO == 1;
 // soft limits 5 to 600 mm, 20 mm/s and 50 mm/s² (MOTION_LIMITS.normal), top switch position unmeasured.
 constexpr LiftSettings kSettings{WALKER_LIFT_MICROSTEPS, 5000, kEstimatedDemo ? 950000u : 600000u,
                                  kEstimatedDemo ? 10000u : 20000u, kEstimatedDemo ? 25000u : 50000u, false, 0,
-                                 WatchdogDriverAction::Hold, kStopSenseWired, kDisableSafe};
+                                 WatchdogDriverAction::Hold, kStopSenseWired, kDisableSafe,
+                                 WALKER_LIFT_SCALE_NUMERATOR, WALKER_LIFT_SCALE_DENOMINATOR};
 static_assert(settingsValid(kSettings), "the lift's built-in limits break the contract");
 
 }  // namespace build

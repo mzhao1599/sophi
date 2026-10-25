@@ -9,7 +9,7 @@ namespace {
 
 bool isCommand(LiftMessageType type) {
   return type == LiftMessageType::Home || type == LiftMessageType::Move || type == LiftMessageType::Stop ||
-         type == LiftMessageType::Enable || type == LiftMessageType::Clear;
+         type == LiftMessageType::Enable || type == LiftMessageType::Clear || type == LiftMessageType::SetPosition;
 }
 
 void copyId(char* out, const char* in) {
@@ -29,8 +29,8 @@ bool sameStatus(const LiftStatusLine& a, const LiftStatusLine& b, bool aRequest,
 }  // namespace
 
 LiftCore::LiftCore(const LiftIdentity& identity, const LiftSettings& settings, LineOutput& output, StepperPort& stepper,
-                   bool allowHoming)
-    : identity_(identity), settings_(settings), allowHoming_(allowHoming), output_(output), stepper_(stepper) {}
+                   bool allowHoming, PositionSaver savePosition)
+    : identity_(identity), settings_(settings), allowHoming_(allowHoming), savePosition_(savePosition), output_(output), stepper_(stepper) {}
 
 // ---- Boot, input, loop ----
 
@@ -51,7 +51,8 @@ void LiftCore::begin(uint32_t now, bool bottomPressed, bool topPressed, StopSens
 bool LiftCore::assumePosition(int32_t position, uint32_t now) {
   if (position < 0 || activity_ != Activity::None || stepper_.running() || faults_ != 0 ||
       rawBottom_ || rawTop_ || stop_ == StopSense::Pressed) return false;
-  const int64_t milli = stepsToMilliMm(position, settings_.microsteps);
+  const int64_t milli = calibratedStepsToMilliMm(position, settings_.microsteps, settings_.scale_numerator,
+                                                  settings_.scale_denominator);
   if (milli < settings_.soft_min_milli_mm || milli > settings_.soft_max_milli_mm) return false;
   stepper_.setPosition(position);
   homed_ = true;
@@ -168,6 +169,8 @@ void LiftCore::handleCommand(const LiftPiLine& command, uint32_t now) {
   switch (command.type) {
     case LiftMessageType::Move:
       return commandMove(command, now);
+    case LiftMessageType::SetPosition:
+      return commandSetPosition(command, now);
     case LiftMessageType::Home:
       return commandHome(command, now);
     case LiftMessageType::Stop:
@@ -267,7 +270,8 @@ void LiftCore::commandMove(const LiftPiLine& command, uint32_t now) {
   // (llround of one product: no fused multiply-add, so every compiler gets the same number.)
   const uint32_t targetMilli = static_cast<uint32_t>(std::llround(command.target_mm * 1000.0));
   const int32_t target = steps(targetMilli);
-  uint32_t speed = static_cast<uint32_t>(std::llround(command.speed_mm_s * stepsPerMm(settings_.microsteps)));
+  uint32_t speed = static_cast<uint32_t>(std::llround(command.speed_mm_s * stepsPerMm(settings_.microsteps) *
+                                                     settings_.scale_numerator / settings_.scale_denominator));
   if (speed == 0) speed = 1;
   if (target != stepper_.position() && !stepper_.moveTo(target, speed, rate(settings_.max_accel_milli_mm_s2))) {
     stepper_.halt();
@@ -280,6 +284,26 @@ void LiftCore::commandMove(const LiftPiLine& command, uint32_t now) {
   targetMilliMm_ = targetMilli;
   accept(command, now);
   if (target == stepper_.position()) finish(LiftOutcome::Completed, LiftFault::LimitHit, now);  // already there
+}
+
+void LiftCore::commandSetPosition(const LiftPiLine& command, uint32_t now) {
+  // No steps are sent. Only the demo build with a persistent-position callback supports this command.
+  if (savePosition_ == nullptr) return sendAck(command.request_id, LiftRefusal::InvalidField, now);
+  const LiftRefusal refusal = motionRefusal(command, now);
+  if (refusal != LiftRefusal::None) return sendAck(command.request_id, refusal, now);
+  const uint32_t milli = static_cast<uint32_t>(std::llround(command.target_mm * 1000.0));
+  if (milli < settings_.soft_min_milli_mm || milli > settings_.soft_max_milli_mm ||
+      stepper_.running() || rawBottom_ || rawTop_) return sendAck(command.request_id, LiftRefusal::OutOfRange, now);
+  const int32_t target = steps(milli);
+  if (!assumePosition(target, now)) return sendAck(command.request_id, LiftRefusal::OutOfRange, now);
+  if (!savePosition_(target)) {
+    homed_ = false;  // A failed journal write makes the estimate unusable until repaired.
+    sendStatus(now);
+    return sendAck(command.request_id, LiftRefusal::InvalidField, now);
+  }
+  recordRequest(command.request_id);
+  accept(command, now);
+  sendStatus(now);
 }
 
 void LiftCore::commandHome(const LiftPiLine& command, uint32_t now) {
@@ -522,7 +546,8 @@ LiftState LiftCore::state() const {
 }
 
 uint32_t LiftCore::positionMilliMm() const {
-  const int64_t milli = stepsToMilliMm(stepper_.position(), settings_.microsteps);
+  const int64_t milli = calibratedStepsToMilliMm(stepper_.position(), settings_.microsteps,
+                                                  settings_.scale_numerator, settings_.scale_denominator);
   // Below zero can't happen while homed (the soft minimum is above it, and a switch would latch first);
   // the builder refuses anything over the rail, so a count gone wrong stops status lines rather than
   // sending a false height, and the Pi then treats the lift as lost.
