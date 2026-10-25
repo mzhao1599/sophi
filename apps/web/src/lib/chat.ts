@@ -31,14 +31,11 @@ export const SKIP_REST_REPLY = "Show me my walker";
 
 /**
  * The line under the text box, on screen before the first send: that answers are saved to the account
- * when signed in, and who else reads them when the agent runs. `agentNotice` is the agent's clause
- * ("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy"),
- * null with the fixed questions. Empty for a guest with the fixed questions: nothing leaves the setup,
- * so the page shows no line.
+ * when signed in. Empty for a guest, so the page shows no line. (The agent's provider isn't named here:
+ * removed 2026-10-25 at Max's request.)
  */
-export function noticeLine(agentNotice: string | null, signedIn: boolean): string {
-  const parts = [signedIn ? "Your answers are saved to your account." : null, agentNotice ? `${agentNotice}.` : null];
-  return parts.filter(Boolean).join(" ");
+export function noticeLine(signedIn: boolean): string {
+  return signedIn ? "Your answers are saved to your account." : "";
 }
 
 /**

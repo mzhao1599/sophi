@@ -18,9 +18,7 @@ export { SKIP_REPLY, SKIP_REST_REPLY, deterministicEngine, openingQuestion, type
 export { createAgentEngine, type AgentEvent, type AgentModel, type AgentReply, type AgentRequest } from "./onboarding/agent";
 export { createAnthropicModel, DEFAULT_AGENT_MODEL } from "./onboarding/anthropic";
 export {
-  AGENT_PROVIDER_NAMES,
   agentModelName,
-  agentNoticeClause,
   agentProviderFromEnv,
   engineFromEnv,
   storeBackendFromEnv,
