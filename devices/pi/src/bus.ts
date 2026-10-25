@@ -1,4 +1,4 @@
-import type { Cue, MotionState, ProposalView, ScreenContent, ScreenStateName, ShowCard } from "@walker/contracts";
+import type { Cue, MotionState, NavigatingScreen, ProposalView, ScreenAction, ScreenContent, ScreenStateName, ShowCard } from "@walker/contracts";
 import type { ScreenHoldEvent } from "./screen/server";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
@@ -22,10 +22,11 @@ export type TalkState = "idle" | "recording" | "waiting";
 export type LinkState = "unpaired" | "connecting" | "online" | "offline" | "unauthorized";
 export type CueName = "listening" | "done" | "error" | "nothing_to_confirm" | "obstacle" | "help";
 /**
- * What a spoken line was: a model or fake-cloud reply, or one of the Pi's own fixed lines. `help`: a fixed help line
- * (it may hold caretakers' names): never a heartbeat event, logged by length on the Pi.
+ * What a spoken line was: a model or fake-cloud reply, or one of the Pi's own fixed lines. `guidance` is a
+ * walking-directions line (street and place names): never recorded for the page or the server, logged by length.
+ * `help`: a fixed help line (it may hold caretakers' names): never a heartbeat event, logged by length on the Pi.
  */
-export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message" | "help";
+export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message" | "guidance" | "help";
 
 /** The help states the walker screen can show (src/help.ts decides them). */
 export type HelpScreen = Extract<ScreenContent, { state: "help_hold" | "help_countdown" | "help" }>;
@@ -62,6 +63,16 @@ export interface BusEvents {
   circleMessage: { id: number; message_id: string; from_name: string; text: string };
   /** That message finished playing, or was stopped. */
   circleMessageSpoken: { id: number };
+  /**
+   * The route in progress as the screen draws it (the Navigator's view), or null when no route is active. It
+   * holds coordinates and a place name: never log it, never send it to the server or a model.
+   */
+  navigation: { view: NavigatingScreen | null };
+  /**
+   * A press on the walker screen (POST /screen/press, validated by the screen server), with the state that was on
+   * screen when it was drawn. The service acts on `end_route` and `repeat_direction` while a route is on.
+   */
+  screenPress: { action: ScreenAction; revision: number; state: ScreenStateName | null };
   /**
    * A card Sophi pulled up for her (`show_on_screen`), built by the Pi from its own data, for the walker screen.
    * A message card holds someone's words and a location card her address: never log it or send it anywhere else.

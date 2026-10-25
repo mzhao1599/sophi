@@ -9,7 +9,7 @@ import type { Logger } from "./log";
  */
 export function attachLogging(bus: Bus, log: Logger, options: { replyText: boolean }): void {
   bus.on("spoke", ({ text, kind }) =>
-    log.info("speak", { kind, text: (kind === "reply" || kind === "message" || kind === "help") && !options.replyText ? `(${text.length} characters)` : text }),
+    log.info("speak", { kind, text: kind === "guidance" || ((kind === "reply" || kind === "message" || kind === "help") && !options.replyText) ? `(${text.length} characters)` : text }),
   );
   bus.on("cue", ({ name }) => log.info("cue sound", { name }));
   bus.on("haptic", ({ instanceId, pattern, durationMs }) => log.info("haptic sent", { module: instanceId, pattern, ms: durationMs }));

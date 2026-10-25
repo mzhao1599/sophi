@@ -103,6 +103,38 @@ Written before the code (2026-10-23). The server keeps one `ActivityLog` per pro
 | The log, dumped as JSON after typed and spoken turns | Contains none of the person's words or the replies |
 | `GET /api/v1/walkers` after a page turn, over HTTP | 200, parses with `WalkerListResponseSchema`, and carries that walker's trace |
 
+## Walking directions (route tools)
+
+Written before the code (2026-10-24), from [the navigation guide](../../../../docs/subsystems/navigation.md#the-cloud-servicescloud-api). The Pi runs `start_route` and `stop_route`; the cloud only offers them, passes `destination` on, and ends the loop. Stub model unless marked live. "Route summary" below is `{ destination: "Lake Merritt Boating Center", phase: "guiding", next: "Turn left onto Lenox Avenue.", to_next_m: 120, remaining_m: 620, remaining_min: 9, simulated: true }`.
+
+| Case | Expected |
+| --- | --- |
+| A device turn with `navigation` (route null or a route summary) | The schema sent to the model offers `start_route` (with `destination`) and `stop_route`; the system prompt carries the walking-directions rules (not "can't navigate"); the context's `walking_directions` is the route summary, or null with no route on |
+| A device turn without `navigation` (an older Pi, or no position source) | The schema offers neither route tool; the prompt keeps "This walker can't navigate, plan routes"; `walking_directions` is null |
+| A page turn | The schema offers neither route tool; the prompt says directions work only through Talk, asks her to use Talk for them, and doesn't list directions among what Sophi can do (the page can't tell whether the walker has a position source). *(live, 2026-10-24)* The first version gave the page the walker's rules, and beat 2 on the page then offered "walking directions" on 3 of 3 runs |
+| The model asks for `start_route` with `destination` on a spoken walker turn with `navigation` | Unfinished response: `tool_call: { name: "start_route", destination: "the Lake Merritt Boating Center" }` (her words as the model passed them, trimmed), reply "Let me find that.", `answered_by: "fixed"`; nothing stored |
+| The model asks for `stop_route` | `tool_call: { name: "stop_route" }`, reply "Stopping the directions." |
+| `destination` over 80 characters, empty, or with a line break | The reply breaks the schema: one retry with a note naming the rule (never her words); a second such reply falls back to the fixed line; no `tool_call` |
+| A route tool the server didn't offer: on a device turn without `navigation` | No `tool_call`; the fixed line "I can't give walking directions on this walker.", reason `route_unavailable` |
+| A route tool on a page turn | "Please use Talk on the walker for that request.", reason `device_tool_only`; no `tool_call` |
+| A continuation whose `tool_results` holds a `start_route` (or `stop_route`) result, and the model answers | The model's reply is the final turn (stored once, spoken), as with any tool |
+| *(live, 2026-10-24)* Any continuation of a spoken turn (`original_audio: true`) | The context's `how_they_asked` is "spoke while holding Talk", not "typed on the walker" (the first live run had the model answer "please use Talk" after `get_location` on 3 of 3 runs, and once after `start_route`) |
+| The same continuation, but the model asks for another tool (a second route tool, or `get_location`) | Not run: no `tool_call`; the fixed line "I couldn't finish checking all of that right now.", reason `route_once`. At most one route tool per turn |
+| "Take me to ..." with `topics: ["directions"]` and `start_route` | Runs `start_route`, not the arms line. (With `arms` in topics the arms rule still drops every tool call, as before; the live rows check the model doesn't tag it so) |
+| The "I'll check" line | Comes from one record over every `WalkerToolName`, so each tool has its own line: location, weather, sensors, "Let me find that.", "Stopping the directions." |
+| A final reply after a route result says "clear" or "safe" | Retried like any final reply (the clear/safe check still applies) |
+| Existing tool loop | `get_location` on a spoken walker turn still returns `tool_call: { name: "get_location" }` with "I'll check your GPS location now."; on a page turn the Talk line; `get_distance` on a page turn the server's sensor line |
+
+Live (real Gemini, the server's spoken path: a synthetic `say` clip, continuations as text with `original_audio`, the Pi's tool results faked by the harness), fresh wording, three runs each:
+
+| She says | Context | Expected |
+| --- | --- | --- |
+| "Take me to the Lake Merritt Boating Center" | `navigation: { route: null }` | `start_route` with a destination naming the Lake Merritt Boating Center; after the result, one short sentence that it found the place and is starting directions |
+| "Can you give me walking directions to the library?" | `navigation: { route: null }` | `start_route` with a destination naming the library |
+| "How far is it now?" | the route summary | No tool; the reply gives the remaining distance (620 m, in a person's words) and says it's simulated |
+| "Stop the directions" | the route summary | `stop_route` |
+| "Where am I?" | `navigation: { route: null }` | `get_location` |
+| "Pick up the cup" | `navigation: { route: null }` | The arms line, no route tool |
 ## Pulling something up on the walker's screen (`show_on_screen`)
 
 Written before the code (2026-10-24), from [the show-on-screen guide](../../../../docs/subsystems/show-on-screen.md). Stub model, both stores. The walker is the demo walker; "with a screen" means the turn request carries `screen: { views: [...] }`, as the Pi sends while a screen page is connected.

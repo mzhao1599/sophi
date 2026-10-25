@@ -47,7 +47,7 @@ These are proposals, not installed dependencies. Pin versions and commit lockfil
 | `voice` | Push-to-talk input and spoken output | Ask a question without typing | Microphone/speaker and consent | Optional |
 | `manipulation.arm` | Supervised reach/grasp | Retrieve a light object in a tested workspace | Camera, arm(s), power, stop circuit, user start | Optional |
 | `manipulation.lift` | Change arm working height | Reach objects at tested heights | Homed lift, hard limits, guarded motion | Optional |
-| `location.gps` | Location display/sharing | Show a recent GPS fix to approved caretakers after the walker user's phone opts in | Receiver, connectivity, consent | Software written; hardware unverified |
+| `location.gps` | Location display/sharing, walking directions | Show a recent GPS fix to approved caretakers after the walker user's phone opts in; "Where am I?"; spoken walking directions with the route on the walker screen | Receiver, connectivity, consent | Software written; hardware unverified; directions use a labelled simulated position indoors |
 
 Catalog metadata should also carry cost/weight/power estimates, compatibility, availability, limitations, and a human-readable rationale. Unknown estimates must be labeled unknown rather than filled with guesses. The agent may recommend from this catalog but cannot invent modules or treat a disability label as consent.
 

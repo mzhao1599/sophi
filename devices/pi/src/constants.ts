@@ -92,6 +92,48 @@ export const SCREEN_ZONES_MIN_MS = 250;
  */
 export const SCREEN_MOTION_STALE_MS = 1000;
 
+// ---- Walking directions (src/navigation/; docs/subsystems/navigation.md) ----
+// The guide's numbers, chosen for a walker on a sidewalk; none is measured on a real walk yet.
+
+/** Placeholder: at most one Nominatim request this often (the public service's limit is one a second). */
+export const NOMINATIM_GAP_MS = 1_100;
+/** Placeholder: one map request (search, reverse, route) gives up after this long. */
+export const MAP_REQUEST_MS = 6_000;
+/** Placeholder: a map response bigger than this is refused (the recorded 773 m route is about 11 KB). */
+export const MAP_RESPONSE_MAX_BYTES = 64 * 1024;
+/** Placeholder: the whole `start_route` tool (position, search, route) gives up after this long. */
+export const ROUTE_TOOL_MS = 12_000;
+/** Placeholder: a place is searched for within about this far of her, each way. */
+export const PLACE_SEARCH_RADIUS_M = 5_000;
+/** Placeholder: a longer walking route is refused. */
+export const ROUTE_MAX_M = 5_000;
+/** Placeholder: a step shorter than this is folded with the one after it, so two turns never come seconds apart. */
+export const STEP_FOLD_M = 10;
+/** Placeholder: a walker's pace for minutes left (800 m is about 11 minutes). */
+export const WALK_SPEED_MPS = 1.2;
+/** Placeholder: how often the Navigator reads the position while a route is on. */
+export const NAV_TICK_MS = 1_000;
+/** Placeholder: "In 30 meters, ..." once she is this close to the next step. */
+export const NAV_AHEAD_M = 40;
+/** Placeholder: "Turn left now." once she is this close to the step's point, or past it. */
+export const NAV_NOW_M = 8;
+/** Placeholder: a position this far from the route counts as off it (two in a row plan again). */
+export const NAV_OFF_ROUTE_M = 30;
+/** Placeholder: planning again happens at most this often... */
+export const NAV_REROUTE_GAP_MS = 20_000;
+/** ...and at most this many times a route. */
+export const NAV_REROUTES_MAX = 5;
+/** Placeholder: within this of the end she has arrived. */
+export const NAV_ARRIVE_M = 15;
+/** Placeholder: the arrival stays on screen this long, then the route ends. */
+export const NAV_ARRIVED_HOLD_MS = 20_000;
+/** Placeholder: no position for this long says "I've lost the GPS position." */
+export const NAV_LOST_MS = 15_000;
+/** A GPS position older than this is not a new position for the Navigator. */
+export const NAV_POSITION_MAX_AGE_MS = 5_000;
+/** The simulated position's walking pace, before WALKER_SIM_WALK_SPEEDUP. */
+export const SIM_WALK_MPS = 1.2;
+
 // ---- Cloud (the interval is the walker contract's; the timeouts are placeholders) ----
 
 export const HEARTBEAT_INTERVAL_MS = CONTRACT_HEARTBEAT_INTERVAL_MS;

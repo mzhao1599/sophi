@@ -5,6 +5,7 @@ import { SHOWING_CAPTION_CHARS, showingCaptionPages } from "@walker/walker-scree
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SCREEN_ANSWER_HOLD_MS, SCREEN_ZONES_MIN_MS, ZONE_VALIDITY_MS } from "../src/constants";
 import { describeGpsLocation, lookUpPlace } from "../src/location";
+import { mapServicesFromEnv } from "../src/navigation/osm";
 import { attachScreen, seedScreen, startingSettings } from "../src/screen/attach";
 import { ScreenMachine, pageMs, pickScreen, type ScreenModel } from "../src/screen/machine";
 import type { ServiceDeps } from "../src/service";
@@ -35,6 +36,7 @@ class FakeGps {
     return this.plugged;
   }
   setEnabled() {}
+  track() {}
   current() {
     return null;
   }
@@ -177,15 +179,17 @@ describe("SH3: location", () => {
     const reply = (result: object) => vi.fn(() => Promise.resolve(new Response(JSON.stringify(result), { status: 200 })));
     const signal = new AbortController().signal;
     const near = { lat: "37.80913", lon: "-122.25871" };
+    // A geocoder of its own per call (its own cache and limiter), on the real fetch the test stubs.
+    const at = (url: string) => ({ services: mapServicesFromEnv({ WALKER_GEOCODER_URL: url }) });
     const address = { house_number: "600", road: "Bellevue Avenue", city: "Oakland", state: "California" };
     vi.stubGlobal("fetch", reply({ ...near, name: "Lakeside Park", category: "leisure", address }));
-    expect(await describeGpsLocation(37.80913, -122.25871, signal, "https://geo.example.test/a")).toBe("Your GPS puts you near Lakeside Park, around 600 Bellevue Avenue, Oakland, California.");
-    expect((await lookUpPlace(37.80913, -122.25871, signal, "https://geo.example.test/b")).place).toBe("Lakeside Park, 600 Bellevue Avenue, Oakland, California");
+    expect(await describeGpsLocation(37.80913, -122.25871, signal, at("https://geo.example.test/a"))).toBe("Your GPS puts you near Lakeside Park, around 600 Bellevue Avenue, Oakland, California.");
+    expect((await lookUpPlace(37.80913, -122.25871, signal, at("https://geo.example.test/b"))).place).toBe("Lakeside Park, 600 Bellevue Avenue, Oakland, California");
     const long = "A".repeat(90);
     vi.stubGlobal("fetch", reply({ ...near, name: long, category: "amenity", address }));
-    expect((await lookUpPlace(37.80913, -122.25871, signal, "https://geo.example.test/c")).place).toBe("600 Bellevue Avenue, Oakland, California");
+    expect((await lookUpPlace(37.80913, -122.25871, signal, at("https://geo.example.test/c"))).place).toBe("600 Bellevue Avenue, Oakland, California");
     vi.stubGlobal("fetch", reply({ lat: "38.5", lon: "-122.25871", address }));
-    expect(await lookUpPlace(37.80913, -122.25871, signal, "https://geo.example.test/d")).toEqual({ text: "I have a GPS fix, but the map does not show a reliable nearby address.", place: null });
+    expect(await lookUpPlace(37.80913, -122.25871, signal, at("https://geo.example.test/d"))).toEqual({ text: "I have a GPS fix, but the map does not show a reliable nearby address.", place: null });
   });
 });
 
@@ -353,7 +357,7 @@ describe("SH9: one log line per show, with the view, whether it was shown and th
 
 describe("SH10: where the card sits", () => {
   const card: ShowCard = { view: "weather", temperature_f: 64, conditions: "partly cloudy skies", wind_mph: 8, simulated: false };
-  const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, help: null };
+  const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, navigation: null, help: null };
   const showing = { card, shownMono: 0, zones: null };
   const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, showing, ...model }, now, settings).content.state;
 
@@ -426,7 +430,7 @@ describe("SH11: the answer's caption page rides under the card", () => {
     expect(states.at(-1)!.screen.state).toBe("showing");
 
     const off = pickScreen(
-      { link: "online", talk: "idle", alerts: null, offer: null, answer: { id: 2, heard: null, reply, source: "model", startedMono: 0, spokenMono: null }, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: { card, shownMono: 0, zones: null }, help: null },
+      { link: "online", talk: "idle", alerts: null, offer: null, answer: { id: 2, heard: null, reply, source: "model", startedMono: 0, spokenMono: null }, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: { card, shownMono: 0, zones: null }, navigation: null, help: null },
       0,
       { ...settings, captions: false },
     );

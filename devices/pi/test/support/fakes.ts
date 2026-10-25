@@ -11,6 +11,8 @@ import type { Logger } from "../../src/log";
 import { formatFields } from "../../src/log";
 import { ModuleManager } from "../../src/serial/modules";
 import { WalkerService, type ServiceDeps } from "../../src/service";
+import type { MapServices } from "../../src/navigation/osm";
+import type { PositionSource } from "../../src/navigation/position";
 import { HELP_CHORD_WINDOW_MS, type Cue } from "@walker/contracts";
 import { FakeCloud, FakeCloudClient } from "../../src/sim/fakeCloud";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "../../src/sim/fakeModules";
@@ -163,8 +165,14 @@ export interface HarnessOptions {
   cues?: Cue[];
   withHand?: boolean;
   withTof?: boolean;
-  /** A GPS reader and the weather and address lookups its fix goes to (fakes: no test reaches the internet). */
-  location?: ServiceDeps["location"];
+  /**
+   * A position source (the simulated one, or a stub): turns on walking directions. Either the source itself, or a
+   * factory that makes it on the harness's clock.
+   */
+  location?: PositionSource | ((clock: FakeClock, log: Logger) => PositionSource);
+  /** Map services on the harness's clock (tests use the recorded ones: src/sim/fakeMaps.ts). */
+  maps?: (clock: FakeClock) => MapServices;
+  /** The weather and address lookups a fix goes to (fakes: no test reaches the internet). */
   lookups?: ServiceDeps["lookups"];
 }
 
@@ -183,10 +191,11 @@ export function makeHarness(options: HarnessOptions = {}) {
   const capture = new FakeCapture(clock);
   const speaker = new FakeSpeaker();
   const events: Recorded[] = [];
-  for (const name of ["spoke", "cue", "haptic", "talk", "link", "config", "heartbeat", "turn", "button"] as const) {
+  for (const name of ["spoke", "cue", "haptic", "talk", "link", "config", "heartbeat", "turn", "button", "navigation"] as const) {
     bus.on(name, (payload) => events.push({ name, payload } as Recorded));
   }
   let ids = 0;
+  const location = typeof options.location === "function" ? options.location(clock, log) : options.location;
   const service = new WalkerService({
     clock,
     log,
@@ -199,7 +208,8 @@ export function makeHarness(options: HarnessOptions = {}) {
     audioInstanceId: "test-audio",
     coordinatorInstanceId: "sim-coordinator",
     ...(options.gpioButtons ? { gpioButtons: options.gpioButtons } : {}),
-    ...(options.location ? { location: options.location } : {}),
+    ...(location ? { location } : {}),
+    ...(options.maps ? { maps: options.maps(clock) } : {}),
     ...(options.lookups ? { lookups: options.lookups } : {}),
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, "0")}`,
     makeCloud: (file) => {
@@ -228,6 +238,7 @@ export function makeHarness(options: HarnessOptions = {}) {
     clock,
     bus,
     log,
+    location,
     dir,
     store,
     fake,

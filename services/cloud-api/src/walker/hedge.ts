@@ -28,15 +28,15 @@ export const BACKUP_MARGIN_MS = 500;
 export function createHedgedAssistant({ main, backup, backupAfterMs }: { main: WalkerAssistant; backup: WalkerAssistant; backupAfterMs: number }): WalkerAssistant {
   return {
     provider: main.provider,
-    reply(status, source, words, now, limitMs = WALKER_TIMEOUT_MS, signal, toolResults, recipients, help, screenViews) {
+    reply(status, source, words, now, limitMs = WALKER_TIMEOUT_MS, signal, toolResults, recipients, navigation, help, screenViews) {
       const started = Date.now();
       const cancel = new AbortController();
       const both = signal ? AbortSignal.any([signal, cancel.signal]) : cancel.signal;
       // An attempt that throws (it shouldn't: failures are results) counts as a model error.
       const crashed = (): AssistantResult => ({ ok: false, reason: "model_error", attempts: 1, ms: Date.now() - started, provider: main.provider });
-      // Both models see the same turn, tool results, message recipients, help and screen views included.
-      const fromMain = main.reply(status, source, words, now, limitMs, both, toolResults, recipients, help, screenViews).catch(crashed);
-      const fromBackup = backup.reply(status, source, words, now, limitMs, both, toolResults, recipients, help, screenViews).catch(crashed);
+      // Both models see the same turn, tool results, message recipients, route, help and screen views included.
+      const fromMain = main.reply(status, source, words, now, limitMs, both, toolResults, recipients, navigation, help, screenViews).catch(crashed);
+      const fromBackup = backup.reply(status, source, words, now, limitMs, both, toolResults, recipients, navigation, help, screenViews).catch(crashed);
 
       return new Promise<AssistantResult>((resolve) => {
         let mainResult: AssistantResult | undefined;

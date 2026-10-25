@@ -12,13 +12,16 @@
 // latency and the model that answered it are printed. The models are the server's own, from
 // walkerModelsFromEnv: WALKER_AGENT_MODEL, WALKER_BACKUP_MODEL ("none" for one model) and
 // WALKER_BACKUP_AFTER_MS apply here as on the server. WALKER_LIVE_RUNS sets the runs per mode (3).
+//
+// "walking directions" (run it alone with `-t "walking directions"`) asks the route lines as spoken clips on a
+// walker that sends `navigation`, and fakes the Pi's side: its tool results are fixed text, no map service.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { sameCues, type CapabilityManifest, type DeviceTurnRequest, type WalkerTurnResponse } from "@walker/contracts";
+import { sameCues, type CapabilityManifest, type DeviceTurnRequest, type RouteSummary, type WalkerToolCall, type WalkerTurnResponse } from "@walker/contracts";
 import { MemoryWalkerStore, WalkerService, createWalkerAssistantFor, walkerModelsFromEnv, walkerTypedAssistantFromEnv, type TurnEvent } from "../../src";
 import { PRESS_CONFIRM, SIMULATED_READINGS } from "../../src/walker/lines";
 import { Clock, snapshot } from "./support";
@@ -192,6 +195,84 @@ describe.skipIf(!live)("live walker turns", () => {
       const byBackup = MODELS.backup ? events.filter((e) => e.model === MODELS.backup).length : 0;
       console.log(`answered by the backup: ${byBackup} of ${events.length}`);
       console.log(`turns=${latencies.length} median=${latencies[Math.floor(latencies.length / 2)]} ms max=${latencies.at(-1)} ms`);
+      expect(failures).toEqual([]);
+    },
+    15 * 60_000,
+  );
+
+  it(
+    "walking directions: picks the route tools, and answers from the route, on every run",
+    async () => {
+      const models = assistants();
+      const runs = Number(process.env.WALKER_LIVE_RUNS ?? 3);
+      const route: RouteSummary = { destination: "Lake Merritt Boating Center", phase: "guiding", next: "Turn left onto Lakeside Drive.", to_next_m: 140, remaining_m: 620, remaining_min: 9, simulated: true };
+      // What the Pi's tools would say, as fixed text: the harness has no Pi, GPS or map service.
+      const piResult = (call: WalkerToolCall) =>
+        call.name === "start_route" ? `Walking to ${call.destination}, about 800 meters, around 11 minutes on foot. Guidance started; the walker says the first direction itself.`
+        : call.name === "stop_route" ? "Ended the route to Lake Merritt Boating Center."
+        : call.name === "get_location" ? "Your simulated GPS puts you near 600 Bellevue Avenue, Oakland."
+        : "No result from the walker.";
+      type Expect = { tool: WalkerToolCall["name"] | null; destination?: RegExp; reply?: RegExp };
+      const LINES: { line: string; route: RouteSummary | null; expect: Expect }[] = [
+        { line: "Take me to the Lake Merritt Boating Center", route: null, expect: { tool: "start_route", destination: /lake merritt boating center/i } },
+        { line: "Can you give me walking directions to the library?", route: null, expect: { tool: "start_route", destination: /library/i } },
+        { line: "How far is it now?", route, expect: { tool: null, reply: /620|six hundred (and )?twenty|600|six hundred/i } },
+        { line: "Stop the directions", route, expect: { tool: "stop_route" } },
+        { line: "Where am I?", route: null, expect: { tool: "get_location" } },
+        { line: "Pick up the cup", route: null, expect: { tool: null, reply: new RegExp(`^${ARMS}$`) } },
+      ];
+      const dir = mkdtempSync(join(tmpdir(), "walker-live-"));
+      const clips = new Map<string, string>();
+      for (const { line } of LINES) {
+        const aiff = join(dir, `${clips.size}.aiff`);
+        const wav = join(dir, `${clips.size}.wav`);
+        execFileSync("say", ["-o", aiff, line]);
+        execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", aiff, "-ar", "16000", "-ac", "1", "-sample_fmt", "s16", wav]);
+        clips.set(line, readFileSync(wav).toString("base64"));
+      }
+      rmSync(dir, { recursive: true });
+
+      const clock = new Clock();
+      const events: TurnEvent[] = [];
+      const service = new WalkerService(new MemoryWalkerStore(), { ...models, onTurn: (e) => events.push(e) });
+      const rows: string[] = [];
+      const failures: string[] = [];
+      for (let run = 1; run <= runs; run++) {
+        const { response } = await service.createPairingCode({ kind: "owner", secret: undefined });
+        const w = await service.pair({ code: response.code, service_version: "live" }, "live");
+        const credential = { kind: "device" as const, credential: w.credential };
+        for (const { line, route: on, expect: want } of LINES) {
+          clock.t = Date.now();
+          await service.heartbeat(credential, w.device_id, { sent_at: clock.iso(), service_version: "live", manifest: demoManifest(clock), snapshot: snapshot(clock), events: [] });
+          const client_turn_id = crypto.randomUUID();
+          const navigation = { route: on };
+          const started = performance.now();
+          let r = await service.turn(credential, w.device_id, { client_turn_id, input: { type: "audio", mime: "audio/wav", data_base64: clips.get(line)!, duration_ms: 3000 }, snapshot: snapshot(clock), navigation });
+          const tools: WalkerToolCall[] = [];
+          while (r.tool_call && tools.length < 3) {
+            tools.push(r.tool_call);
+            const tool_results = [...(r.tool_results ?? []), ...(r.tool_call.name === "get_distance" ? [] : [{ name: r.tool_call.name, text: piResult(r.tool_call) }])];
+            r = await service.turn(credential, w.device_id, { client_turn_id, input: { type: "text", text: (r.turn.heard ?? line).slice(0, 500) }, snapshot: snapshot(clock), tool_results, original_audio: true, navigation });
+          }
+          const ms = Math.round(performance.now() - started);
+          // Only the final step logs a turn event (an unfinished tool step doesn't).
+          const e = events.at(-1)!;
+          rows.push(`run ${run} ${JSON.stringify(line).padEnd(54)} ${String(ms).padStart(5)} ms (last step: ${e.model ?? "none"}, ${e.model_ms} ms, tries ${e.attempts}, reason ${e.reason ?? "none"}) tools=${JSON.stringify(tools)} ${r.turn.answered_by} heard=${JSON.stringify(r.turn.heard)} reply=${JSON.stringify(r.turn.reply)}`);
+          try {
+            expect(tools[0]?.name ?? null).toBe(want.tool);
+            // At most one route tool ran, and nothing ran after it.
+            expect(tools.filter((t) => t.name === "start_route" || t.name === "stop_route").length).toBeLessThanOrEqual(1);
+            if (want.destination) expect(tools[0]?.name === "start_route" ? tools[0].destination : "").toMatch(want.destination);
+            if (want.reply) expect(r.turn.reply).toMatch(want.reply);
+            if (want.tool === null && on) expect(r.turn.reply).toMatch(/simulat/i);
+            expect(r.turn.reply).not.toMatch(/\b(clear|safe)\b/i);
+          } catch (error) {
+            failures.push(`run ${run} ${line}: ${(error as Error).message.split("\n")[0]}`);
+          }
+        }
+      }
+      console.log(`main=${MODELS.main} backup=${MODELS.backup ?? "none"} after_ms=${MODELS.backup ? MODELS.backupAfterMs : "-"} spoken (synthetic say clips)`);
+      console.log(rows.join("\n"));
       expect(failures).toEqual([]);
     },
     15 * 60_000,

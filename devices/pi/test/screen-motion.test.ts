@@ -8,6 +8,7 @@ import {
   type ConfirmAction,
   type LiftState,
   type MotionState,
+  type NavigatingScreen,
   type ScreenState,
 } from "@walker/contracts";
 import { describe, expect, it } from "vitest";
@@ -23,7 +24,7 @@ import { FakeClock, captureLogger, flush } from "./support/fakes";
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const AT = "2026-10-24T19:00:00.000Z";
 const settings = startingSettings(undefined, Date.parse(AT));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, help: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, navigation: null, help: null };
 
 const LIFT_AT_100: LiftState = {
   connected: true,
@@ -133,6 +134,29 @@ describe("D19: motion in the screen's priority", () => {
     expect(name({ motionEnded: ended, link: "offline" })).toBe("motion_holding");
     expect(name({ motionEnded: ended, link: "offline" }, 4000)).toBe("offline");
     expect(name({ motionEnded: ended }, 4000)).toBe("ambient");
+  });
+
+  it("D27: a running motion, a fault, a pending target and Done, Stopped or Not started all come before a route", () => {
+    const navigation: NavigatingScreen = {
+      state: "navigating",
+      destination: "Lake Merritt Boating Center",
+      phase: "guiding",
+      instruction: "Turn left onto Lenox Avenue.",
+      maneuver: "left",
+      street: "Lenox Avenue",
+      to_step_m: 30,
+      remaining_m: 750,
+      remaining_min: 10,
+      simulated: true,
+      map: { position: [37.809875, -122.257855], route: [[37.809875, -122.257855], [37.805086, -122.257848]], step_at: null, destination_at: [37.805086, -122.257848] },
+    };
+    expect(name({ navigation, motion: running })).toBe("motion_running");
+    expect(name({ navigation, motion: faulted })).toBe("motion_fault");
+    expect(name({ navigation, motion: pending })).toBe("motion_confirm");
+    expect(name({ navigation, motionEnded: ended })).toBe("motion_holding");
+    expect(name({ navigation, motionEnded: ended }, 4000)).toBe("navigating");
+    // A motion state gone stale shows nothing about motion, and the route is underneath.
+    expect(name({ navigation, motion: running }, SCREEN_MOTION_STALE_MS)).toBe("navigating");
   });
 
   it("every motion screen it picks is a valid ScreenState", () => {

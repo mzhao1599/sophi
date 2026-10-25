@@ -8,7 +8,7 @@ import { FakeClock, flush } from "./support/fakes";
 /** Rows GS1 and GS2 of test/EXPECTED.md: where help sits in the walker screen's priority. */
 
 const settings = startingSettings(undefined, Date.parse("2026-10-24T02:00:00Z"));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, help: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, navigation: null, help: null };
 const open: HelpScreen = { state: "help", help: { phase: "open", sent_to: ["Maya"], shown_to: [], coming: [], confirm_okay: false } };
 const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, ...model }, now, settings).content.state;
 const answer = { id: 1, heard: null, reply: "It's sunny.", source: "model" as const, startedMono: 0, spokenMono: null };

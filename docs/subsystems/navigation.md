@@ -1,0 +1,100 @@
+# Navigation guide: "Where am I?" and "Help me get there"
+
+**For:** whoever builds or demos walking directions on the walker: the Pi service (`devices/pi`), the cloud assistant's tools (`services/cloud-api/src/walker/`), the walker screen (`packages/walker-screen`, `devices/pi/src/screen`) and the shared contract (`packages/contracts`).
+
+**Status (2026-10-24, built, simulator only):** built on branch `navigation` and tested on a Mac: the Pi's unit tests (rows N1 to N30 in [`devices/pi/test/EXPECTED.md`](../../devices/pi/test/EXPECTED.md)), the walker screen's tests and headless screenshots at 800 by 480, the cloud's unit tests, the simulator walking a recorded route in real time (`test/sim/navigation.walk`, `test/sim/navigation-screen.walk`), and Gemini choosing the route tools on synthetic spoken clips: in the cloud's live harness, and end to end through the simulator against a local production build with live OpenStreetMap services, 3 of 3 runs of the demo segment ([walker demo script](../demo/walker-script.md), segment 9). Route questions take two model steps (7 to 10.4 seconds in all) and sometimes run past the server's 8-second model limit, which gives the fixed "can't answer" line. **Not yet run:** on the real Pi, on its 5-inch panel, with the real GPS outdoors, or on Render. Indoors the position is the labelled simulated one. "Where am I?" (`get_location`) already existed and is described in the [walker assistant guide](walker-assistant.md#how-a-spoken-question-travels); this adds a simulated position for indoor demos, walking routes, guidance along the way, and the route on the walker's screen.
+
+## What she can do
+
+- **"Where am I?"** Sophi checks the walker's position and says the nearest address ("Your GPS puts you near 600 Bellevue Avenue, Oakland"). Unchanged, except that a simulated position says so ("Your simulated GPS puts you near ...").
+- **"Take me to the Lake Merritt Boating Center."** Sophi finds the place near her, plans a walking route and says how far and how long ("It's about 800 meters, around 11 minutes on foot. Head north on the path."). The walker's screen shows the street map, the route, her dot and the next turn in large type.
+- **On the way,** the walker says each turn shortly before it, in its own local voice ("In 30 meters, turn left onto Lenox Avenue."), and again at the turn ("Turn left now."). If she leaves the route, it plans again from where she is. Near the end: "You've arrived near the Lake Merritt Boating Center."
+- **"How far is it?" / "What's next?"** Sophi answers from the route in progress, which the walker sends with every question (names and rounded distances, never coordinates).
+- **"Stop the directions."** Sophi ends the route. The screen's **End route** button does the same without voice, and works offline; a left-handle Confirm press with nothing else to confirm repeats the next instruction (except while a caretaker's message is on screen, when it replays the message as the screen says).
+- **Offline,** guidance keeps going: the route, the position and the spoken turns are all on the Pi. Only planning a new route needs the internet.
+
+## Where each part lives (module boundaries)
+
+| Part | Where | Why |
+| --- | --- | --- |
+| Deciding a question needs a tool | Gemini, through `tool_call` | No keyword match starts a tool (existing rule). |
+| Position | Pi: the USB GPS (`GpsSampler`) or the simulated position | Coordinates never leave the Pi except to the map services below, and to caretakers only when sharing is on (existing rule). |
+| Finding the place, planning the route | Pi, over HTTPS: Nominatim search, OpenStreetMap's walking router | Same pattern as the reverse geocoder: the Pi sends coordinates straight to the provider; the cloud and Gemini never see them. |
+| Following the route, spoken turns | Pi (`Navigator`), fixed lines written in Pi code | Guidance is not a model output. It keeps working offline. |
+| Drawing the map | The walker screen page on the Pi (127.0.0.1) | The screen is local; its coordinates never reach the server. Map tiles come from OpenStreetMap's tile server. |
+
+Nothing here moves a motor. Directions are advice the walker speaks; she steers.
+
+## The shared contract (built first, by the lead)
+
+All in `packages/contracts`, validated on both sides (and in the `navigation` branch's first commit):
+
+1. **Two route tools** (`ROUTE_TOOLS` in `walker.ts`), in the device turn's `tool_call` and in `tool_results`:
+   - `start_route` with `destination` (`RouteDestinationSchema`: the place in her words, 1 to 80 characters, one line). The Pi finds the place, plans the route, starts guidance and returns a summary text.
+   - `stop_route`: ends the route; returns what it ended.
+   They change state on the Pi, but only the Pi's own guidance; no motor authority and no Confirm (see Decisions). They run only from a spoken walker turn, like `get_location`; a typed page turn is asked to use Talk. **At most one route tool runs in a turn:** the server ends the tool loop once `tool_results` holds one.
+2. **`navigation` on every device turn** (`DeviceTurnRequestSchema.navigation`, also on continuations): `{route: RouteSummary | null}`. Present only when the walker has a position source, real or simulated, and only then does the server offer the route tools. `RouteSummary` is the destination's name, `phase`, the next instruction, metres to it and to the end, minutes left and `simulated`. No coordinates. The model reads it as the per-turn state, so "How far is it?" needs no tool.
+3. **A `navigating` screen state** (`NavigatingScreenSchema` in `circle.ts`): the destination, `phase` (`guiding`, `rerouting`, `off_route`, `no_position`, `arrived`), the whole instruction (for a screen reader), a short form for the big type (`maneuver`, an arrow and a word, and `street`), metres to the step, metres and minutes left, `simulated`, and the map (her position, the route ahead as at most 200 `[lat, lon]` points, the next step's point, the destination's point). Its place in the priority order: under a message being read, above `offline` and `ambient`, so a Talk answer, an obstacle, motion and offers all still come first, and the route returns when they finish.
+4. **Two screen actions:** `end_route` and `repeat_direction`.
+5. **Pi bus events** (`devices/pi/src/bus.ts`): `navigation` (`{view: NavigatingScreen | null}`, from the Navigator to the screen machine) and `screenPress` (every press the screen server accepts, with the state that revision drew; `devices/pi/src/screen/index.ts` emits it). A new `SpeechKind`, `guidance`: never recorded as a walker line for the page or the server, and logged by length only.
+
+## The Pi (devices/pi)
+
+- **Position source.** One interface for the service's `location` dependency, with a `simulated` flag and `track(on)` to keep sampling while a route is active, separate from caretaker sharing.
+  - Real: `GpsSampler` with two flags, `sharing` and `tracking`; it samples while either is on, about once a second while tracking. Going offline turns sharing off (as today) but not tracking, so guidance keeps going offline.
+  - Simulated: `SimulatedPosition` (`src/navigation/simulated.ts`). It starts at the phone's People nearby sample starting point by Lake Merritt, Oakland (37.8098, -122.2575), and while a route is active walks along it at 1.2 m/s times a speed-up (`WALKER_SIM_WALK_SPEEDUP`, default 3, so an 800 m route takes about 4 minutes; the demo can set it higher once rehearsed in real time). It is the default in `walker simulate`, and on the real Pi only with `WALKER_GPS_SIMULATED=1`. The `location.gps` part then reports `simulated: true` (the flag comes from the source, not a constant), so the page, the screen and Sophi all say Simulated. **A simulated position never goes into a heartbeat**, even with sharing on: caretakers must never see a made-up position as hers. Script commands move it (`gps at <lat> <lon>`, `gps walk <metres>`, `gps off_route <metres>`, `gps pause`, `gps resume`) for tests and for an off-route beat.
+- **Map services** (`src/navigation/osm.ts`): one shared Nominatim limiter (at most one request a second, used by `location.ts` too), the user agent, and an injectable `fetch` and base URLs so tests and the simulator's scripts never touch the internet.
+- **Finding the place** (`src/navigation/places.ts`): Nominatim search for her words within about 5 km of her position (`viewbox`, `bounded=1`), first result; the spoken name is the place's own name (or the street address), cleaned like the reverse geocoder's. `WALKER_PLACES_URL` switches provider.
+- **Planning the route** (`src/navigation/route.ts`): OSRM's foot profile on `routing.openstreetmap.de/routed-foot` (`steps=true`, `geometries=geojson`, `overview=full`); `WALKER_ROUTER_URL` switches. A route over 5 km is refused ("That's about 7 kilometers, farther than I can guide on foot."). Steps shorter than 10 m are folded into the next one so she never hears two turns a second apart. Unnamed ways read "the path". The instruction words and `maneuver` are built on the Pi from the maneuver's type and direction, never copied from the provider. Each request has a 6 s deadline and a 64 KB size limit; the whole `start_route` tool (position, search, route) has 12 s, then a fixed failure line.
+- **Following it** (`src/navigation/navigator.ts`): on every new position it snaps her to the route and works out the distance along it to the next turn and to the end (progress along the route, not a radius, so a fast simulated walk can't skip a turn between samples), and:
+  - says "In 30 meters, turn left onto Lenox Avenue." once per step when 40 m or less away, and "Turn left now." once she reaches 8 m or passes the turn's point;
+  - plans again after two positions in a row more than 30 m from the route (at most once every 20 s, at most 5 times a route); says "You seem to be off the route. Finding the way again." and, if planning fails, "I can't find the way from here." (phase `off_route`) and tries again at the next window;
+  - ends with "You've arrived near the Lake Merritt Boating Center." within 15 m of the end, keeps the arrival on screen for 20 s, then clears;
+  - says "I've lost the GPS position. I'll keep trying." once after 15 s with no position (phase `no_position`), and resumes when it returns.
+  - **The first line is the Pi's own,** spoken once the turn's final reply has finished (or at once if the turn failed after the route started): "Walking to the Lake Merritt Boating Center, about 800 meters. Head south on the path. Directions come from OpenStreetMap and may include steps or curbs." So she always hears the place's name, even when the model's reply is lost.
+  Guidance lines are `guidance` speech, wait while Talk is held, a turn is waiting, an answer or a message is playing, and the newest waiting line replaces an older one (a turn passed while she was talking is not read late). Never the words "clear" or "safe".
+- **Tools in the service's loop** (`service.ts`, next to `runLocationTool`): `start_route` replaces any active route; `stop_route` ends it. Every device turn and continuation carries `navigation`. A Talk press during a route doesn't end it. Forget, unpair and service stop end it.
+- **Buttons and presses.** A left Confirm with nothing else to confirm (after motion's claim, an open proposal and a message draft) replays the caretaker's message while its screen hold is on, and otherwise repeats the next instruction while a route is on; both work offline. `screenPress` `end_route` ends the route and `repeat_direction` repeats, checked against the state drawn (`navigating`), not the exact revision (the state changes every second while she walks).
+- **Fake cloud.** `fakeCloud.ts` can script a `tool_call` per question, so `.walk` scripts drive `start_route` and `stop_route` without Gemini.
+
+## The cloud (services/cloud-api)
+
+- `WalkerToolSchema` and the JSON schema gain the two route tools, offered only when the turn carries `navigation`; `start_route` carries `destination`. The model's context gets `walking_directions`: the `RouteSummary` or null.
+- The server's "I'll check" line comes from a `Record` over every tool name, so a new tool can't fall through to the obstacle line ("Let me find that." for `start_route`, "Stopping the directions." for `stop_route`).
+- The loop ends once a route tool's result is in `tool_results`. A page turn asking for a route tool gets "Please use Talk on the walker for that request."
+- The system prompt replaces "This walker can't navigate, plan routes" with: guiding her to a place is walking directions, not the arms (the walker never drives or steers); when a spoken walker turn asks for directions or to be guided to a place, request `start_route` with the place as she said it; "how far / what's next / how long" during a route is answered from `walking_directions`, with no tool; "stop / cancel the directions" → `stop_route`. Never invent directions, distances or arrival; answer from the tool result. A route summary is advice, never a promise that the way is passable. On a typed page turn, ask her to use Talk on the walker.
+- The "clear or safe" check still applies to the final reply.
+
+## The screen (packages/walker-screen, devices/pi/src/screen)
+
+At 800 by 480, with a height budget per region written first and every region measured at Largest with the longest allowed strings (the 2026-10-23 lesson): the map takes the left part, and the right shows the short form big (an arrow drawn in SVG and one word: "Left", "Right", "Ahead", "Arrive"), the street under it at body size, the distance to the step, and "350 m to go, about 5 min" at detail size. A dashed Simulated tag when the position is simulated. End route and Repeat buttons between the handles. A screen reader hears the whole instruction when it changes, not every metre.
+
+The map is a plain tile grid, no map library: OpenStreetMap's standard tiles at a fixed zoom around her position, drawn as images, with the route ahead as a thick SVG line, her position as a ringed dot and the next turn marked, and "© OpenStreetMap contributors" always visible. The page's security policy stays `img-src 'self'`: **the Pi's screen server fetches tiles** (`/tiles/{z}/{x}/{y}.png`) with the project's user agent, keeps them in a disk cache, and serves them; `walker tiles --around <lat>,<lon>` warms the cache for a demo area beforehand (real tiles, fetched under the tile usage policy). With no tile (offline, not cached) the route line and dot still draw on a plain background. Reduced motion: no animated pans. The web app's Preview draws the same view from fixtures.
+
+## Privacy
+
+Coordinates go only to Nominatim (search and reverse), the walking router and the tile server, from the Pi. Not to the cloud, Gemini or logs (logs carry the step count and distances rounded to 10 m, never coordinates or place names). The route lives in Pi memory and is gone when it ends or the service stops. **Map tiles are kept on disk** (`WALKER_TILE_DIR`, owner-only permissions, up to 200 MB, oldest removed first) so the map works offline; which tiles are there shows roughly which areas the screen has drawn, though not when or in what order. Forget does not clear them yet: delete the folder to forget them (`sudo rm -rf /var/lib/steady-walker/tiles` on the Pi). The destination words she says go to Gemini as part of her turn (they already do today) and to Nominatim. The model's tool result holds the place's name and distances, never coordinates.
+
+## Known gaps (2026-10-24)
+
+- **Ending a route offline needs the screen.** "Stop the directions" needs the server; offline, the screen's End route button is the only way, and Confirm only repeats the instruction. A hand-button path to end a route is still to design.
+- **A place or street named with "clear" or "safe"** ("Clear Street", "Safe Harbor Marina") is spoken by the Pi as is, but the cloud's clear-or-safe check would reject the model's reply naming it, and the turn would end with a fixed failure line while the route is on.
+- **A second tool request after a route tool** in the same turn gets "I couldn't finish checking all of that right now." while the route did start.
+- **A cancelled turn ends the route it started,** but a turn that failed (timeout, server error) after the route started keeps it, and the Pi's first line still names the place.
+
+## Decisions for review (defaults picked; Max can override)
+
+1. **No Confirm to start a route.** She asked out loud, guidance is only speech, and it ends with one word or one tap. A misheard destination is caught by Sophi saying the place's name first. Alternative: read the place back and wait for Confirm (one more beat, slower demo).
+2. **Confirm repeats the next instruction during a route,** instead of replaying her newest message. The screen's message view still replays it.
+3. **Simulated position for the demo.** The real receiver has no indoor fix (2026-10-24). The simulator, and the Pi with `WALKER_GPS_SIMULATED=1`, walk a simulated position along the route, labelled Simulated everywhere: the screen's tag, the first spoken line ("On the simulated position: Walking to …"), the tool result the model reads, and "Your simulated GPS puts you near …". It sets off only once she has heard the first line. Against a real server the simulator uses the live map services; the recorded responses are for the fake cloud and tests. A real-GPS walk outdoors is still unverified.
+4. **Public OpenStreetMap services** (Nominatim, routing.openstreetmap.de, tile.openstreetmap.org) under their usage policies for a single prototype: identified user agent, at most one search a second, no bulk use.
+5. **No route on the owner's page.** The page would need coordinates on the server. The conversation on the page shows Sophi's spoken route summary; the destination's name and distances do reach the server and Gemini, as `navigation.route` and tool results.
+6. **Plain tile grid instead of Leaflet** on the walker screen: no gestures are needed there, and it keeps the page's strict security policy.
+
+## Expected results (written before the code)
+
+- `test/sim/navigation.walk` (simulator against the fake cloud, which scripts the tool calls, with the map services faked on the Pi): "Where am I?" says "simulated GPS"; start a route to a fixture place; hear "Walking to ..." with the first instruction and the OpenStreetMap line after the reply; the screen shows `navigating`; walk; hear each turn once; go 50 m off the route and hear the reroute; reach the end and hear the arrival; screen returns to ambient after 20 s. Three runs in a row.
+- Unit tests with recorded provider responses (no network): place parsing, route parsing and step folding, the instruction words for every maneuver type in the fixture, snapping and progress, each announcement once, rerouting limits, lost position, arrival, offline guidance, End route, Repeat.
+- Cloud: the route tools are offered only with `navigation`; `destination` is bounded; a second route tool in one turn ends the loop; a page turn gets the Talk line; `walking_directions` reaches the context; "take me to" isn't sent to the arms line; the existing tool-loop tests still pass.
+- Privacy rows: no guidance line in a heartbeat's walker lines; no simulated position in a heartbeat with sharing on; no coordinates in a device turn request or a log line.
+- Live (the one check a harness can't make): the simulator against a local server with Gemini, three runs in a row of: "Where am I?", "Take me to the Lake Merritt Boating Center", "How far is it now?", arrival, "Stop the directions" on a second route.
