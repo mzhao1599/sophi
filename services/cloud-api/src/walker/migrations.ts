@@ -185,4 +185,32 @@ alter table walker_devices
   add column location_received_at timestamptz;
 `,
   },
+  {
+    id: "0005_walker_help",
+    sql: `
+-- Help requests (docs/subsystems/help.md): she asked her caretakers for help. At most one open per walker.
+-- Deleted 24 hours after she asked, open or not, by the circle's sweep, and with the walker by cascade.
+-- No location is ever stored here. told: the caretakers' names when she asked (JSON array, fixed then);
+-- coming: [{member_id, name}] who answered "I'm on my way" (no foreign key: a removed caretaker stays named).
+create table walker_help_requests (
+  id uuid primary key,
+  device_id uuid not null references walker_devices (id) on delete cascade,
+  client_help_id uuid not null,
+  source text not null check (source in ('handles', 'voice', 'phone')),
+  told jsonb not null check (jsonb_typeof(told) = 'array' and jsonb_array_length(told) between 1 and 8),
+  coming jsonb not null default '[]'::jsonb check (jsonb_typeof(coming) = 'array' and jsonb_array_length(coming) <= 8),
+  created_at timestamptz not null,
+  closed_at timestamptz,
+  closed_how text check (closed_how in ('okay', 'with_her', 'expired')),
+  closed_by_name text check (char_length(closed_by_name) between 1 and 12),
+  seq bigint generated always as identity,
+  unique (device_id, client_help_id),
+  check ((closed_at is null) = (closed_how is null)),
+  check (closed_how is null or (closed_how = 'expired') = (closed_by_name is null)),
+  check (closed_how is not null or closed_by_name is null)
+);
+create unique index walker_help_one_open on walker_help_requests (device_id) where closed_at is null;
+create index walker_help_created on walker_help_requests (created_at);
+`,
+  },
 ];
