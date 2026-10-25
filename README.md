@@ -8,6 +8,7 @@
   <a href="https://sophi.work"><b>Try the setup</b></a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#under-the-hood">Under the hood</a> ·
+  <a href="#tracks">Tracks</a> ·
   <a href="#run-it">Run it</a>
 </p>
 
@@ -74,6 +75,16 @@ A few rules we built around:
 
 > [!NOTE]
 > Sophi is a hackathon prototype. It isn't a certified mobility aid and it doesn't replace a caregiver.
+
+## Tracks
+
+These are the Cal Hacks 2026 special tracks Sophi is entering. The [track guide](docs/demo/tracks.md) has what each one asks for, what we show for it, and how far each part has been tested.
+
+- **Microsoft: Built for the Real World**, and its Customer Impact Award
+- **Cartesia: Best Use of Cartesia**. Cartesia turns Talk clips into words and speaks every answer.
+- **Anthropic**. Claude runs onboarding and answers every question asked on the walker.
+- **Spacetime**. The care circle, the family and caretaker phones around the walker, runs on SpacetimeDB.
+- **Meta: Bringing People Closer Together with AI**
 
 ## Run it
 
