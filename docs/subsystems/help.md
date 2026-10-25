@@ -2,7 +2,7 @@
 
 **For:** whoever builds or demos asking for help: the contract (`packages/contracts`), the server and the care database (`services/cloud-api`, `services/care-db`, `apps/web/app/api`), the Pi and its screen (`devices/pi`, `packages/walker-screen`), and the two phones (`apps/web`, `/app`).
 
-**Status (2026-10-24):** the contract is written, with tests: the shared request view, timings and the walker's routes in [`walker.ts`](../../packages/contracts/src/walker.ts) ("Asking for help", plus `can_ask_for_help` and `ask_for_help` on a turn), and the phone routes and the walker screen's states in [`circle.ts`](../../packages/contracts/src/circle.ts). Update this line as each piece lands.
+**Status (2026-10-24):** merged and live on Render (PR #7, `af2cdbe`), with the care database on Maincloud; the voice beat passed 3 of 3 on Render with the simulator and two headless phones (below). Not yet on the real Pi or real phones. The contract is written, with tests: the shared request view, timings and the walker's routes in [`walker.ts`](../../packages/contracts/src/walker.ts) ("Asking for help", plus `can_ask_for_help` and `ask_for_help` on a turn), and the phone routes and the walker screen's states in [`circle.ts`](../../packages/contracts/src/circle.ts). Update this line as each piece lands.
 
 **Server (built 2026-10-24, branch `sos-cloud`; not deployed):** the store (memory, Postgres migration `0005_walker_help`, and the care-db module's `help_request` table, `ask_for_help`/`answer_help`/`help_of` procedures, sweep, forget and `my_help` view), the walker's routes in `WalkerService` (walker envelope), the phones' routes in `CircleService` (circle envelope), `help` and `shown_to` on `GET /api/v1/circle`, and the voice tool with its fixed lines. Checked with the expected results in [`EXPECTED-help.md`](../../services/cloud-api/test/walker/EXPECTED-help.md): every store row on memory, a local Postgres 17 and a local SpacetimeDB 2.13, the voice path with a stub model, and the routes over HTTP in memory. Not yet: a live model turn, Render, or Maincloud (the module isn't published). Two server choices to know: with `can_ask_for_help` and the circle readable, the tool is offered even with no approved caretaker, so a voice request can get the fixed no-caretaker line (offering it only with a caretaker would leave that line unreachable); and a replayed countdown turn says `ask_for_help` again, recognised by its fixed words on a `fixed` reply rather than a stored flag.
 
@@ -156,6 +156,18 @@ Three ways to ask, none of them voice-only or fine-motor-only: two big buttons h
 | Voice 3 | 3.89 s | 1 call, 3.8 s | 98 ms | 0.66 s | pass |
 
 The tap-to-line time varies with the walker's 2 s poll (`HELP_POLL_MS`). "It's showing on Maya's phone." followed Maya's card by 0.6 to 1.8 s for the same reason. In an earlier run at `133b6a6` the voice beat failed 1 of 3 (a timeout): Gemini left its reply empty beside `ask_for_help`, the server rejected that and retried; fixed in `a39dab8` (all 6 later fall-clip turns took one model call). Also passed once each at `133b6a6`: the chord (Maya "I'm with Rose" → "Maya says they're with you."), a request from Rose's phone (Maya's card 102 ms after her tap; the walker picked it up 4 s later from its poll), and no caretaker linked ("…so nothing was sent."). Gemini's judgement, live: "What can you help me with?" never counted down (6 of 6), and its replies said Sophi can "ask your caretaker for help" (one reply said "call for help" before `a39dab8`'s prompt line, none after); "Help, I fell.", "I can't get up. Can you get Maya?" and "I've fallen. Please get Maya." always did (8 of 8). Not yet: the real Pi, its buttons and panel, a real iPhone, Render with Maincloud, and hearing any of it aloud.
+
+### On Render (2026-10-24, after the merge)
+
+**Setup:** the deployed server (<https://steady-walker.onrender.com>, `main` at `af2cdbe`, Postgres and the care circle on Maincloud `sophi-care`), with Render's own Gemini and Cartesia keys; a fresh simulator walker paired for the run and forgotten after; Rose's and Maya's phones as two headless Chromium pages at 390x844, joined through the real join screen on `/app`, Maya approved with the consent line. Only "I've fallen. Please get Maya." went to Gemini.
+
+| Run | Talk let go → reply | "Sent to Maya's phone." → Maya's card | Maya's tap → "Maya is on the way." | Walker's okay → Maya's "Rose says she's okay." | Voice | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 3.59 s | 0.60 s | 0.97 s | 0.43 s | Cartesia | pass |
+| 2 | 3.67 s | 0.99 s | 0.44 s | 0.47 s | Cartesia | pass |
+| 3 | 3.05 s | 0.72 s | 0.88 s | 0.37 s | Cartesia | pass |
+
+Every walker line matched the table above word for word in all three runs. Afterwards both phones were removed and the walker forgotten; its credential and both phones' cookies then got `401`. Not checked here: Render's own logs (model calls and times), the audio heard aloud, the chord or a request from her phone on Render, the real Pi and real iPhones.
 
 **Deploy order:** the server first (with the care database published), then the walker's bundle. A new walker talks to an old server safely (it sends `can_ask_for_help` only after `/help` answers), but the demo needs both.
 
