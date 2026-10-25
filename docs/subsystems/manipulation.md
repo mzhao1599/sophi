@@ -61,6 +61,7 @@ There is at most **one pending Confirm target** at a time, across everything Con
 
 - **Who may prepare.** The preparers are `walker_screen`, `operator_cli` (the terminal), `offer` (the cloud's id-only request) and `walker_local` (the Pi's own "Let go?"). The policy lists, for each command, who may prepare it.
   - The cloud may offer only a locally taught skill or pose by id, or the `ground`/`up` lift preset (`MotionOfferRequestSchema`). The Pi drops unknown skills or poses and refuses an unavailable lift preset; it words any Confirm target itself. No cloud text is ever shown or spoken.
+  - A lift move prepared from an offer must go to one of `LIFT_PRESET_HEIGHTS_MM` (`offerKeepsToPresets`, checked on the Confirm target and the command), so the cloud never chooses a height in millimetres; `lift.move` stays hold-to-run. A port carries lift lines beside sensor lines only for the shared ToF and lift board; a hand board's port never becomes a lift port.
 - **Timing, on the Pi's monotonic clock.**
   - A target expires after `WALKER_CONFIRM_WAIT_MS` (30 s).
   - A press is accepted only after the button was seen released for the whole `CONFIRM_ARM_DELAY_MS` (2 s), all after the target appeared, with no reset of that hand module since (`confirmPressVerdict`). Otherwise it is ignored, and the ignored press restarts the window.

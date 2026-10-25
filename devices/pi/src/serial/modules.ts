@@ -209,6 +209,8 @@ export class ModuleManager {
       return true;
     }
     if (text === undefined || result.ok || result.problem !== "unknown_type") return false;
+    // Only the shared ToF and lift board carries both kinds of line; a hand board's port never becomes a lift port.
+    if (port.instanceId && this.records.get(port.instanceId)?.type === "hand") return false;
     const lift = parseLiftSerialLine(text);
     if (!lift.ok) return false;
     if (lift.message.type !== "lift.hello") {
@@ -416,7 +418,7 @@ export class ModuleManager {
     if (port.instanceId && port.instanceId !== id) this.forget(port.instanceId);
     port.instanceId = id;
     port.wantHello = false;
-    port.kind = port.liftLink ? "hybrid" : "serial";
+    port.kind = port.liftLink && message.module_type !== "hand" ? "hybrid" : "serial";
     // A module answering a hello.request keeps its seq running; a reboot starts it again (or it moved ports).
     // Only a reboot means a button it reported as held is no longer held.
     const rebooted = existing !== undefined && (existing.port !== port || message.seq <= (existing.lastSeq ?? -1));

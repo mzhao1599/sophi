@@ -1612,7 +1612,8 @@
                 "enum": [
                   "get_location",
                   "get_distance",
-                  "get_weather"
+                  "get_weather",
+                  "show_on_screen"
                 ]
               },
               "text": {
@@ -1630,6 +1631,30 @@
         },
         "original_audio": {
           "type": "boolean"
+        },
+        "screen": {
+          "type": "object",
+          "properties": {
+            "views": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "weather",
+                  "location",
+                  "sensors",
+                  "message",
+                  "parts"
+                ]
+              }
+            }
+          },
+          "required": [
+            "views"
+          ],
+          "additionalProperties": false
         },
         "can_ask_for_help": {
           "type": "boolean",
@@ -2764,6 +2789,17 @@
         "configuration_version"
       ],
       "additionalProperties": false
+    },
+    "ShowViewSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "weather",
+        "location",
+        "sensors",
+        "message",
+        "parts"
+      ]
     },
     "SpeechSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5272,6 +5308,62 @@
       ],
       "additionalProperties": false
     },
+    "WalkerToolCallSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "get_location",
+                "get_distance",
+                "get_weather"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "const": "show_on_screen"
+            },
+            "view": {
+              "type": "string",
+              "enum": [
+                "weather",
+                "location",
+                "sensors",
+                "message",
+                "parts"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "view"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WalkerToolNameSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "get_location",
+        "get_distance",
+        "get_weather",
+        "show_on_screen"
+      ]
+    },
     "WalkerToolResultSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -5281,7 +5373,8 @@
           "enum": [
             "get_location",
             "get_distance",
-            "get_weather"
+            "get_weather",
+            "show_on_screen"
           ]
         },
         "text": {
@@ -6089,21 +6182,49 @@
           "additionalProperties": false
         },
         "tool_call": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "enum": [
-                "get_location",
-                "get_distance",
-                "get_weather"
-              ]
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "get_location",
+                    "get_distance",
+                    "get_weather"
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "const": "show_on_screen"
+                },
+                "view": {
+                  "type": "string",
+                  "enum": [
+                    "weather",
+                    "location",
+                    "sensors",
+                    "message",
+                    "parts"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "view"
+              ],
+              "additionalProperties": false
             }
-          },
-          "required": [
-            "name"
-          ],
-          "additionalProperties": false
+          ]
         },
         "tool_results": {
           "maxItems": 8,
@@ -6116,7 +6237,8 @@
                 "enum": [
                   "get_location",
                   "get_distance",
-                  "get_weather"
+                  "get_weather",
+                  "show_on_screen"
                 ]
               },
               "text": {
