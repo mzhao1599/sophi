@@ -214,9 +214,10 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   }
 
   // ---- SIMULATED position and map services ----
-  // The position always is simulated here. Against a real server, with no script, the map services are the
-  // real public ones: a demo must never pass a recorded route off as a live one. With the fake cloud or a
-  // script they are the recorded responses (offline, repeatable). WALKER_SIM_MAPS=live or recorded overrides.
+  // The position always is simulated here. Against a real server the map services are the real public ones: a
+  // recorded route must never reach a real assistant as if it were planned live. With the fake cloud they are the
+  // recorded responses (offline, repeatable). WALKER_SIM_MAPS=live or recorded overrides (recorded against a real
+  // server is for tests only).
   let speedup: number;
   try {
     speedup = readWalkSpeedup(process.env.WALKER_SIM_WALK_SPEEDUP);
@@ -230,7 +231,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     log.error("WALKER_SIM_MAPS must be live or recorded.");
     return 2;
   }
-  const liveMaps = mapsChoice === "live" || (mapsChoice !== "recorded" && Boolean(options.server) && !steps);
+  const liveMaps = mapsChoice === "live" || (mapsChoice !== "recorded" && Boolean(options.server));
   const maps = liveMaps ? mapServicesFromEnv(process.env, clock) : recordedMapServices(clock);
   log.info("SIMULATED GPS position by Lake Merritt, Oakland", {
     walk_speedup: speedup,

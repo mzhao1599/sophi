@@ -36,6 +36,7 @@ export class SimulatedPosition implements PositionSource {
   private along = 0;
   private holding = false;
   private paused = false;
+  private waitingForDirections = false;
   private tracking = false;
   private cancel: Cancel | null = null;
   private readonly speed: number;
@@ -77,6 +78,10 @@ export class SimulatedPosition implements PositionSource {
     this.line = route && route.length >= 2 ? polyline(route) : null;
     this.along = this.line ? snapTo(this.line, this.position, 0).along : 0;
     this.holding = false;
+  }
+
+  waitForDirections(waiting: boolean): void {
+    this.waitingForDirections = waiting;
   }
 
   stop(): void {
@@ -126,7 +131,7 @@ export class SimulatedPosition implements PositionSource {
   private schedule(): void {
     this.cancel = this.clock.setTimeout(() => {
       this.cancel = null;
-      if (this.line && !this.paused && !this.holding) {
+      if (this.line && !this.paused && !this.holding && !this.waitingForDirections) {
         this.along = Math.min(lengthOf(this.line), this.along + (this.speed * STEP_MS) / 1000);
         this.position = pointAlong(this.line, this.along);
       }

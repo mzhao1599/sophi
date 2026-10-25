@@ -382,9 +382,18 @@ describe("the Navigator (N9 to N16)", () => {
     n.navigator.start(recordedRoute(), START);
     const intro = n.navigator.introLine()!;
     expect(intro.text).toBe(
-      "Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.",
+      "On the simulated position: Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.",
     );
     everyLine.push(intro.text);
+  });
+
+  it("N30: a line about a phase (off the route, lost position) is no longer due once guidance has left that phase", () => {
+    const n = makeNavigator();
+    n.navigator.start(recordedRoute(), START);
+    const line = n.navigator.introLine()!;
+    expect(n.navigator.due({ ...line, phase: "rerouting" })).toBe(false);
+    expect(n.navigator.due({ ...line, phase: "guiding" })).toBe(true);
+    expect(n.navigator.due(line)).toBe(true);
   });
 
   it("N15: a line about a step she has passed, or from an ended route, is no longer due", async () => {

@@ -18,7 +18,8 @@ key t
 expect spoke Fake cloud: Your simulated GPS puts you near 451 Lee Street, Oakland, California.
 
 # 3. "Take me to the Lake Merritt Boating Center": the route starts (the screen's view is on), the fake
-# cloud's reply carries the walker's result, then the Pi says its own first line.
+# cloud's reply carries the walker's result, then the Pi says its own first line once both replies have played
+# (the Mac's `say` can take several seconds a line). The simulated position stands still until then.
 fake tool start_route Lake Merritt Boating Center
 key t
 expect mic open
@@ -27,7 +28,7 @@ key t
 expect spoke Fake cloud: let me find that.
 expect navigation guiding
 expect spoke Fake cloud: Walking directions started to Lake Merritt Boating Center: about 750 meters
-expect spoke Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.
+expect 60000 spoke On the simulated position: Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.
 
 # 4. Walking: the Lenox Avenue turn, ahead of it and at it.
 expect 30000 spoke turn left onto Lenox Avenue.
@@ -41,8 +42,8 @@ absent 1500 cue nothing_to_confirm
 # 6. 50 m off the route (to its right, where the route is far): two positions later the walker plans again
 # from there and says the new first instruction.
 gps off_route 50
-expect 10000 spoke You seem to be off the route. Finding the way again.
-expect 10000 spoke Head
+expect 30000 spoke You seem to be off the route. Finding the way again.
+expect 30000 spoke Head
 expect navigation guiding
 
 # 7. On to the end: the arrival, then the route ends 20 s later.

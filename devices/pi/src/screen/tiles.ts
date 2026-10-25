@@ -31,6 +31,8 @@ export const TILE_MAX_BYTES = 512 * 1024;
 const FETCH_TIMEOUT_MS = 6000;
 /** The usage policy's "at most two connections". */
 const UPSTREAM_CONNECTIONS = 2;
+/** Tiles waiting for a connection beyond this many are a 404: no page can queue a bulk download through the walker. */
+const MAX_WAITING = 32;
 /** After the tile server couldn't be reached, the screen asks again only this much later (offline: no stalls). */
 const UNREACHABLE_BACKOFF_MS = 30_000;
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -144,6 +146,7 @@ export class TileCache {
     const key = tileKey(t);
     let pending = this.inFlight.get(key);
     if (!pending) {
+      if (this.waiting.length >= MAX_WAITING) return Promise.resolve(null);
       pending = this.limited(() => this.fetchAndStore(t)).finally(() => this.inFlight.delete(key));
       this.inFlight.set(key, pending);
     }
@@ -205,10 +208,10 @@ export class TileCache {
     try {
       await this.loadIndex();
       const file = this.file(t);
-      await mkdir(join(this.options.dir, String(t.z), String(t.x)), { recursive: true, mode: 0o755 });
+      await mkdir(join(this.options.dir, String(t.z), String(t.x)), { recursive: true, mode: 0o700 });
       // Written beside it and renamed, so a reader never sees half a tile.
       const temp = `${file}.${process.pid}.tmp`;
-      await writeFile(temp, body, { mode: 0o644 });
+      await writeFile(temp, body, { mode: 0o600 });
       await rename(temp, file);
       const key = tileKey(t);
       this.total += body.length - (this.index!.get(key)?.bytes ?? 0);

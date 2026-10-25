@@ -197,6 +197,8 @@ interface PendingTurn {
   abort: AbortController;
   /** Set once the request is built; a cancelled turn's proposal is declined by it. */
   clientTurnId: string | null;
+  /** This turn's start_route started a route: cancelling the turn ends it, so she never hears it start after "Cancelled". */
+  startedRoute?: boolean;
 }
 
 /**
@@ -297,6 +299,7 @@ export class WalkerService {
           if (!route) {
             this.introWaiting = null;
             this.guidanceWaiting = null;
+            source.waitForDirections?.(false);
           }
         },
       });
@@ -554,7 +557,7 @@ export class WalkerService {
         else {
           // At most one route tool in a turn (the server ends the loop after one; this is the Pi's own check).
           routeToolRan = true;
-          text = call.name === "start_route" ? await this.runStartRoute(call.destination, turn.abort.signal) : this.runStopRoute();
+          text = call.name === "start_route" ? await this.runStartRoute(call.destination, turn.abort.signal, () => { turn.startedRoute = true; }) : this.runStopRoute();
         }
         if (this.turn !== turn) return;
         const heard = reply.turn.heard?.trim();
@@ -641,7 +644,7 @@ export class WalkerService {
    * result for the model names the place and the distances; the coordinates stay here. Every failure is a
    * fixed line, and leaves no route on.
    */
-  private async runStartRoute(destination: string, signal: AbortSignal): Promise<string> {
+  private async runStartRoute(destination: string, signal: AbortSignal, started: () => void): Promise<string> {
     const source = this.deps.location;
     const navigator = this.navigator;
     if (!source || !navigator) return "This walker has no GPS, so I can't give walking directions.";
@@ -675,8 +678,10 @@ export class WalkerService {
       case "ok": {
         const { route, from } = planned;
         navigator.start(route, from);
+        started();
         this.introWaiting = navigator.introLine();
-        return `Walking directions started to ${route.place.name}: about ${roughDistanceWords(route.length)}, around ${minutesWords(walkingMinutes(route.length))} on foot. First: ${route.steps[0]!.instruction} The walker says each turn itself. ${NAV_LINES.osm}`;
+        this.deps.location?.waitForDirections?.(true);
+        return `Walking directions started to ${route.place.name}: about ${roughDistanceWords(route.length)}, around ${minutesWords(walkingMinutes(route.length))} on foot. First: ${route.steps[0]!.instruction} The walker says each turn itself. ${NAV_LINES.osm}${source.simulated ? " This uses the walker's simulated position, not a real GPS fix." : ""}`;
       }
     }
   }
@@ -715,12 +720,14 @@ export class WalkerService {
     if (this.talk !== "idle" || this.answersPlaying > 0 || this.readingMessage) return;
     const line = this.introWaiting ?? this.guidanceWaiting;
     if (!line) return;
-    if (line === this.introWaiting) this.introWaiting = null;
+    const intro = line === this.introWaiting;
+    if (intro) this.introWaiting = null;
     else this.guidanceWaiting = null;
     if (!navigator.due(line)) return this.flushGuidance();
     this.guidancePlaying = true;
     void this.say(line.text, "guidance").then(() => {
       this.guidancePlaying = false;
+      if (intro) this.deps.location?.waitForDirections?.(false);
       this.flushGuidance();
     });
   }
@@ -762,6 +769,7 @@ export class WalkerService {
     if (!turn) return;
     this.turn = null;
     if (turn.clientTurnId) this.rememberUnheard(turn.clientTurnId);
+    if (turn.startedRoute && this.navigator?.active()) this.navigator.stop("turn cancelled");
     turn.abort.abort(new CancelledError("Cancelled by a Talk press."));
     this.setTalk("idle");
     this.deps.bus.emit("turn", { outcome: "cancelled" });

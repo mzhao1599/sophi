@@ -22,5 +22,11 @@ export interface PositionSource {
   onDemand(signal: AbortSignal): Promise<GpsResult>;
   /** The route she is on, or null: the simulated position walks along it. A real receiver ignores it. */
   follow?(route: LatLon[] | null): void;
+  /**
+   * True while a new route's first line waits to be heard: the simulated position stands still meanwhile, as a
+   * person sets off once she knows the way (otherwise a long reply walks her past the first turn's warning).
+   * A real receiver ignores it.
+   */
+  waitForDirections?(waiting: boolean): void;
   stop(): void;
 }

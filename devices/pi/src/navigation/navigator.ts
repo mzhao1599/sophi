@@ -29,6 +29,8 @@ export interface GuidanceLine {
   epoch: number;
   /** Monotonic time it was made. */
   at: number;
+  /** For a line about a phase ("off the route", "lost the position"): said only while guidance is still in it. */
+  phase?: NavigationPhase;
 }
 
 export interface NavigatorDeps {
@@ -125,7 +127,9 @@ export class Navigator {
   introLine(): GuidanceLine | null {
     const route = this.route;
     if (!route) return null;
-    const text = `Walking to ${route.place.spoken}, about ${roughDistanceWords(route.length)}. ${route.steps[0]!.instruction} ${NAV_LINES.osm}`;
+    // A simulated position says so out loud too, not only on the screen: she must never hear made-up guidance as real.
+    const simulated = this.deps.simulated ? "On the simulated position: " : "";
+    const text = `${simulated}Walking to ${route.place.spoken}, about ${roughDistanceWords(route.length)}. ${route.steps[0]!.instruction} ${NAV_LINES.osm}`;
     return this.line(text, "status", 0);
   }
 
@@ -154,7 +158,7 @@ export class Navigator {
     if (!this.route || line.epoch !== this.epoch) return false;
     if (line.kind === "ahead") return this.next === line.step && this.phase === "guiding";
     if (line.kind === "now") return this.next <= line.step + 1 && this.deps.clock.monotonic() - line.at < 10_000;
-    return true;
+    return line.phase === undefined || line.phase === this.phase;
   }
 
   /** The route in progress as the model reads it (names and rounded distances; never coordinates), or null. */
@@ -175,12 +179,12 @@ export class Navigator {
 
   // ---- Inside ----
 
-  private line(text: string, kind: GuidanceLine["kind"], step: number): GuidanceLine {
-    return { text, kind, step, epoch: this.epoch, at: this.deps.clock.monotonic() };
+  private line(text: string, kind: GuidanceLine["kind"], step: number, phase?: NavigationPhase): GuidanceLine {
+    return { text, kind, step, epoch: this.epoch, at: this.deps.clock.monotonic(), ...(phase ? { phase } : {}) };
   }
 
-  private say(text: string, kind: GuidanceLine["kind"], step: number): void {
-    this.deps.say(this.line(text, kind, step));
+  private say(text: string, kind: GuidanceLine["kind"], step: number, phase?: NavigationPhase): void {
+    this.deps.say(this.line(text, kind, step, phase));
   }
 
   private aheadText(index: number, metres: number): string {
@@ -240,7 +244,7 @@ export class Navigator {
       this.lostSaid = true;
       this.phase = "no_position";
       this.deps.log.info("route position lost", { seconds: Math.round((now - this.lastFixAt) / 1000) });
-      this.say(NAV_LINES.lost, "status", this.next);
+      this.say(NAV_LINES.lost, "status", this.next, "no_position");
     }
     this.emitView();
     if (this.route && !this.arrived()) this.scheduleTick();
@@ -308,7 +312,7 @@ export class Navigator {
     this.deps.log.info("off the route; planning again", { attempt: this.reroutes });
     if (!this.offSaid) {
       this.offSaid = true;
-      this.say(NAV_LINES.offRoute, "status", this.next);
+      this.say(NAV_LINES.offRoute, "status", this.next, "rerouting");
     }
     const controller = new AbortController();
     this.rerouting = controller;
@@ -318,7 +322,7 @@ export class Navigator {
       this.deps.log.info("planning again failed", { attempt: this.reroutes });
       if (!this.noWaySaid) {
         this.noWaySaid = true;
-        this.say(NAV_LINES.noWay, "status", this.next);
+        this.say(NAV_LINES.noWay, "status", this.next, "off_route");
       }
       this.emitView();
     };

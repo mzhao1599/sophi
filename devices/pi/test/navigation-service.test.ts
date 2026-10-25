@@ -17,7 +17,7 @@ import { boot, captureLogger, flush, makeHarness, type Harness } from "./support
  * fake cloud (which scripts the tool calls), the SIMULATED position and the recorded map services.
  */
 
-const INTRO = "Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.";
+const INTRO = "On the simulated position: Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs.";
 
 /** A walker with the simulated position (or `source`) and the recorded map services (or `fetch`). */
 function walker(options: { source?: (clock: Harness["clock"]) => PositionSource; fetch?: MapFetch; logging?: boolean } = {}) {
@@ -55,7 +55,7 @@ describe("start_route and stop_route in the turn loop", () => {
     const result = lastRequest(h).tool_results!.at(-1)!;
     expect(result.name).toBe("start_route");
     expect(result.text).toBe(
-      "Walking directions started to Lake Merritt Boating Center: about 750 meters, around 11 minutes on foot. First: Head west on the path. The walker says each turn itself. Directions come from OpenStreetMap and may include steps or curbs.",
+      "Walking directions started to Lake Merritt Boating Center: about 750 meters, around 11 minutes on foot. First: Head west on the path. The walker says each turn itself. Directions come from OpenStreetMap and may include steps or curbs. This uses the walker's simulated position, not a real GPS fix.",
     );
     const spoken = h.spoken();
     const reply = spoken.indexOf(`Fake cloud: ${result.text}`);
@@ -153,6 +153,45 @@ describe("start_route and stop_route in the turn loop", () => {
     bare.press("talk", "released");
     await flush();
     expect("navigation" in bare.device()!.turnRequests.at(-1)!).toBe(false);
+  });
+
+  it("N28: the simulated position stands still until she has heard the route's first line", async () => {
+    const h = walker();
+    await boot(h);
+    h.speaker.hold = true;
+    await ask(h, START_ROUTE);
+    const before = h.position.current();
+    await h.clock.advance(20_000);
+    expect(guidance(h)).toEqual([]);
+    expect(h.position.current()).toMatchObject({ latitude: before.latitude, longitude: before.longitude });
+    for (let i = 0; i < 6 && !guidance(h).includes(INTRO); i += 1) {
+      h.speaker.finish();
+      await flush();
+    }
+    expect(guidance(h)[0]).toBe(INTRO);
+    h.speaker.hold = false;
+    h.speaker.finish();
+    await flush();
+    await h.clock.advance(5_000);
+    expect(h.position.current().latitude).not.toBe(before.latitude);
+  });
+
+  it("N29: a Talk press that cancels the turn after start_route ran ends that route; its first line is never said", async () => {
+    const h = walker();
+    await boot(h);
+    const client = h.client;
+    const original = client.turn.bind(client);
+    let calls = 0;
+    // The continuation after start_route never answers, so the turn is still waiting when she presses Talk.
+    client.turn = (body, signal) => (++calls === 2 ? new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true })) : original(body, signal));
+    await ask(h, START_ROUTE);
+    expect(views(h).at(-1)).toMatchObject({ state: "navigating" });
+    h.press("talk", "pressed");
+    await flush();
+    expect(views(h).at(-1)).toBeNull();
+    await h.clock.advance(5_000);
+    expect(guidance(h)).not.toContain(INTRO);
+    expect(h.spoken()).toContain(LINES.cancelled);
   });
 
   it("N18: stop_route ends the route; with none it says so; a second start_route replaces the first", async () => {
