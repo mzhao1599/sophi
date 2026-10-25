@@ -6,7 +6,7 @@ import { createCameraApi } from "@/lib/cameraApi";
 import { buzz, playHelpTone, unlockAudioOnFirstTap } from "@/lib/helpAlert";
 import { createPhoneApi, type HelpView, type PhoneApi, type PhoneHome, type PhoneRole } from "@/lib/phoneApi";
 import { createPreviewPhone, type DemoCircle, type PreviewOptions } from "@/lib/phoneFake";
-import { CANT_REACH, JOIN_NOTICE, codeDigits, helpArrived, helpChange, helpTitle, herName } from "@/lib/phoneView";
+import { CANT_REACH, JOIN_NOTICE, codeDigits, helpArrived, helpChange, helpTitle, herName, type StartScreen } from "@/lib/phoneView";
 import { usePhone, type Phone } from "@/lib/usePhone";
 import { MayaPhone } from "./MayaPhone";
 import { RosePhone } from "./RosePhone";
@@ -21,9 +21,7 @@ const HEADING = "app-heading";
  * (development only, `/app?preview=rose` or `?preview=maya`) swaps in the in-memory fake with one phone
  * already linked, says "Preview" on every screen, and adds preview controls that drive the fake circle.
  */
-/** Screens a link can open on (`/app?screen=`): the same on both phones. Help is never opened by a link. */
-export const START_SCREENS = ["walker", "messages", "nearby"] as const;
-export type StartScreen = (typeof START_SCREENS)[number];
+export type { StartScreen } from "@/lib/phoneView";
 
 export function PhoneApp({
   preview = null,

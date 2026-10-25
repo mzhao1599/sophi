@@ -1,4 +1,5 @@
-import { PhoneApp, START_SCREENS, type StartScreen } from "@/components/PhoneApp";
+import { PhoneApp } from "@/components/PhoneApp";
+import { START_SCREENS, type StartScreen } from "@/lib/phoneView";
 import type { PhoneRole } from "@/lib/phoneApi";
 
 /**
