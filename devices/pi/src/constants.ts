@@ -106,6 +106,17 @@ export const MESSAGES_RETRY_MS = 60_000;
 /** Placeholder, not measured: retry delays after failed heartbeats; the last one repeats. */
 export const HEARTBEAT_BACKOFF_MS = [5000, 10000, 15000] as const;
 
+// ---- Asking for help (src/help.ts; the HELP_* timings shared with the server are the contract's, walker.ts) ----
+
+/** Placeholder: a help request that couldn't be sent is tried again this long after each failure (the design's 5 s). */
+export const HELP_SEND_RETRY_EVERY_MS = 5_000;
+/** Placeholder, not measured: one try of a help call (ask, status, okay) with no answer by then counts as failed. */
+export const HELP_CALL_DEADLINE_MS = 10_000;
+/** Placeholder (the design's 10 s): `closed` and `not_sent` stay on the walker screen this long, then it goes back. */
+export const HELP_RESULT_SHOWN_MS = 10_000;
+/** After GET /help answers 404 (an older server), the walker doesn't ask again for this long (like the messages feed). */
+export const HELP_STATUS_RETRY_MS = 60_000;
+
 // ---- The lift client (src/motion/lift/; the lift's own timings are motion.ts's) ----
 
 /**

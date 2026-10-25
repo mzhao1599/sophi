@@ -4,6 +4,7 @@ import {
   FAULT_SENTENCES,
   REFUSAL_SENTENCES,
   VOICE_CHOICES,
+  helpNames,
   holdControlShown,
   type Cue,
   type ScreenAction,
@@ -456,8 +457,130 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
     case "help_hold":
     case "help_countdown":
     case "help":
-      // Placeholder until the walker piece draws them (docs/subsystems/help.md); the Pi doesn't send them yet.
-      throw new Error(`The ${content.state} screen isn't drawn yet.`);
+      return helpScene(content, textSize);
+  }
+}
+
+// ---- Asking for help (docs/subsystems/help.md, added 2026-10-24) ----
+
+/** "Maya is" / "Maya and Sam are": the verb agrees with how many names there are. */
+const agree = (names: readonly string[], one: string, more: string) => `${helpNames(names)} ${names.length === 1 ? one : more}`;
+
+/**
+ * The walker's fixed help lines, the design's table word for word (docs/subsystems/help.md, "The walker's fixed
+ * lines"). The Pi speaks these (devices/pi/src/notices.ts imports them) and the help screens show them, so the two
+ * never drift. Gender-neutral: the walker can't know anyone's pronouns. Calm words only (the screen's rule).
+ */
+export const HELP_WORDS = {
+  asking: "Asking for help.",
+  stopped: "Okay. I didn't ask anyone.",
+  retrying: "No internet yet. I'll keep trying.",
+  sent: (names: readonly string[]) => `Sent to ${helpNames(names)}'s ${names.length === 1 ? "phone" : "phones"}.`,
+  /** One phone at a time: each phone that shows it is said once. */
+  shown: (name: string) => `It's showing on ${name}'s phone.`,
+  coming: (names: readonly string[]) => `${agree(names, "is", "are")} on the way.`,
+  armOkay: (sentTo: readonly string[]) => `Press Confirm again to tell ${helpNames(sentTo)} you're okay.`,
+  closedOkay: (sentTo: readonly string[]) => `Okay. ${helpNames(sentTo)} will see that you're okay.`,
+  closedWithHer: (name: string) => `${name} says they're with you.`,
+  expired: "Your request for help has ended.",
+  notSent: {
+    no_caretaker: "No caretaker's phone is linked to this walker, so nothing was sent.",
+    offline: "I couldn't reach the internet, so nothing was sent. Use your phone if you can.",
+    failed: "Something went wrong, so nothing was sent. Use your phone if you can.",
+  },
+  /** The second Confirm's /okay didn't get through (added to the design's table with it). */
+  okayNotSent: "I couldn't reach the internet. Press Confirm twice to try again.",
+  countdown: (seconds: number) => `Asking for help in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`,
+  pressToStop: "Press any button to stop.",
+} as const;
+
+/**
+ * The help screen's main line at the main size when it fits in at most two lines with the lines under it, else
+ * as a motion title does (`fitMotionMain`: bold body size, then bold smallest). Names are never cut.
+ */
+function helpMain(text: string, textSize: TextSize, lines: readonly ViewLine[]): ScreenView["main"] {
+  const sizes = screenSizes(textSize);
+  const room = ONE_THING_PX.words - linesPx(lines, sizes) - 4;
+  const mainLines = Math.ceil((chars(text) * CHAR_EM.bold * sizes.main) / WRAP_PX);
+  if (mainLines <= 2 && Math.ceil(mainLines * sizes.main * 1.02) <= room) return { text, size: "main" };
+  return fitMotionMain(text, textSize, lines, false);
+}
+
+/** A line holding names: the body size while it stays short, else the smallest size, so seven long names still fit. */
+const namesLine = (text: string): ViewLine => (chars(text) <= 40 ? body(text) : detail(text));
+
+type HelpContent = Extract<ScreenContent, { state: "help_hold" | "help_countdown" | "help" }>;
+
+/**
+ * Asking for help. Nothing here can be tapped: the handles start it, stop a countdown and say "I'm okay" (the
+ * contract has no ScreenAction for help), so the band names the handles instead.
+ */
+function helpScene(content: HelpContent, textSize: TextSize): Scene {
+  const stop = { left: { kind: "hint", word: "Stop" } as const, right: "Stop" as const };
+  if (content.state === "help_hold") {
+    const lines = [body("to ask for help.")];
+    return {
+      key: "help_hold",
+      main: helpMain("Keep holding", textSize, lines),
+      lines,
+      center: { lines: [detail("Let go to stop.")] },
+      announce: "Keep holding to ask for help. Let go to stop.",
+    };
+  }
+  if (content.state === "help_countdown") {
+    const line = HELP_WORDS.countdown(content.seconds_left);
+    // One key for the whole countdown: the number changes each second without a cross-fade.
+    return {
+      ...stop,
+      key: "help_countdown",
+      main: { text: String(content.seconds_left), size: "main" },
+      lines: [body(line)],
+      center: { lines: [detail(HELP_WORDS.pressToStop)] },
+      announce: `${line} ${HELP_WORDS.pressToStop}`,
+    };
+  }
+  const help = content.help;
+  switch (help.phase) {
+    case "sending": {
+      const lines = help.retrying ? [detail(HELP_WORDS.retrying)] : [];
+      return { key: `help_sending:${help.retrying}`, main: helpMain("Asking for help", textSize, lines), lines };
+    }
+    case "not_sent": {
+      const lines = [detail(HELP_WORDS.notSent[help.why])];
+      return { key: `help_not_sent:${help.why}`, main: helpMain("Not sent", textSize, lines), lines, announce: `Not sent. ${HELP_WORDS.notSent[help.why]}` };
+    }
+    case "open": {
+      const confirm = { left: { kind: "hint", word: "Confirm" } as const };
+      if (help.confirm_okay) {
+        const lines = [namesLine(`to tell ${helpNames(help.sent_to)} you're okay.`)];
+        return { ...confirm, key: "help_open:confirm_okay", main: helpMain("Press Confirm again", textSize, lines), lines, announce: HELP_WORDS.armOkay(help.sent_to) };
+      }
+      // The newest news leads: coming, else showing on a phone, else sent.
+      const news =
+        help.coming.length > 0
+          ? HELP_WORDS.coming(help.coming)
+          : help.shown_to.length > 0
+            ? `It's showing on ${helpNames(help.shown_to)}'s ${help.shown_to.length === 1 ? "phone" : "phones"}.`
+            : HELP_WORDS.sent(help.sent_to);
+      const lines = [detail("Press Confirm twice to say you're okay.")];
+      return {
+        ...confirm,
+        key: `help_open:${help.sent_to.join(",")}:${help.shown_to.join(",")}:${help.coming.join(",")}`,
+        main: helpMain(news.slice(0, -1), textSize, lines),
+        lines,
+        announce: `${news} Press Confirm twice to say you're okay.`,
+      };
+    }
+    case "closed": {
+      // The screen's `closed` carries who closed it, not who it was sent to, so "Okay. Maya will see that you're
+      // okay." (spoken) shows here without the names.
+      if (help.how === "okay") {
+        const lines = [body("They'll see that you're okay.")];
+        return { key: "help_closed:okay", main: helpMain("Okay", textSize, lines), lines, announce: "Okay. They'll see that you're okay." };
+      }
+      const said = help.how === "with_her" && help.by_name ? HELP_WORDS.closedWithHer(help.by_name) : HELP_WORDS.expired;
+      return { key: `help_closed:${help.how}:${help.by_name ?? ""}`, main: helpMain(said.slice(0, -1), textSize, []), announce: said };
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import {
+  HELP_CHORD_WINDOW_MS,
   ArmCalibrationSchema,
   MANIFEST_MAY_LIST_ARMS,
   MAX_GOAL_LEAD_DEG,
@@ -189,13 +190,14 @@ describe("the coordinator", () => {
     await h.clock.advance(100);
     // A second press edge with no release seen (a lost release): not trusted.
     h.hand.press("confirm", "pressed");
-    await h.clock.advance(100);
+    // Each press is answered after the help chord window (HELP_CHORD_WINDOW_MS), with the evidence of its own moment.
+    await h.clock.advance(HELP_CHORD_WINDOW_MS);
     expect(ignored()).toEqual(["press-ignored ignore_too_early", "press-ignored ignore_too_early", "press-ignored ignore_untrusted"]);
     expect(seen).not.toContain("torque left on");
     h.hand.press("confirm", "released");
     await h.clock.advance(2100);
     h.hand.press("confirm", "pressed");
-    await h.clock.advance(100);
+    await h.clock.advance(100 + HELP_CHORD_WINDOW_MS);
     expect(seen).toContain("torque left on");
     // A new target, then the hand says hello again: withdrawn.
     h.coordinator.operatorGoToPose("left", "ready");

@@ -23,7 +23,7 @@ import { FakeClock, captureLogger, flush } from "./support/fakes";
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const AT = "2026-10-24T19:00:00.000Z";
 const settings = startingSettings(undefined, Date.parse(AT));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, help: null };
 
 const LIFT_AT_100: LiftState = {
   connected: true,

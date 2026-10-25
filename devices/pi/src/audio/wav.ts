@@ -72,7 +72,7 @@ export function toneWav(notes: ReadonlyArray<{ hz: number; ms: number }>, sample
   return wavFromPcm(pcm, sampleRate);
 }
 
-/** The five generated cue sounds. Each is under half a second. */
+/** The six generated cue sounds. Each is under half a second. `help`: both handle buttons are down (a calm rising three-note). */
 export const CUE_TONES = {
   listening: [
     { hz: 660, ms: 90 },
@@ -92,5 +92,10 @@ export const CUE_TONES = {
     { hz: 1250, ms: 70 },
     { hz: 0, ms: 50 },
     { hz: 1250, ms: 70 },
+  ],
+  help: [
+    { hz: 523, ms: 110 },
+    { hz: 659, ms: 110 },
+    { hz: 784, ms: 160 },
   ],
 } as const;

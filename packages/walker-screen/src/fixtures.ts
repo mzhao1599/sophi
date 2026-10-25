@@ -53,6 +53,8 @@ const longest = <K extends string>(sentences: Readonly<Record<K, string>>): K =>
 export const LONGEST_FAULT: MotionFaultCode = longest(FAULT_SENTENCES);
 export const LONGEST_REFUSAL: MotionRefusal = longest(REFUSAL_SENTENCES);
 const BENCH = { bench_mode: true } as const;
+/** Seven caretakers (a full circle of 8, less her), each with a name of the longest length, wide letters first. */
+export const LONGEST_TOLD = ["Christabelle", "Maximilianus", "Wilhelminaes", "Montgomeryss", "Gwendolynnes", "Bartholomews", "Evangelinaes"] as const;
 
 const BASES: Base[] = [
   // The walker's own states first.
@@ -134,6 +136,29 @@ const BASES: Base[] = [
     screen: { state: "motion_fault", faults: [LONGEST_FAULT, "overload"], confirm: target(67, LONGEST_MOTION_TITLE, false) },
     strip: BENCH,
   },
+  // Asking for help (docs/subsystems/help.md), added 2026-10-24: every phase, with the demo's names and the longest
+  // seven caretakers the contract allows (a circle of 8 is her and 7 others), each name 12 characters.
+  { name: "help-hold", screen: { state: "help_hold" } },
+  { name: "help-hold-simulator", screen: { state: "help_hold" }, strip: { simulator: true } },
+  { name: "help-countdown", screen: { state: "help_countdown", seconds_left: 8 } },
+  { name: "help-countdown-1", screen: { state: "help_countdown", seconds_left: 1 }, choices: { theme: "dark" } },
+  { name: "help-sending", screen: { state: "help", help: { phase: "sending", retrying: false } } },
+  { name: "help-sending-retrying", screen: { state: "help", help: { phase: "sending", retrying: true } }, strip: { link: "offline" } },
+  { name: "help-not-sent-no-caretaker", screen: { state: "help", help: { phase: "not_sent", why: "no_caretaker" } } },
+  { name: "help-not-sent-offline", screen: { state: "help", help: { phase: "not_sent", why: "offline" } }, strip: { link: "offline" } },
+  { name: "help-not-sent-failed", screen: { state: "help", help: { phase: "not_sent", why: "failed" } } },
+  { name: "help-open", screen: { state: "help", help: { phase: "open", sent_to: ["Maya"], shown_to: [], coming: [], confirm_okay: false } } },
+  { name: "help-open-shown", screen: { state: "help", help: { phase: "open", sent_to: ["Maya", "Sam"], shown_to: ["Maya"], coming: [], confirm_okay: false } } },
+  { name: "help-open-coming", screen: { state: "help", help: { phase: "open", sent_to: ["Maya", "Sam"], shown_to: ["Maya"], coming: ["Maya"], confirm_okay: false } } },
+  { name: "help-open-confirm-okay", screen: { state: "help", help: { phase: "open", sent_to: ["Maya"], shown_to: ["Maya"], coming: ["Maya"], confirm_okay: true } } },
+  { name: "help-open-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [], coming: [], confirm_okay: false } }, strip: { link: "connecting", simulator: true, ...BENCH } },
+  { name: "help-open-shown-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [...LONGEST_TOLD], coming: [], confirm_okay: false } } },
+  { name: "help-open-coming-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [...LONGEST_TOLD], coming: [...LONGEST_TOLD], confirm_okay: false } }, strip: BENCH },
+  { name: "help-open-confirm-okay-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [], coming: [], confirm_okay: true } } },
+  { name: "help-closed-okay", screen: { state: "help", help: { phase: "closed", how: "okay", by_name: "Rose" } }, strip: { simulator: true } },
+  { name: "help-closed-with-her", screen: { state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya" } } },
+  { name: "help-closed-with-her-long", screen: { state: "help", help: { phase: "closed", how: "with_her", by_name: LONG } }, choices: { theme: "dark" } },
+  { name: "help-closed-expired", screen: { state: "help", help: { phase: "closed", how: "expired", by_name: null } } },
 ];
 
 export function screenFixtures(): ScreenFixture[] {
