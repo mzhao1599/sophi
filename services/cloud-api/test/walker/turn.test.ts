@@ -425,6 +425,33 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect((await service.get(owner(w.secret), w.id)).walker.turns).toHaveLength(0);
     });
 
+    it("takes a show_on_screen step with an empty reply on the first call: the step's line is the server's", async () => {
+      // Live Gemini left reply empty on 15 of 18 first attempts at this step (2026-10-24).
+      const stub = stubModel({ ...show("weather"), reply: "" });
+      const service = serviceWith(stub.model);
+      const w = await walker(service);
+      const r = await service.turn(device(w.credential), w.id, withScreen(spoken()));
+      parses(r);
+      expect(stub.requests).toHaveLength(1);
+      expect(r.tool_call).toEqual({ name: "show_on_screen", view: "weather" });
+      expect(r.turn).toMatchObject({ reply: "Putting that on your screen.", answered_by: "fixed", heard: SHOW_ME });
+    });
+
+    it("still retries an empty reply with nothing heard or no tool, and never answers with an empty line", async () => {
+      for (const answer of [{ ...show("weather", ""), reply: "" }, { transcript: SHOW_ME, reply: "", topics: ["other"] }]) {
+        const stub = stubModel(answer);
+        const service = serviceWith(stub.model);
+        const w = await walker(service);
+        const r = await service.turn(device(w.credential), w.id, withScreen(spoken()));
+        parses(r);
+        expect(stub.requests).toHaveLength(2);
+        expect(r.tool_call).toBeUndefined();
+        expect(r.turn.answered_by).toBe("fixed");
+        expect(r.turn.reply.trim().length).toBeGreaterThan(0);
+        expect(events.at(-1)!.reason).toBe("invalid_reply");
+      }
+    });
+
     it("refuses a view the walker didn't list, or any view without a screen", async () => {
       for (const request of [withScreen(spoken(), ["weather"]), spoken()]) {
         const service = serviceWith(stubModel(show("location", "Show me where I am")).model);

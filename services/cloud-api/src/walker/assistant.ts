@@ -34,11 +34,19 @@ const ModelToolCallSchema = z.union([
 export const WalkerReplySchema = z.strictObject({
   /** The person's words as heard in the clip; empty when none were made out. Ignored for typed turns. */
   transcript: z.string().trim().max(MAX_TRANSCRIPT),
-  reply: z.string().trim().min(1).max(MAX_REPLY),
+  reply: z.string().trim().max(MAX_REPLY),
   topics: z.array(TopicSchema).max(5),
   cues_change: z.strictObject({ cues: z.array(CueSchema).min(1).max(4) }).nullable(),
   tool_call: ModelToolCallSchema.nullable().optional(),
-}).refine((reply) => !reply.cues_change || !reply.tool_call, "A tool request and a settings offer must be separate steps.");
+})
+  .refine((reply) => !reply.cues_change || !reply.tool_call, "A tool request and a settings offer must be separate steps.")
+  // A show_on_screen step's spoken line is the server's ("Putting that on your screen."), so the model's reply
+  // isn't used; live Gemini left it empty on 15 of 18 first attempts (2026-10-24). Anywhere else, and when nothing
+  // was heard (the step then isn't taken and the reply would be the answer), a reply is required.
+  .refine((reply) => reply.reply.length > 0 || (reply.tool_call?.name === "show_on_screen" && reply.transcript.length > 0), {
+    path: ["reply"],
+    message: "Too small: expected string to have >=1 characters",
+  });
 export type WalkerReply = z.infer<typeof WalkerReplySchema>;
 
 /**
