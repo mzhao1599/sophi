@@ -204,10 +204,10 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 
 > "Maya sees whether the walker is on and how its alerts work, never what Rose says to Sophi. Messages are deleted after a day. And the people nearby are sample data, and the screen says so."
 
-**Get help (about 40 s)** †. Rehearsed 3 of 3 on a Mac with the simulator, a local server and live Gemini, phones in a headless browser ([results](../subsystems/help.md#rehearsal-results-2026-10-24-on-a-mac-not-the-real-walker-or-phones)); not yet on the real Pi, real phones or Render. Maya's phone must have Sophi open: there are no push notifications.
+**Get help (about 40 s)** †. Rehearsed 3 of 3 with the simulator against Render (Cartesia voice, phones in a headless browser joined through `/app`) and 3 of 3 on a local server ([results](../subsystems/help.md#on-render-2026-10-24-after-the-merge)); not yet on the real Pi or real phones. Maya's phone must have Sophi open: there are no push notifications.
 
 9. Hold Talk: **"I've fallen. Please get Maya."** The walker: "I'll ask Maya for help in 8 seconds. Press any button to stop." Its screen counts down from 8.
-10. At zero: "Asking for help.", then "Sent to Maya's phone." Maya holds up her phone: "Rose asked for help", "By asking Sophi, just now." (under 0.2 s after the walker asked, in rehearsal). The walker: "It's showing on Maya's phone."
+10. At zero: "Asking for help.", then "Sent to Maya's phone." Maya holds up her phone: "Rose asked for help", "By asking Sophi, just now." (0.6 to 1 s after "Sent to Maya's phone." on Render). The walker: "It's showing on Maya's phone."
 11. Maya taps **"I'm on my way"**. The walker: "Maya is on the way." (0.5 to 2 s later), and Rose's phone says so too.
 12. Press **Confirm twice**. The walker: "Press Confirm again to tell Maya you're okay.", then "Okay. Maya will see that you're okay." Maya's phone: "Rose says she's okay."
 
