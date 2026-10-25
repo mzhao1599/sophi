@@ -51,21 +51,22 @@ afterEach(() => {
 });
 
 describe("the walker's backup model", () => {
-  it("gives both models the turn's tool results and message recipients", async () => {
+  it("gives both models the turn's tool results, message recipients and route", async () => {
     const seen: unknown[][] = [];
     const record = (model: string): WalkerAssistant => ({
       reply: async (...args) => {
-        seen.push([model, args[6], args[7]]);
+        seen.push([model, args[6], args[7], args[8]]);
         return ok(model);
       },
     });
     const toolResults = [{ name: "get_weather" as const, text: "12 degrees and cloudy." }];
     const recipients = [{ member_id: crypto.randomUUID(), name: "Sam" }];
+    const navigation = { route: { destination: "Lake Merritt Boating Center", phase: "guiding" as const, next: "Turn left onto Lenox Avenue.", to_next_m: 120, remaining_m: 620, remaining_min: 9, simulated: true } };
     const hedged = createHedgedAssistant({ main: record("main"), backup: record("backup"), backupAfterMs: AFTER });
-    const promise = hedged.reply(status, "walker", { type: "text", text: "hi" }, new Date(), undefined, undefined, toolResults, recipients);
+    const promise = hedged.reply(status, "walker", { type: "text", text: "hi" }, new Date(), undefined, undefined, toolResults, recipients, navigation);
     await vi.advanceTimersByTimeAsync(10_000);
     expect((await promise).ok).toBe(true);
-    expect(seen).toEqual([["main", toolResults, recipients], ["backup", toolResults, recipients]]);
+    expect(seen).toEqual([["main", toolResults, recipients, navigation], ["backup", toolResults, recipients, navigation]]);
   });
 
   it("uses the main model's answer when it comes before the switch-over, and cancels the backup", async () => {
