@@ -28,8 +28,9 @@ bool sameStatus(const LiftStatusLine& a, const LiftStatusLine& b, bool aRequest,
 
 }  // namespace
 
-LiftCore::LiftCore(const LiftIdentity& identity, const LiftSettings& settings, LineOutput& output, StepperPort& stepper)
-    : identity_(identity), settings_(settings), output_(output), stepper_(stepper) {}
+LiftCore::LiftCore(const LiftIdentity& identity, const LiftSettings& settings, LineOutput& output, StepperPort& stepper,
+                   bool allowHoming)
+    : identity_(identity), settings_(settings), allowHoming_(allowHoming), output_(output), stepper_(stepper) {}
 
 // ---- Boot, input, loop ----
 
@@ -45,6 +46,17 @@ void LiftCore::begin(uint32_t now, bool bottomPressed, bool topPressed, StopSens
   sendStatus(now);
   checkSwitches(now);  // rule 8 "at any time": an unplugged harness or a pressed stop latches at boot
   maybeSendStatus(now);
+}
+
+bool LiftCore::assumePosition(int32_t position, uint32_t now) {
+  if (position < 0 || activity_ != Activity::None || stepper_.running() || faults_ != 0 ||
+      rawBottom_ || rawTop_ || stop_ == StopSense::Pressed) return false;
+  const int64_t milli = stepsToMilliMm(position, settings_.microsteps);
+  if (milli < settings_.soft_min_milli_mm || milli > settings_.soft_max_milli_mm) return false;
+  stepper_.setPosition(position);
+  homed_ = true;
+  sendStatus(now);
+  return true;
 }
 
 void LiftCore::receive(const uint8_t* data, size_t length, uint32_t now) {
@@ -271,6 +283,7 @@ void LiftCore::commandMove(const LiftPiLine& command, uint32_t now) {
 }
 
 void LiftCore::commandHome(const LiftPiLine& command, uint32_t now) {
+  if (!allowHoming_) return sendAck(command.request_id, LiftRefusal::InvalidField, now);
   const LiftRefusal refusal = motionRefusal(command, now);
   if (refusal != LiftRefusal::None) return sendAck(command.request_id, refusal, now);
   copyId(activeRequest_, command.request_id);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LiftPresetSchema } from "./motion";
 import { CATALOG_VERSION, ModuleIdSchema, type ModuleId } from "./catalog";
 import {
   CapabilityManifestSchema,
@@ -493,6 +494,8 @@ export const WalkerTurnResponseSchema = z
     tool_call: WalkerToolCallSchema.optional(),
     /** Results already gathered in this unfinished turn; the Pi returns them with the next tool result. */
     tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
+    /** A named lift request, delivered only on a newly saved device turn. The Pi may refuse it. */
+    motion_offer: z.strictObject({ preset: LiftPresetSchema }).optional(),
     /** A draft only. The Pi reads this back and requires a fresh Confirm press before POSTing it. */
     message_offer: z.strictObject({ client_message_id: id, to_member_id: id, to_name: z.string().trim().min(1).max(12), text: z.string().trim().min(1).max(30).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u) }).optional(),
   })
