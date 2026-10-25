@@ -5,6 +5,8 @@ import {
   AnswerProposalRequestSchema,
   AnswerProposalResponseSchema,
   ConfigurationResponseSchema,
+  DeviceMessagesResponseSchema,
+  WALKER_MESSAGES_KEPT,
   DeviceTurnRequestSchema,
   HeartbeatRequestSchema,
   HeartbeatResponseSchema,
@@ -23,6 +25,8 @@ import {
   type Cue,
   type DeviceTurnRequest,
   type DeviceSendMessageRequest,
+  type DeviceMessagesResponse,
+  type WalkerIncomingMessage,
   type HeartbeatRequest,
   type HeartbeatResponse,
   type PairDeviceRequest,
@@ -52,6 +56,8 @@ export interface FakeTurnScript {
   reply: string;
   /** Makes the fake open a `cues_change` proposal with these cues. */
   proposeCues?: Cue[];
+  /** Makes the turn end with a spoken message draft to this (made-up) caretaker (tests). */
+  offerMessage?: { to_name: string; text: string };
 }
 
 export class FakeCloudError extends Error {
@@ -82,6 +88,8 @@ interface FakeDevice {
   events: WalkerEventView[];
   clips: Array<{ bytes: number; durationMs: number }>;
   turns: Map<string, { turn: WalkerTurnView; proposal: ProposalView | null; speech: WalkerTurnResponse["speech"] }>;
+  /** Messages a (fake) caretaker sent to her phone, oldest first. */
+  messages: WalkerIncomingMessage[];
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -133,6 +141,7 @@ export class FakeCloud {
       events: [],
       clips: [],
       turns: new Map(),
+      messages: [],
     });
     return { device_id: deviceId, credential, configuration };
   }
@@ -181,6 +190,25 @@ export class FakeCloud {
     }
     device.events.splice(0, Math.max(0, device.events.length - 100));
     return { configuration_version: this.current(device).version, open_proposal: this.open(device) };
+  }
+
+  /** A fake caretaker's message to her phone (the simulator's `m` key, tests). Made up: there are no real phones here. */
+  sendFromCaretaker(deviceId: string, fromName: string, text: string): WalkerIncomingMessage {
+    const device = this.devices.get(deviceId);
+    if (!device) throw new FakeCloudError("not_found", "Unknown walker.");
+    const message = { message_id: randomUUID(), from_name: fromName, text };
+    device.messages.push(message);
+    return message;
+  }
+
+  /** Deletes a message, as the server does after 24 hours or when a phone is removed. */
+  deleteMessage(deviceId: string, messageId: string): void {
+    const device = this.devices.get(deviceId);
+    if (device) device.messages = device.messages.filter((m) => m.message_id !== messageId);
+  }
+
+  messages(device: FakeDevice): DeviceMessagesResponse {
+    return { messages: device.messages.slice(-WALKER_MESSAGES_KEPT) };
   }
 
   configuration(device: FakeDevice): { configuration: WalkerConfiguration } {
@@ -242,7 +270,10 @@ export class FakeCloud {
       created_at: this.iso(),
     };
     device.turns.set(body.client_turn_id, { turn, proposal, speech });
-    return { turn, proposal, speech, status: this.status(device) };
+    const offer = step?.offerMessage
+      ? { message_offer: { client_message_id: randomUUID(), to_member_id: randomUUID(), to_name: step.offerMessage.to_name, text: step.offerMessage.text } }
+      : {};
+    return { turn, proposal, speech, status: this.status(device), ...offer };
   }
 
   answer(device: FakeDevice, proposalId: string, answer: "confirm" | "decline"): AnswerProposalResponse {
@@ -400,6 +431,10 @@ export class FakeCloudClient implements CloudClient {
     return Promise.reject(new CloudError("rejected", "The fake cloud has no approved phones."));
   }
 
+  incomingMessages(signal: AbortSignal) {
+    return this.call("messages", signal, DeviceMessagesResponseSchema, () => this.cloud.messages(this.device()));
+  }
+
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal) {
     return this.call(`answer:${answer}`, signal, AnswerProposalResponseSchema, () => this.cloud.answer(this.device(), proposalId, answer));
   }
@@ -427,7 +462,7 @@ export interface FakeCloudServer {
   close(): Promise<void>;
 }
 
-const DEVICE_PATH = /^\/api\/v1\/devices\/([^/]+)\/(heartbeat|configuration|turns|proposals\/([^/]+))$/;
+const DEVICE_PATH = /^\/api\/v1\/devices\/([^/]+)\/(heartbeat|configuration|turns|messages|proposals\/([^/]+))$/;
 
 /** Serves the fake cloud on 127.0.0.1 over plain HTTP (allowed only to this machine), on the contract's device routes. */
 /**
@@ -470,6 +505,7 @@ export async function startFakeCloudServer(cloud: FakeCloud, log: Logger, turnDe
           return send(response, 200, cloud.heartbeat(device, parse(HeartbeatRequestSchema, body, "heartbeat")));
         }
         if (request.method === "GET" && route === "configuration") return send(response, 200, cloud.configuration(device));
+        if (request.method === "GET" && route === "messages") return send(response, 200, DeviceMessagesResponseSchema.parse(cloud.messages(device)));
         if (request.method === "POST" && route === "turns") {
           const answer = cloud.turn(device, parse(DeviceTurnRequestSchema, body, "turn"));
           if (turnDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, turnDelayMs));

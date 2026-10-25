@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { APP_MANIFEST } from "@/lib/appManifest";
-import { SAMPLE_CARETAKERS, SAMPLE_GROUPS, SAMPLE_LINE, SAMPLE_PLACES, SAMPLE_WALKERS } from "@/lib/nearbySample";
+import {
+  SAMPLE_AREA,
+  SAMPLE_CARETAKERS,
+  SAMPLE_GROUPS,
+  SAMPLE_LINE,
+  SAMPLE_PLACES,
+  SAMPLE_WALKERS,
+  sampleDistance,
+} from "@/lib/nearbySample";
 import { PhoneApiError, PhoneHomeSchema, createOwnerPhonesApi, createPhoneApi, type PhoneMember } from "@/lib/phoneApi";
 import { createDemoCircle, createPreviewPhone } from "@/lib/phoneFake";
 import {
@@ -262,10 +270,17 @@ describe("the app's words", () => {
 });
 
 describe("people nearby: a labelled sample", () => {
-  it("is made up, says so and carries no coordinates", () => {
-    expect(SAMPLE_LINE).toBe("Sample people for the demo. This list does not use GPS or anyone's real location.");
-    const all = JSON.stringify([SAMPLE_WALKERS, SAMPLE_CARETAKERS, SAMPLE_GROUPS, SAMPLE_PLACES]);
-    expect(all).not.toMatch(/\b(lat|lng|latitude|longitude|coords?)\b|-?\d+\.\d{4,}/i);
+  it("is made up and says so", () => {
+    expect(SAMPLE_LINE).toBe("Sample people and places on a real street map. Nothing here uses GPS or anyone's real location.");
+    expect(SAMPLE_AREA.startLabel).toMatch(/not your location/);
+  });
+
+  it("keeps every pin in its one fixed neighbourhood, measured from the sample's start", () => {
+    const pins = [...SAMPLE_WALKERS, ...SAMPLE_CARETAKERS, ...SAMPLE_GROUPS, ...SAMPLE_PLACES];
+    for (const { at } of pins) {
+      expect(Number.parseFloat(sampleDistance(at))).toBeLessThan(1.5);
+    }
+    expect(sampleDistance(SAMPLE_AREA.start)).toBe("0.0 mi");
   });
 });
 

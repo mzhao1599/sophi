@@ -85,6 +85,8 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
   on("config", () => machine.alerts(deps.service.configuration ? [...deps.service.configuration.cues] : null));
   on("answer", (answer) => machine.answer(answer));
   on("answerSpoken", ({ id }) => machine.answerSpoken(id));
+  on("circleMessage", (message) => machine.message(message));
+  on("circleMessageSpoken", ({ id }) => machine.messageSpoken(id));
   on("offer", ({ proposal }) => machine.offer(proposal));
   on("settled", ({ result }) => machine.settled(result));
   on("confirming", ({ phase }) => machine.confirm(phase));

@@ -1,6 +1,7 @@
 import {
   AnswerProposalResponseSchema,
   ConfigurationResponseSchema,
+  DeviceMessagesResponseSchema,
   DeviceSpeechResponseSchema,
   DeviceSendMessageResponseSchema,
   HeartbeatResponseSchema,
@@ -8,6 +9,7 @@ import {
   WalkerErrorSchema,
   WalkerTurnResponseSchema,
   type AnswerProposalResponse,
+  type DeviceMessagesResponse,
   type DeviceTurnRequest,
   type DeviceSendMessageRequest,
   type HeartbeatRequest,
@@ -68,6 +70,8 @@ export interface CloudClient {
   configuration(signal: AbortSignal): Promise<WalkerConfiguration>;
   turn(body: DeviceTurnRequest, signal: AbortSignal): Promise<WalkerTurnResponse>;
   sendMessage(body: DeviceSendMessageRequest, signal: AbortSignal): Promise<{ sent: true }>;
+  /** Her newest incoming messages from caretakers (GET on the messages route); an older server answers 404. */
+  incomingMessages(signal: AbortSignal): Promise<DeviceMessagesResponse>;
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal): Promise<AnswerProposalResponse>;
 }
 
@@ -215,6 +219,10 @@ export class HttpCloudClient implements CloudClient {
 
   sendMessage(body: DeviceSendMessageRequest, signal: AbortSignal) {
     return request(this.server, DEVICE_ROUTES.messages(this.deviceId), { method: "POST", body, credential: this.credential, signal }, DeviceSendMessageResponseSchema);
+  }
+
+  incomingMessages(signal: AbortSignal) {
+    return request(this.server, DEVICE_ROUTES.messages(this.deviceId), { method: "GET", credential: this.credential, signal }, DeviceMessagesResponseSchema);
   }
 
   async voiceLine(text: string, signal: AbortSignal): Promise<Buffer | null> {

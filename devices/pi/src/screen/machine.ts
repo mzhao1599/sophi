@@ -9,6 +9,7 @@ import {
   NEAR_EXIT_MM,
   SCREEN_ANSWER_HOLD_MS,
   SCREEN_DONE_MS,
+  SCREEN_MESSAGE_HOLD_MS,
   SCREEN_MOTION_STALE_MS,
   SCREEN_OBSTACLE_TAIL_MS,
   SCREEN_ZONES_MIN_MS,
@@ -18,7 +19,8 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
 
 /**
  * Which state the walker's screen shows, decided on the Pi (the page decides nothing). Only the walker's own
- * states for now: the circle's (suggestions, joins, messages, My screen) come with the circle feed.
+ * states, and a caretaker's message as it is read aloud; the circle's other states (suggestions, joins, the
+ * "message waiting" notice, My screen) come with the circle feed.
  *
  * Priority, highest first (the screen design, section 2, and the contract's ScreenContent comment):
  *   1. obstacle: a zone is near (the cue policy's thresholds and hysteresis), and for a short tail after
@@ -29,8 +31,10 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  *   5. Sophi's offer: today's model offer, until it is settled or closes
  *   6. Done / Nothing changed, for a few seconds after Confirm settles an offer; and after a motion, Done,
  *      Stopped or Not started (the motion's own "holding" screen)
- *   7. offline, or not set up (unpaired, or the server no longer knows this walker)
- *   8. ambient: the clock, and the alerts in force
+ *   7. a caretaker's message: its words while the walker reads it aloud, and for SCREEN_MESSAGE_HOLD_MS after
+ *      (shown offline too, when Confirm reads it again)
+ *   8. offline, or not set up (unpaired, or the server no longer knows this walker)
+ *   9. ambient: the clock, and the alerts in force
  * Why motion sits where it does: an obstacle is the walker's first job, about her body in the next second.
  * A running motion or a fault is next because it is about motors moving near her now: the screen must keep
  * saying what moves and how to stop it, above anything of hers still on screen (any handle press stops it,
@@ -81,6 +85,15 @@ export interface ScreenObstacle {
   near: boolean;
 }
 
+export interface ScreenMessage {
+  id: number;
+  message_id: string;
+  from_name: string;
+  text: string;
+  /** When it finished playing; null while it plays. */
+  spokenMono: number | null;
+}
+
 /** Everything the choice depends on: the inputs of the pure function below. */
 export interface ScreenModel {
   link: ScreenLink;
@@ -94,6 +107,8 @@ export interface ScreenModel {
   motion: ScreenMotion | null;
   /** Done, Stopped or Not started after a motion, until `untilMono`. */
   motionEnded: { content: MotionHolding; untilMono: number } | null;
+  /** The caretaker's message being read aloud, or read last. */
+  message: ScreenMessage | null;
 }
 
 /** How long one caption page shows: its characters at the speaking rate, and never less than the minimum. */
@@ -174,6 +189,9 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   } else if (model.motionEnded && now < model.motionEnded.untilMono) {
     soonest.push(model.motionEnded.untilMono);
     under = model.motionEnded.content;
+  } else if (model.message && (model.message.spokenMono === null || now < model.message.spokenMono + SCREEN_MESSAGE_HOLD_MS)) {
+    if (model.message.spokenMono !== null) soonest.push(model.message.spokenMono + SCREEN_MESSAGE_HOLD_MS);
+    under = { state: "message", message_id: model.message.message_id, from_name: model.message.from_name, text: model.message.text };
   } else if (model.link === "offline") under = { state: "offline" };
   else if (model.link === "unpaired" || model.link === "unauthorized") under = { state: "not_set_up" };
   else under = { state: "ambient", alerts: model.alerts };
@@ -207,7 +225,7 @@ export interface ScreenMachineDeps {
  * state, so the page never flashes an in-between screen. The clock is redrawn on the minute.
  */
 export class ScreenMachine {
-  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null };
+  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null };
   private revision = -1;
   private last: ScreenState | null = null;
   private lastKey = "";
@@ -247,6 +265,7 @@ export class ScreenMachine {
     if (talk === "recording") {
       this.model.answer = null;
       this.model.done = null;
+      this.model.message = null;
     }
     this.changed();
   }
@@ -264,6 +283,18 @@ export class ScreenMachine {
   answerSpoken(id: number): void {
     if (this.model.answer?.id !== id || this.model.answer.spokenMono !== null) return;
     this.model.answer.spokenMono = this.deps.clock.monotonic();
+    this.changed();
+  }
+
+  /** A caretaker's message, as the walker starts reading it aloud (a new one, or heard again). */
+  message(message: { id: number; message_id: string; from_name: string; text: string }): void {
+    this.model.message = { ...message, spokenMono: null };
+    this.changed();
+  }
+
+  messageSpoken(id: number): void {
+    if (this.model.message?.id !== id || this.model.message.spokenMono !== null) return;
+    this.model.message.spokenMono = this.deps.clock.monotonic();
     this.changed();
   }
 

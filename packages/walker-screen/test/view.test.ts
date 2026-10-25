@@ -351,6 +351,10 @@ describe("her circle's states", () => {
     expect(waiting.left).toMatchObject({ kind: "button", button: { action: "read_message", label: "Read it", sublabel: "Confirm" } });
     const open = screenView(state({ state: "message", message_id: uuid(20), from_name: "Cooper", text: "Dinner at six. I'll get you." }));
     expect(open.main).toEqual({ text: "Dinner at six. I'll get you.", size: "message" });
+    // Heard again with the Confirm handle; no touch button, since the Pi doesn't act on screen presses yet.
+    expect(open.left).toEqual({ kind: "hint", word: "Confirm" });
+    expect(texts(open)).toContain("Press Confirm to hear it again.");
+    expect(buttons(open)).toEqual([]);
   });
 
   it("My screen: three entries, text size that doesn't wrap around, and reading aloud named in full", () => {

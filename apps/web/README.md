@@ -69,7 +69,7 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 | `/checkout/success` | Where Stripe returns after a test payment: the ordered walker drawn again, "Demo order: no money moved", the modules read from the Checkout Session on the server, and **Set up another walker** (deletes this tab's demo answers and opens a fresh first frame) |
 | `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
 | `/walker` | **Your walker**, the always-on assistant's page: pair a walker, watch it live, read and join its conversation, confirm or decline what it offers ([guide](../../docs/subsystems/web-and-onboarding.md#your-walker-page)). Uses the owner routes `/api/v1/walkers/...`; typed questions use the built assistant turn route (`POST /api/v1/walkers/{id}/turns`) |
-| `/app` | **The two-phone app** (a PWA, "Sophi" on the Home Screen): her own phone in simple mode (My walker, Message Maya, People nearby) or a caretaker's (walker status, messages, nearby). Her phone alone can opt in to sharing the walker's latest GPS fix with approved caretakers. Joins with the code from the walker page's **Phones** card. People nearby is a labelled sample ([guide](../../docs/subsystems/web-and-onboarding.md#the-two-phone-app-app)) |
+| `/app` | **The two-phone app** (a PWA, "Sophi" on the Home Screen): her own phone in simple mode (My walker, Message Maya, People nearby) or a caretaker's (walker status, messages, nearby). Her phone alone can opt in to sharing the walker's latest GPS fix with approved caretakers. Joins with the code from the walker page's **Phones** card. People nearby is a labelled sample on a real street map ([guide](../../docs/subsystems/web-and-onboarding.md#the-two-phone-app-app)) |
 | `/app?preview=rose`, `/app?preview=maya` | **Development only**: the app on its in-memory fake, with "Preview" across the top. Never on stage |
 | `/walker?fake=1` | **Development only**: the same page on a typed fake of its API, with a "Fake walker" banner and a controls panel that plays the walker's side (pair, press Talk, go offline, press Confirm, fail the next action). Its turns report progress like the server's (`activity`), so "Behind the scenes" can be checked without a server |
 | `/dev/preview/{start,chat,walker,saved,order}` | **Development only** (404 in production): the demo page in each state, from a session the deterministic engine produced from the demo persona's lines ([script](../../docs/demo/script.md)), for design review and the taste-skill inspector; `order` is the success page's design with that session's modules at their placeholder prices (a real order is only ever read from Stripe) |
@@ -259,8 +259,9 @@ src/lib/motion.ts        surge() for the background, reduced-motion hook, the su
 src/lib/phoneApi.ts      the circle's client in one file: the phones' routes and the owner's Phones routes
 src/lib/phoneFake.ts     in-memory stand-in for those routes (tests, /app?preview=, /walker?fake=1)
 src/lib/phoneView.ts     the phone app's words and small rules; usePhone.ts polls and joins
-src/lib/nearbySample.ts  the labelled sample of people nearby (made up, no location)
+src/lib/nearbySample.ts  the labelled sample of people nearby: made up, pinned at fixed points in one real neighbourhood, distances from a sample start
 src/components/PhoneApp.tsx, RosePhone.tsx, MayaPhone.tsx, NearbySample.tsx  the /app screens
+src/components/NearbyMap.tsx  the street map under People nearby (Leaflet, OpenStreetMap tiles, numbered sample pins)
 src/components/PhonesPanel.tsx  "Phones" on /walker: add a phone, approve a caretaker, remove
 src/components/          DemoScreen (the page and the sheet), Chat, WalkerDiagram (line drawing, hotspots, panel, legend),
                          ModuleList, ModuleSwitch, ContourField (WebGL), CheckoutButton; SavedWalker and

@@ -36,6 +36,9 @@ import {
   MAX_LIVE_MESSAGES,
   DeviceSendMessageRequestSchema,
   type DeviceSendMessageRequest,
+  DeviceMessagesResponseSchema,
+  type DeviceMessagesResponse,
+  WALKER_MESSAGES_KEPT,
 } from "@walker/contracts";
 import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
@@ -517,6 +520,25 @@ export class WalkerService {
     const saved = await this.store.saveMessage(record, MAX_LIVE_MESSAGES, now);
     if (!saved || saved === "cleared") throw new WalkerError("invalid_request", "This message can no longer be sent.");
     return { sent: true };
+  }
+
+  /**
+   * For the paired Pi, after each heartbeat: the newest messages an approved caretaker sent to her phone, which
+   * her walker reads aloud in its own voice. Never sent to a model or the voice service, and never logged.
+   */
+  async incomingMessages(caller: DeviceCaller, deviceId: string): Promise<DeviceMessagesResponse> {
+    const device = await this.resolve(caller, deviceId);
+    const now = this.now();
+    const { members } = await this.store.circleOf(device.device_id, now);
+    const her = members.find((m) => m.role === "walker_user" && m.state === "member");
+    if (!her) return { messages: [] };
+    const caretakers = new Map(members.filter((m) => m.role === "caregiver" && m.state === "member").map((m) => [m.member_id, m.name]));
+    const toHer = (await this.store.messagesFor(device.device_id, her.member_id, now)).filter(
+      (m) => m.to_member_id === her.member_id && caretakers.has(m.from_member_id),
+    );
+    return DeviceMessagesResponseSchema.parse({
+      messages: toHer.slice(-WALKER_MESSAGES_KEPT).map((m) => ({ message_id: m.message_id, from_name: caretakers.get(m.from_member_id), text: m.text })),
+    });
   }
 
   /** Confirm or decline by id, from the walker's Confirm button or the page. The first answer wins. */

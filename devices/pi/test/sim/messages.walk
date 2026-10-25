@@ -1,0 +1,34 @@
+# Her messages against the FAKE cloud (test/EXPECTED.md, "Her messages"): a caretaker's message is read aloud
+# and shown, heard again on Confirm, and heard again offline. The "caretaker" is the fake cloud's `m` key: made-up
+# words, no real phone.
+# Run: node dist/walker.mjs simulate --screen --script test/sim/messages.walk
+
+# 1. Boot and the first messages answer (nothing waiting, so nothing is read out).
+expect spoke Sophi is on.
+expect link online
+expect heartbeat ok
+wait 6000
+
+# 2. Maya sends a message: the walker reads it within a heartbeat, and the screen shows it.
+key m
+expect 12000 spoke Message from Maya. Dinner at six. I'll get you.
+expect screen message
+
+# 3. Once it has been read, Confirm with nothing to confirm reads it again; no "nothing to confirm" sound.
+# (A press while it is still being read does nothing more: CM6.)
+wait 5000
+key c
+expect spoke Message from Maya. Dinner at six. I'll get you.
+absent 1500 cue nothing_to_confirm
+
+# 4. Offline: the words are on the walker, so Confirm still reads them.
+wait 5000
+key o
+expect 60000 link offline
+# The message stays on screen 20 s after it was read, then the offline screen shows; Confirm brings it back.
+expect 40000 screen offline
+key c
+expect spoke Message from Maya. Dinner at six. I'll get you.
+expect screen message
+key o
+expect 60000 link online

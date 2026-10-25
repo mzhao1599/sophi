@@ -54,7 +54,7 @@ describe("Join", () => {
     expect(html).toMatch(/inputmode="numeric"/i);
     expect(html).toMatch(/autocomplete="one-time-code"/i);
     expect(html).toContain('aria-describedby="join-notice"');
-    expect(text(html)).toContain("Messages between the phones are deleted after 24 hours.");
+    expect(text(html)).toContain("Messages between the phones are deleted after 24 hours, and the walker reads a caretaker's messages aloud.");
     expect(buttons(html).map((b) => b.name)).toEqual(["Link this phone"]);
   });
 
@@ -99,7 +99,7 @@ describe("Rose's phone (simple mode)", () => {
   it("people nearby: tagged Sample in the heading, with the line, and no actions", async () => {
     const html = await rose("nearby");
     expect(html).toMatch(/<h1[^>]*>People nearby <span[^>]*>Sample<\/span><\/h1>/);
-    expect(text(html)).toContain("Sample people for the demo. This list does not use GPS or anyone's real location.");
+    expect(text(html)).toContain("Sample people and places on a real street map. Nothing here uses GPS or anyone's real location.");
     expect(text(html)).toContain("Step-free places");
     expect(text(html)).not.toContain("Caretakers nearby");
     expect(buttons(html).map((b) => b.name)).toEqual(["Back"]);
@@ -145,7 +145,8 @@ describe("Maya's phone (caretaker)", () => {
     expect(t).toContain("You Dinner at six. I'll get you.");
     expect(html).toMatch(/<label[^>]*for="message-text"[^>]*>Message to <!-- -->Rose<\/label>|<label[^>]*for="message-text"[^>]*>Message to Rose<\/label>/);
     expect(t).toContain("0 of 30 characters");
-    expect(html).toContain('aria-describedby="message-counter"');
+    expect(html).toContain('aria-describedby="message-counter message-aloud"');
+    expect(t).toContain("Rose's walker reads your messages aloud.");
     expect(buttons(html).map((b) => b.name)).toEqual(["Walker", "Messages", "Nearby", "Send"]);
   });
 
@@ -153,7 +154,7 @@ describe("Maya's phone (caretaker)", () => {
     const html = await maya("nearby");
     expect(html).toMatch(/<h1[^>]*>Nearby <span[^>]*>Sample<\/span><\/h1>/);
     expect(text(html)).toContain("Caretakers nearby");
-    expect(text(html)).toContain("Sample people for the demo. This list does not use GPS or anyone's real location.");
+    expect(text(html)).toContain("Sample people and places on a real street map. Nothing here uses GPS or anyone's real location.");
   });
 });
 
