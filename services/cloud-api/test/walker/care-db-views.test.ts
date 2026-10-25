@@ -24,6 +24,9 @@ import { Clock, SKIP_SPACETIME, spacetimeTestServer, uuid } from "./support";
  * 4. Removing a caretaker deletes her membership row and empties her messages on her still-open connection.
  * 5. The owner's token sees every phone on its walker, waiting ones included, and its open codes without the
  *    digits; nothing of another walker.
+ * 7. my_help (EXPECTED-help.md, S1 to S4): an approved caretaker gets one row per request of her walker, only
+ *    `{ help_id, rev }`, pushed within 2 s; `rev` goes up on "on my way" and on the close, not on a repeated
+ *    "on my way"; a waiting caretaker and another walker's phone see none; forgetting the walker empties it.
  * 6. Refused: no token; a token signed with another key under the same issuer and kid; a member token calling a
  *    server procedure over HTTP. A member token for an unknown member connects and sees nothing.
  */
@@ -31,7 +34,7 @@ import { Clock, SKIP_SPACETIME, spacetimeTestServer, uuid } from "./support";
 const WAIT_MS = 5_000;
 const run = promisify(execFile);
 const CARE_DB_DIR = fileURLToPath(new URL("../../../care-db", import.meta.url));
-const VIEWS = ["my_membership", "my_people", "my_messages", "owner_members", "owner_invites"];
+const VIEWS = ["my_membership", "my_people", "my_messages", "my_help", "owner_members", "owner_invites"];
 const ALL_VIEWS = VIEWS.map((v) => `SELECT * FROM ${v}`);
 
 const owner = (secret: string | undefined): OwnerCaller => ({ kind: "owner", secret });
@@ -170,6 +173,9 @@ if (spacetimeTestServer) {
       };
     }
 
+    /** my_help is apart from rows(): the earlier cases compare those whole. */
+    const helpRows = (conn: DbConnection) => [...conn.db.myHelp.iter()];
+
     async function pairWalker(address: string) {
       const { secret, response } = await walkers.createPairingCode(owner(undefined));
       const paired = await walkers.pair({ code: response.code, service_version: "pi-0.1.0", name: "Rose's walker" }, address);
@@ -200,6 +206,42 @@ if (spacetimeTestServer) {
       for (const [name, secret] of Object.entries(secrets)) ids[name] = await idOf(secret);
       return { w, secrets, ids };
     }
+
+    it("my_help: one row per request, only an id and a revision that moves on every change, for members of that walker", async () => {
+      const a = await circleOf("203.0.113.40", "Rose", ["Maya", "Ana"]);
+      const b = await circleOf("203.0.113.41", "Edna", ["Nora"]);
+      await addAndJoin(a.w, "caregiver", "Ben");
+      const benId = (await circle.ownerCircle(owner(a.w.secret), a.w.deviceId)).joins[0]!.member_id;
+      const maya = await live(token(`member:${a.ids.Maya}`));
+      const ben = await live(token(`member:${benId}`));
+      const nora = await live(token(`member:${b.ids.Nora}`));
+      expect(helpRows(maya)).toEqual([]);
+
+      const asked = performance.now();
+      const { response } = await circle.askForHelp(phone(a.secrets.Rose!), { client_help_id: uuid() });
+      await until(() => helpRows(maya).length === 1, 2_000, "the request reaches Maya's my_help");
+      console.info(`[case 7] my_help row ${Math.round(performance.now() - asked)} ms after the ask`);
+      const first = helpRows(maya)[0]!;
+      expect(Object.keys(first).sort()).toEqual(["helpId", "rev"]);
+      expect(first.helpId).toBe(response.help.help_id);
+      // The generated row type has exactly these two fields.
+      const fields = [...readFileSync(`${CARE_DB_DIR}/bindings/my_help_table.ts`, "utf8").matchAll(/^\s+(\w+): __t\./gm)].map((m) => m[1]);
+      expect(fields).toEqual(["helpId", "rev"]);
+
+      await circle.helpComing(phone(a.secrets.Maya!), response.help.help_id);
+      await until(() => helpRows(maya)[0]!.rev > first.rev, 2_000, "on my way bumps rev");
+      const coming = helpRows(maya)[0]!.rev;
+      await circle.helpComing(phone(a.secrets.Maya!), response.help.help_id);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(helpRows(maya)[0]!.rev).toBe(coming);
+      await circle.helpOkay(phone(a.secrets.Rose!), response.help.help_id);
+      await until(() => helpRows(maya)[0]!.rev > coming, 2_000, "the close bumps rev");
+
+      expect(helpRows(ben)).toEqual([]);
+      expect(helpRows(nora)).toEqual([]);
+      await walkers.forget(owner(a.w.secret), a.w.deviceId);
+      await until(() => helpRows(maya).length === 0, 2_000, "forgetting the walker empties my_help");
+    }, 30_000);
 
     it("shows a caretaker only her own walker's people and her own thread, and no cookie hash", async () => {
       const a = await circleOf("203.0.113.10", "Rose", ["Maya", "Ana"]);
