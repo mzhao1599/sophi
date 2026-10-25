@@ -407,8 +407,8 @@ describe("her circle's states", () => {
 /**
  * Walking directions on the screen (docs/subsystems/navigation.md, "The screen"), rows written before the code:
  * N1 guiding: the maneuver's word, "in 30 m" in bold beside the arrow, the street under it, "750 m to go" and
- *    "about 10 min" under the map, Repeat and End route between the handles, Talk on the right, nothing over the
- *    left handle; a screen reader hears the whole instruction.
+ *    "about 10 min" on the map, End route on screen (the left handle repeats the instruction), nothing over
+ *    either handle; a screen reader hears the whole instruction.
  * N2 the scene (and what a screen reader hears) changes with the instruction or the phase, never as the metres
  *    count down or her dot moves; the map and the distances do change.
  * N3 each phase in words: "Finding the way again", "Can't find the way from here", "Looking for GPS" (with the
@@ -468,9 +468,9 @@ describe("walking directions", () => {
     const arrived = at({ phase: "arrived", maneuver: "arrive", street: null, to_step_m: 0, remaining_m: 0, remaining_min: 0 });
     expect(texts(arrived)).toEqual(["You've arrived", "Lake Merritt Boating Center"]);
     expect(arrived.announce).toBe("You've arrived: Lake Merritt Boating Center.");
-    // Repeat and End route stay in every phase.
+    // End route stays in every phase; Repeat is the left handle's press, not a button (499bdb2).
     for (const phase of ["rerouting", "off_route", "no_position", "arrived"] as const) {
-      expect(buttons(at({ phase })).map((b) => b.action), phase).toEqual(["repeat_direction", "end_route"]);
+      expect(buttons(at({ phase })).map((b) => b.action), phase).toEqual(["end_route"]);
     }
   });
 

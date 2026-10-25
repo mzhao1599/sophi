@@ -15,7 +15,7 @@ import { screenSizes } from "./sizes";
  * | Left column (map, then the distance left), wide | 280 | 264 | 240 |
  * | Right column (the next thing to do, then the band), wide | 472 | 488 | 512 |
  * | Right: the next thing to do (the one thing), tall | 255 | 255 | 255 |
- * | Right: the band (Repeat, End route, Talk), tall | 147 | 147 | 147 |
+ * | Right: the band (End route, Talk), tall | 147 | 147 | 147 |
  * | Left: the distance left, two lines at 40 px, tall | 92 | 92 | 92 |
  * | Left: the map, tall (410 - 8 - the distance lines) | 310 | 310 | 310 |
  *
@@ -34,9 +34,9 @@ import { screenSizes } from "./sizes";
  * 54, 57 and 63 px. A phase sentence ("Finding the way again") takes the whole right column: one line as large
  * as fits up to the cap, or two lines in bold at her body size when one line would be smaller than that.
  *
- * The band, right column: Talk over the right handle (118 px with its mark) and 12 px, then Repeat (131 px of
- * words, 153 px of button) and End route (two lines in 147 px), 22 px apart, labels at the smallest size: 455
- * px at most, in 472 at Large. Every region is measured at every text size, with the longest street (60
+ * The band, right column: Talk over the right handle (118 px with its mark) and 12 px, then End route (two
+ * lines in 147 px), its label at the smallest size. There is no Repeat button (499bdb2): the left handle's press
+ * repeats the instruction. Every region is measured at every text size, with the longest street (60
  * characters) and place name (100 characters) the contract allows, by test/shots.test.tsx.
  *
  * Text under 40 px: only "© OpenStreetMap contributors" on the map, a licence credit (16 px, 7:1 on its own
@@ -239,12 +239,12 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * The map for a navigating state: a frame `width` by `height` centred on her position (or, with no position,
- * the start of the route ahead), at MAP_ZOOM, or MAP_ZOOM_OUT when the next point (the step, else the
+ * the start of the route ahead; `centreX` from the frame's left edge when the dot belongs off-centre), at MAP_ZOOM, or MAP_ZOOM_OUT when the next point (the step, else the
  * destination) would be off the part that shows (`visibleHeight` tall, centred). Tiles cover the whole frame,
  * and the page centres the frame in the map's box, so her dot stays in the middle whatever height the box
  * gets. Markers and the route are in the frame's pixels. Pure: the same state draws the same map.
  */
-export function navMap(map: NavigatingScreen["map"], width: number, height: number, visibleHeight = height, followAhead = false): NavMap {
+export function navMap(map: NavigatingScreen["map"], width: number, height: number, visibleHeight = height, followAhead = false, centreX = width / 2): NavMap {
   const centre = map.position ?? map.route[0]!;
   const next = map.step_at ?? map.destination_at;
   const frame = (zoom: number) => {
@@ -255,7 +255,7 @@ export function navMap(map: NavigatingScreen["map"], width: number, height: numb
     const distance = Math.hypot(dx, dy);
     // The full-screen view pans toward the next turn, keeping nearby route ahead in view.
     const advance = followAhead && distance > 0 ? Math.min(120, distance * 0.4) / distance : 0;
-    const origin = { x: c.x + dx * advance - width / 2, y: c.y + dy * advance - height / 2 };
+    const origin = { x: c.x + dx * advance - centreX, y: c.y + dy * advance - height / 2 };
     const at = (p: LatLon): MapPoint => {
       const w = worldPx(p, zoom);
       return { x: round1(w.x - origin.x), y: round1(w.y - origin.y) };
