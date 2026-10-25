@@ -27,17 +27,23 @@ import {
 } from "../../src";
 import { PRESS_CONFIRM, SIMULATED_ALL_PARTS, SIMULATED_PARTS, SIMULATED_READINGS, readingAge } from "../../src/walker/lines";
 import { walkerSystemPrompt } from "../../src/walker/assistant";
-import { isWav16kMono } from "../../src/walker/speech";
+import { CANT_HEAR_LINE, NOT_HEARD_LINE } from "../../src/walker/service";
+import { createCartesiaEars, isWav16kMono, type WalkerEars } from "../../src/walker/speech";
 import { Clock, SKIP_POSTGRES, manifest, memoryHarness, postgresHarness, snapshot, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
 
 /** The assistant turn's rules with a stub model (EXPECTED-turns.md), against both stores. */
 
 type Reply = { transcript?: string; reply: string; topics?: string[]; cues_change?: { cues: string[] } | null; tool_call?: { name: string; destination?: string; view?: string } | null };
 
-/** A model that answers from a queue (or a function), recording every request it got. */
+/**
+ * A model that answers from a queue (or a function), recording every request it got. `heard` stands in for
+ * Cartesia: the transcript field of the reply its next call would give ("" for a function), so a spoken turn
+ * is heard as the words the stub then copies back.
+ */
 function stubModel(answer: Reply | Reply[] | ((request: AgentRequest, call: number) => Reply | Promise<Reply> | Error)) {
   const requests: AgentRequest[] = [];
-  const model: AgentModel = {
+  const model: AgentModel & { heard: () => string } = {
+    heard: () => (typeof answer === "function" ? "" : ((Array.isArray(answer) ? answer[Math.min(requests.length, answer.length - 1)]! : answer).transcript ?? "")),
     async generate(request) {
       requests.push(request);
       const call = requests.length;
@@ -88,10 +94,13 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       events = [];
     });
 
-    function serviceWith(model: AgentModel | null, extra: { voice?: WalkerVoice; timeoutMs?: number; turnBudgetMs?: number; voiceTimeoutMs?: number } = {}) {
+    function serviceWith(model: AgentModel | null, extra: { voice?: WalkerVoice; ears?: WalkerEars | null; transcribeTimeoutMs?: number; timeoutMs?: number; turnBudgetMs?: number; voiceTimeoutMs?: number } = {}) {
+      const heard = model && "heard" in model ? (model.heard as () => string) : () => "";
       return new WalkerService(h.store(), {
         now: clock.now,
         assistant: model ? createWalkerAssistant({ model, timeoutMs: extra.timeoutMs }) : null,
+        ears: extra.ears !== undefined ? extra.ears : { transcribe: async () => heard() },
+        transcribeTimeoutMs: extra.transcribeTimeoutMs,
         voice: extra.voice ?? null,
         onTurn: (e) => events.push(e),
         turnBudgetMs: extra.turnBudgetMs,
@@ -129,11 +138,13 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(text.proposal).toBeNull();
       expect(text.speech).toBeNull();
       const voice = await service.turn(device(w.credential), w.id, spoken());
-      expect(voice.turn).toMatchObject({ heard: "What can you help me with?", heard_by: "gemini", answered_by: "model" });
-      // The clip went to the model in the same call as the schema.
-      expect(stub.requests.at(-1)?.audio).toEqual({ mime: "audio/wav", data_base64: wav(1200).toString("base64") });
+      expect(voice.turn).toMatchObject({ heard: "What can you help me with?", heard_by: "cartesia", answered_by: "model" });
+      // Cartesia's words went to the model as text, marked as spoken; the clip itself never did.
       expect(stub.requests.at(-1)?.schema).toBeDefined();
-      expect(JSON.parse(stub.requests.at(-1)!.context).person_words).toBe("in the attached audio");
+      const context = JSON.parse(stub.requests.at(-1)!.context);
+      expect(context.person_words).toBe("What can you help me with?");
+      expect(context.walker.how_they_asked).toBe("spoke while holding Talk");
+      expect(JSON.stringify(stub.requests.at(-1))).not.toContain(wav(1200).toString("base64"));
     });
 
     it("beat 3: adds that the readings are simulated when the ToF part is, and not when it's real", async () => {
@@ -432,7 +443,7 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       parses(start);
       // Directions aren't the arms: tagged "directions", the route runs.
       expect(start.tool_call).toEqual({ name: "start_route", destination: "the Lake Merritt Boating Center" });
-      expect(start.turn).toMatchObject({ reply: "Let me find that.", answered_by: "fixed", heard: TAKE_ME, heard_by: "gemini" });
+      expect(start.turn).toMatchObject({ reply: "Let me find that.", answered_by: "fixed", heard: TAKE_ME, heard_by: "cartesia" });
       const stop = await service.turn(device(w.credential), w.id, navigating(spoken(), ROUTE));
       parses(stop);
       expect(stop.tool_call).toEqual({ name: "stop_route" });
@@ -480,7 +491,7 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       const done = await service.turn(device(w.credential), w.id, continued(TAKE_ME, result, ROUTE));
       parses(done);
       expect(done.tool_call).toBeUndefined();
-      expect(done.turn).toMatchObject({ reply: "I found the boating center and I'm starting the directions.", answered_by: "model", heard: TAKE_ME, heard_by: "gemini" });
+      expect(done.turn).toMatchObject({ reply: "I found the boating center and I'm starting the directions.", answered_by: "model", heard: TAKE_ME, heard_by: "cartesia" });
       expect(JSON.parse(answer.requests[0]!.context)).toMatchObject({ tool_results: result, walker: { how_they_asked: "spoke while holding Talk" }, person_words: TAKE_ME });
       for (const next of [{ name: "start_route", destination: "the library" }, { name: "stop_route" }, { name: "get_location" }]) {
         const again = serviceWith(stubModel({ reply: "One more thing.", topics: ["directions"], tool_call: next }).model);
@@ -562,13 +573,13 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       parses(r);
       expect(r.tool_call).toEqual({ name: "show_on_screen", view: "weather" });
       expect(WalkerToolCallSchema.safeParse(r.tool_call).success).toBe(true);
-      expect(r.turn).toMatchObject({ reply: "Putting that on your screen.", answered_by: "fixed", heard: SHOW_ME, heard_by: "gemini" });
+      expect(r.turn).toMatchObject({ reply: "Putting that on your screen.", answered_by: "fixed", heard: SHOW_ME, heard_by: "cartesia" });
       // Unfinished steps aren't stored.
       expect((await service.get(owner(w.secret), w.id)).walker.turns).toHaveLength(0);
     });
 
     it("takes a show_on_screen step with an empty reply on the first call: the step's line is the server's", async () => {
-      // Live Gemini left reply empty on 15 of 18 first attempts at this step (2026-10-24).
+      // A live model left reply empty on 15 of 18 first attempts at this step (2026-10-24).
       const stub = stubModel({ ...show("weather"), reply: "" });
       const service = serviceWith(stub.model);
       const w = await walker(service);
@@ -579,10 +590,10 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(r.turn).toMatchObject({ reply: "Putting that on your screen.", answered_by: "fixed", heard: SHOW_ME });
     });
 
-    it("still retries an empty reply with nothing heard or no tool, and never answers with an empty line", async () => {
+    it("still retries an empty reply with nothing copied back or no tool, and never answers with an empty line", async () => {
       for (const answer of [{ ...show("weather", ""), reply: "" }, { transcript: SHOW_ME, reply: "", topics: ["other"] }]) {
         const stub = stubModel(answer);
-        const service = serviceWith(stub.model);
+        const service = serviceWith(stub.model, { ears: { transcribe: async () => SHOW_ME } });
         const w = await walker(service);
         const r = await service.turn(device(w.credential), w.id, withScreen(spoken()));
         parses(r);
@@ -624,7 +635,7 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       const done = await service.turn(device(w.credential), w.id, shown(SHOW_ME, result));
       parses(done);
       expect(done.tool_call).toBeUndefined();
-      expect(done.turn).toMatchObject({ reply: "It's on your screen: 64 degrees and partly cloudy. Weather data from Open-Meteo.", answered_by: "model", heard: SHOW_ME, heard_by: "gemini" });
+      expect(done.turn).toMatchObject({ reply: "It's on your screen: 64 degrees and partly cloudy. Weather data from Open-Meteo.", answered_by: "model", heard: SHOW_ME, heard_by: "cartesia" });
       expect(JSON.parse(answer.requests[0]!.context)).toMatchObject({ tool_results: result, screen_views: ["weather", "sensors"], walker: { how_they_asked: "spoke while holding Talk" }, person_words: SHOW_ME });
       expect((await service.get(owner(w.secret), w.id)).walker.turns).toHaveLength(1);
     });
@@ -671,12 +682,12 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
     // ---- Fallback ----
 
     it("falls back on an error, a refusal or the deadline, and with no model at all", async () => {
-      const failing = serviceWith(stubModel(() => new Error("Gemini API returned 500")).model);
+      const failing = serviceWith(stubModel(() => new Error("model API returned 500")).model, { ears: { transcribe: async () => "What can you help me with?" } });
       const w = await walker(failing);
       const text = await failing.turn(device(w.credential), w.id, typed("What can you help me with?"));
       expect(text.turn).toMatchObject({ answered_by: "fixed", heard: "What can you help me with?", heard_by: "typed" });
       const voice = await failing.turn(device(w.credential), w.id, spoken());
-      expect(voice.turn).toMatchObject({ answered_by: "fixed", heard: null, heard_by: null });
+      expect(voice.turn).toMatchObject({ answered_by: "fixed", heard: "What can you help me with?", heard_by: "cartesia" });
       expect(events.map((e) => e.reason)).toEqual(["model_error", "model_error"]);
 
       const refusing: AgentModel = { generate: async () => ({ stop_reason: "refusal", text: "" }) };
@@ -695,6 +706,47 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       const none = await serviceWith(null).turn(device(w.credential), w.id, typed("Hello"));
       expect(none.turn).toMatchObject({ answered_by: "fixed", reply: "I can't answer that right now. Your alerts are set to buzzing and speech." });
       expect(events.at(-1)).toMatchObject({ reason: "no_model" });
+    });
+
+    it("answers a clip with no words, or one Cartesia couldn't transcribe, with a fixed line and no model call", async () => {
+      const stub = stubModel({ transcript: "Hello", reply: "Hi.", topics: ["other"] });
+      const cases: [WalkerEars | null, string, string][] = [
+        [{ transcribe: async () => "" }, NOT_HEARD_LINE, "not_heard"],
+        [{ transcribe: async () => null }, CANT_HEAR_LINE, "cant_hear"],
+        [null, CANT_HEAR_LINE, "cant_hear"],
+        // Past the transcription's own limit: the turn doesn't wait on Cartesia.
+        [{ transcribe: (_clip, signal) => new Promise((resolve) => signal.addEventListener("abort", () => resolve(null))) }, CANT_HEAR_LINE, "cant_hear"],
+      ];
+      for (const [ears, line, reason] of cases) {
+        const service = serviceWith(stub.model, { ears, transcribeTimeoutMs: 50 });
+        const w = await walker(service);
+        const r = await service.turn(device(w.credential), w.id, spoken());
+        parses(r);
+        expect(r.turn).toMatchObject({ reply: line, answered_by: "fixed", heard: null, heard_by: null });
+        expect(events.at(-1)).toMatchObject({ reason, attempts: 0, model: null });
+      }
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    it("sends Cartesia the clip as a multipart upload and reads back its text", async () => {
+      const sent: { url: string; headers: Headers; form: FormData }[] = [];
+      const ears = createCartesiaEars({
+        apiKey: "cartesia-key",
+        fetch: (async (url: string, init: RequestInit) => {
+          sent.push({ url, headers: new Headers(init.headers), form: init.body as FormData });
+          return new Response(JSON.stringify({ type: "transcript", request_id: "r", text: "  Which parts work? " }), { status: 200, headers: { "content-type": "application/json" } });
+        }) as unknown as typeof fetch,
+      });
+      expect(await ears.transcribe(wav(600), new AbortController().signal)).toBe("Which parts work?");
+      expect(sent[0]!.url).toBe("https://api.cartesia.ai/stt");
+      expect(sent[0]!.headers.get("authorization")).toBe("Bearer cartesia-key");
+      expect(sent[0]!.headers.get("cartesia-version")).toBe("2026-08-14");
+      expect([sent[0]!.form.get("model"), sent[0]!.form.get("language")]).toEqual(["ink-whisper", "en"]);
+      const file = sent[0]!.form.get("file") as Blob;
+      expect(Buffer.from(await file.arrayBuffer())).toEqual(wav(600));
+
+      const failing = createCartesiaEars({ apiKey: "k", fetch: (async () => new Response("{}", { status: 401 })) as unknown as typeof fetch });
+      expect(await failing.transcribe(wav(600), new AbortController().signal)).toBeNull();
     });
 
     // ---- Idempotency ----

@@ -3,8 +3,8 @@ import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant } from ".
 /**
  * The walker assistant with a backup model: both are asked at the same moment, and the main model's
  * answer is used unless it hasn't come `backupAfterMs` after the start; from then on, the first usable
- * answer wins (the backup's is usually ready by then). Measured live on 2026-10-23 (210 turns): 3.7 Flash
- * took over 4.5 s on 33 turns and once hit the 8 s deadline; 3.6 Flash answered every turn within 3.3 s.
+ * answer wins (the backup's is usually ready by then). With Claude, the main model is Haiku 5.5 and the
+ * backup Opus 5.5 (config.ts).
  *
  * - The main model fails early (an API error, a bad reply twice, its deadline): the backup's answer is
  *   used as soon as there is one, without waiting for the switch-over.

@@ -3,13 +3,12 @@
 // (no network), so a change that breaks the demo path fails CI. A live run on a model happens only
 // when asked for:
 //
-//   REHEARSE_PROVIDER=gemini pnpm --filter @walker/cloud-api rehearse
 //   REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse
 //
 // It reads the key from the environment, or else from apps/web/.env.local (the demo laptop's own
 // settings; REHEARSE_ENV_FILE names another file, such as the main checkout's from a worktree), and
-// never prints it. Wren is made up, so only her scripted lines reach the model; on
-// Gemini's free tier that is the only kind of text allowed. REHEARSE_RUNS sets the number of runs (3).
+// never prints it. Wren is made up, so only her scripted lines reach the model. REHEARSE_RUNS sets the
+// number of runs (3).
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -19,7 +18,6 @@ import {
   OnboardingService,
   createAgentEngine,
   createAnthropicModel,
-  createGeminiModel,
   deterministicEngine,
   type AgentEvent,
   type TurnEngine,
@@ -169,8 +167,8 @@ describe.skipIf(!provider)(`live demo rehearsal on ${provider ?? "a model"}`, ()
   it(
     "passes every path on every run, with every reply from the model",
     async () => {
-      if (provider !== "gemini" && provider !== "anthropic") throw new Error('REHEARSE_PROVIDER must be "gemini" or "anthropic".');
-      const keyName = provider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY";
+      if (provider !== "anthropic") throw new Error('REHEARSE_PROVIDER must be "anthropic".');
+      const keyName = "ANTHROPIC_API_KEY";
       const apiKey = process.env[keyName]?.trim();
       if (!apiKey) throw new Error(`${keyName} isn't set here or in apps/web/.env.local.`);
       // The same default model the demo runs; ONBOARDING_AGENT_MODEL is ignored so the rehearsal matches the script.
@@ -178,7 +176,7 @@ describe.skipIf(!provider)(`live demo rehearsal on ${provider ?? "a model"}`, ()
       const all: Result[] = [];
       for (let run = 1; run <= runs; run++) {
         const events: AgentEvent[] = [];
-        const model = provider === "gemini" ? createGeminiModel({ apiKey }) : createAnthropicModel({ apiKey });
+        const model = createAnthropicModel({ apiKey });
         const engine = createAgentEngine({ model, onEvent: (e) => events.push(e) });
         const results: Result[] = [];
         for (const path of Object.keys(PATHS) as PathName[]) results.push(await rehearse(engine, path, events));

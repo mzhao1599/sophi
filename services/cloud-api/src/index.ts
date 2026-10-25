@@ -17,7 +17,6 @@ export { QUESTIONS } from "./onboarding/questions";
 export { SKIP_REPLY, SKIP_REST_REPLY, deterministicEngine, openingQuestion, type TurnEngine } from "./onboarding/engine";
 export { createAgentEngine, type AgentEvent, type AgentModel, type AgentReply, type AgentRequest } from "./onboarding/agent";
 export { createAnthropicModel, DEFAULT_AGENT_MODEL } from "./onboarding/anthropic";
-export { createGeminiModel, DEFAULT_GEMINI_MODEL } from "./onboarding/gemini";
 export {
   AGENT_PROVIDER_NAMES,
   agentModelName,
@@ -41,7 +40,7 @@ export {
 export { CAMERA_RECHECK_MS, CameraRelay, CameraService, cameraPart, sharedCameraRelay, type CameraFrame, type CameraServiceOptions } from "./walker/camera";
 export { CircleError, CircleService, isCircleError, type CircleServiceOptions, type MemberCaller, type MessageEvent } from "./walker/circle";
 export { WALKER_SYSTEM_PROMPT, createWalkerAssistant, type WalkerAssistant, type Words } from "./walker/assistant";
-export { createCartesiaVoice, type WalkerVoice } from "./walker/speech";
+export { createCartesiaEars, createCartesiaVoice, type WalkerEars, type WalkerVoice } from "./walker/speech";
 export { CIRCLE_SWEEP_EVERY_MS, MemoryWalkerStore, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./walker/store";
 export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
 export { SpacetimeCircleStore } from "./walker/spacetime-store";
@@ -63,8 +62,6 @@ export {
   WALKER_BACKUP_AFTER_MS,
   WALKER_BACKUP_MODEL,
   WALKER_DEFAULT_MODEL,
-  backupThinkingFor,
-  createClaudeWalkerAssistant,
   createWalkerAssistantFor,
   sharedWalkerActivity,
   sharedWalkerAgent,
@@ -72,8 +69,7 @@ export {
   walkerAgentFromEnv,
   walkerBackendFromEnv,
   walkerModelsFromEnv,
-  walkerTypedAssistantFromEnv,
-  walkerTypedModelFromEnv,
+  walkerModelFromEnv,
   type WalkerAgent,
   type WalkerBackend,
   type WalkerModels,

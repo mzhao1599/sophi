@@ -181,7 +181,7 @@ describe("show_on_screen", () => {
 
 describe("turn views", () => {
   const view = {
-    turn_id: uuid(5), client_turn_id: uuid(1), source: "walker", heard: "What can you help me with?", heard_by: "gemini",
+    turn_id: uuid(5), client_turn_id: uuid(1), source: "walker", heard: "What can you help me with?", heard_by: "cartesia",
     reply: "I can buzz your handles when something is close.", answered_by: "model", voiced_by: "cartesia", created_at: T0,
   };
 
@@ -301,7 +301,7 @@ describe("turn responses", () => {
     walker_said: [{ event_id: uuid(4), kind: "local_reply", text: "I'm offline right now.", at: T0 }],
   };
   const turn = {
-    turn_id: uuid(5), client_turn_id: uuid(1), source: "walker", heard: "Hello", heard_by: "gemini",
+    turn_id: uuid(5), client_turn_id: uuid(1), source: "walker", heard: "Hello", heard_by: "cartesia",
     reply: "Hi, I'm Sophi.", answered_by: "model", voiced_by: "cartesia", created_at: T0,
   };
   const speech = { mime: "audio/wav", data_base64: "UklGRiQAAABXQVZF" };

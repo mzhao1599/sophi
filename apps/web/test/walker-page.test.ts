@@ -47,7 +47,7 @@ function turn(n: number, at: number, over: Partial<WalkerTurnView> = {}): Walker
     client_turn_id: id(200 + n),
     source: "walker",
     heard: "What can you help me with?",
-    heard_by: "gemini",
+    heard_by: "cartesia",
     reply: "I can read your obstacle sensors.",
     answered_by: "model",
     voiced_by: "cartesia",
@@ -240,7 +240,7 @@ describe("conversation", () => {
     expect(entries.map((e) => e.key)).toEqual([`e-${id(401)}`, `t-${id(101)}`, `t-${id(102)}`, `e-${id(402)}`, `t-${id(103)}`, `t-${id(104)}`]);
     const turns = entries.filter((e) => e.kind === "turn");
     expect(turns.map((e) => [e.heardLabel, e.heard, e.engineNote, e.voiceNote])).toEqual([
-      ["You said (as heard by Gemini)", "What can you help me with?", null, "In Cartesia's voice"],
+      ["You said (as heard by Cartesia)", "What can you help me with?", null, "In Cartesia's voice"],
       ["You typed", "Is anything in front of me?", "Answered by the fixed replies", null],
       ["You said", null, null, "In the walker's own voice"],
       ["Typed on the walker", "hello", null, "In Cartesia's voice"],
@@ -372,14 +372,11 @@ describe("errors in plain words", () => {
   });
 
   it("keeps the typed-words notice exactly as written, naming who reads typed words", () => {
-    expect(typedNotice("gemini")).toBe(
-      "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
-    );
     expect(typedNotice("claude")).toBe(
-      "What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
+      "Your words go to Anthropic's Claude. What's said to the walker goes to Cartesia to be written down, then to Claude. The text of Sophi's spoken replies goes to Cartesia. Both may keep a copy. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
     );
     expect(typedNotice(null)).toBe(
-      "No model reads what you type here: Sophi answers with fixed replies. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
+      "No model reads what you type here: Sophi answers with fixed replies. What's said to the walker and the text of Sophi's spoken replies go to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
     );
   });
 });
@@ -524,7 +521,7 @@ describe("development fake", () => {
     expect(controls.walkerTalks("What can you help me with?")).toBe(false);
   });
 
-  it("holds a Talk press in flight, hearing then voicing, until it's saved", async () => {
+  it("holds a Talk press in flight, transcribing, hearing then voicing, until it's saved", async () => {
     vi.useFakeTimers({ now: T0 });
     vi.spyOn(Math, "random").mockReturnValue(0.5);
     try {
@@ -539,15 +536,17 @@ describe("development fake", () => {
       await code;
       controls.pairFromWalker();
       controls.walkerTalks("What can you help me with?");
-      const hearing = (await list()).activity[0]!.in_flight;
-      expect(hearing.map((f) => [f.input, f.stage, f.clip_ms !== null])).toEqual([["audio", "hearing", true]]);
-      await vi.advanceTimersByTimeAsync(1_600);
+      const transcribing = (await list()).activity[0]!.in_flight;
+      expect(transcribing.map((f) => [f.input, f.stage, f.clip_ms !== null, f.model])).toEqual([["audio", "transcribing", true, "claude"]]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect((await list()).activity[0]!.in_flight.map((f) => f.stage)).toEqual(["hearing"]);
+      await vi.advanceTimersByTimeAsync(1_100);
       expect((await list()).activity[0]!.in_flight.map((f) => f.stage)).toEqual(["voicing"]);
       await vi.advanceTimersByTimeAsync(1_000);
       const done = await list();
       expect(done.activity[0]!.in_flight).toEqual([]);
-      expect(done.activity[0]!.traces.map((t) => [t.model_ms, t.voice_ms])).toEqual([[1_600, 650]]);
-      expect(done.walkers[0]!.turns.map((t) => [t.source, t.heard_by, t.voiced_by])).toEqual([["walker", "gemini", "cartesia"]]);
+      expect(done.activity[0]!.traces.map((t) => [t.transcribe_ms, t.model_ms, t.voice_ms])).toEqual([[500, 1_100, 650]]);
+      expect(done.walkers[0]!.turns.map((t) => [t.source, t.heard_by, t.voiced_by])).toEqual([["walker", "cartesia", "cartesia"]]);
     } finally {
       vi.restoreAllMocks();
       vi.useRealTimers();

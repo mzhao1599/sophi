@@ -70,7 +70,7 @@ const shared = globalThis as unknown as { __walkerBackend?: WalkerBackend; __wal
 const store = new MemoryWalkerStore();
 beforeAll(() => {
   shared.__walkerBackend = { kind: "memory", store };
-  shared.__walkerAgent = { assistant: null, typed: null, voice: null };
+  shared.__walkerAgent = { assistant: null, ears: null, voice: null };
 });
 afterEach(() => {
   vi.restoreAllMocks();

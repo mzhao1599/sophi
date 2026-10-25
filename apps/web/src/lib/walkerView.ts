@@ -26,15 +26,14 @@ import {
 const NOTICE_END = "Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.";
 
 /**
- * Shown above the text box before anyone types. `typedBy` is who reads typed words on this server
- * (walkerTypedModelFromEnv): Claude, Gemini, or no model. Spoken words always go to Gemini.
+ * Shown above the text box before anyone types. `typedBy` is who answers on this server
+ * (walkerModelFromEnv): Claude, or no model. What's said to the walker goes to Cartesia to be written down first.
  */
 export function typedNotice(typedBy: WalkerModel | null): string {
   if (typedBy === "claude") {
-    return `What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. ${NOTICE_END}`;
+    return `Your words go to Anthropic's Claude. What's said to the walker goes to Cartesia to be written down, then to Claude. The text of Sophi's spoken replies goes to Cartesia. Both may keep a copy. ${NOTICE_END}`;
   }
-  if (typedBy === "gemini") return `Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. ${NOTICE_END}`;
-  return `No model reads what you type here: Sophi answers with fixed replies. The text of Sophi's spoken replies goes to Cartesia. ${NOTICE_END}`;
+  return `No model reads what you type here: Sophi answers with fixed replies. What's said to the walker and the text of Sophi's spoken replies go to Cartesia. ${NOTICE_END}`;
 }
 
 /** How often the page asks for the walker's status while the tab is visible. */
@@ -309,7 +308,7 @@ export type ConversationEntry =
       key: string;
       at: number;
       turn: WalkerTurnView;
-      /** "You said (as heard by Gemini)", "You typed", "Typed on the walker". */
+      /** "You said (as heard by Cartesia)", "You typed", "Typed on the walker". */
       heardLabel: string;
       /** Her words, or null when nothing was heard ("Sophi didn't catch that"). */
       heard: string | null;
@@ -323,7 +322,7 @@ export type ConversationEntry =
 export const NOT_CAUGHT = "Sophi didn't catch that";
 
 export function heardLabel(turn: WalkerTurnView): string {
-  if (turn.heard_by === "gemini") return "You said (as heard by Gemini)";
+  if (turn.heard_by === "cartesia") return "You said (as heard by Cartesia)";
   if (turn.heard_by === "typed") return turn.source === "page" ? "You typed" : "Typed on the walker";
   return "You said";
 }

@@ -2,9 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { AgentModel } from "./agent";
 
 /**
- * The onboarding agent's model client: one Messages API call per attempt, with structured output.
- * Server-side only; the API key never reaches the browser. Override the model with
- * ONBOARDING_AGENT_MODEL; it must support structured outputs and the effort setting.
+ * The model client for the onboarding agent and the walker assistant: one Messages API call per attempt,
+ * with structured output. Server-side only; the API key never reaches the browser. Override the
+ * onboarding model with ONBOARDING_AGENT_MODEL and the walker's with WALKER_AGENT_MODEL and
+ * WALKER_BACKUP_MODEL (walker/config.ts); each must support structured outputs and the effort setting.
  */
 
 export const DEFAULT_AGENT_MODEL = "claude-opus-5-5";
@@ -20,8 +21,7 @@ export function createAnthropicModel({ apiKey, model = DEFAULT_AGENT_MODEL, fetc
   // One quick retry for a dropped connection or an overloaded API; the agent's deadline bounds the total.
   const client = new Anthropic({ apiKey, maxRetries: 1, ...(fetch ? { fetch } : {}) });
   return {
-    async generate({ system, context, retry, schema, audio }, signal) {
-      if (audio) throw new Error("The Claude client takes text only; voice turns use Gemini.");
+    async generate({ system, context, retry, schema }, signal) {
       const message = await client.beta.messages.create(
         {
           model,
@@ -29,6 +29,7 @@ export function createAnthropicModel({ apiKey, model = DEFAULT_AGENT_MODEL, fetc
           // A short conversational step, so low effort: it keeps a turn to a few seconds.
           output_config: { effort: "low", format: { type: "json_schema", schema } },
           // If the model declines for policy reasons, the API tries its default fallback model in the same call.
+          // A model without fallbacks (Haiku) runs alone, so a refusal there stays a refusal.
           betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",
           // The rules and question bank are the same on every turn, so they are cached.

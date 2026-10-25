@@ -10,7 +10,7 @@ This is the script for showing the website to judges at Cal Hacks: a click seque
 
 ## Click sequence (website only)
 
-Every input and click, with nothing to say. Use it to rehearse, or alongside the 3-minute script below. Wait for each reply to appear before typing the next line (about 2 to 3 seconds; "Read by Gemini" shows under each one).
+Every input and click, with nothing to say. Use it to rehearse, or alongside the 3-minute script below. Wait for each reply to appear before typing the next line (about 2 to 5 seconds; "Read by Claude" shows under each one).
 
 1. Open <http://localhost:3004> (start it with the setup checklist below).
 2. Click the text box, type the line below and press Enter:
@@ -44,8 +44,8 @@ If the assistant asks the questions in a different order, type the line that mat
 | what you'd like to reach | step 6 |
 | about sharing location, or anything else | don't type: click "Show My Walker" |
 
-**Checked live on 2026-10-23** on a production build of `main` (`6a5d088`) at 1440 by 900, with the agent on:
-- All five replies said "Read by Gemini", with no fallbacks.
+**Checked live on 2026-10-23** on a production build of `main` (`6a5d088`) at 1440 by 900, with the agent on the model it used before the switch to Claude (not yet rerun with Claude):
+- All five replies were read by the model, with no fallbacks.
 - The walker came out with hand controls and obstacle sensors on, the robot arms and arm lift worth considering, and Voice "You Said No".
 - The two switches made it 5 modules, and the Stripe test payment of $1,675.00 at the placeholder prices reached the success page.
 - "Set up another walker" returned to a fresh first frame.
@@ -63,7 +63,7 @@ If the assistant asks the questions in a different order, type the line that mat
 
 Wren is a **made-up person**. She has a first name only, no surname, no age and no medical details. She uses a walker around her apartment and to the corner shop. She keeps bumping into things, small buttons are hard for her, and she'd like help picking up things she drops. She would rather not talk to a machine.
 
-**Her exact lines.** Type them as written. Each line is keyed by the question's topic. With the agent on, Gemini writes its own wording for each question (for example "Where will you mostly use it?"), so read what the question is about and type the line for that topic.
+**Her exact lines.** Type them as written. Each line is keyed by the question's topic. With the agent on, Claude writes its own wording for each question (for example "Where will you mostly use it?"), so read what the question is about and type the line for that topic.
 
 | # | Topic (the fixed questions' wording on `main`†) | Wren types | Words that must survive a typo |
 | --- | --- | --- | --- |
@@ -81,7 +81,7 @@ The 3-minute script uses L1 to L5, then "Show My Walker"†. The 60-second cut u
 
 "Lit" means the module's status is `recommended` (on, solid on the drawing, labelled "Suggested"† during the chat and "On"† on the "Your walker"† view) or `consider` (dashed, labelled "Worth Considering"† during the chat and "Suggested"† on the "Your walker"† view). The frame is always on ("Always Included"†) and isn't counted. Location sharing shows "Not Available Yet"† throughout.
 
-| Line | Deterministic engine: next topic, lit after the line, its reply | Gemini agent (3 of 3 runs on `main`): next topic, what it read, model time |
+| Line | Deterministic engine: next topic, lit after the line, its reply | Agent on the earlier model (3 of 3 runs on `main`, before the switch to Claude; rerun with Claude before the demo): next topic, what it read, model time |
 | --- | --- | --- |
 | L1 | places. Lit: hand controls, obstacle sensors (on); robot arms (dashed). "Got it, knowing what's in your way, buttons that are easy to press and help picking things up." | places, all runs. Read: obstacles, easy controls, picking up. Same lit set. 2.1 to 2.9 s |
 | L2 | feedback. No change. "Good to know: at home and in shops and public buildings." | feedback, all runs. Read: home, shops. 2.0 to 3.5 s |
@@ -93,7 +93,7 @@ The 3-minute script uses L1 to L5, then "Show My Walker"†. The 60-second cut u
 
 **The intended walker** after L5 (and after L7): hand controls and obstacle sensors on; robot arms and arm lift suggested but off until she switches them on; voice "You Said No"†; location sharing "Not Available Yet"†. After L1 alone (the 60-second cut): hand controls and obstacle sensors on, robot arms suggested but off, voice off ("Off"†, since she hasn't said anything about it).
 
-**How to tell which engine answered.** On screen: under each reply the model worded, a quiet note says "Read by Gemini"†. A reply from the fixed questions instead says "Fixed questions: the model's reply didn't come through"†. A turn falls back when the model errors, runs past the 15-second deadline, or gives two unusable replies, and the next turn tries the model again. Backup: the terminal running the site prints `[onboarding-agent] outcome=agent …` for each model turn, or `outcome=fallback` with a reason. Carry on after a fallback: the rehearsal shows the same lines light the same parts either way. Never present a fallback turn as the model's; the note under it already says so.
+**How to tell which engine answered.** On screen: under each reply the model worded, a quiet note says "Read by Claude"†. A reply from the fixed questions instead says "Fixed questions: the model's reply didn't come through"†. A turn falls back when the model errors, runs past the 15-second deadline, or gives two unusable replies, and the next turn tries the model again. Backup: the terminal running the site prints `[onboarding-agent] outcome=agent …` for each model turn, or `outcome=fallback` with a reason. Carry on after a fallback: the rehearsal shows the same lines light the same parts either way. Never present a fallback turn as the model's; the note under it already says so.
 
 ## The 3-minute script
 
@@ -112,15 +112,15 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 > "No diagnosis, no form. She said what's hard, and the walker drew the parts that help."
 
-1. Thinking dots† show for about 2 to 3 seconds, then the reply fades in word by word†, with "Read by Gemini"† under it.
+1. Thinking dots† show for about 2 to 5 seconds, then the reply fades in word by word†, with "Read by Claude"† under it.
 2. On the drawing, the parts arrive one at a time with their names: hand controls and obstacle sensors on, the robot arms dashed.
 3. Say nothing for about 3 seconds while it draws, then say the line.
 
 **0:23 to 0:36. Name it, and say where her words go**
 
-> "This is Sophi. The line under the box says her answers are kept temporarily for this setup, Google's Gemini reads them and Google may keep a copy, and it asks her to leave out names and medical details. Each reply says who read it."
+> "This is Sophi. The line under the box says her answers are kept temporarily for this setup, Anthropic's Claude reads them and Anthropic may keep a copy, and it asks her to leave out names and medical details. Each reply says who read it."
 
-1. Point at the name in the header, Sophi†, then at the line under the text box†, then at "Read by Gemini"†.
+1. Point at the name in the header, Sophi†, then at the line under the text box†, then at "Read by Claude"†.
 
 **0:36 to 0:47. Where she'll use it (L2)**
 
@@ -241,7 +241,7 @@ Use these only when they are true on the day.
 - **Hardware, only if the walker is built.** Point at the physical walker and name only the parts that are on it and have been tested by the team that day. Say "planned" for everything else. Don't demo a part that hasn't been tested that day.
 - **Location sharing (Meta's "Bringing People Closer Together"), only if built.** Today it shows "Not Available Yet"†, and the fixed reply to L6 says "once that's built". If you type L6, say: "She'd like her family to see where the walker is. It isn't built yet; Sophi notes her answer."
 - **Voice (Cartesia), only if built.** The voice module doesn't exist. Don't mention Cartesia unless it does.
-- **Claude (Anthropic's track), only if Claude is on.** Mention Claude only if the setup checklist's engine check shows "Anthropic's Claude". These lines were rehearsed with the deterministic engine and Gemini, not Claude.
+- **Claude (Anthropic's track), only if Claude is on.** Mention Claude only if the setup checklist's engine check shows "Anthropic's Claude". These lines were rehearsed in the browser with the deterministic engine and the earlier model; on Claude only the committed rehearsal has run them (9 of 9 paths on 2026-10-24).
 
 ## Honesty lines
 
@@ -258,7 +258,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 ## Judge Q&A
 
-**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†; the line under the text box says only that they're "kept temporarily for this setup"†. With the agent on, each answer is also sent to Google's Gemini API, and that line names Google and says Google may keep a copy, before anyone types. Once sent, deleting here can't recall it from Google. That's why the demo uses a made-up persona and the line ends "Please leave out names and medical details."†
+**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†; the line under the text box says only that they're "kept temporarily for this setup"†. With the agent on, each answer is also sent to Anthropic's API, and that line names Anthropic and says Anthropic may keep a copy, before anyone types. Once sent, deleting here can't recall it from Anthropic. That's why the demo uses a made-up persona and the line ends "Please leave out names and medical details."†
 
 **2. Does Google use it?** [Fill in from the setup checklist.] If the key's project is on Google's paid tier: Google doesn't use it to improve its products, and keeps it for a limited time to check for abuse. If it's on the free tier: Google can use it to improve its products, people may review it, and the terms say not to send sensitive or personal information. That's why the laptop only gets Wren's made-up lines. On the phone link tonight, no model runs, so nothing typed there goes to Google.
 
@@ -270,7 +270,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 **6. Is it safe?** It's a prototype, not a certified mobility aid. The model is never given control of a motor. In the planned walker, any motion needs the person's own start signal, and a physical stop always wins. None of that hardware is built yet, so we make no safety claim today.
 
-**7. Which model is it, and how fast?** Google's Gemini 3.7 Flash with low thinking. These are our own timings of the model's time per turn, measured in-process; the page adds a little on top. On `main` (2026-10-23, after the redesign), a turn took 1.8 to 3.6 seconds, with a median of 2.3 seconds, and no fallbacks over 39 turns. One typed turn through the production build took 2.9 seconds end to end. The provider sits behind one adapter, so it can also run on Anthropic's Claude.
+**7. Which model is it, and how fast?** Anthropic's Claude Opus 5.5 at low effort. These are our own timings of the model's time per turn, measured in-process; the page adds a little on top. In the rehearsal on 2026-10-24 (laptop only), a turn took 1.9 to 5.1 seconds, with a median of 2.5 seconds, and no fallbacks over 39 turns.
 
 **8. Have real walker users tried it?** Not yet. That's the next step: watch someone who hasn't seen it set up a walker without help, and note where they hesitate. The persona's lines were rehearsed against both engines, not tested with people.
 
@@ -280,7 +280,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 ## Setup checklist (before judges arrive)
 
-**Engines tonight.** The presenter's laptop runs the agent (Gemini) locally. The public site at assistive-walker.vercel.app stays on the built-in questions, so judges' phones get the deterministic engine. Both produce the same walker from Wren's lines.
+**Engines tonight.** The presenter's laptop runs the agent (Claude) locally. The public site at assistive-walker.vercel.app stays on the built-in questions, so judges' phones get the deterministic engine. Both produce the same walker from Wren's lines.
 
 **Run it as a production build.** A production build has no Next.js development badge and no slow first compile of each page, so nothing needs pre-warming for speed. The commands in steps 4 and 5 were run on 2026-10-23 in a worktree of `main` at `daea268`, on port 3004, with the results listed there. Port 3004 is used here because other projects on this laptop may use ports 3000 to 3003; any free port works if you change it everywhere.
 
@@ -294,7 +294,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    pnpm install
    ```
 
-2. **Settings.** `apps/web/.env.local` (git-ignored) needs `ONBOARDING_ENGINE=agent`, `ONBOARDING_AGENT_PROVIDER=gemini`, `GEMINI_API_KEY` and a Stripe test key in `STRIPE_SECRET_KEY` (`sk_test_…`). Check the names without showing any value, and never open the file on a mirrored screen:
+2. **Settings.** `apps/web/.env.local` (git-ignored) needs `ONBOARDING_ENGINE=agent`, `ANTHROPIC_API_KEY` and a Stripe test key in `STRIPE_SECRET_KEY` (`sk_test_…`). Check the names without showing any value, and never open the file on a mirrored screen:
 
    ```bash
    sed 's/=.*//' apps/web/.env.local
@@ -324,7 +324,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= ONBOARDING_ALLOW_MEMORY_STORE=true pnpm --filter @walker/web exec next start --port 3004
    ```
 
-   Open <http://localhost:3004>. What the 2026-10-23 run gave: the server was ready in under a second; `/`, `/checkout/cancelled` and `/api/v1/checkout/status` answered 200, and the status said ordering is on (that check only reads the test key; it doesn't contact Stripe); the page held the name Sophi and the notice "Google's Gemini reads them to choose each question, and Google may keep a copy"; and L1 sent through the API came back in 2.9 seconds with both new assistant turns marked `answered_by: "model"`, the next topic places, and hand controls, obstacle sensors and robot arms lit. The terminal printed `[onboarding-agent] outcome=agent attempts=1 reason=none ms=2824`.
+   Open <http://localhost:3004>. What the 2026-10-23 run gave: the server was ready in under a second; `/`, `/checkout/cancelled` and `/api/v1/checkout/status` answered 200, and the status said ordering is on (that check only reads the test key; it doesn't contact Stripe); the page held the name Sophi and the agent's notice (then naming the earlier model's provider); and L1 sent through the API came back in 2.9 seconds with both new assistant turns marked `answered_by: "model"`, the next topic places, and hand controls, obstacle sensors and robot arms lit. The terminal printed `[onboarding-agent] outcome=agent attempts=1 reason=none ms=2824`.
 
 6. **Fallback: development mode.** If the build fails, run the development server instead (not re-run on 2026-10-23; it shows a Next.js badge, and each page compiles slowly the first time it opens, so pre-warm in step 9):
 
@@ -332,9 +332,9 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= pnpm --filter @walker/web exec next dev --port 3004
    ```
 
-7. **Engine check.** The header says Sophi†. The line under the text box† must include "Google's Gemini reads them to choose each question, and Google may keep a copy"†. After the first answer, the reply shows "Read by Gemini"† and the terminal prints `[onboarding-agent] outcome=agent …`. If the notice doesn't name Google, the deterministic engine is running: fix `.env.local`, rebuild and restart. Only if it names "Anthropic's Claude" may you mention Claude.
+7. **Engine check.** The header says Sophi†. The line under the text box† must include "Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy"†. After the first answer, the reply shows "Read by Claude"† and the terminal prints `[onboarding-agent] outcome=agent …`. If the notice doesn't name Anthropic, the deterministic engine is running: fix `.env.local`, rebuild and restart, and don't mention Claude.
 8. **Free-tier check.** Ask the key's owner whether its Google Cloud project has billing on, and write the answer into Q&A 2.
-9. **Run it through once.** Run the whole 3-minute script once, end to end, including the test payment and the success page. This checks Gemini and Stripe on the venue network (and, in development mode, compiles every page). Then reset (step 13).
+9. **Run it through once.** Run the whole 3-minute script once, end to end, including the test payment and the success page. This checks Claude and Stripe on the venue network (and, in development mode, compiles every page). Then reset (step 13).
 10. **Browser.** Use a separate browser profile with no saved data, so Stripe's email field can't autofill a real address. Close every other tab: email, chat, Messages, password managers, other localhost tabs (another project may use ports 3000 to 3003; the only localhost tab should be this demo on port 3004), any editor showing `.env.local`, and the vercel.app tab. Turn on Do Not Disturb.
 11. **Projector zoom.** Zoom with Cmd+= to 110% or 125%. If the walker drops below the chat or the layout looks cramped, zoom out one step (Cmd+-). If mirroring sets the laptop to 1024 by 768, stay at 100%. Check this on the projector, since the redesigned layout's breakpoints weren't measured for this script.
 12. **Stripe test card,** on a sticky note: `4242 4242 4242 4242`, `12/34`, `123`, `Wren Demo`, `94720`, `demo@example.com`. It's Stripe's public test card, not a secret.
@@ -343,14 +343,14 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 15. **Fallbacks.**
     - **No Wi-Fi:** the deterministic engine needs no internet. Restart with it so turns don't wait for the model's deadline: put `ONBOARDING_ENGINE=deterministic` at the front of the step 5 command (no rebuild needed). Stripe needs the internet, so without it stop at "Saved"† and show the order on a phone instead. Phone hotspots are banned at Cal Hacks; a cable from the venue's hardline switch (requested in the Cal Hacks app, picked up at the Hardware Checkout window) can bring back the internet, through an adapter if the laptop has no Ethernet port.
     - **The agent is slow:** each turn falls back to the fixed questions after 15 seconds on its own, and the note under the reply says so. If turns take more than about 5 seconds, restart with `ONBOARDING_ENGINE=deterministic` as above; the same lines give the same walker. While the dots show, say the next spoken line.
-    - **Cisco Umbrella:** this laptop's network filter blocks the new vercel.app domain, so on this laptop always open localhost, never vercel.app. Gemini's API answered from this laptop on 2026-10-23; Stripe wasn't contacted that day. Check both on the venue network in step 9.
+    - **Cisco Umbrella:** this laptop's network filter blocks the new vercel.app domain, so on this laptop always open localhost, never vercel.app. Anthropic's API hasn't been checked from this laptop on the venue network yet, and Stripe wasn't contacted on 2026-10-23. Check both on the venue network in step 9.
 
 ## Requests to the product
 
 Design changes for the demo, sent to the redesign session. Status checked against the code on `main` (`daea268`).
 
 1. **Done.** A "you said no" state: Voice shows "You Said No"† with a struck dot, and its panel quotes her decline.
-2. **Done.** A note under each reply saying which engine answered: "Read by Gemini"† or "Fixed questions: the model's reply didn't come through"†.
+2. **Done.** A note under each reply saying which engine answered: "Read by Claude"† or "Fixed questions: the model's reply didn't come through"†.
 3. **Done.** New parts arrive one at a time, with their names.
 4. **Done.** Her words come first in a part's panel: "You said"†, then "Why it's suggested:"†.
 5. **Done.** The success page ends on her drawn walker, with "Demo order: no money moved"†.
@@ -363,24 +363,24 @@ Design changes for the demo, sent to the redesign session. Status checked agains
 
 **Date:** 2026-10-23. **Code:** `main` at `daea268` (with PR #20's agent wording and PR #22's redesign), in the worktree `claude/demo-script-update`. **Method:** a scratch Vitest test (not committed) ran Wren's lines through the real onboarding service, `OnboardingService` with `MemorySessionStore`, in-process; no browser was involved. Each path was a new session. For each turn the presenter's rule was applied: read the topic asked, type that topic's line. A path passed only if all of these held: every topic came in the bank's order; the lit modules matched the expected list after every line; the final walker matched; the session reached review; voice was off; the robot arms were suggested but off; no turn fell back; and every model reply was marked `answered_by: "model"` (none with the deterministic engine). The expected results were written before the first run.
 
-The 3-minute path is L1 to L5 then "Show My Walker"; the 60-second path is L1 then "Show My Walker" (the Gemini runs) or L1, "Skip", then "Show My Walker" (the deterministic run, as performed on stage; skips never reach the model, so the model's part is the same L1 turn); the full path is L1 to L7.
+The 3-minute path is L1 to L5 then "Show My Walker"; the 60-second path is L1 then "Show My Walker" (the agent runs) or L1, "Skip", then "Show My Walker" (the deterministic run, as performed on stage; skips never reach the model, so the model's part is the same L1 turn); the full path is L1 to L7.
 
 | Engine and run | Path | Turns | Order as expected | Lit after every line as expected | Final walker | Fallbacks | Model time per turn |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Deterministic | full | 7 | yes | yes | intended | n/a | n/a |
 | Deterministic | 3-minute | 5 | yes | yes | intended | n/a | n/a |
 | Deterministic | 60-second | 1 + Skip | yes | yes | intended | n/a | n/a |
-| Gemini run 1 | full | 7 | yes | yes | intended | 0 | 1.8 to 2.6 s, mean 2.3 |
-| Gemini run 1 | 3-minute | 5 | yes | yes | intended | 0 | 2.0 to 2.9 s, mean 2.4 |
-| Gemini run 1 | 60-second | 1 | yes | yes | intended | 0 | 2.8 s |
-| Gemini run 2 | full | 7 | yes | yes | intended | 0 | 1.8 to 3.6 s, mean 2.5 |
-| Gemini run 2 | 3-minute | 5 | yes | yes | intended | 0 | 2.1 to 2.4 s, mean 2.2 |
-| Gemini run 2 | 60-second | 1 | yes | yes | intended | 0 | 2.1 s |
-| Gemini run 3 | full | 7 | yes | yes | intended | 0 | 2.0 to 3.5 s, mean 2.5 |
-| Gemini run 3 | 3-minute | 5 | yes | yes | intended | 0 | 2.0 to 2.6 s, mean 2.3 |
-| Gemini run 3 | 60-second | 1 | yes | yes | intended | 0 | 2.7 s |
+| Earlier-model run 1 | full | 7 | yes | yes | intended | 0 | 1.8 to 2.6 s, mean 2.3 |
+| Earlier-model run 1 | 3-minute | 5 | yes | yes | intended | 0 | 2.0 to 2.9 s, mean 2.4 |
+| Earlier-model run 1 | 60-second | 1 | yes | yes | intended | 0 | 2.8 s |
+| Earlier-model run 2 | full | 7 | yes | yes | intended | 0 | 1.8 to 3.6 s, mean 2.5 |
+| Earlier-model run 2 | 3-minute | 5 | yes | yes | intended | 0 | 2.1 to 2.4 s, mean 2.2 |
+| Earlier-model run 2 | 60-second | 1 | yes | yes | intended | 0 | 2.1 s |
+| Earlier-model run 3 | full | 7 | yes | yes | intended | 0 | 2.0 to 3.5 s, mean 2.5 |
+| Earlier-model run 3 | 3-minute | 5 | yes | yes | intended | 0 | 2.0 to 2.6 s, mean 2.3 |
+| Earlier-model run 3 | 60-second | 1 | yes | yes | intended | 0 | 2.7 s |
 
-Model: `gemini-3.7-flash` at low thinking. Over all 39 agent turns: no fallbacks, no retries, 1.8 to 3.6 seconds, a median of 2.3 seconds. No line had to change. Every run read the same needs from each line, and they matched the keyword matcher's, except that the agent also read "picking up" from L5 (already known from L1) and didn't add "easy controls" from the word "button" in L4 (already known from L1), so the lit modules matched. The agent wrote its own question wording, which varied between runs (for example "Where will you mostly use it?" and "Where will you mostly use the walker?"), but the topic order never changed.
+Model: the agent's model before the switch to Claude (2026-10-25), at low thinking. Not yet rerun with Claude. Over all 39 agent turns: no fallbacks, no retries, 1.8 to 3.6 seconds, a median of 2.3 seconds. No line had to change. Every run read the same needs from each line, and they matched the keyword matcher's, except that the agent also read "picking up" from L5 (already known from L1) and didn't add "easy controls" from the word "button" in L4 (already known from L1), so the lit modules matched. The agent wrote its own question wording, which varied between runs (for example "Where will you mostly use it?" and "Where will you mostly use the walker?"), but the topic order never changed.
 
 **The "she decides" beat and the order.** A second scratch test, in the web app's own code, ran the 3-minute path, then the page's own switch logic: Robot arms on, then Arm lift on. Before the switches, all seven parts were in the expected states (frame, hand controls and obstacle sensors on; voice "You said no"; arms and lift suggested but off; location sharing unavailable). After them, the arms and lift were on with nothing else changed, the selection had no problems, and Save confirmed five modules. The Stripe line items built from that setup were the frame, hand controls, obstacle sensors, robot arms and arm lift, each at its placeholder price from `apps/web/src/server/checkout/order.ts` and labelled "demo price, not a real quote". (Since `8cc072e` on 2026-10-23, each line's name ends "(sample price)" instead; the note on Stripe's page still says "Prices are demo prices, not a real quote.")
 

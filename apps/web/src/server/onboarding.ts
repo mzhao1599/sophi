@@ -36,14 +36,14 @@ const globalForStore = globalThis as unknown as { __walkerStoreBackend?: StoreBa
 function storeBackend(): StoreBackend {
   return (globalForStore.__walkerStoreBackend ??= storeBackendFromEnv(process.env));
 }
-// ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY or GEMINI_API_KEY turns on the onboarding agent;
+// ONBOARDING_ENGINE=agent plus ANTHROPIC_API_KEY turns on the onboarding agent;
 // otherwise the deterministic engine runs. These variables and the Supabase secret key are read here,
 // on the server, and never sent to the browser.
 const engine = engineFromEnv(process.env);
 const agentProvider = agentProviderFromEnv(process.env);
 /** The notice's clause for the agent (who reads the answers, who may keep them); null without the agent. */
 export const agentNotice: string | null = agentProvider ? agentNoticeClause(agentProvider) : null;
-/** The model's short name for the note under each reply it worded ("Read by Gemini"); null without the agent. */
+/** The model's short name for the note under each reply it worded ("Read by Claude"); null without the agent. */
 export const agentName: string | null = agentProvider ? agentModelName(agentProvider) : null;
 
 /** True when sessions are kept in Supabase, so account features (resume, saved setups) can work. */

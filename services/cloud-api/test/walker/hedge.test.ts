@@ -154,10 +154,10 @@ describe("the walker's backup model", () => {
 });
 
 describe("walkerModelsFromEnv", () => {
-  it("defaults to gemini-3.7-flash with gemini-3.6-flash as the backup after 4.5 s", () => {
-    expect(walkerModelsFromEnv({})).toEqual({ main: "gemini-3.7-flash", backup: "gemini-3.6-flash", backupAfterMs: 4500 });
-    // "none" for the main model leaves it at its default, as before the backup.
-    expect(walkerModelsFromEnv({ WALKER_AGENT_MODEL: "none" }).main).toBe("gemini-3.7-flash");
+  it("defaults to claude-haiku-5-5 with claude-opus-5-5 as the backup after 4.5 s", () => {
+    expect(walkerModelsFromEnv({})).toEqual({ main: "claude-haiku-5-5", backup: "claude-opus-5-5", backupAfterMs: 4500 });
+    // "none" for the main model leaves it at its default.
+    expect(walkerModelsFromEnv({ WALKER_AGENT_MODEL: "none" }).main).toBe("claude-haiku-5-5");
   });
 
   it('turns the backup off with "none", in any case', () => {
@@ -166,9 +166,9 @@ describe("walkerModelsFromEnv", () => {
   });
 
   it("reads the overrides and keeps the default switch-over for a value it can't use", () => {
-    expect(walkerModelsFromEnv({ WALKER_AGENT_MODEL: "models/gemini-3.6-flash", WALKER_BACKUP_MODEL: "gemini-3.5-flash-lite", WALKER_BACKUP_AFTER_MS: "4000" })).toEqual({
-      main: "gemini-3.6-flash",
-      backup: "gemini-3.5-flash-lite",
+    expect(walkerModelsFromEnv({ WALKER_AGENT_MODEL: "claude-sonnet-5-5", WALKER_BACKUP_MODEL: "claude-opus-5", WALKER_BACKUP_AFTER_MS: "4000" })).toEqual({
+      main: "claude-sonnet-5-5",
+      backup: "claude-opus-5",
       backupAfterMs: 4000,
     });
     for (const bad of ["", "soon", "4.5", "-1", "9000"]) expect(walkerModelsFromEnv({ WALKER_BACKUP_AFTER_MS: bad }).backupAfterMs).toBe(4500);
@@ -185,39 +185,46 @@ describe("createWalkerAssistantFor", () => {
     lines: [],
     now,
   });
-  const answer = JSON.stringify({ transcript: "", reply: "Hello.", topics: [], cues_change: null });
+  const answer = JSON.stringify({ transcript: "Hi", reply: "Hello.", topics: [], cues_change: null, tool_call: null });
+  /** A Messages API reply carrying the structured answer. */
+  const message = (model: string) =>
+    new Response(
+      JSON.stringify({ id: "msg_test", type: "message", role: "assistant", model, content: [{ type: "text", text: answer }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  const modelOf = (init: RequestInit) => (JSON.parse(String(init.body)) as { model: string }).model;
 
   function fakeFetch() {
-    const sent: { model: string; thinking: unknown }[] = [];
-    const impl = (async (url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as { generationConfig: { thinkingConfig?: unknown } };
-      sent.push({ model: /models\/([^:]+):/.exec(url)![1]!, thinking: body.generationConfig.thinkingConfig });
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: answer }] }, finishReason: "STOP" }] }), { status: 200 });
+    const sent: { host: string; model: string; effort: unknown }[] = [];
+    const impl = (async (url: string | URL, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { model: string; output_config?: { effort?: unknown } };
+      sent.push({ host: new URL(String(url)).host, model: body.model, effort: body.output_config?.effort });
+      return message(body.model);
     }) as unknown as typeof fetch;
     return { impl, sent };
   }
 
-  it("asks both models, the backup with minimal thinking and the main model never with it", async () => {
+  it("asks both Claude models at low effort", async () => {
     vi.useRealTimers();
     const { impl, sent } = fakeFetch();
     const result = await createWalkerAssistantFor("k", walkerModelsFromEnv({}), impl).reply(view, "page", { type: "text", text: "Hi" }, now);
-    expect(result).toMatchObject({ ok: true, model: "gemini-3.7-flash" });
+    expect(result).toMatchObject({ ok: true, model: "claude-haiku-5-5", provider: "claude" });
     expect(sent).toEqual([
-      { model: "gemini-3.7-flash", thinking: { thinkingLevel: "low" } },
-      { model: "gemini-3.6-flash", thinking: { thinkingLevel: "minimal" } },
+      { host: "api.anthropic.com", model: "claude-haiku-5-5", effort: "low" },
+      { host: "api.anthropic.com", model: "claude-opus-5-5", effort: "low" },
     ]);
   });
 
   /** A fetch per model: `answer` answers at once, `hang` never answers until its request is cancelled. */
   function scriptedFetch(behaviour: Record<string, "answer" | "hang" | "503">) {
     const calls: Record<string, { count: number; aborted: number }> = {};
-    const impl = ((url: string, init: RequestInit) => {
-      const model = /models\/([^:]+):/.exec(url)![1]!;
+    const impl = ((_url: string, init: RequestInit) => {
+      const model = modelOf(init);
       const c = (calls[model] ??= { count: 0, aborted: 0 });
       c.count++;
       const how = behaviour[model] === "503" && c.count > 1 ? "hang" : behaviour[model];
-      if (how === "answer") return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: answer }] }, finishReason: "STOP" }] }), { status: 200 }));
-      if (how === "503") return Promise.resolve(new Response("busy", { status: 503 }));
+      if (how === "answer") return Promise.resolve(message(model));
+      if (how === "503") return Promise.resolve(new Response(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "busy" } }), { status: 503, headers: { "content-type": "application/json" } }));
       return new Promise((_resolve, reject) =>
         init.signal!.addEventListener("abort", () => {
           c.aborted++;
@@ -231,28 +238,28 @@ describe("createWalkerAssistantFor", () => {
 
   it("cancels the backup's request once the main model answers, so it sends nothing more", async () => {
     vi.useRealTimers();
-    const { impl, calls } = scriptedFetch({ "gemini-3.7-flash": "answer", "gemini-3.6-flash": "hang" });
+    const { impl, calls } = scriptedFetch({ "claude-haiku-5-5": "answer", "claude-opus-5-5": "hang" });
     const result = await createWalkerAssistantFor("k", walkerModelsFromEnv({}), impl).reply(view, "page", { type: "text", text: "Hi" }, now);
     await settle();
-    expect(result).toMatchObject({ ok: true, model: "gemini-3.7-flash" });
-    expect(calls["gemini-3.6-flash"]).toEqual({ count: 1, aborted: 1 });
+    expect(result).toMatchObject({ ok: true, model: "claude-haiku-5-5" });
+    expect(calls["claude-opus-5-5"]).toEqual({ count: 1, aborted: 1 });
   });
 
-  it("cancels the main model's request, its 5xx retry included, once the backup's answer is used", async () => {
+  it("uses the backup's answer when the main model is overloaded, and its retry is never sent", async () => {
     vi.useRealTimers();
-    const { impl, calls } = scriptedFetch({ "gemini-3.7-flash": "503", "gemini-3.6-flash": "answer" });
+    const { impl, calls } = scriptedFetch({ "claude-haiku-5-5": "503", "claude-opus-5-5": "answer" });
     const result = await createWalkerAssistantFor("k", walkerModelsFromEnv({ WALKER_BACKUP_AFTER_MS: "50" }), impl).reply(view, "page", { type: "text", text: "Hi" }, now);
     await settle();
-    expect(result).toMatchObject({ ok: true, model: "gemini-3.6-flash" });
-    // The 503 is retried once (gemini.ts), and that retry is cancelled at the pick: no third request.
-    expect(calls["gemini-3.7-flash"]).toEqual({ count: 2, aborted: 1 });
+    expect(result).toMatchObject({ ok: true, model: "claude-opus-5-5" });
+    // The SDK waits before its one retry (anthropic.ts, maxRetries 1); the pick cancels the wait, so no second request.
+    expect(calls["claude-haiku-5-5"]!.count).toBe(1);
   });
 
   it('asks one model when the backup is "none"', async () => {
     vi.useRealTimers();
     const { impl, sent } = fakeFetch();
     const result = await createWalkerAssistantFor("k", walkerModelsFromEnv({ WALKER_BACKUP_MODEL: "none" }), impl).reply(view, "page", { type: "text", text: "Hi" }, now);
-    expect(result).toMatchObject({ ok: true, model: "gemini-3.7-flash" });
-    expect(sent).toEqual([{ model: "gemini-3.7-flash", thinking: { thinkingLevel: "low" } }]);
+    expect(result).toMatchObject({ ok: true, model: "claude-haiku-5-5" });
+    expect(sent.map((s) => s.model)).toEqual(["claude-haiku-5-5"]);
   });
 });

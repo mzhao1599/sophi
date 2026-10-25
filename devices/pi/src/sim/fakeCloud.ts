@@ -518,7 +518,7 @@ export class FakeCloud {
       source: "walker",
       // The contract has no "fake" transcriber: the words say they are made up.
       heard: `Fake transcript: ${call.name === "start_route" ? `take me to ${call.destination}` : call.name.replace(/_/g, " ")}`,
-      heard_by: "gemini",
+      heard_by: "cartesia",
       reply: step.reply ?? "Fake cloud: let me check.",
       answered_by: "fixed",
       voiced_by: "walker",
@@ -557,7 +557,7 @@ export class FakeCloud {
       client_turn_id: body.client_turn_id,
       source: "walker",
       heard: body.input.type === "text" ? body.input.text : null,
-      heard_by: body.input.type === "text" ? "gemini" : null,
+      heard_by: body.input.type === "text" ? "cartesia" : null,
       reply: (step.final ?? `Fake cloud: ${result?.text ?? "the walker sent no tool result."}`).slice(0, 600),
       answered_by: "fixed",
       voiced_by: "walker",

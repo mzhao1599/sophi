@@ -149,7 +149,7 @@ describe("the walker's own states", () => {
     const v = screenView(state({ state: "answering", heard: "Is there anything in front of me right now?", reply: SAMPLE_REPLY, source: "model", page: 1 }));
     const pages = captionPages(SAMPLE_REPLY, "large");
     expect(v.main).toEqual({ text: pages[1], size: "body" });
-    expect(v.lines.map((l) => l.text)).toEqual(["You said: Is there anything in…", "Answered by Gemini"]);
+    expect(v.lines.map((l) => l.text)).toEqual(["You said: Is there anything in…", "Answered by Claude"]);
     expect(v.center.lines.map((l) => l.text)).toEqual([`2 of ${pages.length}`]);
     expect(v.left).toBeNull();
     // A page past the end shows the last one.

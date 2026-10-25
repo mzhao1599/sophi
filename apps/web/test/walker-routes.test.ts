@@ -72,7 +72,7 @@ const store = new MemoryWalkerStore();
 beforeAll(() => {
   shared.__walkerBackend = { kind: "memory", store };
   // No model or voice in these tests, whatever the shell has: turns get the fixed line.
-  shared.__walkerAgent = { assistant: null, typed: null, voice: null };
+  shared.__walkerAgent = { assistant: null, ears: null, voice: null };
 });
 
 /** A 16 kHz mono 16-bit WAV of silence. */
@@ -191,7 +191,7 @@ describe("walker routes", () => {
     const proposalId = crypto.randomUUID();
     await store.saveTurn(
       w.deviceId,
-      { turn_id: crypto.randomUUID(), client_turn_id: clientTurnId, source: "walker", heard: "Use short sounds.", heard_by: "gemini", reply: "Press Confirm to do it.", answered_by: "model", voiced_by: "walker", created_at: now.toISOString() },
+      { turn_id: crypto.randomUUID(), client_turn_id: clientTurnId, source: "walker", heard: "Use short sounds.", heard_by: "cartesia", reply: "Press Confirm to do it.", answered_by: "model", voiced_by: "walker", created_at: now.toISOString() },
       { proposal_id: proposalId, client_turn_id: clientTurnId, kind: "cues_change", from_cues: ["vibration", "spoken"], cues: ["sound", "spoken"], base_configuration_version: 1, summary: "Switch your alerts from buzzing to short sounds.", state: "open", created_at: now.toISOString(), expires_at: new Date(now.getTime() + 60_000).toISOString(), configuration_version: null },
       now,
     );
@@ -246,9 +246,10 @@ describe("walker routes", () => {
     const body = WalkerListResponseSchema.parse(await listed.json());
     expect(body.activity).toHaveLength(1);
     expect(body.activity![0]).toMatchObject({ device_id: w.deviceId, in_flight: [] });
-    expect(body.activity![0]!.traces.map((t) => [t.client_turn_id, t.input, t.clip_ms, t.model_ran, t.rule, t.voiced_by])).toEqual([
-      [typed.client_turn_id, "text", null, false, "no_model", null],
-      [voice.client_turn_id, "audio", 1000, false, "no_model", "walker"],
+    // No Cartesia key in this test: the clip can't be written down, so it gets the fixed "can't hear" line and no model runs.
+    expect(body.activity![0]!.traces.map((t) => [t.client_turn_id, t.input, t.clip_ms, t.model_ran, t.rule, t.voiced_by, t.transcribe_ms])).toEqual([
+      [typed.client_turn_id, "text", null, false, "no_model", null, null],
+      [voice.client_turn_id, "audio", 1000, false, "cant_hear", "walker", null],
     ]);
     expect(JSON.stringify(body.activity)).not.toContain("help me");
     // The other owner's list carries none of it.

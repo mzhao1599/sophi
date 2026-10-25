@@ -43,11 +43,11 @@ interface ScreenProps {
   opening: Question;
   /**
    * When the server runs the onboarding agent, the notice's clause naming who reads the answers and who
-   * may keep them ("Google's Gemini reads them to choose each question, and Google may keep a copy");
+   * may keep them ("Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy");
    * null with the deterministic engine.
    */
   agentNotice?: string | null;
-  /** The model's short name while the agent runs ("Gemini"), for the note under each reply; null otherwise. */
+  /** The model's short name while the agent runs ("Claude"), for the note under each reply; null otherwise. */
   agentName?: string | null;
 }
 

@@ -64,7 +64,7 @@ import {
   distanceLine,
   stillWaiting,
 } from "./lines";
-import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
+import { isWav16kMono, wav16kMonoMs, type WalkerEars, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
 import {
   HELP_CLOSED_MESSAGE,
@@ -149,8 +149,10 @@ export interface WalkerServiceOptions {
   blocked?: string;
   /** The model step for turns; without one, every turn gets a fixed line. */
   assistant?: WalkerAssistant | null;
-  /** The model step for typed turns (Claude, when set up); without one, typed turns use `assistant`. */
-  typed?: WalkerAssistant | null;
+  /** Turns a Talk clip into words before the model reads them (Cartesia); without it, spoken turns get a fixed line. */
+  ears?: WalkerEars | null;
+  /** The transcription's own limit (default TRANSCRIBE_TIMEOUT_MS). */
+  transcribeTimeoutMs?: number;
   /** Sophi's spoken voice for walker turns; without one, the walker speaks replies itself. */
   voice?: WalkerVoice | null;
   /** One event per turn, for the log: ids, outcomes and timings, never words. */
@@ -180,6 +182,8 @@ export interface TurnEvent {
   /** The model whose answer (or failure) the turn used; null when no model ran. */
   model: string | null;
   model_ms: number;
+  /** Cartesia's transcription time; 0 when it wasn't asked. */
+  transcribe_ms: number;
   voiced_by: "cartesia" | "walker" | null;
   voice_ms: number;
   proposal_opened: boolean;
@@ -192,6 +196,12 @@ export interface TurnEvent {
  */
 const TURN_BUDGET_MS = 8_000;
 const VOICE_TIMEOUT_MS = 3_000;
+/** Cartesia's transcript of a clip of a few seconds; past this the turn answers with NOT_HEARD_LINE. */
+const TRANSCRIBE_TIMEOUT_MS = 2_500;
+/** A Talk press with no words made out. */
+export const NOT_HEARD_LINE = "I didn't catch that. Please hold Talk and say it again.";
+/** A Talk press the server couldn't transcribe (no Cartesia key, an error, or its time limit). */
+export const CANT_HEAR_LINE = "I can't hear you right now. You can type your question on the walker's page.";
 /** Less time than this left for the voice isn't worth a call. */
 const VOICE_MIN_MS = 500;
 
@@ -221,7 +231,8 @@ export class WalkerService {
   private readonly randomCode: () => string;
   private readonly blocked: string | undefined;
   private readonly assistant: WalkerAssistant | null;
-  private readonly typed: WalkerAssistant | null;
+  private readonly ears: WalkerEars | null;
+  private readonly transcribeTimeoutMs: number;
   private readonly voice: WalkerVoice | null;
   private readonly onTurn: (event: TurnEvent) => void;
   private readonly turnBudgetMs: number;
@@ -238,7 +249,8 @@ export class WalkerService {
     this.randomCode = options.randomCode ?? (() => String(randomInt(0, 1_000_000)).padStart(6, "0"));
     this.blocked = options.blocked;
     this.assistant = options.assistant ?? null;
-    this.typed = options.typed ?? null;
+    this.ears = options.ears ?? null;
+    this.transcribeTimeoutMs = options.transcribeTimeoutMs ?? TRANSCRIBE_TIMEOUT_MS;
     this.voice = options.voice ?? null;
     this.onTurn = options.onTurn ?? logTurn;
     this.turnBudgetMs = options.turnBudgetMs ?? TURN_BUDGET_MS;
@@ -407,22 +419,18 @@ export class WalkerService {
 
     const now = this.now();
     // Accepted: the page's companion shows it until it ends, however it ends.
-    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs, model: this.assistantFor(request)?.provider ?? null });
+    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs, model: this.assistant?.provider ?? null });
     try {
-      return await this.answerTurn(device, source, request, now, started, left, clipMs, flight);
+      return await this.answerTurn(device, source, request, now, started, left, clip, clipMs, flight);
     } finally {
       flight?.end();
     }
   }
 
-  /**
-   * Who answers this turn. Typed by the person (text with no original_audio): `typed` when set up, so
-   * Claude. Spoken, or the text continuation of a spoken turn after a tool: `assistant`, so Gemini, which
-   * heard the clip. One turn never switches model halfway.
-   */
-  private assistantFor(request: DeviceTurnRequest | PageTurnRequest): WalkerAssistant | null {
-    const typed = request.input.type === "text" && !("original_audio" in request && request.original_audio);
-    return typed && this.typed ? this.typed : this.assistant;
+  /** Cartesia's words for a clip: "" when none were made out, null when it couldn't be asked or failed in time. */
+  private async transcribe(clip: Buffer, limitMs: number): Promise<string | null> {
+    if (!this.ears || limitMs <= 0) return null;
+    return this.ears.transcribe(clip, AbortSignal.timeout(Math.max(1, limitMs)));
   }
 
   private async answerTurn(
@@ -432,10 +440,23 @@ export class WalkerService {
     now: Date,
     started: number,
     left: () => number,
+    clip: Buffer | null,
     clipMs: number | null,
     flight: FlightHandle | undefined,
   ): Promise<WalkerTurnResponse> {
     const input = request.input;
+    // A Talk press is heard first: Cartesia writes the words, and the model reads them like typed text.
+    const transcribeStarted = Date.now();
+    if (clip && this.ears) flight?.stage("transcribing");
+    const transcript = clip ? await this.transcribe(clip, Math.min(this.transcribeTimeoutMs, left())) : null;
+    const transcribeMs = clip && this.ears ? Date.now() - transcribeStarted : 0;
+    if (clip) flight?.stage("hearing");
+    // What she said, as the turn stores it: typed text, the continuation's original words, or the transcript.
+    const heardText = input.type === "text" ? input.text : transcript || null;
+    const spoken = input.type === "audio" || ("original_audio" in request && request.original_audio === true);
+    const heardBy = heardText === null ? null : spoken ? ("cartesia" as const) : ("typed" as const);
+    // A clip with no words, or one that couldn't be transcribed: a fixed line, and no model call.
+    const unheard = input.type === "audio" && heardText === null ? (transcript === "" ? "not_heard" : "cant_hear") : null;
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
@@ -446,8 +467,8 @@ export class WalkerService {
     // caretaker it answers with the fixed no-caretaker line). Never on the owner's page.
     const canAsk = source === "walker" && "can_ask_for_help" in request && request.can_ask_for_help === true;
     const help = { offer: canAsk && circle !== null, open: source === "walker" && circle?.help ? helpContextLine(circle.help) : null };
-    // A spoken turn continued after a tool is still spoken: the model must not answer it as typed ("use Talk").
-    const words: Words = input.type === "text" ? { type: "text", text: input.text, ...("original_audio" in request && request.original_audio ? { spoken: true } : {}) } : { type: "audio", data_base64: input.data_base64 };
+    // A spoken turn, continued after a tool or not, stays spoken: the model must not answer it as typed ("use Talk").
+    const words: Words = { type: "text", text: heardText ?? "", ...(spoken ? { spoken: true } : {}) };
     const toolResults: WalkerToolResult[] = "tool_results" in request
       ? (request.tool_results ?? []).map((r) => r.name === "get_distance" ? { name: r.name, text: distanceLine(status) } : r)
       : [];
@@ -456,21 +477,20 @@ export class WalkerService {
     const routeDone = toolResults.some((r) => isRouteTool(r.name));
     // Only a walker turn that carries `screen` is offered show_on_screen, and only with the views it lists.
     const screenViews = source === "walker" && "screen" in request ? (request.screen?.views ?? []) : [];
-    const assistant = this.assistantFor(request);
+    const assistant = unheard ? null : this.assistant;
     const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, navigation, help, screenViews) : null;
 
-    const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
+    const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change ? result.reply.tool_call : null;
     const tool = toolCall?.name;
     const routeTool = tool !== undefined && isRouteTool(tool);
     const unlistedView = toolCall?.name === "show_on_screen" && !screenViews.includes(toolCall.view);
     const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && !unlistedView && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
     if (nextTool) {
-      const heard = input.type === "audio" ? result?.ok ? result.reply.transcript.trim() : "" : input.text;
       const line = LOOKUP_LINE[nextTool];
       if (nextTool === "get_distance") toolResults.push({ name: "get_distance", text: distanceLine(status) });
       const speech = await this.speak(line, left(), () => flight?.stage("voicing"));
       return WalkerTurnResponseSchema.parse({
-        turn: { turn_id: this.randomId(), client_turn_id: request.client_turn_id, source: "walker", heard: heard || null, heard_by: heard ? (input.type === "audio" || ("original_audio" in request && request.original_audio) ? "gemini" : "typed") : null, reply: line, answered_by: "fixed", voiced_by: speech ? "cartesia" : "walker", created_at: now.toISOString() },
+        turn: { turn_id: this.randomId(), client_turn_id: request.client_turn_id, source: "walker", heard: heardText, heard_by: heardBy, reply: line, answered_by: "fixed", voiced_by: speech ? "cartesia" : "walker", created_at: now.toISOString() },
         proposal: null,
         speech: speech ? { mime: "audio/wav", data_base64: speech } : null,
         status,
@@ -489,7 +509,9 @@ export class WalkerService {
     // Asking for help: the server words the reply, and the Pi counts down and asks itself. Nothing is created here.
     const caretakerNames = recipients.map((r) => r.name);
     const helpAsked = tool === "ask_for_help" && help.offer && caretakerNames.length > 0;
-    const decided = tool === "ask_for_help"
+    const decided = unheard
+      ? { reply: unheard === "not_heard" ? NOT_HEARD_LINE : CANT_HEAR_LINE, answered_by: "fixed" as const, reason: unheard, proposal: null }
+      : tool === "ask_for_help"
       ? helpAsked
         ? { reply: helpCountdownLine(caretakerNames), answered_by: "fixed" as const, reason: "ask_for_help", proposal: null }
         : help.offer
@@ -519,8 +541,7 @@ export class WalkerService {
     if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => (r.name === "get_weather" || r.name === "show_on_screen") && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
       decided.reply += " Weather data from Open-Meteo.";
     }
-    const transcript = input.type === "audio" && result?.ok ? result.reply.transcript.trim() : "";
-    const heard = input.type === "text" ? { heard: input.text, heard_by: ("original_audio" in request && request.original_audio ? "gemini" : "typed") as "gemini" | "typed" } : transcript ? { heard: transcript, heard_by: "gemini" as const } : { heard: null, heard_by: null };
+    const heard = { heard: heardText, heard_by: heardBy };
 
     const voiceStarted = Date.now();
     let voiceCalled = false;
@@ -570,6 +591,7 @@ export class WalkerService {
       attempts: result?.attempts ?? 0,
       model: result?.model ?? null,
       model_ms: result?.ms ?? 0,
+      transcribe_ms: transcribeMs,
       voice_ms: source === "walker" ? voiceMs : 0,
       proposal_opened: saved.created && decided.proposal !== null,
       ms: Date.now() - started,
@@ -586,6 +608,7 @@ export class WalkerService {
         model_ran: event.attempts > 0,
         model: event.attempts > 0 ? (result?.provider ?? null) : null,
         model_ms: event.attempts > 0 ? event.model_ms : null,
+        transcribe_ms: input.type === "audio" && this.ears ? transcribeMs : null,
         rule: event.reason,
         answered_by: event.answered_by,
         proposal_opened: event.proposal_opened,
@@ -860,6 +883,7 @@ function turnEvent(deviceId: string, source: "walker" | "page", input: "audio" |
     attempts: 0,
     model: null,
     model_ms: 0,
+    transcribe_ms: 0,
     voiced_by: turn.voiced_by,
     voice_ms: 0,
     proposal_opened: false,
@@ -869,7 +893,7 @@ function turnEvent(deviceId: string, source: "walker" | "page", input: "audio" |
 
 function logTurn(e: TurnEvent) {
   console.info(
-    `[walker] turn device=${e.device_id} source=${e.source} input=${e.input} replayed=${e.replayed} answered_by=${e.answered_by} reason=${e.reason ?? "none"} attempts=${e.attempts} model=${e.model ?? "none"} model_ms=${e.model_ms} voiced_by=${e.voiced_by ?? "none"} voice_ms=${e.voice_ms} proposal=${e.proposal_opened} ms=${e.ms}`,
+    `[walker] turn device=${e.device_id} source=${e.source} input=${e.input} replayed=${e.replayed} answered_by=${e.answered_by} reason=${e.reason ?? "none"} attempts=${e.attempts} transcribe_ms=${e.transcribe_ms} model=${e.model ?? "none"} model_ms=${e.model_ms} voiced_by=${e.voiced_by ?? "none"} voice_ms=${e.voice_ms} proposal=${e.proposal_opened} ms=${e.ms}`,
   );
 }
 

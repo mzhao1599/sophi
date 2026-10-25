@@ -1,6 +1,6 @@
 # Walker cloud, piece 3: expected results for the assistant turn
 
-Written before the code (2026-10-23). Rows marked *(review)* were added or corrected after the break-it review. The walker in every case is the demo walker: the `WALKER_SETUP` configuration (hand controls, obstacle sensors, voice; alerts by buzzing and speech), running as the simulator with real hand controls and a simulated ToF sensor whose front zone reads 640 mm. Stub-model cases run against both stores; the live rows run against Gemini (`gemini-3.7-flash`) with Max's key.
+Written before the code (2026-10-23). Rows marked *(review)* were added or corrected after the break-it review. The walker in every case is the demo walker: the `WALKER_SETUP` configuration (hand controls, obstacle sensors, voice; alerts by buzzing and speech), running as the simulator with real hand controls and a simulated ToF sensor whose front zone reads 640 mm. Stub-model cases run against both stores; the live rows run against the server's own models with Max's keys (since 2026-10-25: Claude, `claude-haiku-5-5` with `claude-opus-5-5` as the backup, and Cartesia `ink-whisper` hearing the clips).
 
 ## The demo path (design beats 2 to 5)
 
@@ -8,7 +8,7 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 
 | Beat | She says | Expected |
 | --- | --- | --- |
-| 2 | "What can you help me with?" | `answered_by: "model"`. The reply names what this walker has (hand controls, obstacle sensors, voice) and its alerts, in at most two short sentences, and claims nothing the walker doesn't report (no navigation, no arms). No proposal. Voice: `heard` is the transcript, `heard_by: "gemini"`; text: `heard` is what she typed, `heard_by: "typed"` |
+| 2 | "What can you help me with?" | `answered_by: "model"`. The reply names what this walker has (hand controls, obstacle sensors, voice) and its alerts, in at most two short sentences, and claims nothing the walker doesn't report (no navigation, no arms). No proposal. Voice: `heard` is Cartesia's transcript, `heard_by: "cartesia"`; text: `heard` is what she typed, `heard_by: "typed"` |
 | 3 | "Is anything in front of me?" | `topics` includes `obstacles`. The reply gives the front zone's measured distance (640 mm, said in a person's words such as "about 64 centimetres") and how old the reading is, and never says "clear". It ends "These readings are simulated." because the ToF part is simulated. With the front zone unknown, it says it doesn't know |
 | 4 | "Stop buzzing me, use short sounds instead." | `cues_change: { cues: ["sound", "spoken"] }`. A proposal opens: `from_cues` `["vibration","spoken"]`, `cues` `["sound","spoken"]`, base version 1, `summary` "Switch your alerts from buzzing to short sounds." (written by the server), the turn's `client_turn_id`, expiring 60 s later. *(review)* The reply is written from that payload, so she hears exactly what Confirm will do: "I can switch your alerts from buzzing to short sounds. Press Confirm to do it." Nothing changes until Confirm; Confirm makes version 2 (piece 2) |
 | 5 | "Can you pick up my keys?" | `topics` includes `arms`. The reply is the fixed line "This walker doesn't have robot arms, so I can't pick things up or move things." with `answered_by: "fixed"`. No proposal, no action request |
@@ -40,9 +40,20 @@ Each line runs 3 of 3 as typed text and 3 of 3 as a synthetic `say` clip (16 kHz
 | Case | Expected |
 | --- | --- |
 | The model throws, refuses, or replies badly twice, or 8 s pass | A fixed line from the status view (what still works: the walker's alerts), `answered_by: "fixed"` |
-| A voice turn that falls back before a transcript came back | `heard: null`, `heard_by: null` |
+| A voice turn whose model call falls back | `heard` is Cartesia's transcript, `heard_by: "cartesia"` (added 2026-10-25: the transcript now comes before the model) |
 | A text turn that falls back | `heard` is what she typed, `heard_by: "typed"` |
-| No `GEMINI_API_KEY` on the server | Every turn gets the fixed line, `answered_by: "fixed"` |
+| No `ANTHROPIC_API_KEY` on the server | Every turn gets the fixed line, `answered_by: "fixed"` |
+
+## Hearing a Talk press (added 2026-10-25)
+
+Cartesia's speech-to-text turns the clip into words before Claude reads them; the clip itself never reaches the model.
+
+| Case | Expected |
+| --- | --- |
+| A clip Cartesia hears as words | The model gets those words as `person_words`, with `how_they_asked` "spoke while holding Talk"; no audio in the request; the turn stores `heard` = the transcript, `heard_by: "cartesia"` |
+| Cartesia hears no words (`""`) | "I didn't catch that. Please hold Talk and say it again.", `answered_by: "fixed"`, reason `not_heard`, no model call, `heard: null` |
+| No `CARTESIA_API_KEY`, a Cartesia error, or no transcript within 2.5 s | "I can't hear you right now. You can type your question on the walker's page.", reason `cant_hear`, no model call |
+| The request to Cartesia | `POST https://api.cartesia.ai/stt`, `Authorization: Bearer <key>`, `Cartesia-Version: 2026-08-14`, multipart `file` (the clip, unchanged), `model` `ink-whisper`, `language` `en`; the reply's `text`, trimmed |
 
 ## Idempotency
 
@@ -78,17 +89,16 @@ Written before the code (2026-10-23). The server keeps one `ActivityLog` per pro
 
 | Case | Expected |
 | --- | --- |
-| A turn while the model is still answering (a slow stub) | The owner's list shows one `in_flight` entry for that walker: its `client_turn_id`, `input`, `since` (the server's clock when the clip or text was accepted), `clip_ms` (from the WAV's samples, 1,200 ms clip → 1200; null for text), `stage: "hearing"` and `model`: the family of the model asked ("gemini", "claude"), null without one |
-| A typed turn (from the page, or text from the walker with no `original_audio`) with a typed model set up | Answered by the typed model (Claude); its in-flight entry and trace say `model: "claude"` |
-| A spoken turn, and the text continuation of a spoken turn after a tool (`original_audio: true`) | Answered by the main model (Gemini), never the typed one, so one turn never switches model; `model: "gemini"` |
-| A typed turn with no typed model set up | Answered by the main model; `model: "gemini"` |
+| A turn while the model is still answering (a slow stub) | The owner's list shows one `in_flight` entry for that walker: its `client_turn_id`, `input`, `since` (the server's clock when the clip or text was accepted), `clip_ms` (from the WAV's samples, 1,200 ms clip → 1200; null for text), `stage: "hearing"` and `model`: the family of the model asked ("claude"), null without one |
+| A spoken turn while Cartesia is still transcribing (a slow stub) *(2026-10-25)* | `stage: "transcribing"`, then `"hearing"` once the model is asked; its trace has `transcribe_ms` a number (null on a typed turn) |
+| A spoken turn, and the text continuation of a spoken turn after a tool (`original_audio: true`) | Answered by Claude like a typed one; `heard_by: "cartesia"` on both, never `"typed"` |
 | The main model with its backup (hedge.ts), on a turn with tool results and message recipients | Both models get the same tool results and recipients |
 | The same turn while Cartesia is making the audio (a slow stub voice) | `stage: "voicing"` |
 | After the turn answers | `in_flight` is empty, and one trace is there |
 | The model throws; the model passes its deadline (fallback line); the walker is forgotten during the model (`saveTurn` returns null, 404); the response fails its schema; the store throws while saving | `in_flight` is empty afterwards every time |
 | A clip that isn't a 16 kHz mono WAV; a replay of a stored `client_turn_id` | Never shows in `in_flight` (it's set only after those checks) and adds no trace |
 | Two uploads of one `client_turn_id` at once | One `in_flight` entry while both run; it stays while the second is still running after the first ends; it clears when both end. One trace (the second saved nothing new) |
-| Trace for the model's own words (typed on the walker, no voice configured) | `model_ran: true`, `model: "gemini"` (the stub is set up as Gemini), `model_ms` a number, `rule: null`, `answered_by: "model"`, `proposal_opened: false`, `voiced_by: "walker"`, `voice_ms: null` (no Cartesia call), `input: "text"`, `clip_ms: null`, `at` = when it was saved, `total_ms` a number, `turn_id` and `client_turn_id` the stored turn's |
+| Trace for the model's own words (typed on the walker, no voice configured) | `model_ran: true`, `model: "claude"`, `model_ms` a number, `transcribe_ms: null`, `rule: null`, `answered_by: "model"`, `proposal_opened: false`, `voiced_by: "walker"`, `voice_ms: null` (no Cartesia call), `input: "text"`, `clip_ms: null`, `at` = when it was saved, `total_ms` a number, `turn_id` and `client_turn_id` the stored turn's |
 | Trace for the arms line | `rule: "arms"`, `answered_by: "fixed"`, `model_ran: true` |
 | Trace for a cues change that would turn alerts off | `rule: "cues_alerts_off"`, `answered_by: "fixed"`, `proposal_opened: false` |
 | Trace for an opened proposal | `proposal_opened: true`, `answered_by: "model"`, `rule: null` |
@@ -125,7 +135,7 @@ Written before the code (2026-10-24), from [the navigation guide](../../../../do
 | A final reply after a route result says "clear" or "safe" | Retried like any final reply (the clear/safe check still applies) |
 | Existing tool loop | `get_location` on a spoken walker turn still returns `tool_call: { name: "get_location" }` with "I'll check your GPS location now."; on a page turn the Talk line; `get_distance` on a page turn the server's sensor line |
 
-Live (real Gemini, the server's spoken path: a synthetic `say` clip, continuations as text with `original_audio`, the Pi's tool results faked by the harness), fresh wording, three runs each:
+Live (the server's real models and its spoken path: a synthetic `say` clip, continuations as text with `original_audio`, the Pi's tool results faked by the harness), fresh wording, three runs each:
 
 | She says | Context | Expected |
 | --- | --- | --- |
@@ -145,7 +155,7 @@ Written before the code (2026-10-24), from [the show-on-screen guide](../../../.
 | A walker turn without `screen` (an older Pi, or no screen page connected), and a page turn | The schema doesn't offer `show_on_screen` at all; `screen_views` is `[]` |
 | The system prompt | Says to request `show_on_screen` when she asks to see, show, display or pull up one of the five things, only for a view in `screen_views`; never to say it's on the screen until a `show_on_screen` result says so; that a message's words aren't in the result and mustn't be invented; Talk on a page turn. The old rules stay (never "clear" or "safe") and nothing says the walker has no screen |
 | The model asks for a listed view on a spoken walker turn | Unfinished response: `tool_call: { name: "show_on_screen", view: "weather" }` (parses with `WalkerToolCallSchema`), reply "Putting that on your screen.", `answered_by: "fixed"`, `heard` her transcript; nothing stored |
-| The model asks for a listed view with an empty `reply` (added 2026-10-24 after the live check: both Gemini models often left `reply` empty when asking for `show_on_screen`, on 15 of 18 logged first attempts, and the reply check rejected it, costing a retry and, in 2 of 4 runs, the turn) | Accepted on the first call, no retry: the same unfinished response with "Putting that on your screen." (the server's line, never the model's) |
+| The model asks for a listed view with an empty `reply` (added 2026-10-24 after the live check: both live models often left `reply` empty when asking for `show_on_screen`, on 15 of 18 logged first attempts, and the reply check rejected it, costing a retry and, in 2 of 4 runs, the turn) | Accepted on the first call, no retry: the same unfinished response with "Putting that on your screen." (the server's line, never the model's) |
 | An empty `reply` with `show_on_screen` but an empty transcript on a spoken turn (nothing was heard), or with no `tool_call` | Rejected as before and retried once; a second empty reply gets the fixed fallback line, never an empty answer |
 | The model asks for a view the turn didn't list (`location` with `["weather"]`), or any view on a walker turn without `screen` | No `tool_call`; the fixed line "I can't show that on this walker's screen right now.", reason `show_unavailable` |
 | The model asks for `show_on_screen` on a page turn | No `tool_call`; "Please use Talk on the walker for that request.", reason `device_tool_only` |

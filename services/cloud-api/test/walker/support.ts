@@ -224,7 +224,7 @@ export function turn(clock: Clock, overrides: Partial<WalkerTurnView> = {}): Wal
     client_turn_id: uuid(),
     source: "walker",
     heard: "Stop buzzing me, use short sounds instead.",
-    heard_by: "gemini",
+    heard_by: "cartesia",
     reply: "I can switch your alerts from buzzing to short sounds. Press Confirm to do it.",
     answered_by: "model",
     voiced_by: "walker",

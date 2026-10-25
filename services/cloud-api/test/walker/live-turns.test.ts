@@ -1,13 +1,13 @@
 // The walker assistant's demo lines (design beats 2 to 5) through the real walker service, as typed
-// text and as synthetic voice clips, routed as the server routes them: typed turns to Claude when
-// ANTHROPIC_API_KEY is set (else Gemini), spoken turns to Gemini. Runs only when asked for, on a Mac (it makes the clips
+// text and as synthetic voice clips, handled as the server handles them: Claude answers every turn, and a
+// spoken one is first transcribed by Cartesia. Runs only when asked for, on a Mac (it makes the clips
 // with `say` and `ffmpeg`, writing files only; nothing plays aloud):
 //
 //   WALKER_LIVE=1 pnpm --filter @walker/cloud-api walker-live
 //
-// It reads GEMINI_API_KEY and ANTHROPIC_API_KEY from the environment, or else from apps/web/.env.local
+// It reads ANTHROPIC_API_KEY and CARTESIA_API_KEY from the environment, or else from apps/web/.env.local
 // (WALKER_LIVE_ENV_FILE names another file), and never prints them. WALKER_LIVE_MODES picks the modes
-// ("text,audio" by default; "text" runs without a Gemini key when Claude reads typed turns). Only the presenter's scripted, fictional lines and three
+// ("text,audio" by default; "text" runs without a Cartesia key). Only the presenter's scripted, fictional lines and three
 // fresh wordings reach the model, and the voice is synthetic, so no real person is recorded. Each turn's
 // latency and the model that answered it are printed. The models are the server's own, from
 // walkerModelsFromEnv: WALKER_AGENT_MODEL, WALKER_BACKUP_MODEL ("none" for one model) and
@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { sameCues, type CapabilityManifest, type DeviceTurnRequest, type RouteSummary, type WalkerToolCall, type WalkerTurnResponse } from "@walker/contracts";
-import { MemoryWalkerStore, WalkerService, createWalkerAssistantFor, walkerModelsFromEnv, walkerTypedAssistantFromEnv, type TurnEvent } from "../../src";
+import { MemoryWalkerStore, WalkerService, createCartesiaEars, createWalkerAssistantFor, walkerModelsFromEnv, type TurnEvent } from "../../src";
 import { PRESS_CONFIRM, SIMULATED_READINGS } from "../../src/walker/lines";
 import { Clock, snapshot } from "./support";
 
@@ -59,13 +59,13 @@ if (live && existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 const MODELS = walkerModelsFromEnv(process.env);
 const MODES = (process.env.WALKER_LIVE_MODES ?? "text,audio").split(",").map((m) => m.trim()) as ("text" | "audio")[];
 
-/** The server's two model steps: Gemini (spoken turns, and typed ones without Claude) and Claude (typed turns). */
+/** The server's steps: Claude answers, and Cartesia hears spoken turns first. */
 function assistants() {
-  const gemini = process.env.GEMINI_API_KEY?.trim();
-  const typed = walkerTypedAssistantFromEnv(process.env);
-  if (MODES.includes("audio") && !gemini) throw new Error("GEMINI_API_KEY isn't set here or in apps/web/.env.local (spoken turns need it; WALKER_LIVE_MODES=text skips them).");
-  if (!gemini && !typed) throw new Error("Neither GEMINI_API_KEY nor ANTHROPIC_API_KEY is set here or in apps/web/.env.local.");
-  return { assistant: gemini ? createWalkerAssistantFor(gemini, MODELS) : null, typed };
+  const anthropic = process.env.ANTHROPIC_API_KEY?.trim();
+  const cartesia = process.env.CARTESIA_API_KEY?.trim();
+  if (!anthropic) throw new Error("ANTHROPIC_API_KEY isn't set here or in apps/web/.env.local.");
+  if (MODES.includes("audio") && !cartesia) throw new Error("CARTESIA_API_KEY isn't set here or in apps/web/.env.local (spoken turns need it; WALKER_LIVE_MODES=text skips them).");
+  return { assistant: createWalkerAssistantFor(anthropic, MODELS), ears: cartesia ? createCartesiaEars({ apiKey: cartesia }) : null };
 }
 
 const ARMS = "This walker doesn't have robot arms, so I can't pick things up or move things.";
@@ -162,11 +162,11 @@ describe.skipIf(!live)("live walker turns", () => {
         }
         const ms = Math.round(performance.now() - started);
         const e = events.at(-1)!;
-        rows.push(`${beat.padEnd(3)} ${mode.padEnd(5)} run ${run} ${String(ms).padStart(5)} ms (model ${e.model_ms}, tries ${e.attempts}, ${e.model ?? "none"}) ${r.turn.answered_by.padEnd(5)} heard=${JSON.stringify(r.turn.heard)} reply=${JSON.stringify(r.turn.reply)}`);
+        rows.push(`${beat.padEnd(3)} ${mode.padEnd(5)} run ${run} ${String(ms).padStart(5)} ms (transcribe ${e.transcribe_ms}, model ${e.model_ms}, tries ${e.attempts}, ${e.model ?? "none"}) ${r.turn.answered_by.padEnd(5)} heard=${JSON.stringify(r.turn.heard)} reply=${JSON.stringify(r.turn.reply)}`);
         try {
           check(r, mode);
           if (mode === "audio") {
-            expect(r.turn.heard_by).toBe("gemini");
+            expect(r.turn.heard_by).toBe("cartesia");
             // The transcript has the line's words (a synthetic voice, so close to exact).
             const heard = new Set(words(r.turn.heard ?? ""));
             const missing = words(line).filter((w) => !heard.has(w));
@@ -189,7 +189,7 @@ describe.skipIf(!live)("live walker turns", () => {
         }
         for (const { beat, line, check } of FRESH) await ask(await walker(), line, mode, beat, 1, check);
       }
-      console.log(`typed=${models.typed ? "claude" : MODELS.main} main=${MODELS.main} backup=${MODELS.backup ?? "none"} after_ms=${MODELS.backup ? MODELS.backupAfterMs : "-"} modes=${MODES.join(",")}`);
+      console.log(`main=${MODELS.main} backup=${MODELS.backup ?? "none"} after_ms=${MODELS.backup ? MODELS.backupAfterMs : "-"} modes=${MODES.join(",")}`);
       console.log(rows.join("\n"));
       const latencies = rows.map((r) => Number(/(\d+) ms/.exec(r)![1])).sort((a, b) => a - b);
       const byBackup = MODELS.backup ? events.filter((e) => e.model === MODELS.backup).length : 0;

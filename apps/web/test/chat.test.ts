@@ -96,21 +96,20 @@ describe("quick replies", () => {
 });
 
 describe("the notice under the text box", () => {
-  const gemini = agentNoticeClause("gemini");
+  const claude = agentNoticeClause("anthropic");
 
   it("asks to leave out names and medical details for a guest, with and without the model's clause", () => {
-    expect(noticeLine(gemini, false)).toBe(
-      "Your answers are kept temporarily for this setup. Google's Gemini reads them to choose each question, and Google may keep a copy. Please leave out names and medical details.",
+    expect(noticeLine(claude, false)).toBe(
+      "Your answers are kept temporarily for this setup. Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy. Please leave out names and medical details.",
     );
     expect(noticeLine(null, false)).toBe("Your answers are kept temporarily for this setup. Please leave out names and medical details.");
   });
 
   it("asks the same when signed in, with and without the model's clause", () => {
-    expect(noticeLine(gemini, true)).toBe(
-      "Your answers are saved to your account. Google's Gemini reads them to choose each question, and Google may keep a copy. Please leave out names and medical details.",
+    expect(noticeLine(claude, true)).toBe(
+      "Your answers are saved to your account. Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy. Please leave out names and medical details.",
     );
     expect(noticeLine(null, true)).toBe("Your answers are saved to your account. Please leave out names and medical details.");
-    expect(noticeLine(agentNoticeClause("anthropic"), true)).toContain("Anthropic may keep a copy. Please leave out names and medical details.");
   });
 });
 

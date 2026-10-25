@@ -30,14 +30,14 @@ export const CAPTION = "Drawn as each step's evidence reaches this page. Times a
 export const NO_TIMINGS = "No timings for this turn";
 export const NOTHING_YET = "Nothing yet. Each turn is drawn here as it happens.";
 
-export type StageId = "sent" | "model" | "rules" | "reply" | "voice" | "offer" | "confirm" | "recorded" | "applied";
+export type StageId = "sent" | "transcribe" | "model" | "rules" | "reply" | "voice" | "offer" | "confirm" | "recorded" | "applied";
 
 /** done: finished; live: what the server or the walker is waiting on now; end: the line stops here (an offer that changed nothing). */
 export type StageState = "done" | "live" | "end";
 
 export interface Stage {
   id: StageId;
-  /** The short name on the drawing ("Gemini", "Claude"). */
+  /** The short name on the drawing ("Cartesia", "Claude"). */
   label: string;
   /** The measured figure or fact under it ("2.1 s"). */
   figure: string;
@@ -100,19 +100,18 @@ function modelFailed(rule: string, ms: number | null): { figure: string; spoken:
   return null;
 }
 
-const FIXED_REPLY_CODES = new Set(["timeout", "model_error", "refusal", "invalid_reply", "no_model"]);
+const FIXED_REPLY_CODES = new Set(["timeout", "model_error", "refusal", "invalid_reply", "no_model", "not_heard", "cant_hear"]);
 
 /**
- * The model's short name, from what the server said ran. A trace or in-flight entry without the field
- * comes from a server older than 2026-10-24, which only had Gemini; null means no model, so no name.
+ * The model's short name, from what the server said ran. Null (no model) or a missing field (a server
+ * older than 2026-10-24) names none.
  */
 export function modelName(model: WalkerModel | null | undefined): string {
-  if (model === "claude") return "Claude";
-  return model === "gemini" || model === undefined ? "Gemini" : "The model";
+  return model === "claude" ? "Claude" : "The model";
 }
 
-/** The rule that decided the reply, in plain words. `name` is the model that answered ("Gemini", "Claude"). */
-export function ruleWords(rule: string | null, proposalOpened: boolean, name = "Gemini"): string {
+/** The rule that decided the reply, in plain words. `name` is the model that answered ("Claude"). */
+export function ruleWords(rule: string | null, proposalOpened: boolean, name = "Claude"): string {
   if (rule === null) return proposalOpened ? "Change allowed" : `${name}'s own words`;
   switch (rule) {
     case "arms":
@@ -128,6 +127,10 @@ export function ruleWords(rule: string | null, proposalOpened: boolean, name = "
       return "Refused: not a valid change";
     case "offline":
       return "Refused: walker offline";
+    case "not_heard":
+      return "Fixed line: no words heard";
+    case "cant_hear":
+      return "Fixed line: couldn't hear the clip";
   }
   return FIXED_REPLY_CODES.has(rule) ? "Fixed reply" : `Fixed reply (${rule})`;
 }
@@ -149,10 +152,25 @@ function sentStage(source: Source, input: "audio" | "text", clipMs: number | nul
   return { id: "sent", label, figure: "typed", state: "done", sentence: `${who} a typed question.` };
 }
 
+/**
+ * Cartesia writing down a clip: `ms` is its measured time, null when the server doesn't say. `rule`
+ * not_heard: it made out no words; cant_hear: it answered with nothing usable (an error or its time limit).
+ */
+function transcribeStage(rule: string | null, ms: number | null): Stage {
+  const took = ms === null ? null : { figure: formatMs(ms), spoken: spokenMs(ms) };
+  if (rule === "not_heard") {
+    return { id: "transcribe", label: "Cartesia", figure: took ? `No words, ${took.figure}` : "No words", state: "done", sentence: took ? `Cartesia made out no words in ${took.spoken}.` : "Cartesia made out no words." };
+  }
+  if (rule === "cant_hear") {
+    return { id: "transcribe", label: "Cartesia", figure: took ? `No transcript after ${took.figure}` : "No transcript", state: "done", sentence: took ? `Cartesia gave no transcript after ${took.spoken}.` : "Cartesia gave no transcript." };
+  }
+  return { id: "transcribe", label: "Cartesia", figure: took ? took.figure : "Wrote down the clip", state: "done", sentence: took ? `Cartesia wrote down the clip in ${took.spoken}.` : "Cartesia wrote down the clip." };
+}
+
 function modelStage(input: "audio" | "text", rule: string | null, modelMs: number | null, name: string): Stage {
   const failed = rule !== null ? modelFailed(rule, modelMs) : null;
   if (failed) return { id: "model", label: name, figure: failed.figure, state: "done", sentence: `${name} ${failed.spoken}.` };
-  const how = input === "audio" ? "heard the clip and wrote an answer" : "read the question and wrote an answer";
+  const how = input === "audio" ? "read what was said and wrote an answer" : "read the question and wrote an answer";
   if (modelMs === null) return { id: "model", label: name, figure: "ran", state: "done", sentence: `${name} ${how}.` };
   return { id: "model", label: name, figure: formatMs(modelMs), state: "done", sentence: `${name} ${how} in ${spokenMs(modelMs)}.` };
 }
@@ -230,21 +248,26 @@ function offerStages(offer: { proposal: ProposalView; state: OfferState }, statu
 function inFlightStages(f: WalkerTurnInFlight, ownTurnId: string | null): Stage[] {
   const source: Source = f.client_turn_id === ownTurnId ? "page" : f.input === "audio" ? "walker" : "unknown";
   const sent = sentStage(source, f.input, f.clip_ms);
+  if (f.stage === "transcribing") {
+    return [sent, { id: "transcribe", label: "Hearing", figure: "Waiting for Cartesia…", state: "live", sentence: "The server is waiting for Cartesia to write down the clip." }];
+  }
   if (f.stage === "hearing") {
-    // Gemini hears a clip; a typed question is read, by Claude when the server has it.
+    // A clip has been written down by now (when the server can hear at all); the model reads the words either way.
     const name = modelName(f.model);
     const who = name === "The model" ? "the model" : name;
-    return [sent, { id: "model", label: f.input === "audio" ? "Hearing" : "Reading", figure: `Waiting for ${who}…`, state: "live", sentence: `The server is waiting for ${who}.` }];
+    return [sent, { id: "model", label: "Reading", figure: `Waiting for ${who}…`, state: "live", sentence: `The server is waiting for ${who}.` }];
   }
   return [
     sent,
-    { id: "model", label: "Hearing", figure: "Done", state: "done", sentence: "The server has its answer." },
+    { id: "model", label: "Reading", figure: "Done", state: "done", sentence: "The server has its answer." },
     { id: "voice", label: "Voice", figure: "Waiting for Cartesia…", state: "live", sentence: "The server is waiting for Cartesia's audio." },
   ];
 }
 
 function tracedStages(turn: WalkerTurnView, t: WalkerTurnTrace): Stage[] {
   const stages: Stage[] = [sentStage(turn.source, t.input, t.clip_ms)];
+  // Only a trace that measured Cartesia's step draws it (null: not asked; missing: a server from before 2026-10-25).
+  if (t.input === "audio" && t.transcribe_ms !== null && t.transcribe_ms !== undefined) stages.push(transcribeStage(t.rule, t.transcribe_ms));
   const name = modelName(t.model);
   if (t.model_ran) stages.push(modelStage(t.input, t.rule, t.model_ms, name));
   stages.push(rulesStage(ruleWords(t.rule, t.proposal_opened, name)), replyStage(t.proposal_opened, turn.source));
@@ -255,10 +278,11 @@ function tracedStages(turn: WalkerTurnView, t: WalkerTurnTrace): Stage[] {
 /** Only what the status view proves: no clip length, no times, no rule code. */
 function statusStages(turn: WalkerTurnView, offerKnown: boolean): Stage[] {
   const input = turn.heard_by === "typed" ? "text" : "audio";
-  // Without a trace the page can't tell which model read a typed question, so it doesn't name one.
-  const name = input === "audio" ? "Gemini" : "The model";
+  // Without a trace the page can't tell whether a model ran for a fixed reply, so it names one only for the model's own answer.
+  const name = "Claude";
   const stages: Stage[] = [sentStage(turn.source, input, null)];
-  if (turn.heard_by === "gemini" || turn.answered_by === "model") stages.push(modelStage(input, null, null, name));
+  if (turn.heard_by === "cartesia") stages.push(transcribeStage(null, null));
+  if (turn.answered_by === "model") stages.push(modelStage(input, null, null, name));
   stages.push(rulesStage(turn.answered_by === "fixed" ? "Fixed reply" : offerKnown ? "Change allowed" : `${name}'s own words`), replyStage(offerKnown, turn.source));
   if (turn.voiced_by) stages.push(voiceStage(turn.voiced_by, null));
   return stages;

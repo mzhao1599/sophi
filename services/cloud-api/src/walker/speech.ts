@@ -58,6 +58,51 @@ export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, 
   };
 }
 
+/**
+ * How Sophi hears a Talk press: Cartesia's batch speech-to-text turns the clip into words, and Claude then
+ * reads the words (the Messages API takes no audio). The clip goes to Cartesia and nowhere else. The request
+ * shape follows docs.cartesia.ai/api-reference/stt/transcribe: `POST /stt`, multipart `file`, `model`
+ * `ink-whisper`, `language` `en`, and `Cartesia-Version: 2026-08-14`, the only version that page allows.
+ */
+const STT_URL = "https://api.cartesia.ai/stt";
+const STT_CARTESIA_VERSION = "2026-08-14";
+export const DEFAULT_CARTESIA_STT_MODEL = "ink-whisper";
+/** A transcript longer than the contract's `heard` limit is cut there. */
+const MAX_HEARD = 1_000;
+
+export interface WalkerEars {
+  /** The words in a 16 kHz mono WAV clip: "" when none were made out, null when Cartesia couldn't be asked or failed. */
+  transcribe(wav: Buffer, signal: AbortSignal): Promise<string | null>;
+}
+
+export function createCartesiaEars({ apiKey, model = DEFAULT_CARTESIA_STT_MODEL, fetch: fetchImpl = fetch }: { apiKey: string; model?: string; fetch?: typeof fetch }): WalkerEars {
+  return {
+    async transcribe(wav, signal) {
+      try {
+        const form = new FormData();
+        form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "talk.wav");
+        form.append("model", model);
+        form.append("language", "en");
+        const response = await fetchImpl(STT_URL, {
+          method: "POST",
+          headers: { authorization: `Bearer ${apiKey}`, "cartesia-version": STT_CARTESIA_VERSION },
+          body: form,
+          signal,
+        });
+        if (!response.ok) {
+          await response.body?.cancel();
+          return null;
+        }
+        const data = (await response.json()) as { text?: unknown };
+        return typeof data.text === "string" ? data.text.trim().slice(0, MAX_HEARD) : null;
+      } catch {
+        // A timeout, a dropped connection or a bad key: the turn answers with its fixed "didn't hear" line.
+        return null;
+      }
+    },
+  };
+}
+
 async function readCapped(response: Response, maxBytes: number): Promise<Buffer | null> {
   if (Number(response.headers.get("content-length") ?? 0) > maxBytes) {
     await response.body?.cancel();

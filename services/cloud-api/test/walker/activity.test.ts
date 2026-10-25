@@ -8,7 +8,7 @@ import {
   type PageTurnRequest,
   type WalkerActivityView,
 } from "@walker/contracts";
-import { ActivityLog, MemoryWalkerStore, WalkerService, createWalkerAssistant, type AgentModel, type DeviceCaller, type OwnerCaller, type WalkerStore, type WalkerVoice } from "../../src";
+import { ActivityLog, MemoryWalkerStore, WalkerService, createWalkerAssistant, type AgentModel, type DeviceCaller, type OwnerCaller, type WalkerEars, type WalkerStore, type WalkerVoice } from "../../src";
 import { Clock, manifest, snapshot, uuid } from "./support";
 
 /** The page-only activity log (EXPECTED-turns.md, "Activity log"), with a stub model, the in-memory store and a fake clock. */
@@ -72,10 +72,14 @@ describe("the walker activity log", () => {
     log = new ActivityLog(clock.now);
   });
 
-  function serviceWith(model: AgentModel | null, extra: { voice?: WalkerVoice; timeoutMs?: number; store?: WalkerStore } = {}) {
+  /** Stands in for Cartesia: every clip is heard as "Which parts work?". */
+  const ears: WalkerEars = { transcribe: async () => "Which parts work?" };
+
+  function serviceWith(model: AgentModel | null, extra: { voice?: WalkerVoice; ears?: WalkerEars; timeoutMs?: number; store?: WalkerStore } = {}) {
     return new WalkerService(extra.store ?? store, {
       now: clock.now,
-      assistant: model ? createWalkerAssistant({ model, provider: "gemini", timeoutMs: extra.timeoutMs }) : null,
+      assistant: model ? createWalkerAssistant({ model, provider: "claude", timeoutMs: extra.timeoutMs }) : null,
+      ears: extra.ears ?? ears,
       voice: extra.voice ?? null,
       onTurn: () => {},
       activity: log,
@@ -122,7 +126,7 @@ describe("the walker activity log", () => {
     const hearing = await activityOf(service, w.secret, w.id);
     expect(hearing).toEqual({
       device_id: w.id,
-      in_flight: [{ client_turn_id: request.client_turn_id, input: "audio", since: clock.iso(), clip_ms: 1200, stage: "hearing", model: "gemini" }],
+      in_flight: [{ client_turn_id: request.client_turn_id, input: "audio", since: clock.iso(), clip_ms: 1200, stage: "hearing", model: "claude" }],
       traces: [],
     });
 
@@ -141,7 +145,7 @@ describe("the walker activity log", () => {
   });
 
   it("clears the in-flight entry after a model error and after the model's deadline (both still traced)", async () => {
-    const service = serviceWith(stubModel(() => new Error("Gemini API returned 500")).model);
+    const service = serviceWith(stubModel(() => new Error("model API returned 500")).model);
     const w = await walker(service);
     await service.turn(device(w.credential), w.id, typed("Hello"));
     const slow: AgentModel = { generate: (_request, signal) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))) };
@@ -264,8 +268,9 @@ describe("the walker activity log", () => {
       input: "text",
       clip_ms: null,
       model_ran: true,
-      model: "gemini",
+      model: "claude",
       model_ms: expect.any(Number),
+      transcribe_ms: null,
       rule: null,
       answered_by: "model",
       proposal_opened: false,
@@ -282,43 +287,34 @@ describe("the walker activity log", () => {
     expect(traces[5]!.at).toBe(clock.iso());
   });
 
-  it("sends typed turns to the typed model, and spoken ones and their tool continuations to the main one, naming each", async () => {
-    const hold = gate();
-    const claude = stubModel({ reply: "Claude here.", topics: ["other"] }, (call) => (call === 1 ? hold.promise : Promise.resolve()));
-    const gemini = stubModel({ reply: "Gemini here.", transcript: "Which parts work?", topics: ["other"] });
-    const service = new WalkerService(store, {
-      now: clock.now,
-      assistant: createWalkerAssistant({ model: gemini.model, provider: "gemini" }),
-      typed: createWalkerAssistant({ model: claude.model, provider: "claude" }),
-      onTurn: () => {},
-      activity: log,
-    });
+  it("shows a spoken turn with Cartesia first, then Claude, and times the transcription", async () => {
+    const heard = gate();
+    const entered = gate();
+    const slowEars: WalkerEars = { transcribe: async () => (entered.open(), await heard.promise, "Which parts work?") };
+    const claude = stubModel({ reply: "Claude here.", transcript: "Which parts work?", topics: ["other"] });
+    const service = serviceWith(claude.model, { ears: slowEars });
     const w = await walker(service);
 
-    // In flight, the page already knows a typed question is with Claude.
-    const page = fromPage("Are my handles working?");
-    const pending = service.turn(owner(w.secret), w.id, page);
+    const request = spoken();
+    const pending = service.turn(device(w.credential), w.id, request);
+    await entered.promise;
+    expect((await activityOf(service, w.secret, w.id))!.in_flight).toMatchObject([{ client_turn_id: request.client_turn_id, input: "audio", stage: "transcribing", model: "claude" }]);
+    heard.open();
     await claude.entered[0]!.promise;
-    expect((await activityOf(service, w.secret, w.id))!.in_flight).toMatchObject([{ client_turn_id: page.client_turn_id, input: "text", stage: "hearing", model: "claude" }]);
-    hold.open();
-    const replies = [await pending];
+    const r = await pending;
+    expect(r.turn).toMatchObject({ heard: "Which parts work?", heard_by: "cartesia" });
 
-    // A tool continuation carries the spoken question as text, flagged original_audio: it stays with Gemini.
+    // A tool continuation carries the spoken question as text, flagged original_audio: still heard by Cartesia, not typed.
     const continuation: DeviceTurnRequest = { client_turn_id: uuid(), input: { type: "text", text: "Where am I?" }, snapshot: snapshot(clock), tool_results: [{ name: "get_location", text: "Near Main Street." }], original_audio: true };
-    for (const request of [typed("Which parts work?"), spoken(), continuation]) replies.push(await service.turn(device(w.credential), w.id, request));
+    const after = await service.turn(device(w.credential), w.id, continuation);
+    expect(after.turn).toMatchObject({ heard: "Where am I?", heard_by: "cartesia" });
 
-    expect(replies.map((r) => r.turn.reply.split(".")[0])).toEqual(["Claude here", "Claude here", "Gemini here", "Gemini here"]);
-    expect([claude.calls(), gemini.calls()]).toEqual([2, 2]);
-    expect((await activityOf(service, w.secret, w.id))!.traces.map((t) => t.model)).toEqual(["claude", "claude", "gemini", "gemini"]);
-  });
-
-  it("sends typed turns to the main model when no typed model is set up", async () => {
-    const gemini = stubModel({ reply: "Gemini here.", topics: ["other"] });
-    const service = serviceWith(gemini.model);
-    const w = await walker(service);
-    const r = await service.turn(owner(w.secret), w.id, fromPage("Are my handles working?"));
-    expect(r.turn.reply.startsWith("Gemini here.")).toBe(true);
-    expect((await activityOf(service, w.secret, w.id))!.traces.map((t) => t.model)).toEqual(["gemini"]);
+    const traces = (await activityOf(service, w.secret, w.id))!.traces;
+    expect(traces.map((t) => [t.input, t.model, typeof t.transcribe_ms])).toEqual([
+      ["audio", "claude", "number"],
+      ["text", "claude", "object"],
+    ]);
+    expect(claude.calls()).toBe(2);
   });
 
   it("holds none of the person's words or the replies", async () => {

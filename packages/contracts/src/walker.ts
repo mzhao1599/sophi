@@ -316,10 +316,10 @@ export const WalkerTurnViewSchema = z
     turn_id: id,
     client_turn_id: id,
     source: z.enum(["walker", "page"]),
-    /** Her words: what she typed, or the model's transcript of the clip; null when nothing was transcribed. */
+    /** Her words: what she typed, or Cartesia's transcript of the clip; null when nothing was transcribed. */
     heard: z.string().max(1000).nullable(),
-    /** `typed`, or who transcribed the clip, so the page can say "as heard by Gemini". */
-    heard_by: z.enum(["typed", "gemini"]).nullable(),
+    /** `typed`, or who transcribed the clip, so the page can say "as heard by Cartesia". */
+    heard_by: z.enum(["typed", "cartesia"]).nullable(),
     reply: z.string().min(1).max(600),
     /**
      * `model` when the model's reply is what the person gets: its own words, or an offer it chose, worded by the
@@ -602,11 +602,8 @@ export type PairingCodeResponse = z.infer<typeof PairingCodeResponseSchema>;
 // or turn views, which the Pi parses strictly. It holds no one's words: only kinds, codes and timings. It
 // lives in server memory, so a restart empties it; the page then draws only what the status view shows.
 
-/**
- * The model family behind a turn, for the page's labels: "claude" (Anthropic's Claude, typed turns when the
- * server has a Claude key) or "gemini" (Google's Gemini: every spoken turn, and typed ones without Claude).
- */
-export const WalkerModelSchema = z.enum(["claude", "gemini"]);
+/** The model family behind a turn, for the page's labels: "claude" (Anthropic's Claude answers every turn). */
+export const WalkerModelSchema = z.enum(["claude"]);
 export type WalkerModel = z.infer<typeof WalkerModelSchema>;
 
 /** A turn the server is working on right now: set once the clip or text is accepted, cleared when it ends however it ends. */
@@ -617,9 +614,9 @@ export const WalkerTurnInFlightSchema = z.strictObject({
   since: time,
   /** The clip's length; null for typed text. */
   clip_ms: z.int().min(0).nullable(),
-  /** "hearing": waiting for the model; "voicing": waiting for Cartesia's audio. */
-  stage: z.enum(["hearing", "voicing"]),
-  /** The model the server asked: Claude reads typed turns when it is set up, Gemini hears spoken ones. null: none. Optional for servers from before 2026-10-24. */
+  /** "transcribing": waiting for Cartesia's transcript of the clip; "hearing": waiting for the model; "voicing": waiting for Cartesia's audio. */
+  stage: z.enum(["transcribing", "hearing", "voicing"]),
+  /** The model the server asked; null: none. Optional for servers from before 2026-10-24. */
   model: WalkerModelSchema.nullable().optional(),
 });
 export type WalkerTurnInFlight = z.infer<typeof WalkerTurnInFlightSchema>;
@@ -637,6 +634,8 @@ export const WalkerTurnTraceSchema = z.strictObject({
   /** Which model ran (see WalkerModelSchema); null when none did. Optional for servers from before 2026-10-24. */
   model: WalkerModelSchema.nullable().optional(),
   model_ms: z.int().min(0).nullable(),
+  /** How long Cartesia took to transcribe the clip; null for typed text or when it wasn't asked. Optional for servers from before 2026-10-25. */
+  transcribe_ms: z.int().min(0).nullable().optional(),
   /** The rule that decided the reply, as a code ("arms", "offline", "cues_alerts_off", "model_error", …); null when the model's own words were used. */
   rule: z.string().min(1).max(40).nullable(),
   answered_by: z.enum(["model", "fixed"]),
