@@ -994,7 +994,10 @@ export const ShowCardSchema = z.discriminatedUnion("view", [
     /** The Pi's words for the weather code ("partly cloudy skies"). */
     conditions: cardLine(40),
     wind_mph: z.int().min(0).max(300),
-    /** The position came from a simulated source: the card says so. */
+    /**
+     * The simulator's sample weather (`walker simulate --gps`), not Open-Meteo's: the card says so and credits no
+     * provider. (A simulated position with real weather would need its own flag.)
+     */
     simulated: z.boolean(),
   }),
   z.strictObject({

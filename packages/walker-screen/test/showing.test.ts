@@ -6,9 +6,10 @@ import { LONGEST_CONDITIONS, LONGEST_PLACE, ONE_THING_PX, SHOWING_CAPTION_CHARS,
  * EXPECTED (written before the code, 2026-10-24; docs/subsystems/show-on-screen.md, "The screen"):
  *
  * - weather: "64°" as the main line; "Partly cloudy skies" and "Wind 8 mph" under it; "Weather data from
- *   Open-Meteo" between the handles on every weather card; a simulated position adds "Near you, from GPS" with a
- *   Simulated tag. Heard as "64 degrees Fahrenheit, partly cloudy skies, wind 8 miles per hour. Weather data
- *   from Open-Meteo."
+ *   Open-Meteo" between the handles; a simulated card (the simulator's sample weather) instead says "Simulated
+ *   weather, not a forecast" with a Simulated tag and credits no provider (changed 2026-10-24 after the live run
+ *   showed the Open-Meteo credit over sample data). Heard as "64 degrees Fahrenheit, partly cloudy skies, wind 8
+ *   miles per hour. Weather data from Open-Meteo."
  * - location: the address as the main line, at the largest size that fits (a 120-character address too);
  *   "Near you, from GPS", Simulated when simulated; "© OpenStreetMap contributors" between the handles (the
  *   address comes from OpenStreetMap's geocoder).
@@ -74,12 +75,12 @@ describe("weather card", () => {
     expect(v.announce).toBe("64 degrees Fahrenheit, partly cloudy skies, wind 8 miles per hour. Weather data from Open-Meteo.");
   });
 
-  it("a simulated position says so; the attribution shows at every size", () => {
+  it("simulated weather says so at every size and credits no provider", () => {
     for (const size of TEXT_SIZES) {
       const v = show({ ...weather, simulated: true }, null, { text_size: size });
-      expect(v.lines.at(-1), size).toMatchObject({ text: "Near you, from GPS", simulated: true });
-      expect(v.center.lines.map((l) => l.text), size).toEqual(["Weather data from Open-Meteo"]);
-      expect(v.announce, size).toContain("The location is simulated.");
+      expect(v.lines.at(-1), size).toMatchObject({ text: "Simulated weather, not a forecast", simulated: true });
+      expect(v.center.lines, size).toEqual([]);
+      expect(v.announce, size).toBe("64 degrees Fahrenheit, partly cloudy skies, wind 8 miles per hour. Simulated weather, not a forecast.");
     }
     expect(show(weather).lines.some((l) => l.simulated)).toBe(false);
   });
@@ -88,7 +89,7 @@ describe("weather card", () => {
     expect([...LONGEST_CONDITIONS].length).toBe(40);
     for (const size of TEXT_SIZES) {
       const v = show({ view: "weather", temperature_f: -150, conditions: LONGEST_CONDITIONS, wind_mph: 300, simulated: true }, "x".repeat(SHOWING_CAPTION_CHARS), { text_size: size });
-      expect(v.lines.map((l) => l.text).join(" "), size).toMatch(/^Thunderstorms with slight and heavy hail,? [Ww]ind 300 mph Near you, from GPS x+$/);
+      expect(v.lines.map((l) => l.text).join(" "), size).toMatch(/^Thunderstorms with slight and heavy hail,? [Ww]ind 300 mph Simulated weather, not a forecast x+$/);
       expect(oneThingPx(v), size).toBeLessThanOrEqual(ONE_THING_PX.words);
     }
   });

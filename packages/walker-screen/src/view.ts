@@ -653,6 +653,7 @@ type PartHealth = Extract<ShowCard, { view: "parts" }>["parts"][number]["health"
 
 const GPS_LINE = "Near you, from GPS";
 const WEATHER_CREDIT = "Weather data from Open-Meteo";
+const SAMPLE_WEATHER = "Simulated weather, not a forecast";
 /** The address comes from OpenStreetMap's reverse geocoder (Nominatim), whose licence asks for this credit. */
 const OSM_CREDIT = "© OpenStreetMap contributors";
 const NOT_MEASURED = "Not measured";
@@ -779,7 +780,8 @@ function showingScene(content: ShowingContent, settings: ScreenSettings): Scene 
   switch (card.view) {
     case "weather": {
       const conditions = capital(card.conditions);
-      const gps: CardLine[] = card.simulated ? [{ text: GPS_LINE, size: "detail", simulated: true }] : [];
+      // A simulated card is the simulator's sample weather, not Open-Meteo's: it says so and credits no one.
+      const gps: CardLine[] = card.simulated ? [{ text: SAMPLE_WEATHER, size: "detail", simulated: true }] : [];
       return cardScene(
         `${card.temperature_f}:${card.conditions}:${card.wind_mph}:${card.simulated}`,
         {
@@ -791,8 +793,8 @@ function showingScene(content: ShowingContent, settings: ScreenSettings): Scene 
           ],
           prefer: "main",
         },
-        `${degrees(card.temperature_f)}, ${card.conditions}, wind ${miles(card.wind_mph)}. ${WEATHER_CREDIT}.${card.simulated ? " The location is simulated." : ""}`,
-        [detail(WEATHER_CREDIT)],
+        `${degrees(card.temperature_f)}, ${card.conditions}, wind ${miles(card.wind_mph)}. ${card.simulated ? `${SAMPLE_WEATHER}.` : `${WEATHER_CREDIT}.`}`,
+        card.simulated ? [] : [detail(WEATHER_CREDIT)],
       );
     }
     case "location":
