@@ -7,11 +7,12 @@ import type {
   ProposalView,
   SensorSnapshot,
   SharedRoute,
+  SpeechPace,
   WalkerConfiguration,
   WalkerEventView,
   WalkerTurnView,
 } from "@walker/contracts";
-import { CIRCLE_ITEM_RETENTION_MS, HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS } from "@walker/contracts";
+import { CIRCLE_ITEM_RETENTION_MS, DEFAULT_SPEECH_PACE, HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS } from "@walker/contracts";
 import { decideAnswer, shouldExpire, type Answer } from "./rules";
 
 /**
@@ -36,6 +37,8 @@ export interface DeviceRecord {
   location_sharing_enabled: boolean;
   location: StoredLocation | null;
   location_received_at: string | null;
+  /** How fast Sophi talks in Cartesia's voice; normal for a new walker. Deleted with the walker. */
+  speech_pace: SpeechPace;
 }
 
 /**
@@ -356,6 +359,8 @@ export interface WalkerStore extends CircleStore {
    * elsewhere (SpacetimeCircleStore), which checks her membership there first. False if there's no such walker.
    */
   writeLocationSharing(deviceId: string, enabled: boolean): Promise<boolean>;
+  /** Sets how fast Sophi talks for this walker. False if there's no such walker. */
+  writeSpeechPace(deviceId: string, pace: SpeechPace): Promise<boolean>;
   currentConfiguration(deviceId: string): Promise<WalkerConfiguration>;
   /** Marks the open proposal expired if it is past its expiry or the walker is offline at `now`. */
   expireProposals(deviceId: string, now: Date): Promise<void>;
@@ -472,6 +477,7 @@ export class MemoryWalkerStore implements WalkerStore {
       location_sharing_enabled: false,
       location: null,
       location_received_at: null,
+      speech_pace: DEFAULT_SPEECH_PACE,
       configurations: [copy(configuration)],
       proposals: [],
       turns: [],
@@ -530,6 +536,13 @@ export class MemoryWalkerStore implements WalkerStore {
     // A new opt-in must wait for a new fix; revocation erases the previous one immediately.
     d.location = null;
     d.location_received_at = null;
+    return true;
+  }
+
+  async writeSpeechPace(deviceId: string, pace: SpeechPace) {
+    const d = this.devices.get(deviceId);
+    if (!d) return false;
+    d.speech_pace = pace;
     return true;
   }
 
@@ -855,5 +868,6 @@ function publicDevice(d: MemoryDevice): DeviceRecord {
     location_sharing_enabled: d.location_sharing_enabled,
     location: copy(d.location),
     location_received_at: d.location_received_at,
+    speech_pace: d.speech_pace,
   };
 }

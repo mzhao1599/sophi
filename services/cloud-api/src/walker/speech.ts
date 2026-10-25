@@ -1,4 +1,4 @@
-import { SPEECH_MAX_BYTES } from "@walker/contracts";
+import { SPEECH_MAX_BYTES, type SpeechPace } from "@walker/contracts";
 
 /**
  * Sophi's spoken voice, from Cartesia's text-to-speech. Only the text of Sophi's reply is sent (a
@@ -16,8 +16,8 @@ export const DEFAULT_CARTESIA_MODEL = "sonic-3.6";
 export const DEFAULT_CARTESIA_VOICE = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";
 
 export interface WalkerVoice {
-  /** The reply as mono 16-bit WAV (16 kHz unless the voice was made with another rate) in base64, or null when it couldn't be made in time. */
-  speak(text: string, signal: AbortSignal): Promise<string | null>;
+  /** The reply as mono 16-bit WAV (16 kHz unless the voice was made with another rate) in base64, or null when it couldn't be made in time. `pace` defaults to normal. */
+  speak(text: string, signal: AbortSignal, pace?: SpeechPace): Promise<string | null>;
 }
 
 export interface CartesiaVoiceOptions {
@@ -30,9 +30,16 @@ export interface CartesiaVoiceOptions {
   fetch?: typeof fetch;
 }
 
+/**
+ * Cartesia's `generation_config.speed` for each pace (the reference allows 0.6 to 1.5; 1 is its default, and
+ * sonic-3 and newer take it). Normal sends no `generation_config`, so its request stays the one already heard
+ * live. 0.8 and 1.2 are a first guess, not yet chosen by ear.
+ */
+export const PACE_SPEED: Record<SpeechPace, number> = { slower: 0.8, normal: 1, faster: 1.2 };
+
 export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, model = DEFAULT_CARTESIA_MODEL, sampleRate = 16_000, fetch: fetchImpl = fetch }: CartesiaVoiceOptions): WalkerVoice {
   return {
-    async speak(text, signal) {
+    async speak(text, signal, pace = "normal") {
       try {
         const response = await fetchImpl(TTS_URL, {
           method: "POST",
@@ -43,6 +50,7 @@ export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, 
             voice: { id: voiceId },
             output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: sampleRate },
             language: "en",
+            ...(pace === "normal" ? {} : { generation_config: { speed: PACE_SPEED[pace] } }),
           }),
           signal,
         });

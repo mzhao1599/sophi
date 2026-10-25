@@ -178,7 +178,7 @@ describe("walkerModelsFromEnv", () => {
 describe("createWalkerAssistantFor", () => {
   const now = new Date("2026-10-23T09:00:00.000Z");
   const view = buildStatusView({
-    device: { device_id: crypto.randomUUID(), owner_hash: "h", name: "Walker", service_version: "t", created_at: now.toISOString(), last_heartbeat_at: null, manifest: null, snapshot: null, snapshot_received_at: null, location_sharing_enabled: false, location: null, location_received_at: null },
+    device: { device_id: crypto.randomUUID(), owner_hash: "h", name: "Walker", service_version: "t", created_at: now.toISOString(), last_heartbeat_at: null, manifest: null, snapshot: null, snapshot_received_at: null, location_sharing_enabled: false, location: null, location_received_at: null, speech_pace: "normal" },
     configuration: { version: 1, ...WALKER_SETUP, cues: [...WALKER_SETUP.cues], created_at: now.toISOString() },
     proposal: undefined,
     turns: [],

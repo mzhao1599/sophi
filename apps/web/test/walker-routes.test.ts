@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { CareDbClient, MemoryWalkerStore, SpacetimeCircleStore, type WalkerAgent, type WalkerBackend } from "@walker/cloud-api";
-import { AnswerProposalResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, WalkerListResponseSchema, WalkerTurnResponseSchema, type HeartbeatRequest } from "@walker/contracts";
+import { AnswerProposalResponseSchema, SpeechPaceResponseSchema, WALKER_ERROR_STATUS, WalkerErrorSchema, WalkerListResponseSchema, WalkerTurnResponseSchema, type HeartbeatRequest } from "@walker/contracts";
 import { clientAddress } from "@/server/walker";
 import * as health from "../app/api/v1/health/route";
 import * as pairingCodes from "../app/api/v1/walkers/pairing-codes/route";
@@ -15,6 +15,7 @@ import * as deviceAnswer from "../app/api/v1/devices/[id]/proposals/[proposalId]
 import * as pageAnswer from "../app/api/v1/walkers/[id]/proposals/[proposalId]/route";
 import * as deviceTurns from "../app/api/v1/devices/[id]/turns/route";
 import * as pageTurns from "../app/api/v1/walkers/[id]/turns/route";
+import * as speechPace from "../app/api/v1/walkers/[id]/speech-pace/route";
 
 /**
  * The walker routes over HTTP, against the in-memory store (no DATABASE_URL in tests): which proof
@@ -126,7 +127,7 @@ describe("walker routes", () => {
     await expectError(await heartbeat.POST(request(`/api/v1/devices/${w.deviceId}/heartbeat`, { cookie: w.cookie, body: beat() }), ctx({ id: w.deviceId })), "unauthenticated");
     await expectError(await configuration.GET(request(`/api/v1/devices/${w.deviceId}/configuration`, { cookie: w.cookie }), ctx({ id: w.deviceId })), "unauthenticated");
     // Each secret presented as the other proof.
-    expect(await (await walkers.GET(request("/api/v1/walkers", { cookie: w.credential }))).json()).toEqual({ walkers: [] });
+    expect(await (await walkers.GET(request("/api/v1/walkers", { cookie: w.credential }))).json()).toEqual({ walkers: [], speech_paces: [] });
     await expectError(await configuration.GET(request(`/api/v1/devices/${w.deviceId}/configuration`, { bearer: w.cookie }), ctx({ id: w.deviceId })), "unauthenticated");
   });
 
@@ -137,6 +138,21 @@ describe("walker routes", () => {
     const unknown = crypto.randomUUID();
     const b = await expectError(await walker.GET(request(`/api/v1/walkers/${unknown}`, { cookie: mine.cookie }), ctx({ id: unknown })), "not_found");
     expect(a.error.message).toBe(b.error.message);
+  });
+
+  it("sets the speaking pace with the owner cookie only, and lists it for the page", async () => {
+    const w = await pairOverHttp();
+    const path = `/api/v1/walkers/${w.deviceId}/speech-pace`;
+    const set = await speechPace.PUT(request(path, { method: "PUT", cookie: w.cookie, body: { speech_pace: "slower" } }), ctx({ id: w.deviceId }));
+    expect(set.status).toBe(200);
+    expect(SpeechPaceResponseSchema.parse(await set.json())).toEqual({ speech_pace: "slower" });
+    const list = WalkerListResponseSchema.parse(await (await walkers.GET(request("/api/v1/walkers", { cookie: w.cookie }))).json());
+    expect(list.speech_paces).toEqual([{ device_id: w.deviceId, speech_pace: "slower" }]);
+    // The walker's own credential can't set it, and only the three named paces are taken.
+    await expectError(await speechPace.PUT(request(path, { method: "PUT", bearer: w.credential, body: { speech_pace: "faster" } }), ctx({ id: w.deviceId })), "unauthenticated");
+    await expectError(await speechPace.PUT(request(path, { method: "PUT", cookie: w.cookie, body: { speech_pace: 0.6 } }), ctx({ id: w.deviceId })), "invalid_request");
+    const other = await pairOverHttp("198.51.100.22");
+    await expectError(await speechPace.PUT(request(path, { method: "PUT", cookie: other.cookie, body: { speech_pace: "faster" } }), ctx({ id: w.deviceId })), "not_found");
   });
 
   it("forgets a walker with 204 and then refuses its credential", async () => {

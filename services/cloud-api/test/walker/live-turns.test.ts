@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { sameCues, type CapabilityManifest, type DeviceTurnRequest, type RouteSummary, type WalkerToolCall, type WalkerTurnResponse } from "@walker/contracts";
+import { sameCues, type CapabilityManifest, type DeviceTurnRequest, type RouteSummary, type SpeechPace, type WalkerToolCall, type WalkerTurnResponse } from "@walker/contracts";
 import { MemoryWalkerStore, WalkerService, createCartesiaEars, createWalkerAssistantFor, walkerModelsFromEnv, type TurnEvent } from "../../src";
 import { PRESS_CONFIRM, SIMULATED_READINGS } from "../../src/walker/lines";
 import { Clock, snapshot } from "./support";
@@ -110,6 +110,17 @@ const FRESH: { beat: string; line: string; check: Check }[] = [
   { beat: "4'", line: "Could you beep at me instead of shaking the handles?", check: askShortSounds },
 ];
 
+// Speaking pace changes at once, with no proposal; each run ends back at normal, as the demo should.
+const PACE: { beat: string; line: string; pace: SpeechPace }[] = [
+  { beat: "P1", line: "Please talk slower.", pace: "slower" },
+  { beat: "P2", line: "You can talk at your normal speed again.", pace: "normal" },
+];
+const FRESH_PACE: { beat: string; line: string; pace: SpeechPace }[] = [
+  { beat: "P1'", line: "Could you speak a bit more slowly for me?", pace: "slower" },
+  { beat: "P3'", line: "Could you talk a bit faster?", pace: "faster" },
+];
+const noProposal: Check = (r) => expect(r.proposal).toBeNull();
+
 describe.skipIf(!live)("live walker turns", () => {
   it(
     "answers every scripted line, typed and spoken, on every run",
@@ -118,7 +129,7 @@ describe.skipIf(!live)("live walker turns", () => {
       const runs = Number(process.env.WALKER_LIVE_RUNS ?? 3);
       const dir = mkdtempSync(join(tmpdir(), "walker-live-"));
       const clips = new Map<string, string>();
-      for (const { line } of MODES.includes("audio") ? [...SCRIPT, ...FRESH] : []) {
+      for (const { line } of MODES.includes("audio") ? [...SCRIPT, ...FRESH, ...PACE, ...FRESH_PACE] : []) {
         const aiff = join(dir, `${clips.size}.aiff`);
         const wav = join(dir, `${clips.size}.wav`);
         execFileSync("say", ["-o", aiff, line]);
@@ -130,7 +141,9 @@ describe.skipIf(!live)("live walker turns", () => {
       const events: TurnEvent[] = [];
       const clock = new Clock();
       clock.t = Date.now();
-      const service = new WalkerService(new MemoryWalkerStore(), { ...models, onTurn: (e) => events.push(e) });
+      // A pace change needs a voice to follow it; without Cartesia here, a stand-in that never answers (so the
+      // walker would speak for itself) lets the pace lines test what Claude decides.
+      const service = new WalkerService(new MemoryWalkerStore(), { ...models, voice: { speak: async () => null }, onTurn: (e) => events.push(e) });
       const rows: string[] = [];
       const failures: string[] = [];
 
@@ -188,6 +201,23 @@ describe.skipIf(!live)("live walker turns", () => {
           }
         }
         for (const { beat, line, check } of FRESH) await ask(await walker(), line, mode, beat, 1, check);
+        const paceNow = async (w: { secret: string; id: string }) =>
+          (await service.list({ kind: "owner", secret: w.secret })).speech_paces.find((p) => p.device_id === w.id)?.speech_pace;
+        for (let run = 1; run <= runs; run++) {
+          const w = await walker();
+          for (const { beat, line, pace } of PACE) {
+            await ask(w, line, mode, beat, run, noProposal);
+            const now = await paceNow(w);
+            if (now !== pace) failures.push(`${beat} ${mode} run ${run}: pace is ${now}, expected ${pace}`);
+          }
+        }
+        // Each fresh wording on its own walker, starting at normal ("speed up" after "slower" can fairly mean normal).
+        for (const { beat, line, pace } of FRESH_PACE) {
+          const fresh = await walker();
+          await ask(fresh, line, mode, beat, 1, noProposal);
+          const now = await paceNow(fresh);
+          if (now !== pace) failures.push(`${beat} ${mode} run 1: pace is ${now}, expected ${pace}`);
+        }
       }
       console.log(`main=${MODELS.main} backup=${MODELS.backup ?? "none"} after_ms=${MODELS.backup ? MODELS.backupAfterMs : "-"} modes=${MODES.join(",")}`);
       console.log(rows.join("\n"));

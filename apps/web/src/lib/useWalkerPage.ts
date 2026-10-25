@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { WalkerActivityView, WalkerStatusView } from "@walker/contracts";
+import type { SpeechPace, WalkerActivityView, WalkerSpeechPaceView, WalkerStatusView } from "@walker/contracts";
 import { FAST_POLL_MS, anyInFlight } from "./behindTheScenes";
 import { WalkerApiError, type WalkerFailure, type WalkerPageApi } from "./walkerApi";
 import {
@@ -47,6 +47,11 @@ export interface WalkerModel {
   sendingTurnId: string | null;
   /** What the server measured of each walker's turns, from the last poll applied (page only; may be empty). */
   activity: WalkerActivityView[];
+  /** Each walker's speaking pace, from the last poll applied or the page's own change (empty from an older server). */
+  paces: WalkerSpeechPaceView[];
+  /** The pace being saved, while the page's change is on its way. */
+  pacing: SpeechPace | null;
+  paceError: string | null;
   sendError: string | null;
   forgetting: boolean;
   forgetError: string | null;
@@ -63,6 +68,8 @@ export interface WalkerPage extends WalkerModel {
   getCode(): Promise<void>;
   send(text: string): Promise<boolean>;
   answer(kind: "confirm" | "decline"): Promise<boolean>;
+  /** Slower / Normal / Faster for the shown walker; in force at once, no Confirm. */
+  setPace(pace: SpeechPace): Promise<boolean>;
   forget(): Promise<boolean>;
   /** Clears an old Forget error before the dialog opens again. */
   resetForget(): void;
@@ -87,6 +94,9 @@ const START: WalkerModel = {
   sending: null,
   sendingTurnId: null,
   activity: [],
+  paces: [],
+  pacing: null,
+  paceError: null,
   sendError: null,
   forgetting: false,
   forgetError: null,
@@ -225,6 +235,7 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
         selectedId: null,
         card: null,
         activity: [],
+        paces: [],
         lastOkAtMs: Date.now(),
         pollFailure: null,
         notice: wasPaired ? errorMessage("unauthenticated") : model.current.notice,
@@ -268,14 +279,14 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
       const mine = new AbortController();
       controller = mine;
       try {
-        const { walkers, activity } = await api.listWalkers(mine.signal);
+        const { walkers, activity, speech_paces } = await api.listWalkers(mine.signal);
         if (stopped || mine.signal.aborted) return;
         const back = model.current.disconnected ? [CONNECTION_BACK] : [];
         update({ lastOkAtMs: Date.now(), pollFailure: null, disconnected: false });
         fast.current = anyInFlight(activity, serverNow());
         // Read before this poll's news, so the news can't overwrite it.
         if (started === epoch.current) {
-          update({ activity });
+          update({ activity, paces: speech_paces });
           applyList(walkers, undefined, back);
         } else if (back.length) update((m) => announce(m, back));
       } catch (e) {
@@ -419,6 +430,29 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
     }
   }, [api, applyList, common, update]);
 
+  const setPace = useCallback(
+    async (pace: SpeechPace) => {
+      const m = model.current;
+      const w = m.walkers.find((x) => x.device_id === m.selectedId);
+      if (!w || m.pacing) return false;
+      update({ pacing: pace, paceError: null });
+      try {
+        const r = await api.setSpeechPace(w.device_id, pace);
+        // A poll that began before this answer would show the old pace.
+        epoch.current += 1;
+        update((now) => ({
+          pacing: null,
+          paces: [...now.paces.filter((p) => p.device_id !== w.device_id), { device_id: w.device_id, speech_pace: r.speech_pace }],
+        }));
+        return true;
+      } catch (e) {
+        update({ pacing: null, paceError: common(e, w.name) });
+        return false;
+      }
+    },
+    [api, common, update],
+  );
+
   const resetForget = useCallback(() => update({ forgetError: null }), [update]);
 
   const select = useCallback(
@@ -426,12 +460,12 @@ export function useWalkerPage(api: WalkerPageApi): WalkerPage {
       const m = model.current;
       if (id === m.selectedId) return;
       const w = m.walkers.find((x) => x.device_id === id);
-      update({ selectedId: id, card: w ? nextCard(null, w, serverNow()) : null, answerError: null, sendError: null });
+      update({ selectedId: id, card: w ? nextCard(null, w, serverNow()) : null, answerError: null, sendError: null, paceError: null });
     },
     [update, serverNow],
   );
 
   const m = model.current;
   const walker = useMemo(() => m.walkers.find((w) => w.device_id === m.selectedId) ?? null, [m.walkers, m.selectedId]);
-  return { ...m, walker, serverNow, select, getCode, send, answer, forget, resetForget, pollNow: () => pollRef.current() };
+  return { ...m, walker, serverNow, select, getCode, send, answer, setPace, forget, resetForget, pollNow: () => pollRef.current() };
 }

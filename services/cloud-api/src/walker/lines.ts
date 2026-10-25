@@ -1,4 +1,4 @@
-import type { CapabilityManifest, Cue, CuesProblem, WalkerStatusView } from "@walker/contracts";
+import type { CapabilityManifest, Cue, CuesProblem, SpeechPace, WalkerStatusView } from "@walker/contracts";
 
 /**
  * The lines the server writes itself, each built from structured fields (the configuration, the
@@ -72,6 +72,20 @@ export function cuesRefused(problem: CuesProblem, current: readonly Cue[]): stri
 }
 
 export const OFFLINE_NO_CHANGE = "Your walker is offline, so I can't change its alerts right now. Ask again when it's back online.";
+
+/** What Sophi says when its speaking pace changes, in the new pace, and when it's already there. */
+export const PACE_CHANGED: Record<SpeechPace, string> = {
+  slower: "Okay, I'll talk more slowly now. Ask for normal speed any time.",
+  normal: "Okay, I'm back to my normal speed.",
+  faster: "Okay, I'll talk faster now. Ask for normal speed any time.",
+};
+export const PACE_UNCHANGED: Record<SpeechPace, string> = {
+  slower: "I'm already talking slowly.",
+  normal: "I'm already talking at my normal speed.",
+  faster: "I'm already talking fast.",
+};
+/** With no Cartesia voice on this server the pace would change nothing the person hears, so it isn't changed. */
+export const PACE_NO_VOICE = "I can't change how fast I talk right now.";
 
 /** Robot arms: no action request exists in this build, whatever the walker reports. */
 export function armsLine(manifest: CapabilityManifest | null): string {

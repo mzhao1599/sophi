@@ -8,9 +8,11 @@ import {
   type ModuleId,
   type PartView,
   type ProposalView,
+  type SpeechPace,
   type WalkerErrorCode,
   type WalkerEventView,
   type WalkerModel,
+  type WalkerSpeechPaceView,
   type WalkerStatusView,
   type WalkerTurnView,
   type ZoneView,
@@ -350,6 +352,19 @@ export function conversation(status: Pick<WalkerStatusView, "turns" | "walker_sa
     label: event.kind === "local_reply" ? "On the walker, offline reply" : "On the walker",
   }));
   return [...turns, ...lines].map((e, i) => ({ e, i })).sort((a, b) => a.e.at - b.e.at || a.i - b.i).map(({ e }) => e);
+}
+
+// ---- Speaking pace ----
+
+export const PACE_WORD: Record<SpeechPace, string> = { slower: "Slower", normal: "Normal", faster: "Faster" };
+
+/** Under the pace choices: what they change, and what they don't. */
+export const PACE_NOTE =
+  "How fast Sophi talks in Cartesia's voice, from the next thing it says. No Confirm needed, and you can also say “Please talk slower.” The walker's own voice keeps its speed.";
+
+/** The shown walker's pace, or null from a server that doesn't report one (the card then isn't drawn). */
+export function paceOf(paces: readonly WalkerSpeechPaceView[], deviceId: string): SpeechPace | null {
+  return paces.find((p) => p.device_id === deviceId)?.speech_pace ?? null;
 }
 
 // ---- Proposals ----

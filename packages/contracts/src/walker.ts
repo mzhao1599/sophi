@@ -17,8 +17,8 @@ import { SerialModuleIdSchema, ZoneDistanceSchema, ZoneNameSchema } from "./seri
  * assistant turn, proposals and the status view the "Your walker" page shows. Two callers with separate
  * proofs: the Pi (`/api/v1/devices/...`, a bearer device credential) and the owner's page
  * (`/api/v1/walkers/...`, the `walker_owner` cookie). Neither proof works on the other's routes. Nothing
- * here moves hardware: the only change a walker can make from a turn is its alert cues, and only after a
- * person confirms it. Objects are strict. Unreleased: no walker has shipped.
+ * here moves hardware: a turn can change only the walker's alert cues, and only after a person confirms it,
+ * and Sophi's speaking pace (SpeechPaceSchema), at once. Objects are strict. Unreleased: no walker has shipped.
  */
 
 /** The Pi reports every few seconds. The server counts the walker offline after a missed few. */
@@ -134,6 +134,19 @@ export function checkCuesChange(
 export function sameCues(a: readonly Cue[], b: readonly Cue[]): boolean {
   return a.length === b.length && a.every((cue) => b.includes(cue));
 }
+
+// ---- Speaking pace ----
+
+/**
+ * How fast Sophi talks in the server's voice (Cartesia), added 2026-10-25. Kept on the server for each walker,
+ * apart from WalkerConfiguration and the status view, which the deployed Pi parses strictly: the page gets it on
+ * the list response and changes it on its own route. Unlike the alert cues it changes at once, from a turn ("Please
+ * talk slower") or the page, with no proposal: it moves nothing, changes no alert, and one sentence undoes it.
+ * The walker's own voice (Piper, offline and when Cartesia fails) keeps its own pace. A new walker starts at normal.
+ */
+export const SpeechPaceSchema = z.enum(["slower", "normal", "faster"]);
+export type SpeechPace = z.infer<typeof SpeechPaceSchema>;
+export const DEFAULT_SPEECH_PACE: SpeechPace = "normal";
 
 // ---- Proposals ----
 
@@ -691,11 +704,21 @@ export const WalkerActivityViewSchema = z.strictObject({
 });
 export type WalkerActivityView = z.infer<typeof WalkerActivityViewSchema>;
 
+export const WalkerSpeechPaceViewSchema = z.strictObject({ device_id: id, speech_pace: SpeechPaceSchema });
+export type WalkerSpeechPaceView = z.infer<typeof WalkerSpeechPaceViewSchema>;
+
 export const WalkerListResponseSchema = z.strictObject({
   walkers: z.array(WalkerStatusViewSchema).max(MAX_WALKERS_PER_OWNER),
   /** One entry per listed walker that has any; optional so a page and server of different versions still agree. */
   activity: z.array(WalkerActivityViewSchema).max(MAX_WALKERS_PER_OWNER).optional(),
+  /** Each listed walker's speaking pace (page only, like `activity`); optional for servers from before 2026-10-25. */
+  speech_paces: z.array(WalkerSpeechPaceViewSchema).max(MAX_WALKERS_PER_OWNER).optional(),
 });
+
+/** PUT /api/v1/walkers/{id}/speech-pace: the page's Slower / Normal / Faster. Answers with the pace now in force. */
+export const SpeechPaceRequestSchema = z.strictObject({ speech_pace: SpeechPaceSchema });
+export const SpeechPaceResponseSchema = z.strictObject({ speech_pace: SpeechPaceSchema });
+export type SpeechPaceResponse = z.infer<typeof SpeechPaceResponseSchema>;
 export const WalkerResponseSchema = z.strictObject({ walker: WalkerStatusViewSchema });
 
 // ---- Asking for help (added 2026-10-24, docs/subsystems/help.md) ----

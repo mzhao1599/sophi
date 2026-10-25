@@ -13,6 +13,7 @@ import {
   type PairingCodeResponse,
   type PartView,
   type ProposalView,
+  type SpeechPace,
   type WalkerConfiguration,
   type WalkerErrorCode,
   type WalkerEventView,
@@ -86,6 +87,8 @@ interface FakeWalker {
   replaced: ProposalView[];
   inFlight: WalkerTurnInFlight[];
   traces: WalkerTurnTrace[];
+  /** Set only from the page here: the fake's typed turns don't change it. */
+  pace: SpeechPace;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -339,7 +342,7 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
       await pause(120);
       if (down) fail("network");
       if (!owner) fail("unauthenticated");
-      return { walkers: walkers.map(status), activity: walkers.map(activity) };
+      return { walkers: walkers.map(status), activity: walkers.map(activity), speech_paces: walkers.map((w) => ({ device_id: w.device_id, speech_pace: w.pace })) };
     },
     async createPairingCode() {
       await pause(300);
@@ -369,6 +372,13 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
       if (p.state !== "open") fail("proposal_closed", p);
       const done = answer === "confirm" ? confirm(w)! : (w.proposal = { ...p, state: "declined" });
       return { proposal: done, status: status(w) };
+    },
+    async setSpeechPace(deviceId, pace) {
+      await pause(200);
+      takeFailure();
+      const w = find(deviceId);
+      w.pace = pace;
+      return { speech_pace: pace };
     },
     async forgetWalker(deviceId) {
       await pause(200);
@@ -404,6 +414,7 @@ export function createFakeWalker(now: () => number = Date.now, delays = true): {
         replaced: [],
         inFlight: [],
         traces: [],
+        pace: "normal",
       });
       return true;
     },
