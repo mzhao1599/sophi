@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { preload } from "react-dom";
 import styles from "./Intro.module.css";
 
@@ -16,8 +16,11 @@ export function Intro() {
   // Fetched with the page's HTML, so the wordmark is there when its fade starts.
   preload(BANNER, { as: "image", fetchPriority: "high" });
   const [gone, setGone] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (gone) return;
+    // When the script arrives after the fade has ended, its animationend has already gone by.
+    if (ref.current?.getAnimations().every((a) => a.playState === "finished")) return setGone(true);
     const skip = () => setGone(true);
     window.addEventListener("keydown", skip);
     return () => window.removeEventListener("keydown", skip);
@@ -25,6 +28,7 @@ export function Intro() {
   if (gone) return null;
   return (
     <div
+      ref={ref}
       className={styles.intro}
       aria-hidden="true"
       onClick={() => setGone(true)}
