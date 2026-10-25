@@ -33,11 +33,21 @@ A walker holds you up, and that's all it does. If you drop your keys, they stay 
 | 🗣️ **Voice** | Hold Talk, ask anything, hear the answer | ✅ Spoken questions answered on the real Pi, about 4 s from release to reply |
 | ✋ **Hand controls** | Big buttons and haptic buzzers in each handle | 🔧 Both boards talk to the Pi, and the press buzz has been felt |
 | 📡 **Obstacle sensors** | Time-of-flight sensors that buzz the handles when something is near | 🔧 Two sensors read live distances, and the Pi has sent obstacle buzzes to the handles |
-| 🦾 **Arms and lift** | Two SO-101 arms on a linear lift to reach the floor or a shelf | 🧪 Software tested against simulated motors. Not yet moving on the walker |
+| 🦾 **Arms and lift** | Two SO-101 arms on a linear lift to reach the floor or a shelf | 🧪 Walker coordinator/lift tested in simulation; [phone teleop](#two-phone-arm-demo) demonstrated separately |
 | 🆘 **Get help** | Hold both handle buttons to reach the people you trust | 🧪 Built and tested in the simulator |
 | 🗺️ **Walking directions** | Spoken turn-by-turn directions | 🧪 Simulator only. No real GPS walk yet |
 
 ✅ works · 🔧 running on hardware, partly tested · 🧪 built, simulator only
+
+## Two-phone arm demo
+
+The [SO-101 phone harness and live dashboard](devices/pi/phone-teleop/README.md)
+combine both followers in one local page, each with its own phone, movement/gripper
+readouts, pause, release, and session reset. The source installation demonstrated
+phone teleoperation on two arms. This standalone operator tool is separate from
+the walker motion coordinator and lift; its [integration guide](docs/subsystems/phone-teleop.md)
+records setup, ownership requirements, and what was tested. Private calibration,
+USB identities, phone pairings and logs are not part of the repo.
 
 ## Under the hood
 

@@ -13,6 +13,14 @@
 
 None of these has run on real arms or a real lift. Not built: preparing a lift target from the screen itself (the terminal does today), and a touch Stop on the screen. Nothing on this page has been measured, and every number is a placeholder until a bench record in [`hardware/`](../../hardware/current-build.md) replaces it.
 
+## Separate phone-operated prototype (2026-10-25)
+
+The [phone teleop harness](phone-teleop.md) is now included as an independent
+operator tool. Its originating installation demonstrated two phone-controlled
+followers on a Pi; this does not validate the coordinator, taught skills, lift,
+Confirm flow, or limits described below. Its own operating behavior is documented
+separately. Never let both control stacks own the same arm adapters.
+
 ## The rule
 
 **Motors start only when a person at the walker acts, and the lift moves only while a person holds its control.**
