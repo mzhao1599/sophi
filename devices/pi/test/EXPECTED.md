@@ -80,65 +80,86 @@ A caretaker's message to her phone, read aloud by the walker (`test/messages.tes
 
 ## Asking for help (`src/help.ts`, added 2026-10-24)
 
-The walker's side of "Get help" ([docs/subsystems/help.md](../../../docs/subsystems/help.md), "The walker (Pi)"). Rows H1 to H31 run on a fake clock against the fake cloud's help routes (`test/help.test.ts`); HS rows are the screen machine (`test/help-screen.test.ts`); HW rows are real-time runs of the bundled CLI against the simulator, not in the suite. Every spoken line is the design's table word for word, with gender-neutral words. Times are from the second button press (the chord) or from the start of the countdown. Timings marked *placeholder* are in `src/constants.ts`; the others are the contract's (`HELP_*` in `circle.ts`).
+The walker's side of "Get help" ([docs/subsystems/help.md](../../../docs/subsystems/help.md), "The walker (Pi)"; revised the same day for the reviewed contract, c9aba72, before its code). Rows GH1 to GH36 run on a fake clock against the fake cloud's help routes (`test/help.test.ts`); GM rows are the motion coordinator's part (`test/help-motion.test.ts`); GS rows are the screen machine (`test/help-screen.test.ts`); GW rows are real-time runs of the bundled CLI against the simulator, not in the suite. Every spoken line is the design's table word for word, gender-neutral. Times are from the press that made both buttons down (the chord) or from the start of the countdown. Timings marked *placeholder* are in `src/constants.ts`; the others are the contract's (`HELP_*` in `walker.ts`).
+
+### The chord and who owns Confirm
 
 | Id | Situation | Expected |
 | --- | --- | --- |
-| H1 | The chord: Talk (right) and Confirm (left) both down, on GPIO or on the ESP32 hand boards, held | At the second press: the `help` cue, the screen `help_hold`, any line playing stops. At 2,000 ms (HELP_HOLD_MS), both still down: "Asking for help." (kind `help`), the screen `help` `sending` (not retrying), and exactly one `POST /devices/{id}/help` with `{ client_help_id, source: "handles" }`. Releasing both afterwards sends nothing more. |
-| H2 | Either button let go at 1,900 ms | Nothing sent (no help call at 2 s, 2.5 s or later), nothing said, the screen back to what was under it (the clock). Pressing both again starts a new hold from 0. |
-| H3 | Talk first (it started listening), then Confirm | The recording that Talk press opened is dropped: the mic session is aborted, Talk goes idle, the `turn` outcome is `discarded`, no turn request is made, and "I stopped listening…" is not said. The Talk release that follows sends nothing. |
-| H4 | Confirm first, then Talk | Confirm acts on its own press as it does today, not delayed (with nothing open: the "nothing to confirm" sound; with a message of hers: it is read again). Talk's press then makes the chord: no listening sound and no mic opened. |
-| H5 | The simulator keyboard's `t` and `c` | Never a chord (a terminal sees only presses). The simulator's `h` key and the script's `chord <ms>` press the simulated hand board's two buttons and release them after the hold (`h`: 2.5 s), through the real ESP32 path. |
-| H6 | A motion runs when the chord starts | The first press stops it (the coordinator claims the press, as for any handle press), and the chord still goes on: the `help` cue, `help_hold`, and the ask at 2 s. |
-| H7 | Every Talk turn the Pi sends | Carries `can_ask_for_help: true`, the first request and a tool continuation alike. |
-| H8 | A turn answer with `ask_for_help: true` | The reply is spoken as an answer (captions, kind `reply`). Once it has played: `help_countdown` 8, then 7, 6, … 1 once a second (*no* other line). At 8 s after the countdown began: "Asking for help." and one POST with `source: "voice"`. |
-| H9 | A handle press during the countdown (Talk at 3 s; Confirm at 3 s; either while the reply itself is still playing) | "Okay. I didn't ask anyone.", the screen back, no POST then or later. The press does nothing else: Talk opens no mic, Confirm answers nothing and reads no message; a press during the reply stops the reply and no countdown starts. The next press acts as usual. |
-| H10 | The first try fails (network down, a timeout at the 10 s deadline (*placeholder*), or a 5xx) | "No internet yet. I'll keep trying." once; the screen `sending` with `retrying: true`. Tries again every 5 s (*placeholder*) with the same `client_help_id`. When a try gets through: the told line (H16). |
-| H11 | It never gets through | A try starts every 5 s after the last failure, only while it would start within HELP_SEND_RETRY_MS (120 s) of the first. After the last failure: "I couldn't reach the internet, so nobody has been told. Use your phone if you can.", the screen `not_sent` `offline`. No try after that. |
-| H12 | `409 no_caretaker` | "No caretaker's phone is linked to this walker, so nobody has been told.", `not_sent` `no_caretaker`; no retry. |
-| H13 | Any other 4xx (400, 403, 429) | "Something went wrong, so nobody has been told. Use your phone if you can.", `not_sent` `failed`; no retry. A 401 says that and the pair-again line once (the walker needs pairing). |
-| H14 | An older server (`404` on `/help`) | The ask gets `not_sent` `failed` (the line above). `GET /devices/{id}/help` is not asked again for 60 s (*placeholder*), while heartbeats go on; after that, the poll after a heartbeat asks again. |
-| H15 | `not_sent` | Stays on screen 10 s (*placeholder*, the same as `closed`), then the screen goes back. |
-| H16 | The server took it (201, or 200 for one already open) | "Maya has been told." (one name) / "Maya and Sam have been told." (more); the screen `help` `open` with `told`, `coming: []`, `confirm_okay: false`. While open it asks `GET /devices/{id}/help` every 2 s (HELP_POLL_MS) and after each heartbeat. |
-| H17 | `coming` grows in the polls | `["Maya"]`: "Maya is on the way." once; the same names again: nothing. Then `["Maya", "Sam"]`: "Sam is on the way." only. Two new names in one poll: "Maya and Sam are on the way." The screen shows who is coming. |
-| H18 | Confirm twice while open | The first: "Press Confirm again to tell Maya you're okay.", `confirm_okay: true`, no request. The second within 30 s (HELP_OKAY_ARMED_TTL_MS): exactly one `POST /help/{help_id}/okay`, then "Okay. Maya knows you're okay." ("… know …" with two or more names), `closed` `okay` for 10 s, then back. A third press while the first is answered sends nothing. |
-| H19 | Armed, and no second press for 30 s | `confirm_okay` goes back to false; the next Confirm arms again (the line again, no request). |
-| H20 | `/okay` answered `409 help_closed` (a caretaker closed it first) | Closed as the body says: "Maya says they're with you.", `closed` `with_her`. |
-| H21 | `/okay` doesn't get through (network down) | Disarmed; "I couldn't reach the internet. Press Confirm twice to try again."; still open. |
-| H22 | Closed, seen in a poll | `with_her` by Maya: "Maya says they're with you."; `expired`: "Your request for help has ended."; `okay` from her phone: "Okay. Maya knows you're okay." Each said once and shown 10 s; later polls that return the same closed request say and show nothing. |
-| H23 | A request made on her phone | The poll after a heartbeat finds it open: the screen `open`, "Maya has been told." A closed request this walker never saw open is neither said nor shown. |
-| H24 | A request open, then gone from the server (`help: null`, it was deleted) | The screen goes back, nothing said, polling every 2 s stops. |
-| H25 | Help open, and an obstacle | The obstacle takes the screen; help comes back after the obstacle's tail. |
-| H26 | Help open, and a Talk turn | Listening, One moment, the answer, then `help` `open` again; the turn is sent as usual. |
-| H27 | Logs and the walker page | On the Pi, help lines (kind `help`: they hold names) are logged by length, never in full; none becomes a heartbeat event (the owner's page doesn't see help); no log line holds a name. |
-| H28 | Unpaired, a 401, or paired to another walker while help is open | Help leaves the screen and its polling stops. |
-| H29 | A caretaker's message arrives during the hold, the countdown or sending | Not read until that is over; read then. |
-| H30 | The chord while help is sending | The hold shows, and at 2 s nothing new is sent (the one in flight carries on). |
-| H31 | A countdown whose reply never finishes playing *(the speaker hangs)* | The countdown starts when the reply is stopped by the 90 s line limit (*placeholder*, SPEECH_LINE_MAX_MS), not before: a press during it still stops the ask. |
+| GH1 | The chord: Talk (right) and Confirm (left) both down, on GPIO or on the ESP32 hand boards, held | At the press that makes both down: the `help` cue, the screen `help_hold`, any line playing stops. At 2,000 ms (HELP_HOLD_MS), both still down: "Asking for help." (kind `help`), the screen `help` `sending` (not retrying), and exactly one `POST /devices/{id}/help` with `{ client_help_id, source: "handles" }`. Releasing both afterwards sends nothing more. |
+| GH2 | Either button let go at 1,900 ms | Nothing sent (no help call at 2 s, 2.5 s or later), nothing said, the screen back to what was under it (the clock). Pressing both again starts a new hold from 0. |
+| GH3 | Talk first (it started listening), then Confirm | The recording that Talk press opened is dropped: the mic session is aborted, Talk goes idle, the `turn` outcome is `discarded`, no turn request is made, "I stopped listening…" is not said. The Talk release that follows sends nothing. |
+| GH4 | Confirm first with nothing to start (no proposal, draft, motion target or open help), then Talk within 250 ms | Confirm acts on its press at once as today (the "nothing to confirm" sound; with a message of hers, it is read again). Talk's press makes the chord: no listening sound, no mic opened. |
+| GH5 | Confirm that would start something (an open proposal, a ready message draft, arming "I'm okay"), then Talk within 250 ms (HELP_CHORD_WINDOW_MS) | The Confirm does nothing: no proposal answer, no message sent, nothing armed. The chord goes on (GH1). |
+| GH6 | The same Confirm alone (no Talk within 250 ms) | It acts 250 ms after its press: the proposal is answered, the draft sent, or "I'm okay" armed, exactly once. A Talk press after the window is a Talk press. |
+| GH7 | The simulator keyboard's `t` and `c` | Never a chord (a terminal sees only presses) and never delayed. The simulator's `h` key and the script's `chord <ms>` press the simulated hand board's two buttons and release them after the hold (`h`: 2.5 s), through the real ESP32 path. |
+| GH8 | A motion runs when the chord starts | The first press stops it at once (the coordinator claims the press; stopping never waits), and the chord still goes on: the `help` cue, `help_hold`, and the ask at 2 s. |
+| GH9 | While `help_hold`, `help_countdown` or an open request (not `sending`, `not_sent` or `closed`) | Help owns Confirm: the coordinator is told (`helpActive(true)`), a proposal from a turn is declined and a message draft from a turn is dropped (as while a motion target owns Confirm), a heartbeat's proposal isn't adopted. When help no longer owns it, `helpActive(false)`. |
+
+### Voice, sending and polling
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| GH10 | Talk turns before any `GET /devices/{id}/help` answered 200 in this run (an older server, or before the first poll) | Carry no `can_ask_for_help`. |
+| GH11 | Talk turns after a 200 | Every request of the turn carries `can_ask_for_help: true`, the first and a tool continuation alike. |
+| GH12 | A turn answer with `ask_for_help: true` | The reply is spoken as an answer (captions, kind `reply`). Once it has played: `help_countdown` 8, then 7, … 1, once a second; no other line. At 8 s after the countdown began: "Asking for help." and one POST with `source: "voice"`. |
+| GH13 | A handle press during the countdown (Talk at 3 s; Confirm at 3 s; either while the reply itself still plays) | "Okay. I didn't ask anyone.", the screen back, no POST then or later. The press does nothing else: Talk opens no mic, Confirm answers nothing, reads no message and arms nothing; a press during the reply stops the reply and no countdown starts. The next press acts as usual. |
+| GH14 | The first try fails (network down, no answer by the 10 s deadline (*placeholder*), or a 5xx) | "No internet yet. I'll keep trying." once; the screen `sending` with `retrying: true`. Tries again 5 s (*placeholder*) after each failure with the same `client_help_id`. When a try gets through: the sent line (GH20). |
+| GH15 | It never gets through | A try starts 5 s after each failure only while it would start within HELP_SEND_RETRY_MS (120 s) of the first. After the last failure: "I couldn't reach the internet, so nothing was sent. Use your phone if you can.", `not_sent` `offline`. No try after that. |
+| GH16 | `409 no_caretaker` (walker envelope) | "No caretaker's phone is linked to this walker, so nothing was sent.", `not_sent` `no_caretaker`; no retry. |
+| GH17 | Any other 4xx (400, 403, 429) | "Something went wrong, so nothing was sent. Use your phone if you can.", `not_sent` `failed`; no retry. A 401 says that and then the pair-again line (the walker needs pairing). |
+| GH18 | An older server (`404` on `/help`) | The ask gets `not_sent` `failed`. `GET /devices/{id}/help` isn't asked again for 60 s (*placeholder*) while heartbeats go on; then the poll after a heartbeat asks again. Turns carry no `can_ask_for_help`. |
+| GH19 | `not_sent` | Stays on screen 10 s (*placeholder*, as `closed`), then the screen goes back. |
+| GH20 | The server took it (201, or 200 for one already open) | "Sent to Maya's phone." (one phone) / "Sent to Maya and Sam's phones." (more); the screen `help` `open` with `sent_to`, `shown_to`, `coming` as names, `confirm_okay: false`. While open it asks `GET /devices/{id}/help` every 2 s (HELP_POLL_MS) and after each heartbeat. |
+| GH21 | A poll while sending finds the request open (the POST's answer was lost) | Taken as the answer: the sent line, `open`; no more tries. |
+| GH22 | `shown_to` grows in the polls | Each new phone once, one line each: "It's showing on Maya's phone."; the same phones again say nothing. Phones are told apart by `member_id` (two "Sam"s are two phones). |
+| GH23 | `coming` grows in the polls | `[Maya]`: "Maya is on the way." once; again: nothing. Then `[Maya, Sam]`: "Sam is on the way." only. Two new in one poll: "Maya and Sam are on the way." |
+| GH24 | A lone Confirm twice while open | The first (250 ms after its press): "Press Confirm again to tell Maya you're okay.", `confirm_okay: true`, no request. The second within 30 s (HELP_OKAY_ARMED_TTL_MS): one `POST /help/{help_id}/okay`, then "Okay. Maya will see that you're okay." (names: `sent_to`), `closed` `okay` for 10 s, then back. A press while that is answered sends nothing more. |
+| GH25 | Armed, and no second press for 30 s | `confirm_okay` goes back to false; the next lone Confirm arms again (the line again, no request). |
+| GH26 | `/okay` answered `409 help_closed` | With `closed.how` `okay` (a retry whose first try got through): success, as GH24. With `with_her`: "Maya says they're with you.", `closed` `with_her`. |
+| GH27 | `/okay` doesn't get through (network down) | Disarmed; "I couldn't reach the internet. Press Confirm twice to try again."; still open. |
+| GH28 | Closed, seen in a poll, for a `help_id` seen open in this run | `with_her` by Maya: "Maya says they're with you."; `expired`: "Your request for help has ended."; `okay` from her phone: "Okay. Maya will see that you're okay." Each said once, shown 10 s; later polls with the same closed request say and show nothing. |
+| GH29 | A request made on her phone | The poll after a heartbeat finds it open: the screen `open`, "Sent to Maya's phone." A closed request this walker never saw open in this run (after a restart) is neither said nor shown. |
+| GH30 | A request open, then gone from the server (`help: null`) | The screen goes back, nothing said, polling every 2 s stops. |
+| GH31 | Help open, and an obstacle | The obstacle takes the screen; help comes back after the obstacle's tail. |
+| GH32 | Help open, and a Talk turn | Listening, One moment, the answer, then `help` `open` again; the turn is sent as usual. |
+| GH33 | Logs and the walker page | On the Pi, help lines (kind `help`: they hold names) are logged by length, never in full; none becomes a heartbeat event (the owner's page doesn't see help); no log line holds a name. |
+| GH34 | Unpaired, a 401, or paired to another walker while help is open | Help leaves the screen, its polling stops, and Confirm is no longer help's. |
+| GH35 | A caretaker's message arrives during the hold, the countdown or sending | Not read until that is over; read then. |
+| GH36 | The chord while help is sending | The hold shows, and at 2 s nothing new is sent (the one in flight carries on). |
+
+### The motion coordinator while help owns Confirm (`src/motion/coordinator.ts`)
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| GM1 | `helpActive(true)` with a pending target | It is withdrawn (`target-ended withdrawn`), except a pending "Let go?" (`gripper.release`), which stays pending (the arm keeps holding). |
+| GM2 | A new target while help is active | Refused `confirm_busy`, like a walker proposal owning Confirm. |
+| GM3 | A Confirm press while help is active and "Let go?" is pending | Not answered: the coordinator doesn't claim it (help gets it). |
+| GM4 | A Confirm press with a target pending, help not active | Taken by the coordinator at once (the service gets nothing), answered 250 ms later with the evidence from the press itself; a Talk press within those 250 ms withdraws the target (as any Talk press does) and the Confirm answers nothing. Stopping a motion never waits. |
 
 ### The screen (help states in `pickScreen`)
 
 | Id | Situation | Expected |
 | --- | --- | --- |
-| HS1 | Priority | Highest first: obstacle; a running motion or a fault; her Talk (listening, thinking, answering); help (`help_hold`, `help_countdown`, `help`); the pending motion Confirm target; Sophi's offer; Done; the motion's own ending; a caretaker's message; offline or not set up; the clock. |
-| HS2 | `help_hold` or `help_countdown` starts while an answer is on screen | The answer (and any Done or message) is dropped, so the countdown shows from its first second. A `help` `open` arriving from a poll doesn't drop an answer: it shows once the answer ends. |
-| HS3 | The countdown ticks | One new state a second (8 to 1); the walker-screen view keeps one scene key for the whole countdown (no cross-fade every second). |
+| GS1 | Priority | Highest first: obstacle; a running motion or a fault; her Talk (listening, thinking, answering); help (`help_hold`, `help_countdown`, `help`); the pending motion Confirm target; Sophi's offer; Done; the motion's own ending; a caretaker's message; offline or not set up; the clock. |
+| GS2 | `help_hold` or `help_countdown` starts while an answer is on screen | The answer (and any Done or message) is dropped, so the countdown shows from its first second. A `help` `open` arriving from a poll doesn't drop an answer: it shows once the answer ends. |
+| GS3 | The countdown ticks | One new state a second (8 to 1); the walker-screen view keeps one scene key for the whole countdown (no cross-fade every second). |
 
 ### The walker screen's help views (`packages/walker-screen`, `test/view.test.ts` and the screenshot check)
 
 | Id | Situation | Expected |
 | --- | --- | --- |
-| HV1 | Every help state at every text size (fixtures: hold, countdown 8 and 1, sending and retrying, the three `not_sent`, open with one name and the longest seven, coming, armed, the three `closed`, dark, simulator and bench strips) | Valid `ScreenState`s; the coverage test passes (every state in the contract has a fixture). |
-| HV2 | The words | `help_hold`: "Keep holding" / "to ask for help.". `help_countdown`: the seconds left large, "Asking for help in 8 seconds." and "Press any button to stop.". `sending`: "Asking for help" (and "No internet yet. I'll keep trying." while retrying). `not_sent`: "Not sent" and the reason, word for word as spoken. `open`: "Maya has been told" or "Maya is on the way", "Press Confirm twice to say you're okay.", "Confirm" named over the left handle; armed: "Press Confirm again" / "to tell Maya you're okay.". `closed`: "Okay" / "You told them you're okay." (the screen's `closed` carries no names, so the spoken "Okay. Maya knows you're okay." can't be shown word for word: a contract gap, reported), "Maya says they're with you", "Your request for help has ended". No touch button on any help screen. |
-| HV3 | Calm words | No help screen says emergency, fall, danger, alarm, warning, clear or safe (the existing test). |
-| HV4 | Headless Chromium at 800x480 | Every help fixture: no overflow, no main line over two lines, no word broken, text at least 40 px, contrast at least 7:1. Names are never cut. |
+| GV1 | Every help state at every text size (fixtures: hold, countdown 8 and 1, sending and retrying, the three `not_sent`, open sent / shown / coming with one name and with the longest seven, armed, the three `closed`, dark, simulator and bench strips) | Valid `ScreenState`s; the coverage test passes (every state in the contract has a fixture). |
+| GV2 | The words | `help_hold`: "Keep holding" / "to ask for help.". `help_countdown`: the seconds left large, "Asking for help in 8 seconds." and "Press any button to stop."; "Stop" over both handles. `sending`: "Asking for help" (and "No internet yet. I'll keep trying." while retrying). `not_sent`: "Not sent" and the reason, word for word as spoken. `open`: the newest news without its full stop ("Sent to Maya's phone", "It's showing on Maya's phone", "Maya is on the way"), "Press Confirm twice to say you're okay.", "Confirm" named over the left handle; armed: "Press Confirm again" / "to tell Maya you're okay.". `closed`: "Okay" / "They'll see that you're okay." (the screen's `closed` carries no `sent_to` names, so the spoken "Okay. Maya will see that you're okay." can't be shown word for word: a contract gap, reported), "Maya says they're with you", "Your request for help has ended". No touch button on any help screen. |
+| GV3 | Calm words | No help screen says emergency, fall, danger, alarm, warning, clear or safe (the existing test). |
+| GV4 | Headless Chromium at 800x480 | Every help fixture: no overflow, no main line over two lines, no word broken, text at least 40 px, contrast at least 7:1. Names are never cut. |
 
 ### Real-time runs (the bundled CLI, `node dist/walker.mjs simulate --screen --script …`)
 
 | Id | Script | Expected |
 | --- | --- | --- |
-| HW1 | `test/sim/help-voice.walk`: the demo beat. The fake cloud's next turn answers as a voice help request; Talk; the reply; the countdown to zero; "Asking for help."; "Maya has been told."; the fake caretaker taps "I'm on my way"; "Maya is on the way."; Confirm twice; "Okay. Maya knows you're okay."; back to the clock | Passes 3 of 3 in a row in real time. |
-| HW2 | `test/sim/help-chord.walk`: a chord let go at 1.9 s (nothing sent), a chord held 2.5 s, told, the fake caretaker says "I'm with Rose", closed, back; a voice countdown stopped by Confirm | Passes 3 of 3 in a row in real time. |
+| GW1 | `test/sim/help-voice.walk`: the demo beat. The fake cloud's next turn answers as a voice help request; Talk; the reply; the countdown to zero; "Asking for help."; "Sent to Maya's phone."; the fake caretaker's app shows it ("It's showing on Maya's phone."); she taps "I'm on my way" ("Maya is on the way."); Confirm twice; "Okay. Maya will see that you're okay."; back to the clock | Passes 3 of 3 in a row in real time. |
+| GW2 | `test/sim/help-chord.walk`: a chord let go at 1.9 s (nothing sent), a chord held 2.5 s, sent, the fake caretaker says "I'm with Rose", closed, back; a voice countdown stopped by Confirm | Passes 3 of 3 in a row in real time. |
 
 ## Serial (shared fixtures in `packages/contracts/test/fixtures/`)
 
