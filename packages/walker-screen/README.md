@@ -4,12 +4,12 @@ What the walker's own 800x480 screen draws: a pure `screenView(state, settings?)
 
 | File | What it is |
 | --- | --- |
-| `src/view.ts` (also exported alone as `@walker/walker-screen/view`, so the Pi's Node bundle gets `captionPages` without React) | `screenView(state, settings?)`: the words and layout for each state, in three fixed regions (status strip, the one thing, the band over the handles). Pass draft `settings` to draw a Preview. Also `captionPages(text, textSize)`, which the Pi uses to page captions |
+| `src/view.ts` (also exported alone as `@walker/walker-screen/view`, so the Pi's Node bundle gets `captionPages` without React) | `screenView(state, settings?)`: the words and layout for each state, in three fixed regions (status strip, the one thing, the band over the handles). Pass draft `settings` to draw a Preview. Also `captionPages(text, textSize)`, which the Pi uses to page captions, and `showingCaptionPages(text)` for captions under a card |
 | `src/sizes.ts` | Every size from one `PX_PER_MM` (7.35 for the 800x480, 108.9 mm wide panel): smallest text 40 px, body 48/56/64, main line 88/104/120 by text size, buttons 147 px (20 mm), at most 3 |
 | `src/WalkerScreenView.tsx` | The React view (React 19, as `apps/web`). `onPress(action)` for taps; omit it for an inert Preview |
 | `src/screen.css` | Tokens copied from `apps/web/app/globals.css`, scoped by `data-theme` (never a system dark mode), `@font-face` for the bundled font, the layout, a 240 ms cross-fade with a reduced-motion branch |
 | `src/fonts/` | Atkinson Hyperlegible Next (Google Fonts' latin and latin-ext subsets, variable weight) and its SIL Open Font License, `OFL.txt` |
-| `src/fixtures.ts` | Every state at every text size, the walker's own first, with the demo's names and the longest names the contract allows; motion with the longest titles, fault and refusal sentences, and the simulator's strip |
+| `src/fixtures.ts` | Every state at every text size, the walker's own first, with the demo's names and the longest names the contract allows; motion with the longest titles, fault and refusal sentences, and the simulator's strip; each card Sophi pulls up, simulated and with the longest strings |
 
 Rules it keeps (from the screen research): text only in colours of 7:1 or better; every colour also a shape and a word (filled, hollow or dashed dot; "Simulator" and "Simulated" dashed tags); nothing moves while idle; no blur, slide or pulse; no emergency wording ("clear it", the instruction to clear a motion fault, is the one use of "clear"); at most 3 buttons of at least 20 mm.
 
@@ -34,5 +34,7 @@ pnpm --filter @walker/walker-screen exec vitest run test/shots.test.tsx
 Not measured: sizes assume CSS px equal panel px (devicePixelRatio 1). Check a rendered cap height with a ruler on the panel, at the walker, before relying on them.
 
 **Messages** *(changed 2026-10-24)*. The Pi now shows `message` while it reads a caretaker's message aloud: the words, "From Maya", "Confirm" named over the left handle and "Press Confirm to hear it again." It no longer offers a touch "Done" button, because the Pi doesn't act on screen presses yet. `message_waiting` (the "Read it" notice) is still drawn for the circle piece and not used by the Pi.
+
+**Cards Sophi pulls up** *(added 2026-10-24)*. `showing` draws the card the Pi built for `show_on_screen` ([guide](../../docs/subsystems/show-on-screen.md#the-screen-packageswalker-screen)): weather, location, sensors, message or parts, with a Simulated tag wherever the data is simulated, the weather's and the map's credits between the handles, and Sophi's caption page under a hairline as the last line. Each card's main line and lines take the largest sizes that fit, from a written height budget, and lists end in "and N more" past what fits. A caption page under a card is `SHOWING_CAPTION_CHARS` (75 characters) at every text size: the Pi pages the reply with `showingCaptionPages` while a card is up. The key and the announcement leave out the caption and the sensors' readings, so a screen reader hears a card once.
 
 **Not shown until built:** the "My screen" button (on the clock and offline screens) is left out until the Pi acts on it (a TODO in `view.ts`; a test checks no fixture offers it). The My screen pages themselves are drawn for the circle piece.

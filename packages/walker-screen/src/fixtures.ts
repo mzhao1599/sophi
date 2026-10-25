@@ -1,6 +1,8 @@
 import {
   DEFAULT_SCREEN_CHOICES,
   FAULT_SENTENCES,
+  ModuleHealthSchema,
+  ModuleIdSchema,
   REFUSAL_SENTENCES,
   TEXT_SIZES,
   confirmPrompt,
@@ -9,9 +11,11 @@ import {
   type ScreenChoices,
   type ScreenContent,
   type ScreenState,
+  type ShowCard,
   type StatusStrip,
   type TextSize,
 } from "@walker/contracts";
+import { showingCaptionPages } from "./view";
 
 /**
  * Example states for every screen in the design, at every text size: for tests, screenshots and the web
@@ -53,6 +57,95 @@ const longest = <K extends string>(sentences: Readonly<Record<K, string>>): K =>
 export const LONGEST_FAULT: MotionFaultCode = longest(FAULT_SENTENCES);
 export const LONGEST_REFUSAL: MotionRefusal = longest(REFUSAL_SENTENCES);
 const BENCH = { bench_mode: true } as const;
+
+// ---- Cards Sophi pulls up (`showing`, added 2026-10-24) ----
+
+/** Sophi's line for a card she pulled up: one caption page at every text size. */
+const SHOWN = "It's on your screen: 64 degrees, partly cloudy.";
+/** A long reply, so a caption page under a card comes close to SHOWING_CAPTION_CHARS. */
+const LONG_SHOW_REPLY =
+  "It's on your screen now, with every reading the walker has from its sensors on the front and on the back, and the nearest one is at the top in large type for you to read.";
+/** The longest caption page of the long reply under a card. */
+export const LONGEST_SHOWING_CAPTION = showingCaptionPages(LONG_SHOW_REPLY).reduce((a, b) => ([...b].length > [...a].length ? b : a));
+/** The longest address the contract allows (120 characters), in real words. */
+export const LONGEST_PLACE = "12 Grand Avenue, Apartment 14, Building B, Lakeshore Gardens Senior Residences, Oakland, California 94610, United States";
+/** The longest conditions the contract allows (40 characters). */
+export const LONGEST_CONDITIONS = "thunderstorms with slight and heavy hail";
+const showing = (card: ShowCard, caption: string | null = null): ScreenContent => ({ state: "showing", card, caption });
+const showingLongest = (card: ShowCard) => showing(card, LONGEST_SHOWING_CAPTION);
+/** 16 zones (the contract's most) with 24-character names (the longest), measured at the farthest or not at all. */
+const LONGEST_ZONES: Extract<ShowCard, { view: "sensors" }>["zones"] = Array.from({ length: 16 }, (_, i) => ({
+  zone: `rear_lower_bumper_left_${i.toString(16)}`,
+  distance: i % 3 === 1 ? { status: "unknown" } : { status: "measured", mm: 65_535 },
+  simulated: true,
+}));
+const MODULE_IDS = ModuleIdSchema.options;
+const HEALTHS = ModuleHealthSchema.options;
+/** 16 parts (the contract's most), every name and health, simulated and not. */
+const LONGEST_PARTS: Extract<ShowCard, { view: "parts" }>["parts"] = Array.from({ length: 16 }, (_, i) => ({
+  module_id: MODULE_IDS[i % MODULE_IDS.length]!,
+  health: HEALTHS[i % HEALTHS.length]!,
+  simulated: i % 2 === 0,
+}));
+const SIMULATOR = { simulator: true } as const;
+
+const SHOWING: Base[] = [
+  { name: "showing-weather", screen: showing({ view: "weather", temperature_f: 64, conditions: "partly cloudy skies", wind_mph: 8, simulated: false }, SHOWN) },
+  { name: "showing-weather-simulated", screen: showing({ view: "weather", temperature_f: 64, conditions: "partly cloudy skies", wind_mph: 8, simulated: true }, SHOWN), strip: SIMULATOR },
+  { name: "showing-weather-no-captions", screen: showing({ view: "weather", temperature_f: 64, conditions: "partly cloudy skies", wind_mph: 8, simulated: false }), choices: { captions: false } },
+  {
+    name: "showing-weather-longest",
+    screen: showingLongest({ view: "weather", temperature_f: -150, conditions: LONGEST_CONDITIONS, wind_mph: 300, simulated: true }),
+    strip: { link: "connecting", ...SIMULATOR },
+  },
+  { name: "showing-location", screen: showing({ view: "location", place: "600 Bellevue Avenue, Oakland", simulated: false }) },
+  { name: "showing-location-simulated", screen: showing({ view: "location", place: "600 Bellevue Avenue, Oakland", simulated: true }, "It's on your screen: 600 Bellevue Avenue."), strip: SIMULATOR },
+  { name: "showing-location-longest", screen: showingLongest({ view: "location", place: LONGEST_PLACE, simulated: true }), strip: SIMULATOR },
+  {
+    name: "showing-sensors-simulated",
+    screen: showing(
+      {
+        view: "sensors",
+        zones: [
+          { zone: "front_left", distance: { status: "measured", mm: 300 }, simulated: true },
+          { zone: "front_right", distance: { status: "measured", mm: 1500 }, simulated: true },
+        ],
+      },
+      "It's on your screen: 30 centimetres on your left.",
+    ),
+    strip: SIMULATOR,
+  },
+  {
+    name: "showing-sensors-not-measured",
+    screen: showing({
+      view: "sensors",
+      zones: [
+        { zone: "front_left", distance: { status: "unknown" }, simulated: false },
+        { zone: "front_right", distance: { status: "measured", mm: 1500 }, simulated: false },
+      ],
+    }),
+  },
+  { name: "showing-sensors-longest", screen: showingLongest({ view: "sensors", zones: LONGEST_ZONES }), strip: SIMULATOR },
+  { name: "showing-message", screen: showing({ view: "message", message_id: uuid(22), from_name: "Maya", text: "Running late, see you at 6" }) },
+  { name: "showing-message-longest", screen: showingLongest({ view: "message", message_id: uuid(21), from_name: LONG, text: "Mmm, wonderful dinner with Mom" }) },
+  {
+    name: "showing-parts-simulated",
+    screen: showing(
+      {
+        view: "parts",
+        parts: [
+          { module_id: "base.walker", health: "ok", simulated: false },
+          { module_id: "controls.hand", health: "ok", simulated: true },
+          { module_id: "perception.tof", health: "ok", simulated: true },
+          { module_id: "voice", health: "degraded", simulated: false },
+        ],
+      },
+      "It's on your screen: four parts.",
+    ),
+    strip: SIMULATOR,
+  },
+  { name: "showing-parts-longest", screen: showingLongest({ view: "parts", parts: LONGEST_PARTS }), strip: SIMULATOR },
+];
 
 const BASES: Base[] = [
   // The walker's own states first.
@@ -134,6 +227,8 @@ const BASES: Base[] = [
     screen: { state: "motion_fault", faults: [LONGEST_FAULT, "overload"], confirm: target(67, LONGEST_MOTION_TITLE, false) },
     strip: BENCH,
   },
+  // Cards Sophi pulls up (illustrative data, not a walker's readings).
+  ...SHOWING,
 ];
 
 export function screenFixtures(): ScreenFixture[] {
