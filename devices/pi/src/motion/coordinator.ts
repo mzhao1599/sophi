@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  HELP_CHORD_WINDOW_MS,
   ARM_COMPLIANT_TORQUE_PCT,
   ARM_JOINTS,
   ARM_OVERLOAD_MS,
@@ -590,6 +591,10 @@ export class MotionCoordinator {
   private poses: NamedPose[] = [];
   private readonly requests = new Map<string, OperatorRequest>();
   private readonly pressResults = new WeakMap<ButtonEvent, boolean>();
+  /** Help owns Confirm (`helpActive`): no target is answered or prepared (a pending "Let go?" stays pending). */
+  private helpOwnsConfirm = false;
+  /** Confirm presses waiting out the chord window before they answer the pending target. */
+  private readonly deferredConfirms = new Set<Cancel>();
   /** Every handle button's last edge, by `source:detail:button`. A button never seen counts as released. */
   private readonly buttonsSeen = new Map<string, ButtonSeen>();
   /** When each hand's (or the GPIO buttons') state was last forgotten: a hello, a loss or a gap in its lines. */
@@ -703,6 +708,7 @@ export class MotionCoordinator {
   /** Service shutdown: hold every follower where it is, let those writes go out (up to 300 ms), then close. */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.dropDeferredConfirms();
     this.cancelTick?.();
     this.cancelReconnect?.();
     // The lift stops first; with no more ticks its heartbeats end too, so its own watchdog stops it anyway.
@@ -779,8 +785,17 @@ export class MotionCoordinator {
         if (this.active || this.commandBusy) {
           this.stopMotion("handle_press", `${event.button} press (${event.source})`);
           claimed = true;
-        } else if (event.button === "confirm" && this.pending) {
-          claimed = this.confirmPressed(event, { pressed_mono_ms: nowMono, released_since_mono_ms: releasedSince, module_reset_mono_ms: reset });
+        } else if (event.button === "confirm" && this.pending && !this.helpOwnsConfirm) {
+          // Help's chord window (help.md, "Confirm waits for a chord"): the press is motion's at once, and answers
+          // the target HELP_CHORD_WINDOW_MS later with this press's own evidence, unless Talk went down in between
+          // (a Talk press withdraws the target, below) or help took Confirm. Stopping never waits (above).
+          // The simulator keyboard can't make a chord, so its press answers at once.
+          const evidence = { pressed_mono_ms: nowMono, released_since_mono_ms: releasedSince, module_reset_mono_ms: reset };
+          if (event.source === "keyboard") claimed = this.confirmPressed(event, evidence);
+          else {
+            this.deferConfirm(event, evidence);
+            claimed = true;
+          }
         } else if (event.button === "talk" && this.pending) {
           // She is asking Sophi something else now: the motion question is withdrawn, so a Confirm meant for
           // whatever the reply proposes can't answer it. The Talk press itself goes on to the walker service.
@@ -790,6 +805,47 @@ export class MotionCoordinator {
     }
     this.pressResults.set(event, claimed);
     return claimed;
+  }
+
+  /** A Confirm press on the pending target, answered once the chord window has passed (GM4). */
+  private deferConfirm(event: ButtonEvent, evidence: ConfirmPressEvidence): void {
+    const targetId = this.pending!.target.target_id;
+    // Each press is answered in its turn (a second press before the first is answered still counts on its own).
+    const cancel = this.deps.clock.setTimeout(() => {
+      this.deferredConfirms.delete(cancel);
+      if (this.stopped || this.helpOwnsConfirm || this.pending?.target.target_id !== targetId) return;
+      try {
+        this.confirmPressed(event, evidence);
+      } catch (error) {
+        this.deps.log.error("motion Confirm handling failed; stopping motion", { error: (error as Error).message });
+        this.emergencyStop("Confirm handling failed");
+      }
+    }, HELP_CHORD_WINDOW_MS);
+    this.deferredConfirms.add(cancel);
+  }
+
+  private dropDeferredConfirms(): void {
+    for (const cancel of this.deferredConfirms) cancel();
+    this.deferredConfirms.clear();
+  }
+
+  /**
+   * Help owns Confirm while her hold, countdown or open request shows (help.md, "Confirm during help"): a pending
+   * target is withdrawn, except a "Let go?" (the arm keeps holding, its safe state), new targets are refused
+   * (`confirm_busy`) and no Confirm press answers a target. Called by the walker service; never throws.
+   */
+  helpActive(active: boolean): void {
+    try {
+      if (this.helpOwnsConfirm === active) return;
+      this.helpOwnsConfirm = active;
+      this.event("help", active ? "owns Confirm" : "released Confirm");
+      if (active) {
+        this.dropDeferredConfirms();
+        if (this.pending && this.pending.target.action.kind !== "gripper.release") this.endPending("withdrawn", "help owns Confirm");
+      }
+    } catch (error) {
+      this.deps.log.error("motion help handling failed", { error: (error as Error).message });
+    }
   }
 
   /** A hand's buttons can't be trusted now (hello, loss, a gap in its lines): forget them and withdraw the target. */
@@ -2501,7 +2557,7 @@ export class MotionCoordinator {
     const prompt = confirmPrompt(title, policy.needs_park);
     const request: OperatorRequest = { id: this.newId(), kind: action.kind, state: "waiting_confirm", prompt, refusal: null, sentence: null, detail: null };
     const busy =
-      !mayReplaceConfirmTarget(this.pending?.target ?? null, nowMono) || (this.deps.walkerProposalOpen?.() ?? false)
+      !mayReplaceConfirmTarget(this.pending?.target ?? null, nowMono) || (this.deps.walkerProposalOpen?.() ?? false) || this.helpOwnsConfirm
         ? ("confirm_busy" as const)
         : null;
     // A target may be pending only while ready, or in a fault for an action allowedWhileFaulted.

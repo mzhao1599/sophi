@@ -17,6 +17,7 @@ import {
   WalkerTurnResponseSchema,
   WalkerToolCallSchema,
   WalkerToolResultSchema,
+  LiftPresetSchema,
   WalkerTurnViewSchema,
   checkCuesChange,
   checkSelection,
@@ -319,6 +320,15 @@ describe("turn responses", () => {
     };
     expect(WalkerTurnResponseSchema.safeParse({ turn, proposal, speech: null, status }).success).toBe(true);
     expect(WalkerTurnResponseSchema.safeParse({ turn, proposal: { ...proposal, client_turn_id: uuid(9) }, speech: null, status }).success).toBe(false);
+  });
+
+  it("ends a walker turn with ask_for_help alone, and never a page turn", () => {
+    const ask = { turn, proposal: null, speech: null, status, ask_for_help: true };
+    expect(WalkerTurnResponseSchema.safeParse(ask).success).toBe(true);
+    expect(WalkerTurnResponseSchema.safeParse({ ...ask, tool_call: { name: "get_location" } }).success).toBe(false);
+    expect(WalkerTurnResponseSchema.safeParse({ ...ask, motion_offer: { preset: LiftPresetSchema.options[0] } }).success).toBe(false);
+    expect(WalkerTurnResponseSchema.safeParse({ ...ask, message_offer: { client_message_id: uuid(7), to_member_id: uuid(8), to_name: "Maya", text: "Come over" } }).success).toBe(false);
+    expect(WalkerTurnResponseSchema.safeParse({ ...ask, turn: { ...turn, source: "page", heard_by: "typed", voiced_by: null } }).success).toBe(false);
   });
 
   it("never speaks a page turn", () => {

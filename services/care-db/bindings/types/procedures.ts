@@ -6,10 +6,13 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as AnswerHelpProcedure from "../answer_help_procedure";
 import * as ApproveJoinProcedure from "../approve_join_procedure";
+import * as AskForHelpProcedure from "../ask_for_help_procedure";
 import * as CircleOfProcedure from "../circle_of_procedure";
 import * as ClaimInviteProcedure from "../claim_invite_procedure";
 import * as ForgetWalkerProcedure from "../forget_walker_procedure";
+import * as HelpOfProcedure from "../help_of_procedure";
 import * as MemberBySecretProcedure from "../member_by_secret_procedure";
 import * as MessagesForProcedure from "../messages_for_procedure";
 import * as PingProcedure from "../ping_procedure";
@@ -18,14 +21,20 @@ import * as RemoveMemberProcedure from "../remove_member_procedure";
 import * as SaveMessageProcedure from "../save_message_procedure";
 import * as SweepCircleProcedure from "../sweep_circle_procedure";
 
+export type AnswerHelpArgs = __Infer<typeof AnswerHelpProcedure.params>;
+export type AnswerHelpResult = __Infer<typeof AnswerHelpProcedure.returnType>;
 export type ApproveJoinArgs = __Infer<typeof ApproveJoinProcedure.params>;
 export type ApproveJoinResult = __Infer<typeof ApproveJoinProcedure.returnType>;
+export type AskForHelpArgs = __Infer<typeof AskForHelpProcedure.params>;
+export type AskForHelpResult = __Infer<typeof AskForHelpProcedure.returnType>;
 export type CircleOfArgs = __Infer<typeof CircleOfProcedure.params>;
 export type CircleOfResult = __Infer<typeof CircleOfProcedure.returnType>;
 export type ClaimInviteArgs = __Infer<typeof ClaimInviteProcedure.params>;
 export type ClaimInviteResult = __Infer<typeof ClaimInviteProcedure.returnType>;
 export type ForgetWalkerArgs = __Infer<typeof ForgetWalkerProcedure.params>;
 export type ForgetWalkerResult = __Infer<typeof ForgetWalkerProcedure.returnType>;
+export type HelpOfArgs = __Infer<typeof HelpOfProcedure.params>;
+export type HelpOfResult = __Infer<typeof HelpOfProcedure.returnType>;
 export type MemberBySecretArgs = __Infer<typeof MemberBySecretProcedure.params>;
 export type MemberBySecretResult = __Infer<typeof MemberBySecretProcedure.returnType>;
 export type MessagesForArgs = __Infer<typeof MessagesForProcedure.params>;

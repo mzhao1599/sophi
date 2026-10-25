@@ -1,7 +1,7 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { CircleService, careLiveAccess, isCircleError, sharedWalkerBackend, type MemberCaller } from "@walker/cloud-api";
-import { CIRCLE_ERROR_STATUS, type CircleError, type CircleErrorCode } from "@walker/contracts";
+import { CIRCLE_ERROR_STATUS, type CircleError, type CircleErrorCode, type HelpView } from "@walker/contracts";
 import { rememberTraceId, traceIdOf, walkerJson } from "./walker";
 
 /**
@@ -41,9 +41,9 @@ export function setMemberCookie(response: NextResponse, secret: string) {
   });
 }
 
-export function circleError(code: CircleErrorCode, message: string): NextResponse {
+export function circleError(code: CircleErrorCode, message: string, help?: HelpView): NextResponse {
   const trace_id = crypto.randomUUID();
-  const body: CircleError = { error: { code, message, trace_id } };
+  const body: CircleError = { error: { code, message, trace_id, ...(help ? { help } : {}) } };
   const response = walkerJson(body, CIRCLE_ERROR_STATUS[code]);
   rememberTraceId(response, trace_id);
   return response;
@@ -65,7 +65,7 @@ export async function circleRoute(route: string, deviceId: string | null, fn: ()
     response = await fn();
   } catch (error) {
     if (isCircleError(error)) {
-      response = circleError(error.code, error.message);
+      response = circleError(error.code, error.message, error.help);
     } else {
       const code = error instanceof Error && "code" in error && typeof error.code === "string" ? ` code=${error.code}` : "";
       note = ` error=${error instanceof Error ? error.name : "unknown"}${code}`;

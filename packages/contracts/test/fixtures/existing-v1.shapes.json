@@ -2808,6 +2808,210 @@
         ]
       }
     },
+    "DeviceAskForHelpRequestSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "client_help_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "handles",
+            "voice"
+          ]
+        }
+      },
+      "required": [
+        "client_help_id",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "DeviceHelpStatusResponseSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "help": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "help_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "handles",
+                    "voice",
+                    "phone"
+                  ]
+                },
+                "age_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400
+                },
+                "sent_to": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "shown_to": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "coming": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "closed": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "okay",
+                            "with_her",
+                            "expired"
+                          ]
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "member_id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 12,
+                                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                                }
+                              },
+                              "required": [
+                                "member_id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "how",
+                        "by"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "help_id",
+                "source",
+                "age_seconds",
+                "sent_to",
+                "shown_to",
+                "coming",
+                "closed"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "help"
+      ],
+      "additionalProperties": false
+    },
     "DeviceSpeechRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -3013,8 +3217,7 @@
                 "enum": [
                   "get_location",
                   "get_distance",
-                  "get_weather",
-                  "show_on_screen"
+                  "get_weather"
                 ]
               },
               "text": {
@@ -3033,29 +3236,9 @@
         "original_audio": {
           "type": "boolean"
         },
-        "screen": {
-          "type": "object",
-          "properties": {
-            "views": {
-              "minItems": 1,
-              "maxItems": 5,
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "weather",
-                  "location",
-                  "sensors",
-                  "message",
-                  "parts"
-                ]
-              }
-            }
-          },
-          "required": [
-            "views"
-          ],
-          "additionalProperties": false
+        "can_ask_for_help": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [
@@ -3480,6 +3663,385 @@
       ],
       "additionalProperties": false
     },
+    "HelpClosedHowSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "okay",
+        "with_her",
+        "expired"
+      ]
+    },
+    "HelpPersonSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "member_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12,
+          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+        }
+      },
+      "required": [
+        "member_id",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "HelpResponseSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "help": {
+          "type": "object",
+          "properties": {
+            "help_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "handles",
+                "voice",
+                "phone"
+              ]
+            },
+            "age_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "sent_to": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "shown_to": {
+              "minItems": 0,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "coming": {
+              "minItems": 0,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "closed": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "how": {
+                      "type": "string",
+                      "enum": [
+                        "okay",
+                        "with_her",
+                        "expired"
+                      ]
+                    },
+                    "by": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "member_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 12,
+                              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                            }
+                          },
+                          "required": [
+                            "member_id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "how",
+                    "by"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "help_id",
+            "source",
+            "age_seconds",
+            "sent_to",
+            "shown_to",
+            "coming",
+            "closed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "help"
+      ],
+      "additionalProperties": false
+    },
+    "HelpSourceSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "handles",
+        "voice",
+        "phone"
+      ]
+    },
+    "HelpViewSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "help_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "handles",
+            "voice",
+            "phone"
+          ]
+        },
+        "age_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "sent_to": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "shown_to": {
+          "minItems": 0,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "coming": {
+          "minItems": 0,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "closed": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "how": {
+                  "type": "string",
+                  "enum": [
+                    "okay",
+                    "with_her",
+                    "expired"
+                  ]
+                },
+                "by": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "member_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 12,
+                          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                        }
+                      },
+                      "required": [
+                        "member_id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "how",
+                "by"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "help_id",
+        "source",
+        "age_seconds",
+        "sent_to",
+        "shown_to",
+        "coming",
+        "closed"
+      ],
+      "additionalProperties": false
+    },
     "PageTurnRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -3807,17 +4369,6 @@
         "configuration_version"
       ],
       "additionalProperties": false
-    },
-    "ShowViewSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "enum": [
-        "weather",
-        "location",
-        "sensors",
-        "message",
-        "parts"
-      ]
     },
     "SpeechSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4189,7 +4740,9 @@
         "walker_limit",
         "proposal_closed",
         "rate_limited",
-        "unavailable"
+        "unavailable",
+        "no_caretaker",
+        "help_closed"
       ]
     },
     "WalkerErrorSchema": {
@@ -4210,7 +4763,9 @@
                 "walker_limit",
                 "proposal_closed",
                 "rate_limited",
-                "unavailable"
+                "unavailable",
+                "no_caretaker",
+                "help_closed"
               ]
             },
             "message": {
@@ -4319,6 +4874,170 @@
                 "created_at",
                 "expires_at",
                 "configuration_version"
+              ],
+              "additionalProperties": false
+            },
+            "help": {
+              "type": "object",
+              "properties": {
+                "help_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "handles",
+                    "voice",
+                    "phone"
+                  ]
+                },
+                "age_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400
+                },
+                "sent_to": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "shown_to": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "coming": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "closed": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "okay",
+                            "with_her",
+                            "expired"
+                          ]
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "member_id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 12,
+                                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                                }
+                              },
+                              "required": [
+                                "member_id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "how",
+                        "by"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "help_id",
+                "source",
+                "age_seconds",
+                "sent_to",
+                "shown_to",
+                "coming",
+                "closed"
               ],
               "additionalProperties": false
             }
@@ -6158,62 +6877,6 @@
       ],
       "additionalProperties": false
     },
-    "WalkerToolCallSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "enum": [
-                "get_location",
-                "get_distance",
-                "get_weather"
-              ]
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "const": "show_on_screen"
-            },
-            "view": {
-              "type": "string",
-              "enum": [
-                "weather",
-                "location",
-                "sensors",
-                "message",
-                "parts"
-              ]
-            }
-          },
-          "required": [
-            "name",
-            "view"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "WalkerToolNameSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "enum": [
-        "get_location",
-        "get_distance",
-        "get_weather",
-        "show_on_screen"
-      ]
-    },
     "WalkerToolResultSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -6223,8 +6886,7 @@
           "enum": [
             "get_location",
             "get_distance",
-            "get_weather",
-            "show_on_screen"
+            "get_weather"
           ]
         },
         "text": {
@@ -7032,49 +7694,21 @@
           "additionalProperties": false
         },
         "tool_call": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "enum": [
-                    "get_location",
-                    "get_distance",
-                    "get_weather"
-                  ]
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "const": "show_on_screen"
-                },
-                "view": {
-                  "type": "string",
-                  "enum": [
-                    "weather",
-                    "location",
-                    "sensors",
-                    "message",
-                    "parts"
-                  ]
-                }
-              },
-              "required": [
-                "name",
-                "view"
-              ],
-              "additionalProperties": false
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "get_location",
+                "get_distance",
+                "get_weather"
+              ]
             }
-          ]
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
         },
         "tool_results": {
           "maxItems": 8,
@@ -7087,8 +7721,7 @@
                 "enum": [
                   "get_location",
                   "get_distance",
-                  "get_weather",
-                  "show_on_screen"
+                  "get_weather"
                 ]
               },
               "text": {
@@ -7103,6 +7736,22 @@
             ],
             "additionalProperties": false
           }
+        },
+        "motion_offer": {
+          "type": "object",
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": [
+                "ground",
+                "up"
+              ]
+            }
+          },
+          "required": [
+            "preset"
+          ],
+          "additionalProperties": false
         },
         "message_offer": {
           "type": "object",
@@ -7136,6 +7785,10 @@
             "text"
           ],
           "additionalProperties": false
+        },
+        "ask_for_help": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

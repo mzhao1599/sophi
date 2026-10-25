@@ -16,7 +16,7 @@ She holds Talk and asks Sophi to pull something up on the walker's screen. Sophi
 | "Show me Maya's message again." | `message` | Her newest caretaker message, held on the Pi. Its words never go to the model. |
 | "What's connected? Show me." | `parts` | The Pi's own capability manifest: each part, its health, simulated parts marked. |
 
-The card stays up while Sophi answers, with her reply as a caption line under it, then for `SCREEN_SHOW_MS` (30 s) after the answer ends. A Talk press, an obstacle or a newer card ends it sooner. Voice is never the only way to get the same information: each answer is spoken, captioned on the walker and shown on the owner's page.
+The card stays up while Sophi answers, with her reply as a caption line under it, then for `SCREEN_SHOW_MS` (30 s) after the answer ends. A Talk press, an obstacle or a newer card ends it sooner. Asking for help always comes first: while her hold, the countdown or a help request shows, the card waits underneath ([help](help.md)). Voice is never the only way to get the same information: each answer is spoken, captioned on the walker and shown on the owner's page.
 
 ## Why the model only picks a name
 

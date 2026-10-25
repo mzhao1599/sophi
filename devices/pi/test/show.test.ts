@@ -368,7 +368,7 @@ describe("SH9: one log line per show, with the view, whether it was shown and th
 
 describe("SH10: where the card sits", () => {
   const card: ShowCard = { view: "weather", temperature_f: 64, conditions: "partly cloudy skies", wind_mph: 8, simulated: false };
-  const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null };
+  const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, help: null };
   const showing = { card, shownMono: 0, zones: null };
   const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, showing, ...model }, now, settings).content.state;
 
@@ -387,6 +387,14 @@ describe("SH10: where the card sits", () => {
     expect(name({}, SCREEN_SHOW_MS)).toBe("ambient");
     expect(name({ talk: "waiting" }, SCREEN_SHOW_MS)).toBe("thinking");
     expect(pickScreen({ ...base, showing }, 0, settings).content).toEqual({ state: "showing", card, caption: null });
+  });
+
+  it("never over help: an open request or the countdown keeps the screen, and the card comes back while its time lasts", () => {
+    const open = { state: "help" as const, help: { phase: "open" as const, sent_to: ["Maya"], shown_to: [], coming: ["Maya"], confirm_okay: false } };
+    expect(name({ help: open })).toBe("help");
+    expect(name({ help: { state: "help_countdown", seconds_left: 8 } })).toBe("help_countdown");
+    expect(name({ help: open, talk: "recording" })).toBe("listening");
+    expect(name({ help: null }, SCREEN_SHOW_MS - 1)).toBe("showing");
   });
 
   it("an obstacle covers the card, which comes back underneath while its time lasts", async () => {
@@ -433,7 +441,7 @@ describe("SH11: the answer's caption page rides under the card", () => {
     expect(states.at(-1)!.screen.state).toBe("showing");
 
     const off = pickScreen(
-      { link: "online", talk: "idle", alerts: null, offer: null, answer: { id: 2, heard: null, reply, source: "model", startedMono: 0, spokenMono: null }, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: { card, shownMono: 0, zones: null } },
+      { link: "online", talk: "idle", alerts: null, offer: null, answer: { id: 2, heard: null, reply, source: "model", startedMono: 0, spokenMono: null }, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: { card, shownMono: 0, zones: null }, help: null },
       0,
       { ...settings, captions: false },
     );

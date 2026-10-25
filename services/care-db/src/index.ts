@@ -3,8 +3,8 @@ import { ScheduleAt, type Infer } from "spacetimedb";
 
 /**
  * Sophi's care circle in SpacetimeDB (docs/interfaces.md, "The care circle on SpacetimeDB"): the phones in a
- * walker's circle, the one-time codes that add them, caretakers waiting for the owner's approval, and the
- * short messages between the phones. This database is where that state lives and where every change to it
+ * walker's circle, the one-time codes that add them, caretakers waiting for the owner's approval, the
+ * short messages between the phones, and her help requests (docs/subsystems/help.md). This database is where that state lives and where every change to it
  * happens, each as one transaction.
  *
  * Two kinds of caller:
@@ -99,6 +99,37 @@ const message = table(
   },
 );
 
+/**
+ * A help request (docs/subsystems/help.md): she asked her caretakers for help from the walker or her phone. Private,
+ * like every table; phones learn that one changed from `my_help` and fetch it from the server.
+ */
+const helpRequest = table(
+  { name: "help_request" },
+  {
+    help_id: t.string().primaryKey(),
+    device_id: t.string().index("btree"),
+    /** JSON: its own client_help_id first, then ids of asks made while it was open (retries find it), newest kept. */
+    client_help_ids: t.string(),
+    /** `handles`, `voice` or `phone`. */
+    source: t.string(),
+    /** JSON `[{ member_id, name }]`: the approved caretaker phones when she asked, in joining order. Fixed then. */
+    sent_to: t.string(),
+    /** JSON, as sent_to: caretaker phones whose app received it while it was open, first first, each once. */
+    shown_to: t.string(),
+    /** JSON, as sent_to: who answered "I'm on my way", first answer first, each once. */
+    coming: t.string(),
+    created_at: t.string(),
+    closed_at: t.option(t.string()),
+    /** `okay`, `with_her` or `expired`. */
+    closed_how: t.option(t.string()),
+    /** JSON `{ member_id, name }`; none for `expired`, and for the walker's okay with no phone of hers in. */
+    closed_by: t.option(t.string()),
+    /** Goes up on every change (from config.next_seq), so `my_help` tells a phone to fetch it again. */
+    rev: t.u64(),
+    seq: t.u64(),
+  },
+);
+
 /** A wrong code, by the server's keyed hash of the client's address (never the address). */
 const joinTry = table(
   { name: "join_try" },
@@ -126,13 +157,20 @@ const sweepTimer = table(
   },
 );
 
-const spacetimedb = schema({ config, member, invite, message, joinTry, session, sweepTimer });
+const spacetimedb = schema({ config, member, invite, message, helpRequest, joinTry, session, sweepTimer });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 type MemberRow = Infer<typeof member.rowType>;
 type InviteRow = Infer<typeof invite.rowType>;
 type MessageRow = Infer<typeof message.rowType>;
+type HelpRow = Infer<typeof helpRequest.rowType>;
+
+/** HELP_OPEN_MAX_MS, HELP_CLOSED_SHOWN_MS, HELP_RETENTION_MS and MAX_CIRCLE_MEMBERS in @walker/contracts. */
+const HELP_OPEN_MAX_MS = 60 * 60_000;
+const HELP_CLOSED_SHOWN_MS = 5 * 60_000;
+const HELP_RETENTION_MS = 24 * 60 * 60_000;
+const MAX_COMING = 8;
 
 const ms = (iso: string) => Date.parse(iso);
 const bySeq = (a: { seq: bigint }, b: { seq: bigint }) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0);
@@ -199,7 +237,56 @@ function forgetSessions(ctx: Ctx, subject: string) {
   for (const x of [...ctx.db.session.subject.filter(subject)]) ctx.db.session.identity.delete(x.identity);
 }
 
+// ---- Help requests: the same rules as store.ts (MemoryWalkerStore's help steps) ----
+
+type Person = { member_id: string; name: string };
+const people = (json: string): Person[] => JSON.parse(json) as Person[];
+const person = (m: MemberRow): Person => ({ member_id: m.member_id, name: m.name });
+/** HELP_ALIASES_KEPT in store.ts. */
+const HELP_ALIASES_KEPT = 50;
+
+/** The record the server reads back (store.ts, HelpRecord). */
+function helpRecord(h: HelpRow) {
+  return {
+    help_id: h.help_id,
+    device_id: h.device_id,
+    client_help_ids: JSON.parse(h.client_help_ids) as string[],
+    source: h.source,
+    sent_to: people(h.sent_to),
+    shown_to: people(h.shown_to),
+    coming: people(h.coming),
+    created_at: h.created_at,
+    closed:
+      h.closed_at !== undefined && h.closed_how !== undefined
+        ? { at: h.closed_at, how: h.closed_how, by: h.closed_by !== undefined ? (JSON.parse(h.closed_by) as Person) : null }
+        : null,
+  };
+}
+
+function helpsOf(ctx: Ctx, deviceId: string): HelpRow[] {
+  return [...ctx.db.helpRequest.device_id.filter(deviceId)].sort(bySeq);
+}
+
+/** Open past HELP_OPEN_MAX_MS: closed `expired`, as of the hour's end (so it shows for HELP_CLOSED_SHOWN_MS after that). */
+function expireHelp(ctx: Ctx, h: HelpRow, nowMs: number): HelpRow {
+  const end = ms(h.created_at) + HELP_OPEN_MAX_MS;
+  if (h.closed_at !== undefined || end > nowMs) return h;
+  return ctx.db.helpRequest.help_id.update({ ...h, closed_at: new Date(end).toISOString(), closed_how: "expired", closed_by: undefined, rev: nextSeq(ctx) });
+}
+
+function expireHelpsOf(ctx: Ctx, deviceId: string, nowMs: number): HelpRow[] {
+  return helpsOf(ctx, deviceId).map((h) => expireHelp(ctx, h, nowMs));
+}
+
+function sweepHelp(ctx: Ctx, nowMs: number) {
+  for (const h of [...ctx.db.helpRequest.iter()]) {
+    if (ms(h.created_at) <= nowMs - HELP_RETENTION_MS) ctx.db.helpRequest.help_id.delete(h.help_id);
+    else expireHelp(ctx, h, nowMs);
+  }
+}
+
 function sweep(ctx: Ctx, nowMs: number, lapsedBeforeMs: number, triesBeforeMs: number) {
+  sweepHelp(ctx, nowMs);
   for (const i of [...ctx.db.invite.iter()]) if (ms(i.expires_at) <= nowMs) ctx.db.invite.invite_id.delete(i.invite_id);
   for (const m of [...ctx.db.message.iter()]) if (ms(m.expires_at) <= nowMs) ctx.db.message.message_id.delete(m.message_id);
   for (const m of [...ctx.db.member.iter()]) {
@@ -442,6 +529,120 @@ export const sweepCircle = spacetimedb.procedure({ now: t.string(), lapsed_befor
   }),
 );
 
+/**
+ * She asks for help (store.ts, askForHelp). `asked_by_member_id` is her phone's member id, or "" for the walker.
+ * In one step: an open request past its hour closes `expired`; her phone must still be in; a request that keeps
+ * this `client_help_id` comes back (`existing`); then the open one, which keeps this id too; with no approved
+ * caretaker, `no_caretaker` and nothing kept; otherwise it is saved with `sent_to` fixed now, in joining order.
+ */
+export const askForHelp = spacetimedb.procedure(
+  {
+    help_id: t.string(),
+    device_id: t.string(),
+    client_help_id: t.string(),
+    source: t.string(),
+    created_at: t.string(),
+    asked_by_member_id: t.string(),
+    now: t.string(),
+  },
+  t.string(),
+  (ctx, a) =>
+    ctx.withTx((tx) => {
+      requireServer(tx);
+      const helps = expireHelpsOf(tx, a.device_id, ms(a.now));
+      const members = membersOf(tx, a.device_id);
+      if (a.asked_by_member_id !== "" && !members.some((m) => m.member_id === a.asked_by_member_id && m.role === "walker_user" && m.state === "member")) {
+        return JSON.stringify({ outcome: "not_found" });
+      }
+      const prior = helps.find((h) => (JSON.parse(h.client_help_ids) as string[]).includes(a.client_help_id));
+      if (prior) return JSON.stringify({ outcome: "existing", help: helpRecord(prior) });
+      const open = helps.find((h) => h.closed_at === undefined);
+      if (open) {
+        const all = [...(JSON.parse(open.client_help_ids) as string[]), a.client_help_id];
+        const kept = all.length <= HELP_ALIASES_KEPT ? all : [all[0]!, ...all.slice(-(HELP_ALIASES_KEPT - 1))];
+        // Only the server reads the ids, so the phones' view doesn't change: no new revision.
+        const updated = tx.db.helpRequest.help_id.update({ ...open, client_help_ids: JSON.stringify(kept) });
+        return JSON.stringify({ outcome: "existing", help: helpRecord(updated) });
+      }
+      const sentTo = members.filter((m) => m.role === "caregiver" && m.state === "member").map(person);
+      if (sentTo.length === 0) return JSON.stringify({ outcome: "no_caretaker" });
+      const seq = nextSeq(tx);
+      const row = tx.db.helpRequest.insert({
+        help_id: a.help_id,
+        device_id: a.device_id,
+        client_help_ids: JSON.stringify([a.client_help_id]),
+        source: a.source,
+        sent_to: JSON.stringify(sentTo),
+        shown_to: "[]",
+        coming: "[]",
+        created_at: a.created_at,
+        closed_at: undefined,
+        closed_how: undefined,
+        closed_by: undefined,
+        rev: seq,
+        seq,
+      });
+      return JSON.stringify({ outcome: "created", help: helpRecord(row) });
+    }),
+);
+
+/**
+ * A caretaker's "I'm on my way" (`kind: coming`), or a close (`kind: close`, `how` okay or with_her) by a phone
+ * (`member_id`) or the walker (`member_id` "": by her phone if it is in, else by nobody). In one step: the request
+ * must be this walker's (`not_found`); one past its hour closes `expired`; the phone must still be in
+ * (`not_member`); a closed one comes back as `closed`; a repeated "on my way" changes nothing (`unchanged`).
+ */
+export const answerHelp = spacetimedb.procedure(
+  { device_id: t.string(), help_id: t.string(), kind: t.string(), how: t.string(), member_id: t.string(), now: t.string() },
+  t.string(),
+  (ctx, a) =>
+    ctx.withTx((tx) => {
+      requireServer(tx);
+      const found = tx.db.helpRequest.help_id.find(a.help_id);
+      if (!found || found.device_id !== a.device_id) return JSON.stringify({ outcome: "not_found" });
+      const h = expireHelp(tx, found, ms(a.now));
+      const members = membersOf(tx, a.device_id).filter((m) => m.state === "member");
+      const by = a.member_id === "" ? undefined : members.find((m) => m.member_id === a.member_id);
+      if (a.member_id !== "" && !by) return JSON.stringify({ outcome: "not_member" });
+      if (h.closed_at !== undefined) return JSON.stringify({ outcome: "closed", help: helpRecord(h) });
+      if (a.kind === "coming") {
+        const coming = people(h.coming);
+        if (!by || coming.some((c) => c.member_id === by.member_id) || coming.length >= MAX_COMING) return JSON.stringify({ outcome: "unchanged", help: helpRecord(h) });
+        const updated = tx.db.helpRequest.help_id.update({ ...h, coming: JSON.stringify([...coming, person(by)]), rev: nextSeq(tx) });
+        return JSON.stringify({ outcome: "answered", help: helpRecord(updated) });
+      }
+      const closer = by ?? members.find((m) => m.role === "walker_user");
+      const closed = tx.db.helpRequest.help_id.update({ ...h, closed_at: a.now, closed_how: a.how, closed_by: closer ? JSON.stringify(person(closer)) : undefined, rev: nextSeq(tx) });
+      return JSON.stringify({ outcome: "answered", help: helpRecord(closed) });
+    }),
+);
+
+/**
+ * The walker's open request, or the newest closed within HELP_CLOSED_SHOWN_MS, or null (store.ts, helpOf). With
+ * `shown_to` (a caretaker phone's GET /circle; "" for none), an open request adds that phone to `shown_to` once.
+ */
+export const helpOf = spacetimedb.procedure({ device_id: t.string(), now: t.string(), shown_to: t.string() }, t.string(), (ctx, a) =>
+  ctx.withTx((tx) => {
+    requireServer(tx);
+    const nowMs = ms(a.now);
+    const helps = expireHelpsOf(tx, a.device_id, nowMs);
+    const open = helps.find((h) => h.closed_at === undefined);
+    if (open && a.shown_to !== "") {
+      const viewer = membersOf(tx, a.device_id).find((m) => m.member_id === a.shown_to && m.role === "caregiver" && m.state === "member");
+      const shown = people(open.shown_to);
+      if (viewer && !shown.some((p) => p.member_id === viewer.member_id) && shown.length < MAX_COMING) {
+        const updated = tx.db.helpRequest.help_id.update({ ...open, shown_to: JSON.stringify([...shown, person(viewer)]), rev: nextSeq(tx) });
+        return JSON.stringify(helpRecord(updated));
+      }
+    }
+    const closed = helps
+      .filter((h) => h.closed_at !== undefined && ms(h.closed_at) > nowMs - HELP_CLOSED_SHOWN_MS)
+      .sort((x, y) => ms(y.closed_at!) - ms(x.closed_at!) || (x.seq < y.seq ? 1 : -1))[0];
+    const h = open ?? closed;
+    return JSON.stringify(h ? helpRecord(h) : null);
+  }),
+);
+
 /** The walker was forgotten: its whole circle goes. */
 export const forgetWalker = spacetimedb.procedure({ device_id: t.string() }, t.string(), (ctx, a) =>
   ctx.withTx((tx) => {
@@ -449,6 +650,7 @@ export const forgetWalker = spacetimedb.procedure({ device_id: t.string() }, t.s
     for (const m of membersOf(tx, a.device_id)) dropMember(tx, m.member_id);
     for (const i of invitesOf(tx, a.device_id)) tx.db.invite.invite_id.delete(i.invite_id);
     for (const m of messagesOf(tx, a.device_id)) tx.db.message.message_id.delete(m.message_id);
+    for (const h of helpsOf(tx, a.device_id)) tx.db.helpRequest.help_id.delete(h.help_id);
     forgetSessions(tx, `owner:${a.device_id}`);
     return JSON.stringify("ok");
   }),
@@ -523,6 +725,21 @@ export const myMessages = spacetimedb.view({ name: "my_messages", public: true }
     .filter((x) => !x.cleared && (x.from_member_id === m.member_id || x.to_member_id === m.member_id))
     .sort(bySeq)
     .map((x) => ({ message_id: x.message_id, device_id: x.device_id, client_message_id: x.client_message_id, from_member_id: x.from_member_id, to_member_id: x.to_member_id, text: x.text, created_at: x.created_at, seq: x.seq }));
+});
+
+const HelpRevView = t.row("HelpRevView", {
+  help_id: t.string().primaryKey(),
+  rev: t.u64(),
+});
+
+/**
+ * One row per help request of this phone's walker, once the phone is in: only the id and a revision that goes up on
+ * every change. No names, times or location: a phone that sees a change fetches GET /api/v1/circle for the request.
+ */
+export const myHelp = spacetimedb.view({ name: "my_help", public: true }, t.array(HelpRevView), (ctx) => {
+  const m = me(ctx);
+  if (!m || m.state !== "member") return [];
+  return [...ctx.db.helpRequest.device_id.filter(m.device_id)].sort(bySeq).map((h) => ({ help_id: h.help_id, rev: h.rev }));
 });
 
 /** The owner's page: every phone and waiting caretaker on this walker. */
