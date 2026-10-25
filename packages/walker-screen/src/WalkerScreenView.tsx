@@ -63,7 +63,6 @@ export function WalkerScreenView({
         </span>
         {view.strip.time ? <span className="ws-time">{view.strip.time}</span> : null}
         {view.strip.simulator ? <span className="ws-tag ws-tag-strip">Simulator</span> : null}
-        {view.strip.bench ? <span className="ws-tag ws-tag-strip">Bench mode</span> : null}
       </header>
       <div className="ws-one" key={view.sceneKey} data-scene={view.sceneKey}>
         {view.nav ? (

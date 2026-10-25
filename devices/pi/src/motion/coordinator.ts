@@ -884,12 +884,16 @@ export class MotionCoordinator {
       return null;
     }
     const target = parsed.data.target;
-    if (target.kind === "lift.preset") {
-      const height = LIFT_PRESET_HEIGHTS_MM[target.preset];
-      const title = target.preset === "up" ? "Raise the lift to the upper preset" : "Lower the lift to the ground preset";
+    if (target.kind === "lift.preset" || target.kind === "lift.relative") {
+      const at = this.lift?.state(this.deps.clock.monotonic()).position_mm ?? null;
+      if (target.kind === "lift.relative" && at === null) return null;
+      const height = target.kind === "lift.preset" ? LIFT_PRESET_HEIGHTS_MM[target.preset] : at! + target.delta_mm;
+      const title = target.kind === "lift.preset"
+        ? target.preset === "up" ? "Raise the lift to the upper preset" : "Lower the lift to the ground preset"
+        : target.delta_mm > 0 ? `Raise the lift by ${target.delta_mm} mm` : `Lower the lift by ${-target.delta_mm} mm`;
       const result = this.prepare({ kind: "lift.move", target_mm: height }, "offer", title, null);
       if (!result.ok || result.request.state !== "waiting_confirm") {
-        this.deps.log.info("lift preset offer dropped", { preset: target.preset, reason: result.ok ? (result.request.refusal ?? "refused") : result.error });
+        this.deps.log.info("lift offer dropped", { target: target.kind === "lift.preset" ? target.preset : target.delta_mm, reason: result.ok ? (result.request.refusal ?? "refused") : result.error });
         return null;
       }
       return this.pending?.target ?? null;

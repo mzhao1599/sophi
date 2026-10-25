@@ -244,12 +244,18 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  * and the page centres the frame in the map's box, so her dot stays in the middle whatever height the box
  * gets. Markers and the route are in the frame's pixels. Pure: the same state draws the same map.
  */
-export function navMap(map: NavigatingScreen["map"], width: number, height: number, visibleHeight = height): NavMap {
+export function navMap(map: NavigatingScreen["map"], width: number, height: number, visibleHeight = height, followAhead = false): NavMap {
   const centre = map.position ?? map.route[0]!;
   const next = map.step_at ?? map.destination_at;
   const frame = (zoom: number) => {
     const c = worldPx(centre, zoom);
-    const origin = { x: c.x - width / 2, y: c.y - height / 2 };
+    const ahead = worldPx(next, zoom);
+    const dx = ahead.x - c.x;
+    const dy = ahead.y - c.y;
+    const distance = Math.hypot(dx, dy);
+    // The full-screen view pans toward the next turn, keeping nearby route ahead in view.
+    const advance = followAhead && distance > 0 ? Math.min(120, distance * 0.4) / distance : 0;
+    const origin = { x: c.x + dx * advance - width / 2, y: c.y + dy * advance - height / 2 };
     const at = (p: LatLon): MapPoint => {
       const w = worldPx(p, zoom);
       return { x: round1(w.x - origin.x), y: round1(w.y - origin.y) };
@@ -260,7 +266,7 @@ export function navMap(map: NavigatingScreen["map"], width: number, height: numb
   let f = frame(zoom);
   const n = f.at(next);
   const top = (height - visibleHeight) / 2 + MARKER_INSET_PX;
-  if (n.x < MARKER_INSET_PX || n.x > width - MARKER_INSET_PX || n.y < top || n.y > height - top) {
+  if (!followAhead && (n.x < MARKER_INSET_PX || n.x > width - MARKER_INSET_PX || n.y < top || n.y > height - top)) {
     zoom = MAP_ZOOM_OUT;
     f = frame(zoom);
   }

@@ -484,7 +484,7 @@ export class WalkerService {
     const tool = toolCall?.name;
     const routeTool = tool !== undefined && isRouteTool(tool);
     const unlistedView = toolCall?.name === "show_on_screen" && !screenViews.includes(toolCall.view);
-    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && !unlistedView && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
+    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && tool !== "move_lift" && !unlistedView && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
     if (nextTool) {
       const line = LOOKUP_LINE[nextTool];
       if (nextTool === "get_distance") toolResults.push({ name: "get_distance", text: distanceLine(status) });
@@ -500,7 +500,11 @@ export class WalkerService {
     }
     // After a card the walker showed (a sensors card included), the model answers from that result.
     const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance" || r.name === "show_on_screen");
-    const motionOffer = source === "walker" && toolCall?.name === "set_lift_height" && !status.open_proposal ? { preset: toolCall.preset } : null;
+    const motionOffer = source === "walker" && !status.open_proposal
+      ? toolCall?.name === "set_lift_height" ? { preset: toolCall.preset }
+        : toolCall?.name === "move_lift" ? { delta_mm: toolCall.direction === "up" ? toolCall.distance_mm : -toolCall.distance_mm }
+        : null
+      : null;
     const messageRecipient = source === "walker" && toolCall?.name === "send_message" ? recipients.find((r) => r.member_id === toolCall.to_member_id) : undefined;
     const validMessage = messageRecipient && toolCall?.name === "send_message" ? DeviceSendMessageRequestSchema.safeParse({ client_message_id: this.randomId(), to_member_id: messageRecipient.member_id, text: toolCall.text }) : null;
     const canSend = members.some((m) => m.role === "walker_user" && m.state === "member");
@@ -525,7 +529,7 @@ export class WalkerService {
       ? { reply: `Send to ${messageOffer.to_name}: ${messageOffer.text}. Press Confirm to send.`, answered_by: "model" as const, reason: "message_offer", proposal: null }
       : source === "page" && tool === "get_distance"
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
-      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height" || tool === "show_on_screen" || routeTool)
+      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height" || tool === "move_lift" || tool === "show_on_screen" || routeTool)
         ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
       : routeTool && !navigation
         ? { reply: "I can't give walking directions on this walker.", answered_by: "fixed" as const, reason: "route_unavailable", proposal: null }
@@ -654,14 +658,17 @@ export class WalkerService {
   async incomingMessages(caller: DeviceCaller, deviceId: string): Promise<DeviceMessagesResponse> {
     const device = await this.resolve(caller, deviceId);
     const now = this.now();
-    const { members } = await this.store.circleOf(device.device_id, now);
+    const { members, invites } = await this.store.circleOf(device.device_id, now);
+    const ownInvite = invites.filter((i) => i.role === "walker_user" && Date.parse(i.expires_at) > now.getTime()).at(-1);
+    const companion_code = ownInvite ? { code: ownInvite.code, expires_at: ownInvite.expires_at } : null;
     const her = members.find((m) => m.role === "walker_user" && m.state === "member");
-    if (!her) return { messages: [] };
+    if (!her) return { messages: [], companion_code };
     const caretakers = new Map(members.filter((m) => m.role === "caregiver" && m.state === "member").map((m) => [m.member_id, m.name]));
     const toHer = (await this.store.messagesFor(device.device_id, her.member_id, now)).filter(
       (m) => m.to_member_id === her.member_id && caretakers.has(m.from_member_id),
     );
     return DeviceMessagesResponseSchema.parse({
+      companion_code,
       messages: toHer.slice(-WALKER_MESSAGES_KEPT).map((m) => ({ message_id: m.message_id, from_name: caretakers.get(m.from_member_id), text: m.text })),
     });
   }

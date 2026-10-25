@@ -5,11 +5,15 @@ import type { Question, SessionView } from "@walker/contracts";
 import { SKIP_REPLY, SKIP_REST_REPLY, chatMessages, quickReplies, revealDelay, words, type ChatMessage } from "@/lib/chat";
 import { surge, useReducedMotion } from "@/lib/motion";
 import type { Onboarding } from "@/lib/useOnboarding";
+import { useVoice } from "@/lib/voice";
 import styles from "./Demo.module.css";
 
 export interface FocusRequest {
   n: number;
 }
+
+/** Said before anyone speaks or listens: who hears the voice and reads the replies. */
+export const VOICE_NOTICE = "The microphone and Read aloud use Cartesia: it hears what you say and reads replies aloud. Leave out names and health details.";
 
 const userTurns = (s: SessionView | null) => (s ? s.turns.filter((t) => t.role === "user").length : 0);
 
@@ -49,6 +53,10 @@ export function Words({ text, animate }: { text: string; animate: boolean }) {
  * Focus moves only after the person's own action. When a reply comes back, focus stays in the text box
  * if it was there; if a quick reply was tapped (and so replaced), the text box takes it. It never moves
  * when focus has gone elsewhere meanwhile.
+ *
+ * With `voice` (the server has Cartesia), a microphone sits beside Send: press it, speak, press it again,
+ * and Cartesia's words are sent as the reply. "Read aloud" reads each new reply in Cartesia's voice; it
+ * turns itself on the first time someone speaks, and either can be switched off. Typing never changes.
  */
 export function Chat({
   o,
@@ -57,6 +65,7 @@ export function Chat({
   notice,
   describedBy,
   agentName = null,
+  voice = false,
 }: {
   o: Onboarding;
   opening: Question;
@@ -66,6 +75,8 @@ export function Chat({
   describedBy: string;
   /** While the agent runs, its short name ("Claude"): each reply then says who answered it. */
   agentName?: string | null;
+  /** True when the server can hear and speak through Cartesia: shows the microphone and Read aloud. */
+  voice?: boolean;
 }) {
   const s = o.session;
   const question: Question | null = s ? s.current_question : o.phase === "none" ? opening : null;
@@ -86,6 +97,12 @@ export function Chat({
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  // What Cartesia heard is sent like typed words (`send` is declared below; this runs only after a recording).
+  const v = useVoice((heard) => {
+    if (!heard) return setLocalError("I didn't catch that. Press the microphone and try again, or type it.");
+    v.setReadAloud(true);
+    void send([], heard, heard);
+  });
 
   const shownPending = pending && userTurns(s) === pending.userTurns ? pending.text : null;
   const messages: ChatMessage[] = o.phase === "loading" ? [] : chatMessages(s?.turns ?? null, opening, shownPending);
@@ -99,7 +116,7 @@ export function Chat({
   if (baseline === null && o.phase !== "loading") setBaseline(o.phase === "none" ? 0 : messages.length);
 
   const sending = pending !== null;
-  const error = localError ?? o.error;
+  const error = localError ?? o.error ?? v.error;
   const errorId = `${ids}-error`;
   const replies = quickReplies(question);
   const last = messages.at(-1);
@@ -131,6 +148,7 @@ export function Chat({
    * failed, focus stays on the pressed control so it can be tried again, unless that control is gone.
    */
   async function act(shown: string, action: () => Promise<boolean>): Promise<boolean> {
+    v.stopSpeaking();
     setLocalError(null);
     o.clearError();
     setPending({ text: shown, userTurns: userTurns(s) });
@@ -171,6 +189,20 @@ export function Chat({
 
   const canSend = Boolean(text.trim()) && !sending && Boolean(question);
 
+  const listening = v.state === "listening";
+  const hearing = v.state === "hearing";
+  const canListen = voice && Boolean(question) && !sending && !hearing;
+  const voiceStatus = listening ? "Listening. Press the microphone again when you're done." : hearing ? "Turning what you said into words" : "";
+
+  // Each new reply is read aloud once, when Read aloud is on; replies restored from before this page load aren't.
+  const spokenKey = useRef<string | null>(null);
+  const readable = voice && last?.role === "assistant" && baseline !== null && messages.length > baseline && !sending ? last : null;
+  useEffect(() => {
+    if (!readable || !v.readAloud || spokenKey.current === readable.key) return;
+    spokenKey.current = readable.key;
+    void v.speak(readable.text);
+  }, [readable, v]);
+
   return (
     <div className={styles.chat}>
       <div ref={logRef} className={styles.log} role="log" aria-label="Conversation" tabIndex={0}>
@@ -184,9 +216,9 @@ export function Chat({
                 <span className="visually-hidden">Assistant: </span>
                 <Words text={m.text} animate={!reduced && baseline !== null && i >= baseline} />
               </p>
-              {agentName && m.answeredBy ? (
+              {agentName && m.answeredBy === "fixed" ? (
                 <p className={styles.engine} data-by={m.answeredBy}>
-                  {m.answeredBy === "model" ? `Read by ${agentName}` : "Fixed questions: the model's reply didn't come through"}
+                  Fixed questions: the model&apos;s reply didn&apos;t come through
                 </p>
               ) : null}
             </div>
@@ -251,19 +283,44 @@ export function Chat({
             value={text}
             maxLength={600}
             autoComplete="off"
-            placeholder={s ? "Type a reply" : "For example: small buttons are hard for me"}
+            placeholder={listening ? "Listening…" : hearing ? "Hearing you…" : s ? "Type a reply" : "For example: small buttons are hard for me"}
             onChange={(e) => {
               setLocalError(null);
+              v.clearError();
               setText(e.target.value);
             }}
             aria-describedby={[notice ? describedBy : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
           />
+          {voice ? (
+            <button
+              type="button"
+              className={styles.micButton}
+              data-state={v.state}
+              aria-label={listening ? "Stop and send what you said" : "Speak your reply"}
+              aria-pressed={listening}
+              aria-describedby={`${ids}-voice`}
+              aria-disabled={(!listening && !canListen) || undefined}
+              onClick={() => {
+                if (listening || canListen) void v.toggleListening();
+              }}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                {listening ? <rect x="6" y="6" width="8" height="8" rx="1.5" /> : <path d="M10 2.75a2.75 2.75 0 0 0-2.75 2.75v4.5a2.75 2.75 0 0 0 5.5 0V5.5A2.75 2.75 0 0 0 10 2.75ZM4.75 9.5a5.25 5.25 0 0 0 10.5 0M10 14.75v2.5" />}
+              </svg>
+            </button>
+          ) : null}
           <button type="submit" className={styles.sendButton} aria-label="Send" aria-disabled={!canSend || undefined}>
             <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
               <path d="M10 15.5V4.5M5 9.5l5-5 5 5" />
             </svg>
           </button>
         </form>
+
+        {voice ? (
+          <p className={styles.voiceStatus} role="status">
+            {voiceStatus}
+          </p>
+        ) : null}
 
         {error ? (
           <p id={errorId} className={styles.error} role="alert">
@@ -277,8 +334,32 @@ export function Chat({
               {notice}
             </p>
           ) : null}
+          {voice ? (
+            <p id={`${ids}-voice`} className={styles.notice}>
+              {VOICE_NOTICE}
+            </p>
+          ) : null}
           {question ? (
             <div className={styles.quiet}>
+              {voice ? (
+                <button
+                  type="button"
+                  className={styles.quietButton}
+                  aria-pressed={v.readAloud}
+                  onClick={() => {
+                    const on = !v.readAloud;
+                    v.setReadAloud(on);
+                    if (!on) return v.stopSpeaking();
+                    const latest = messages[lastAgent];
+                    if (latest) {
+                      spokenKey.current = latest.key;
+                      void v.speak(latest.text);
+                    }
+                  }}
+                >
+                  {v.speaking ? "Reading aloud" : "Read aloud"}
+                </button>
+              ) : null}
               <button type="button" className={styles.quietButton} aria-disabled={sending || undefined} onClick={() => void skip()}>
                 Skip
               </button>

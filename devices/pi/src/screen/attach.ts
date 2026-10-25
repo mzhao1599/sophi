@@ -88,6 +88,7 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
   on("answerSpoken", ({ id }) => machine.answerSpoken(id));
   on("circleMessage", (message) => machine.message(message));
   on("circleMessageSpoken", ({ id }) => machine.messageSpoken(id));
+  on("companionCode", (invite) => machine.companionCode(invite));
   on("show", ({ card }) => machine.show(card));
   on("offer", ({ proposal }) => machine.offer(proposal));
   on("settled", ({ result }) => machine.settled(result));

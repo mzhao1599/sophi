@@ -4,7 +4,6 @@ import {
   OnboardingService,
   SupabaseSessionStore,
   agentModelName,
-  agentNoticeClause,
   agentProviderFromEnv,
   engineFromEnv,
   isOnboardingError,
@@ -41,9 +40,7 @@ function storeBackend(): StoreBackend {
 // on the server, and never sent to the browser.
 const engine = engineFromEnv(process.env);
 const agentProvider = agentProviderFromEnv(process.env);
-/** The notice's clause for the agent (who reads the answers, who may keep them); null without the agent. */
-export const agentNotice: string | null = agentProvider ? agentNoticeClause(agentProvider) : null;
-/** The model's short name for the note under each reply it worded ("Read by Claude"); null without the agent. */
+/** The model's short name while the agent runs; null without it. Set, a reply from the fixed questions says so. */
 export const agentName: string | null = agentProvider ? agentModelName(agentProvider) : null;
 
 /** True when sessions are kept in Supabase, so account features (resume, saved setups) can work. */

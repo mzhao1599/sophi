@@ -66,7 +66,7 @@ Cartesia's speech-to-text turns the clip into words before Claude reads them; th
 
 | Case | Expected |
 | --- | --- |
-| A walker turn with `CARTESIA_API_KEY` set and Cartesia answering a 16 kHz mono 16-bit WAV | `speech: { mime: "audio/wav", data_base64 }`, `voiced_by: "cartesia"`. The request is `POST https://api.cartesia.ai/tts/bytes` with `Authorization: Bearer`, `Cartesia-Version: 2026-10-23`, model `sonic-3.6`, a stock voice id, `output_format` `{ container: "wav", encoding: "pcm_s16le", sample_rate: 16000 }`, `language: "en"`, and the reply text only |
+| A walker turn with `CARTESIA_API_KEY` set and Cartesia answering a 16 kHz mono 16-bit WAV | `speech: { mime: "audio/wav", data_base64 }`, `voiced_by: "cartesia"`. The request is `POST https://api.cartesia.ai/tts/bytes` with `Authorization: Bearer`, `Cartesia-Version: 2026-08-14`, model `sonic-3.6`, a stock voice id, `output_format` `{ container: "wav", encoding: "pcm_s16le", sample_rate: 16000 }`, `language: "en"`, and the reply text only |
 | No key; an HTTP error; more than 3 s; audio over `SPEECH_MAX_BYTES`; audio that isn't 16 kHz mono 16-bit WAV | `speech: null`, `voiced_by: "walker"` |
 | A page turn | Never spoken: `speech: null`, `voiced_by: null` |
 | The whole walker turn *(review)* | The server's part, from reading the upload to the reply and its audio, stays within 8 s, leaving time for the audio's download before the Pi's 10 s: the model gets at most 8 s and only what's left of the budget, the voice at most 3 s and only what's left |

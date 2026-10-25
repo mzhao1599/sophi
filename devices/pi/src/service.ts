@@ -722,7 +722,10 @@ export class WalkerService {
         voice: wav ? "server" : "walker",
       });
       if (reply.motion_offer) {
-        const target = this.deps.motion?.requestOffer?.({ target: { kind: "lift.preset", preset: reply.motion_offer.preset } });
+        const offer = reply.motion_offer;
+        const target = this.deps.motion?.requestOffer?.({ target: "preset" in offer
+          ? { kind: "lift.preset", preset: offer.preset }
+          : { kind: "lift.relative", delta_mm: offer.delta_mm } });
         if (!target) this.sayAnswer(reply.turn.heard, "The lift isn't ready for that height yet.", "fixed", "reply");
         return;
       }
@@ -779,9 +782,15 @@ export class WalkerService {
   }
 
   /** The views the walker can show now, only while a page is connected to draw them (DeviceTurnRequest.screen). */
+  private companionCode: { code: string; expires_at: string } | null = null;
+
   private screenField(): { screen?: { views: ShowView[] } } {
     if (!this.screenConnected()) return {};
-    return { screen: { views: showViews({ gps: this.deps.location?.connected() ?? false, message: this.latestMessage !== null }) } };
+    return { screen: { views: showViews({ gps: this.deps.location?.connected() ?? false, message: this.latestMessage !== null, companion: this.activeCompanionCode() !== null }) } };
+  }
+
+  private activeCompanionCode(): string | null {
+    return this.companionCode && Date.parse(this.companionCode.expires_at) > this.deps.clock.now() ? this.companionCode.code : null;
   }
 
   private screenConnected(): boolean {
@@ -1119,8 +1128,10 @@ export class WalkerService {
     if (this.messagesInFlight || now < this.messagesRetryAt) return;
     this.messagesInFlight = true;
     try {
-      const { messages } = await withDeadline(this.deps.clock, HEARTBEAT_DEADLINE_MS, (signal) => cloud.incomingMessages(signal));
+      const { messages, companion_code } = await withDeadline(this.deps.clock, HEARTBEAT_DEADLINE_MS, (signal) => cloud.incomingMessages(signal));
       if (cloud !== this.cloud || this.stopped) return;
+      this.companionCode = companion_code ?? null;
+      this.deps.bus.emit("companionCode", this.companionCode);
       const first = this.messagesSeen === null;
       const live = new Set(messages.map((m) => m.message_id));
       // Ids the server no longer sends are forgotten; a deleted message never comes back.
@@ -1172,6 +1183,8 @@ export class WalkerService {
   /** Forgets every message (unpaired, or the credential changed): another walker's messages are never read. */
   private forgetMessages(): void {
     this.messagesSeen = null;
+    this.companionCode = null;
+    this.deps.bus.emit("companionCode", null);
     this.unreadMessages.length = 0;
     this.latestMessage = null;
     this.messagesRetryAt = 0;

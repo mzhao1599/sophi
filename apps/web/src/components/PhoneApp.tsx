@@ -6,7 +6,7 @@ import { createCameraApi } from "@/lib/cameraApi";
 import { buzz, playHelpTone, unlockAudioOnFirstTap } from "@/lib/helpAlert";
 import { createPhoneApi, type HelpView, type PhoneApi, type PhoneHome, type PhoneRole } from "@/lib/phoneApi";
 import { createPreviewPhone, type DemoCircle, type PreviewOptions } from "@/lib/phoneFake";
-import { CANT_REACH, JOIN_NOTICE, codeDigits, helpArrived, helpChange, helpTitle, herName } from "@/lib/phoneView";
+import { CANT_REACH, JOIN_NOTICE, codeDigits, helpArrived, helpChange, helpTitle, herName, type StartScreen } from "@/lib/phoneView";
 import { usePhone, type Phone } from "@/lib/usePhone";
 import { MayaPhone } from "./MayaPhone";
 import { RosePhone } from "./RosePhone";
@@ -21,7 +21,17 @@ const HEADING = "app-heading";
  * (development only, `/app?preview=rose` or `?preview=maya`) swaps in the in-memory fake with one phone
  * already linked, says "Preview" on every screen, and adds preview controls that drive the fake circle.
  */
-export function PhoneApp({ preview = null, previewOptions = {} }: { preview?: PhoneRole | null; previewOptions?: PreviewOptions }) {
+export type { StartScreen } from "@/lib/phoneView";
+
+export function PhoneApp({
+  preview = null,
+  previewOptions = {},
+  start,
+}: {
+  preview?: PhoneRole | null;
+  previewOptions?: PreviewOptions;
+  start?: StartScreen;
+}) {
   const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : { ...createPhoneApi(), camera: createCameraApi() }));
   const [circle, setCircle] = useState<DemoCircle | null>(null);
   const { caretakers, location, route } = previewOptions;
@@ -45,7 +55,7 @@ export function PhoneApp({ preview = null, previewOptions = {} }: { preview?: Ph
           {PREVIEW_LINE}
         </p>
       ) : null}
-      {api ? <Linked api={api} preview={preview !== null} circle={circle} /> : <Frame who={null} preview><Loading /></Frame>}
+      {api ? <Linked api={api} preview={preview !== null} circle={circle} start={start} /> : <Frame who={null} preview><Loading /></Frame>}
     </div>
   );
 }
@@ -81,7 +91,7 @@ function Loading() {
 /** Who's holding this phone, in the header: "Rose's phone". */
 const whoLine = (home: PhoneHome | null) => (home?.membership === "member" ? `${home.me.name}'s phone` : null);
 
-function Linked({ api, preview, circle }: { api: PhoneApi; preview: boolean; circle: DemoCircle | null }) {
+function Linked({ api, preview, circle, start }: { api: PhoneApi; preview: boolean; circle: DemoCircle | null; start?: StartScreen }) {
   const phone = usePhone(api);
   const [announcement, setAnnouncement] = useState({ text: "", n: 0 });
   const announce = (text: string) => setAnnouncement((a) => ({ text, n: a.n + 1 }));
@@ -153,13 +163,13 @@ function Linked({ api, preview, circle }: { api: PhoneApi; preview: boolean; cir
       {phone.unreachable ? <p className={styles.alert}>{CANT_REACH}</p> : null}
       {phone.phase === "loading" ? <Loading /> : null}
       {phone.phase === "join" ? <Join phone={phone} /> : null}
-      {phone.phase === "home" && home ? <Home phone={phone} home={home} api={api} announce={announce} /> : null}
+      {phone.phase === "home" && home ? <Home phone={phone} home={home} api={api} announce={announce} start={start} /> : null}
       {circle && home?.membership === "member" ? <PreviewControls circle={circle} home={home} refresh={phone.refresh} /> : null}
     </Frame>
   );
 }
 
-export function Home({ phone, home, api, announce }: { phone: Phone; home: PhoneHome; api: PhoneApi; announce(text: string): void }) {
+export function Home({ phone, home, api, announce, start }: { phone: Phone; home: PhoneHome; api: PhoneApi; announce(text: string): void; start?: StartScreen }) {
   if (home.membership === "waiting") {
     return (
       <section className={styles.screen} aria-labelledby={HEADING}>
@@ -187,9 +197,9 @@ export function Home({ phone, home, api, announce }: { phone: Phone; home: Phone
     );
   }
   return home.me.role === "walker_user" ? (
-    <RosePhone home={home} api={api} refresh={phone.refresh} announce={announce} />
+    <RosePhone home={home} api={api} refresh={phone.refresh} announce={announce} initialScreen={start} />
   ) : (
-    <MayaPhone home={home} api={api} refresh={phone.refresh} announce={announce} />
+    <MayaPhone home={home} api={api} refresh={phone.refresh} announce={announce} initialScreen={start} />
   );
 }
 

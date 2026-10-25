@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemorySessionStore, OnboardingService } from "../src";
-import { agentNoticeClause, agentProviderFromEnv, engineFromEnv } from "../src/onboarding/config";
+import { agentProviderFromEnv, engineFromEnv } from "../src/onboarding/config";
 import { walkerAgentFromEnv, walkerModelFromEnv } from "../src/walker/config";
 
 describe("the agent engine reaches the provider it names", () => {
@@ -30,9 +30,6 @@ describe("the agent engine reaches the provider it names", () => {
     expect(agentProviderFromEnv({ ONBOARDING_ENGINE: "agent", ANTHROPIC_API_KEY: "a-key" })).toBe("anthropic");
   });
 
-  it("words the notice clause", () => {
-    expect(agentNoticeClause("anthropic")).toBe("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy");
-  });
 
   it("warns when the model override isn't a Claude model", () => {
     const warnings: string[] = [];

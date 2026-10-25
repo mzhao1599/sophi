@@ -52,6 +52,7 @@ A walker holds you up, and that's all it does. If you drop your keys, they stay 
 - **The Raspberry Pi** runs the walker. It listens, speaks, keeps track of every part, and enforces every motion limit.
 - **The cloud** handles conversation and planning. It can suggest an action, but it can never move a motor, skip a stop, or silence an obstacle alert.
 - **The web app** is where you set it up.
+- **The voice is Cartesia's.** Hold Talk, and Cartesia's Ink speech-to-text turns what you say into words (built, not yet run live), Claude writes the answer, and Cartesia's Sonic voice speaks it. With no connection, the walker speaks in its own voice. Setup, the Cartesia features used and the known limits are in [Sophi and Cartesia](docs/demo/tracks.md#sophi-and-cartesia-the-readme-section-for-cartesias-judges).
 
 A few rules we built around:
 

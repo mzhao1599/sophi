@@ -9,6 +9,14 @@ import { cueList } from "./walkerView";
  */
 
 /** How often the app asks the server for news while it's on screen. */
+/**
+ * Screens a link can open the phone app on (`/app?screen=`): the same names on both phones. Help is never opened
+ * by a link. Here, not in PhoneApp.tsx: the /app page is a server component and can't read values from a
+ * "use client" file.
+ */
+export const START_SCREENS = ["walker", "messages", "nearby"] as const;
+export type StartScreen = (typeof START_SCREENS)[number];
+
 export const PHONE_POLL_MS = 2_000;
 /**
  * With live updates from SpacetimeDB, the circle comes pushed; this is only for the walker's status (online, alerts,

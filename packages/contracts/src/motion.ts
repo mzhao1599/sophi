@@ -252,8 +252,8 @@ export const LiftMicrostepsSchema = z.literal([1, 2, 4, 8, 16, 32]);
 /** Named lift requests only. The no-switch demo uses a journaled estimated origin; production needs a measured home. */
 export const LiftPresetSchema = z.enum(["ground", "up"]);
 export type LiftPreset = z.infer<typeof LiftPresetSchema>;
-/** Requested demo positions: 600 mm apart. Physical travel and step scale remain unverified. */
-export const LIFT_PRESET_HEIGHTS_MM: Readonly<Record<LiftPreset, number>> = { ground: 5, up: 605 };
+/** Supervised trial positions: 100 mm apart. Physical travel and step scale remain unverified. */
+export const LIFT_PRESET_HEIGHTS_MM: Readonly<Record<LiftPreset, number>> = { ground: 5, up: 105 };
 
 /**
  * Hard ceilings no lift configuration may exceed, whatever is measured later; the configuration's own limits
@@ -1021,12 +1021,17 @@ export type StopSource = z.infer<typeof StopSourceSchema>;
 export const HoldSourceSchema = z.enum(["screen_hold_control"]);
 export type HoldSource = z.infer<typeof HoldSourceSchema>;
 
+/** A spoken request may name any millimetre amount within the rail's nominal length.
+ * The Pi and lift board still enforce the installed soft limits before motion. */
+export const LIFT_VOICE_TRIAL_MAX_MM = 800;
+export const LiftRelativeMmSchema = z.number().int().min(-LIFT_VOICE_TRIAL_MAX_MM).max(LIFT_VOICE_TRIAL_MAX_MM).refine((mm) => mm !== 0);
+
 /**
- * The cloud may request only a local skill, pose, or named lift preset. It cannot send millimetres, speed,
- * a start command, or a hold lease. The Pi validates the request and writes the Confirm target itself.
+ * Cloud requests are offers, never start commands or hold leases. A relative lift offer carries only a bounded
+ * displacement; the Pi computes the target from its stored position and checks installed limits locally.
  */
 export const MotionOfferRequestSchema = z.strictObject({
-  target: z.discriminatedUnion("kind", [actionSchema("skill.run"), actionSchema("arm.go_to_pose"), z.strictObject({ kind: z.literal("lift.preset"), preset: LiftPresetSchema })]),
+  target: z.discriminatedUnion("kind", [actionSchema("skill.run"), actionSchema("arm.go_to_pose"), z.strictObject({ kind: z.literal("lift.preset"), preset: LiftPresetSchema }), z.strictObject({ kind: z.literal("lift.relative"), delta_mm: LiftRelativeMmSchema })]),
 });
 
 // ---- Commands and their policy ----
@@ -1369,13 +1374,11 @@ export function isPreparerAllowed(kind: MotionCommandKind, by: Preparer): boolea
   return MOTION_COMMAND_POLICY[kind].prepared_by.includes(by);
 }
 
-/**
- * A cloud offer names a lift preset, never a height: a lift move prepared from an offer must go to one of
- * LIFT_PRESET_HEIGHTS_MM. A person at the walker still presses Confirm and holds the lift's control.
- */
+/** An offered lift target is finite and within the nominal rail; installation limits are checked separately. */
 export function offerKeepsToPresets(action: { kind: string; target_mm?: number }, by: Preparer): boolean {
   if (by !== "offer" || action.kind !== "lift.move") return true;
-  return (Object.values(LIFT_PRESET_HEIGHTS_MM) as number[]).includes(action.target_mm ?? Number.NaN);
+  const height = action.target_mm;
+  return typeof height === "number" && Number.isFinite(height) && height >= 0 && height <= LIFT_RAIL_LENGTH_MM;
 }
 
 /**

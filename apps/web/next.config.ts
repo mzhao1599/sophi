@@ -27,9 +27,15 @@ const config: NextConfig = {
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // No page asks for the microphone, camera or location yet. Loosen this per page when one does.
+          // No other page asks for the microphone, camera or location. Loosen this per page when one does.
           { key: "Permissions-Policy", value: "microphone=(), camera=(), geolocation=()" },
         ],
+      },
+      {
+        // The onboarding chat (the home page) can be answered by voice; the microphone is for this site only.
+        // Listed after the rule above, so its Permissions-Policy is the one sent for "/".
+        source: "/",
+        headers: [{ key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=()" }],
       },
     ];
   },
