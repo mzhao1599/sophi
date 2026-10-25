@@ -180,6 +180,20 @@ describe("the chord and who owns Confirm", () => {
     expect(h.last()).toBe("help_hold");
   });
 
+  it("GH5: a Confirm tap (already let go) then Talk within 250 ms: the Confirm is dropped, and Talk is Talk", async () => {
+    const h = await booted();
+    h.fake.script = [{ reply: "Fake cloud: short sounds? Press Confirm.", proposeCues: ["sound"] }];
+    await talk(h);
+    h.press("confirm", "pressed");
+    h.press("confirm", "released");
+    await h.clock.advance(100);
+    h.press("talk", "pressed");
+    await h.clock.advance(1000);
+    expect(h.client.calls.filter((c) => c.startsWith("answer:"))).toEqual([]);
+    expect(h.service.talk).toBe("recording");
+    expect(h.speaker.cues).not.toContain("help");
+  });
+
   it("GH5: Confirm then Talk within 250 ms while help is open: nothing is armed", async () => {
     const h = await booted();
     await opened(h);
