@@ -25,9 +25,9 @@ export const SERIAL_BAUD = 115200;
 /** Placeholder, not measured: a ToF reading counts for this long after the Pi receives it. */
 export const ZONE_VALIDITY_MS = 500;
 /** Placeholder, not measured: a zone becomes "near" under this distance. */
-export const NEAR_ENTER_MM = 500;
+export const NEAR_ENTER_MM = 750;
 /** Placeholder, not measured: a near zone clears only over this distance (hysteresis). */
-export const NEAR_EXIT_MM = 650;
+export const NEAR_EXIT_MM = 900;
 /** Placeholder, not measured: while a zone stays near, its cue repeats at most this often. */
 export const CUE_REPEAT_MS = 3000;
 /** Placeholder, not measured: a newly near zone cues at most this often, across all zones. */

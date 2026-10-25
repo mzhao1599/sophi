@@ -176,21 +176,21 @@ describe("D4: zones for the screen", () => {
     expect(states.at(-1)!.screen.state).toBe("ambient");
   });
 
-  it("uses the cue policy's hysteresis: near under 500 mm, clear only over 650 mm", async () => {
+  it("uses the cue policy's hysteresis: near under 750 mm, clear only over 900 mm", async () => {
     const clock = new FakeClock();
     const { m, states } = machine(clock);
     m.seed({ link: "online" });
-    m.zones(near(520));
+    m.zones(near(770));
     await flush();
     expect(states.at(-1)!.screen.state).toBe("ambient");
-    m.zones(near(480));
+    m.zones(near(730));
     await flush();
     for (let t = 0; t < 2000; t += 100) {
-      m.zones(near(640)); // between the two thresholds: stays near
+      m.zones(near(890)); // between the two thresholds: stays near
       await clock.advance(100);
     }
     expect(states.at(-1)!.screen.state).toBe("obstacle");
-    m.zones(near(660));
+    m.zones(near(910));
     await clock.advance(SCREEN_OBSTACLE_TAIL_MS);
     expect(states.at(-1)!.screen.state).toBe("ambient");
   });

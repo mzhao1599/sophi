@@ -95,22 +95,22 @@ describe("local cue policy", () => {
     expect(at).toEqual([0, 3000, 6000, 9000]);
   });
 
-  it("C7: hysteresis holds near between 500 and 650 mm; re-entry cues after 1 s, not before", async () => {
+  it("C7: hysteresis holds near between 750 and 900 mm; re-entry cues after 1 s, not before", async () => {
     const p = policy(["sound"]);
-    for (const mm of [490, 510, 490, 510, 640]) {
+    for (const mm of [740, 760, 740, 760, 890]) {
       p.cuePolicy.evaluate([p.zone(mm)]);
       await p.clock.advance(100);
     }
     expect(p.sounds()).toBe(1);
     expect(p.cuePolicy.zoneState("front_left")).toBe("near");
-    p.cuePolicy.evaluate([p.zone(700)]);
+    p.cuePolicy.evaluate([p.zone(950)]);
     expect(p.cuePolicy.zoneState("front_left")).toBe("clear");
     await p.clock.advance(700); // t = 1200
-    p.cuePolicy.evaluate([p.zone(450)]);
-    expect(p.sounds()).toBe(2);
     p.cuePolicy.evaluate([p.zone(700)]);
+    expect(p.sounds()).toBe(2);
+    p.cuePolicy.evaluate([p.zone(950)]);
     await p.clock.advance(500); // 0.5 s after the last cue
-    p.cuePolicy.evaluate([p.zone(450)]);
+    p.cuePolicy.evaluate([p.zone(700)]);
     expect(p.sounds()).toBe(2);
   });
 
