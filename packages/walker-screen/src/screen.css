@@ -313,6 +313,22 @@
   max-width: none;
 }
 
+.ws-cancel {
+  appearance: none;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ws-text-strong);
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ws-cancel:focus-visible {
+  outline: 4px solid var(--ws-ink);
+  outline-offset: 4px;
+}
 /* Three buttons and the Talk word share 768 px: their labels drop to the smallest size so none breaks a word. */
 .ws-band[data-buttons="3"] .ws-button {
   font-size: var(--ws-smallest);
@@ -451,17 +467,19 @@
   display: none;
 }
 
-/* A spoken lift move: Stop lift joins End route in the band, at the same 20 mm, and the distance card makes room. */
-.ws-screen[data-layout="navigating"][data-lift-moving="true"] > .ws-band {
-  grid-template-columns: auto auto;
-}
-
-.ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-left {
-  display: flex;
+.ws-nav-cancel {
+  position: absolute;
+  z-index: 3;
+  left: var(--ws-edge);
+  bottom: 6px;
+  padding: 8px;
+  border: 2px solid var(--ws-control-edge);
+  border-radius: 20px;
+  background: var(--ws-card);
 }
 
 .ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-nav-info {
-  max-width: calc(800px - 2 * var(--ws-edge) - 2 * var(--ws-button) - 12px - 8px);
+  bottom: calc(var(--ws-button) + 14px);
 }
 
 .ws-screen[data-layout="navigating"] .ws-band[data-tall="true"] {

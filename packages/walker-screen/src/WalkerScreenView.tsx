@@ -47,6 +47,7 @@ export function WalkerScreenView({
       ? { "--ws-nav-col": `${view.nav.columnPx}px`, "--ws-nav-main": `${view.nav.mainPx}px`, "--ws-nav-arrow": `${view.nav.arrowPx}px` }
       : {}),
   } as CSSProperties;
+  const navCancel = view.nav && view.left?.kind === "button" && view.left.button.action === "stop_lift" ? view.left.button : null;
   return (
     <section
       className="ws-screen"
@@ -80,9 +81,10 @@ export function WalkerScreenView({
         )}
       </div>
       {view.nav ? <NavSide nav={view.nav} tiles={tiles} /> : null}
+      {navCancel ? <div className="ws-nav-cancel"><Button button={navCancel} onPress={onPress} /></div> : null}
       <footer className="ws-band" data-tall={hasButtons(view) ? "true" : "false"} data-buttons={buttonCount(view)}>
         <div className="ws-left">
-          {view.left?.kind === "button" ? <Button button={view.left.button} onPress={onPress} /> : null}
+          {view.left?.kind === "button" && !navCancel ? <Button button={view.left.button} onPress={onPress} /> : null}
           {view.left?.kind === "hint" ? <Hint word={view.left.word} /> : null}
         </div>
         <div className="ws-center">
@@ -127,18 +129,21 @@ function Line({ line }: { line: ViewLine }) {
 }
 
 function Button({ button, onPress }: { button: ViewButton; onPress?: ((action: ScreenAction) => void) | undefined }) {
+  const cancelLift = button.action === "stop_lift";
   return (
     <button
       type="button"
-      className="ws-button"
+      className={cancelLift ? "ws-hint ws-cancel" : "ws-button"}
       data-action={button.action}
       data-primary={button.primary ? "true" : "false"}
+      aria-label={cancelLift ? "Cancel lift motion" : undefined}
       aria-pressed={button.pressed === undefined ? undefined : button.pressed}
       aria-disabled={button.disabled ? "true" : undefined}
       onClick={() => {
         if (!button.disabled) onPress?.(button.action);
       }}
     >
+      {cancelLift ? <HintMark /> : null}
       <span className="ws-button-label">
         {/* An on/off switch: filled when on, hollow when off; the words "on" and "off" are in the lines above. */}
         {button.pressed !== undefined ? <span className="ws-switch" data-on={button.pressed ? "true" : "false"} aria-hidden="true" /> : null}

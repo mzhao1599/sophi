@@ -1183,7 +1183,7 @@ export function screenView(state: ScreenState, settings: ScreenSettings = state.
   const clock = state.strip.clock ? clockWords(state.strip.clock.local_time) : null;
   // Keep existing choices visible; the left handle remains a Stop even on a full-button screen.
   const stopOnScreen = state.lift_moving && s.left?.kind !== "button" && (s.center?.buttons?.length ?? 0) < MAX_BUTTONS;
-  const left = stopOnScreen ? { kind: "button" as const, button: button("stop_lift", "Stop lift", { sublabel: "Left handle" }) } : (s.left ?? null);
+  const left = stopOnScreen ? { kind: "button" as const, button: button("stop_lift", "Cancel") } : (s.left ?? null);
   const center = { lines: s.center?.lines ?? [], buttons: s.center?.buttons ?? [] };
   const hold = s.hold ?? null;
   const buttons = (left?.kind === "button" ? 1 : 0) + center.buttons.length + (hold ? 1 : 0);

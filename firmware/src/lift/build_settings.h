@@ -26,10 +26,11 @@
 #ifndef WALKER_LIFT_HW_INVERTER
 #define WALKER_LIFT_HW_INVERTER 0
 #endif
-// The GPIO level on DIR+ expected to move the carriage UP. Level 1 moved the coupled carriage downward
-// in one short bench check; level 0 still needs a short direction check before longer travel.
+// The GPIO level on DIR+ expected to move the carriage UP. On 2026-10-25 a commanded 650 -> 550 mm move
+// physically raised the assembled carriage to 750 mm with level 0 configured, so this wiring needs level 1.
+// Recheck with a short observed move after reflashing; there is no physical height sensor.
 #ifndef WALKER_LIFT_DIR_UP_LEVEL
-#define WALKER_LIFT_DIR_UP_LEVEL 0
+#define WALKER_LIFT_DIR_UP_LEVEL 1
 #endif
 // 1: the stop switch's second (normally closed) contact is wired to the stop-sense pin. 0 only for a bench
 // build without it: lift.hello then says "not_wired", and the Pi refuses motion outside bench mode.
