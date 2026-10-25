@@ -399,8 +399,8 @@ describe("the walker activity log", () => {
     const listB = await service.list(owner(b.secret));
     expect(listA.activity?.map((x) => x.device_id)).toEqual([a.id]);
     expect(listB.activity?.map((x) => x.device_id)).toEqual([b.id]);
-    // An owner whose walker has no activity gets the list as before.
-    expect(await service.list(owner(quiet.secret))).toEqual({ walkers: [expect.objectContaining({ device_id: quiet.id })] });
+    // An owner whose walker has no activity gets no activity: the walkers and their speaking paces only.
+    expect(await service.list(owner(quiet.secret))).toEqual({ walkers: [expect.objectContaining({ device_id: quiet.id })], speech_paces: [{ device_id: quiet.id, speech_pace: "normal" }] });
     for (const listed of [listA, listB]) expect(WalkerListResponseSchema.safeParse(listed).success).toBe(true);
   });
 

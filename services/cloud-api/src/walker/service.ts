@@ -24,6 +24,8 @@ import {
   type PairDeviceResponse,
   type PairingCodeResponse,
   type ProposalView,
+  type SpeechPace,
+  type SpeechPaceResponse,
   type WalkerConfiguration,
   type WalkerErrorCode,
   type WalkerActivityView,
@@ -52,6 +54,9 @@ import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
 import {
   OFFLINE_NO_CHANGE,
+  PACE_CHANGED,
+  PACE_NO_VOICE,
+  PACE_UNCHANGED,
   PRESS_CONFIRM,
   SIMULATED_ALL_PARTS,
   SIMULATED_PARTS,
@@ -261,8 +266,8 @@ export class WalkerService {
 
   /** Voice a local Pi line with the same stock voice as replies. No model call or stored turn. */
   async deviceSpeech(caller: DeviceCaller, deviceId: string, text: string): Promise<DeviceSpeechResponse> {
-    await this.resolve(caller, deviceId);
-    const audio = await this.speak(text, this.voiceTimeoutMs, () => {});
+    const device = await this.resolve(caller, deviceId);
+    const audio = await this.speak(text, this.voiceTimeoutMs, () => {}, device.speech_pace);
     return { speech: audio ? { mime: "audio/wav", data_base64: audio } : null };
   }
 
@@ -362,14 +367,22 @@ export class WalkerService {
   // A page can keep reading a walker that has stopped sending heartbeats, so page reads sweep old
   // history too, once per request, before building any view.
 
-  async list(caller: OwnerCaller): Promise<{ walkers: WalkerStatusView[]; activity?: WalkerActivityView[] }> {
+  async list(caller: OwnerCaller): Promise<{ walkers: WalkerStatusView[]; activity?: WalkerActivityView[]; speech_paces: { device_id: string; speech_pace: SpeechPace }[] }> {
     const owner = await this.owner(caller);
     const devices = await this.store.devicesForOwner(owner);
     await this.sweep(this.now());
     const walkers = await Promise.all(devices.map((d) => this.status(d)));
     // Page only, and only this owner's own walkers: the ids come from devicesForOwner, never the log.
     const activity = this.activity?.view(devices.map((d) => d.device_id)) ?? [];
-    return activity.length > 0 ? { walkers, activity } : { walkers };
+    const speech_paces = devices.map((d) => ({ device_id: d.device_id, speech_pace: d.speech_pace }));
+    return activity.length > 0 ? { walkers, activity, speech_paces } : { walkers, speech_paces };
+  }
+
+  /** The page's Slower / Normal / Faster: how fast Sophi talks in Cartesia's voice from the next line on. */
+  async setSpeechPace(caller: OwnerCaller, deviceId: string, pace: SpeechPace): Promise<SpeechPaceResponse> {
+    const device = await this.resolve(caller, deviceId);
+    if (!(await this.store.writeSpeechPace(device.device_id, pace))) throw notFound();
+    return { speech_pace: pace };
   }
 
   async get(caller: OwnerCaller, deviceId: string): Promise<{ walker: WalkerStatusView }> {
@@ -478,7 +491,7 @@ export class WalkerService {
     // Only a walker turn that carries `screen` is offered show_on_screen, and only with the views it lists.
     const screenViews = source === "walker" && "screen" in request ? (request.screen?.views ?? []) : [];
     const assistant = unheard ? null : this.assistant;
-    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, navigation, help, screenViews) : null;
+    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, navigation, help, screenViews, device.speech_pace) : null;
 
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change ? result.reply.tool_call : null;
     const tool = toolCall?.name;
@@ -488,7 +501,7 @@ export class WalkerService {
     if (nextTool) {
       const line = LOOKUP_LINE[nextTool];
       if (nextTool === "get_distance") toolResults.push({ name: "get_distance", text: distanceLine(status) });
-      const speech = await this.speak(line, left(), () => flight?.stage("voicing"));
+      const speech = await this.speak(line, left(), () => flight?.stage("voicing"), device.speech_pace);
       return WalkerTurnResponseSchema.parse({
         turn: { turn_id: this.randomId(), client_turn_id: request.client_turn_id, source: "walker", heard: heardText, heard_by: heardBy, reply: line, answered_by: "fixed", voiced_by: speech ? "cartesia" : "walker", created_at: now.toISOString() },
         proposal: null,
@@ -541,7 +554,9 @@ export class WalkerService {
       ? { reply: "I couldn't finish checking all of that right now.", answered_by: "fixed" as const, reason: routeDone ? "route_once" : "tool_limit", proposal: null }
       : distanceLookup
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
-        : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now);
+        : applyRules(status, device.manifest, result, () => this.randomId(), request.client_turn_id, now, { now: device.speech_pace, voice: this.voice !== null });
+    // A pace change is in force for this reply already, so she hears the change itself.
+    const pace = "speech_pace" in decided && decided.speech_pace ? decided.speech_pace : device.speech_pace;
     if (!messageOffer && decided.answered_by === "model" && toolResults.some((r) => (r.name === "get_weather" || r.name === "show_on_screen") && r.text.includes("Weather data from Open-Meteo.")) && !decided.reply.includes("Open-Meteo")) {
       decided.reply += " Weather data from Open-Meteo.";
     }
@@ -554,7 +569,7 @@ export class WalkerService {
         ? await this.speak(decided.reply, left(), () => {
             voiceCalled = true;
             flight?.stage("voicing");
-          })
+          }, pace)
         : null;
     const voiceMs = Date.now() - voiceStarted;
     const turn: WalkerTurnView = storable({
@@ -571,6 +586,8 @@ export class WalkerService {
     const saved = await this.store.saveTurn(device.device_id, turn, decided.proposal, savedAt);
     // Forgotten while the model was answering.
     if (!saved) throw notFound();
+    // Only the upload that saved the turn changes the pace; a second upload of it or a replay changes nothing.
+    if (saved.created && pace !== device.speech_pace) await this.store.writeSpeechPace(device.device_id, pace);
     // The status read expires proposals (say the walker went offline during the turn), so read the
     // proposal after it: the response never calls a proposal open that isn't.
     const after = await this.status(device);
@@ -625,11 +642,11 @@ export class WalkerService {
   }
 
   /** `onCall` runs just before Cartesia is asked, so the page can show the voice step. */
-  private async speak(text: string, leftMs: number, onCall: () => void): Promise<string | null> {
+  private async speak(text: string, leftMs: number, onCall: () => void, pace: SpeechPace): Promise<string | null> {
     const ms = Math.min(this.voiceTimeoutMs, leftMs);
     if (!this.voice || ms < VOICE_MIN_MS) return null;
     onCall();
-    return this.voice.speak(text, AbortSignal.timeout(ms)).catch(() => null);
+    return this.voice.speak(text, AbortSignal.timeout(ms), pace).catch(() => null);
   }
 
   /** Called by the paired Pi only after it read a draft aloud and received a fresh Confirm press. */
@@ -822,8 +839,9 @@ export function storable<T>(value: T): T {
 }
 
 /**
- * The server's rules for a reply, all from structured fields (the model's topics and cues_change, the
- * status view, the manifest), never from words: what the person hears, who answered, and any proposal to open.
+ * The server's rules for a reply, all from structured fields (the model's topics, cues_change and speech_pace, the
+ * status view, the manifest), never from words: what the person hears, who answered, any proposal to open, and a
+ * new speaking pace. `pace`: the walker's pace now, and whether this server has Cartesia's voice to apply one.
  */
 export function applyRules(
   status: WalkerStatusView,
@@ -832,12 +850,13 @@ export function applyRules(
   newId: () => string,
   clientTurnId: string,
   now: Date,
-): { reply: string; answered_by: "model" | "fixed"; reason: string | null; proposal: ProposalView | null } {
+  pace: { now: SpeechPace; voice: boolean },
+): { reply: string; answered_by: "model" | "fixed"; reason: string | null; proposal: ProposalView | null; speech_pace?: SpeechPace } {
   if (!result?.ok) return { reply: withReminder(fallbackLine(status), status), answered_by: "fixed", reason: result?.reason ?? "no_model", proposal: null };
   const out = result.reply;
   // An empty reply is valid only beside ask_for_help; when the turn didn't take it (no words were made out), say
   // the fixed line rather than nothing.
-  if (out.reply.length === 0 && !out.topics.includes("arms") && !out.cues_change) {
+  if (out.reply.length === 0 && !out.topics.includes("arms") && !out.cues_change && !out.speech_pace) {
     return { reply: withReminder(fallbackLine(status), status), answered_by: "fixed", reason: "empty_reply", proposal: null };
   }
   if (out.topics.includes("arms")) return { reply: withReminder(armsLine(manifest), status), answered_by: "fixed", reason: "arms", proposal: null };
@@ -863,6 +882,12 @@ export function applyRules(
     };
     // The person hears exactly what Confirm will do, from the payload, not the model's description of it.
     return { reply: `${offerLine(summary)} ${PRESS_CONFIRM}`, answered_by: "model", reason: null, proposal };
+  }
+  if (out.speech_pace) {
+    const next = out.speech_pace;
+    if (!pace.voice) return { reply: withReminder(PACE_NO_VOICE, status), answered_by: "fixed", reason: "pace_no_voice", proposal: null };
+    if (next === pace.now) return { reply: withReminder(PACE_UNCHANGED[next], status), answered_by: "fixed", reason: "pace_unchanged", proposal: null };
+    return { reply: withReminder(PACE_CHANGED[next], status), answered_by: "fixed", reason: `pace_${next}`, proposal: null, speech_pace: next };
   }
   let reply = out.reply;
   const simulatedTof = status.parts.some((p) => p.module_id === "perception.tof" && p.instance_id !== null && p.simulated);

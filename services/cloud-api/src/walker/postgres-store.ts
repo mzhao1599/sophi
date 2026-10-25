@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
-import type { ProposalView, WalkerConfiguration, WalkerEventView, WalkerTurnView } from "@walker/contracts";
-import { HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS, OFFLINE_AFTER_MS } from "@walker/contracts";
+import type { ProposalView, SpeechPace, WalkerConfiguration, WalkerEventView, WalkerTurnView } from "@walker/contracts";
+import { DEFAULT_SPEECH_PACE, HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS, OFFLINE_AFTER_MS } from "@walker/contracts";
 import { WALKER_MIGRATIONS } from "./migrations";
 import { keepIds, storedLocation } from "./store";
 import { decideAnswer, type Answer } from "./rules";
@@ -144,6 +144,7 @@ export class PostgresWalkerStore implements WalkerStore {
         location_sharing_enabled: false,
         location: null,
         location_received_at: null,
+        speech_pace: DEFAULT_SPEECH_PACE,
       };
       return { ok: true, device: record, configuration } as const;
     });
@@ -223,6 +224,12 @@ export class PostgresWalkerStore implements WalkerStore {
       "update walker_devices set location_sharing_enabled = $2, location = null, location_received_at = null where id = $1",
       [deviceId, enabled],
     );
+    return result.rowCount === 1;
+  }
+
+  async writeSpeechPace(deviceId: string, pace: SpeechPace) {
+    if (!UUID.test(deviceId)) return false;
+    const result = await this.query("write speech pace", "update walker_devices set speech_pace = $2 where id = $1", [deviceId, pace]);
     return result.rowCount === 1;
   }
 
@@ -711,7 +718,7 @@ async function insertConfiguration(db: PoolClient, deviceId: string, c: WalkerCo
   );
 }
 
-const DEVICE_COLUMNS = "id, owner_hash, name, service_version, created_at, last_heartbeat_at, manifest, snapshot, snapshot_received_at, location_sharing_enabled, location, location_received_at";
+const DEVICE_COLUMNS = "id, owner_hash, name, service_version, created_at, last_heartbeat_at, manifest, snapshot, snapshot_received_at, location_sharing_enabled, location, location_received_at, speech_pace";
 interface DeviceRow {
   id: string;
   owner_hash: string;
@@ -725,6 +732,7 @@ interface DeviceRow {
   location_sharing_enabled: boolean;
   location: DeviceRecord["location"];
   location_received_at: Date | null;
+  speech_pace: SpeechPace;
 }
 function toDevice(r: DeviceRow): DeviceRecord {
   return {
@@ -740,6 +748,7 @@ function toDevice(r: DeviceRow): DeviceRecord {
     location_sharing_enabled: r.location_sharing_enabled,
     location: r.location,
     location_received_at: iso(r.location_received_at),
+    speech_pace: r.speech_pace,
   };
 }
 

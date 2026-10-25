@@ -1,4 +1,4 @@
-import { CueSchema, LiftPresetSchema, LIFT_VOICE_TRIAL_MAX_MM, MODULE_CATALOG, WALKER_MAX_TOOL_CALLS, WalkerToolCallSchema, type DeviceTurnRequest, type ModuleId, type ShowView, type WalkerModel, type WalkerStatusView, type WalkerToolResult } from "@walker/contracts";
+import { CueSchema, LiftPresetSchema, LIFT_VOICE_TRIAL_MAX_MM, MODULE_CATALOG, SpeechPaceSchema, WALKER_MAX_TOOL_CALLS, WalkerToolCallSchema, type DeviceTurnRequest, type ModuleId, type ShowView, type SpeechPace, type WalkerModel, type WalkerStatusView, type WalkerToolResult } from "@walker/contracts";
 import { z } from "zod";
 import type { AgentFailure, AgentModel, AgentReply, AgentRequest } from "../onboarding/agent";
 import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
@@ -7,7 +7,7 @@ import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
  * The walker assistant's model step: one structured-output call per attempt, to Claude (config.ts). A spoken
  * turn reaches it as Cartesia's transcript of the clip (service.ts transcribes first); a typed one as typed.
  * The model reads the walker's status and their words and returns a transcript, a
- * reply, the topics it touched and at most one suggested cues change or tool request. It decides nothing else: the
+ * reply, the topics it touched and at most one suggested cues change, speaking pace or tool request. It decides nothing else: the
  * service applies the rules (lines.ts and service.ts), opens any proposal, and only a person's Confirm
  * changes the walker. A reply that breaks the shape, or one that says "clear" or "safe" (saysClearOrSafe),
  * is retried once with the reason; a second failure,
@@ -48,15 +48,18 @@ export const WalkerReplySchema = z.strictObject({
   reply: z.string().trim().max(MAX_REPLY),
   topics: z.array(TopicSchema).max(6),
   cues_change: z.strictObject({ cues: z.array(CueSchema).min(1).max(4) }).nullable(),
+  /** The pace they asked Sophi to talk at; the server applies it at once and words the reply. Optional for stub replies. */
+  speech_pace: SpeechPaceSchema.nullable().optional(),
   tool_call: ModelToolCallSchema.nullable().optional(),
 })
   .refine((reply) => !reply.cues_change || !reply.tool_call, "A tool request and a settings offer must be separate steps.")
+  .refine((reply) => !reply.speech_pace || (!reply.cues_change && !reply.tool_call), "Change the speaking pace on its own: no cues_change or tool request with it.")
   // The server words the spoken line of ask_for_help and of each lookup step ("Putting that on your screen.",
   // "I'll check the obstacle sensors now."; service.ts LOOKUP_LINE), so the model's reply isn't used there and it
   // often leaves it empty (show_on_screen: 15 of 18 live first attempts, 2026-10-24; Claude Haiku with get_distance
   // on "Is anything in front of me?", 5 of 5, 2026-10-25). Anywhere else, and a lookup step with nothing heard (the
   // step then isn't taken and the reply would be the answer), a reply is required.
-  .refine((reply) => reply.reply.length > 0 || reply.tool_call?.name === "ask_for_help" || (SERVER_WORDED_LOOKUPS.has(reply.tool_call?.name ?? "") && reply.transcript.length > 0), {
+  .refine((reply) => reply.reply.length > 0 || Boolean(reply.speech_pace) || reply.tool_call?.name === "ask_for_help" || (SERVER_WORDED_LOOKUPS.has(reply.tool_call?.name ?? "") && reply.transcript.length > 0), {
     message: "Write a reply; it may be empty only with tool_call ask_for_help, show_on_screen, get_distance, get_weather or get_location.",
     path: ["reply"],
   });
@@ -77,7 +80,7 @@ export function walkerReplyJsonSchema(views: readonly ShowView[], offerHelp = fa
   return {
     type: "object",
     additionalProperties: false,
-    required: ["transcript", "reply", "topics", "cues_change", "tool_call"],
+    required: ["transcript", "reply", "topics", "cues_change", "speech_pace", "tool_call"],
     properties: {
       transcript: { type: "string", description: "A copy of person_words." },
       reply: { type: "string", description: `What Sophi says back: at most two short sentences, at most ${MAX_REPLY - 50} characters.${offerHelp ? " Empty only with tool_call ask_for_help, whose reply the server writes." : ""}` },
@@ -93,6 +96,10 @@ export function walkerReplyJsonSchema(views: readonly ShowView[], offerHelp = fa
           },
         ],
         description: "Only when the person asks to change how alerts reach them; otherwise null.",
+      },
+      speech_pace: {
+        anyOf: [{ type: "null" }, { type: "string", enum: SpeechPaceSchema.options }],
+        description: "Only when the person asks you to talk slower, faster or at your normal speed: the pace they asked for; otherwise null.",
       },
       tool_call: {
         anyOf: [{ type: "null" }, { type: "object", additionalProperties: false, required: ["name"], properties: { name: { type: "string", enum: tools } } }, ...(routes ? [startRoute] : []), ...(views.length > 0 ? [show] : []), { type: "object", additionalProperties: false, required: ["name", "to_member_id", "text"], properties: { name: { type: "string", enum: ["send_message"] }, to_member_id: { type: "string" }, text: { type: "string" } } }, { type: "object", additionalProperties: false, required: ["name", "preset"], properties: { name: { type: "string", enum: ["set_lift_height"] }, preset: { type: "string", enum: LiftPresetSchema.options } } }, { type: "object", additionalProperties: false, required: ["name", "direction", "distance_mm"], properties: { name: { type: "string", enum: ["move_lift"] }, direction: { type: "string", enum: ["up", "down"] }, distance_mm: { type: "integer" } } }, ...help],
@@ -132,7 +139,8 @@ Rules:
 - Answer only from the JSON context the server sends: this walker's configuration, the parts it reports right now with their health, its obstacle readings, any suggestion waiting for the person's Confirm, and the recent conversation. Never claim a part, a feature or a reading that isn't there. ${directions === "tools" ? "This walker can't steer, call anyone, or fetch anything, but it can give walking directions." : directions === "page" ? PAGE_DIRECTIONS : "This walker cannot navigate, plan routes, steer, call anyone, or fetch anything."} It can request a named lift preset or a millimetre amount only through the tools below; the Pi decides whether the lift is ready and a person must start and hold its motion locally.
 - At most two short sentences, at most ${MAX_REPLY - 50} characters. Plain spoken words: no lists, markdown, emoji, or internal names such as "perception.tof".
 - Obstacles: when the person asks for distance, proximity or what the obstacle sensors currently read, request tool_call get_distance. The host reads all current ToF zones and writes the answer; do not invent distances in reply. Never say the way is clear or safe: a sensor can miss things. Put "obstacles" in topics only for such a question: when they ask what you can do or which parts work, a reply that mentions the sensors is not an obstacle question, so leave "obstacles" out.
-- Alerts: the one setting a conversation can change is how obstacle alerts reach the person: vibration (buzzing in the handles), sound (short sounds) or spoken (speech). If they ask to change them, set cues_change to the full new list, changing only the cues they named: "X instead of Y" or "stop Y, use X" swaps Y for X and keeps every other current cue. This works the same on a typed page turn as by Talk: offer the change either way, and never tell them to use Talk for it. In one sentence say what you can change, starting with "I can". Never say it is done: nothing changes until they press Confirm, and the server tells them how, so don't mention Confirm yourself. Put "settings" in topics.
+- Alerts: one setting a conversation can change is how obstacle alerts reach the person: vibration (buzzing in the handles), sound (short sounds) or spoken (speech). If they ask to change them, set cues_change to the full new list, changing only the cues they named: "X instead of Y" or "stop Y, use X" swaps Y for X and keeps every other current cue. This works the same on a typed page turn as by Talk: offer the change either way, and never tell them to use Talk for it. In one sentence say what you can change, starting with "I can". Never say it is done: nothing changes until they press Confirm, and the server tells them how, so don't mention Confirm yourself. Put "settings" in topics.
+- Speaking pace: the other is how fast you talk, and it changes at once, with no Confirm. speech_pace in the context is the pace now: slower, normal or faster. When they ask you to talk slower or more slowly, set speech_pace "slower"; faster or quicker, "faster"; back to normal or your usual speed, "normal". Keep cues_change and tool_call null, and put "settings" in topics. The server says the change itself, so your reply isn't used. This works the same on a typed page turn.
 - Robot arms, picking up, or fetching: put "arms" in topics; the server answers that part.
 - Lift: only when the person presently asks to move the lift, put "lift" in topics. For "move to top", "table height", "raise it", or "upper height", request set_lift_height with preset "up"; for "move to bottom", "low height", "lower it", or "floor height", use preset "ground". These are named trial positions 100 mm apart, not measurements of a table or floor. For a clear relative distance such as "move the lift up 20 millimeters", request move_lift with direction "up" and distance_mm 20 (1 to 800 whole millimeters). For an absolute height such as "move the lift to 70 millimeters", ask whether they mean up or down by 70 millimeters; the walker has no measured origin. Ask for direction or distance if missing. Never claim the lift moved or is ready. The Pi computes relative targets from its stored estimate and enforces its installed travel limits. If the lift was moved by hand or skipped steps, that estimate may be wrong. Do not request either tool for an arm task or from a typed page turn.
 - Parts: say which parts work, and which are degraded or not responding, in plain words. A part with simulated true is a stand-in, not real hardware: never call it working; say it's simulated. But when every part in parts has simulated true and "obstacles" isn't in your topics, the server ends your reply with "${SIMULATED_ALL_PARTS}" itself, so leave that out and don't say it in other words (all simulated, stand-ins, not real hardware): name the parts and their health instead. Put "parts" in topics.
@@ -178,6 +186,7 @@ export function walkerContext(
   navigation?: Navigation,
   help: HelpTurn = { offer: false, open: null },
   screenViews: readonly ShowView[] = [],
+  speechPace: SpeechPace = "normal",
 ): string {
   const proposal = status.open_proposal;
   return JSON.stringify({
@@ -194,6 +203,7 @@ export function walkerContext(
       alert_cues: status.configuration.cues,
       cue_words: CUE_WORDS,
     },
+    speech_pace: speechPace,
     parts: status.parts.map((p) => ({ part: partName(p.module_id), instance: p.instance_id, health: p.health, simulated: p.simulated, in_configuration: p.in_configuration })),
     zones: status.zones.map((z) =>
       z.reading.status === "measured"
@@ -237,7 +247,8 @@ export interface WalkerAssistant {
    * `timeoutMs` shortens the deadline when the turn has less time left than WALKER_TIMEOUT_MS. `signal`
    * cancels the attempt early (the hedge cancels the model it didn't use). `navigation`, from a walker turn
    * only, offers the route tools and puts the route in progress in the context. `screenViews`, from a walker turn's
-   * `screen` only, offers show_on_screen with those views and lists them in the context.
+   * `screen` only, offers show_on_screen with those views and lists them in the context. `speechPace`: how fast Sophi
+   * talks now (normal when left out).
    */
   reply(
     status: WalkerStatusView,
@@ -251,6 +262,7 @@ export interface WalkerAssistant {
     navigation?: Navigation,
     help?: HelpTurn,
     screenViews?: readonly ShowView[],
+    speechPace?: SpeechPace,
   ): Promise<AssistantResult>;
 }
 
@@ -287,7 +299,7 @@ const WORDED_STEPS: ReadonlySet<string> = new Set(["get_distance", "get_weather"
 const LOOKUP_TOOLS: ReadonlySet<string> = new Set(["get_location", "start_route", "stop_route", "set_lift_height"]);
 
 export function saysClearOrSafe(reply: WalkerReply): boolean {
-  if (reply.topics.includes("arms") || reply.cues_change || (reply.tool_call && WORDED_STEPS.has(reply.tool_call.name))) return false;
+  if (reply.topics.includes("arms") || reply.cues_change || reply.speech_pace || (reply.tool_call && WORDED_STEPS.has(reply.tool_call.name))) return false;
   // A rejected tool step is retried, and the retry can run out the turn's 8 s ("I'll find a safe route there", seen
   // live 2026-10-24) though the walker never hears those words.
   if (reply.tool_call && LOOKUP_TOOLS.has(reply.tool_call.name) && reply.transcript.trim().length > 0) return false;
@@ -324,7 +336,7 @@ function deadline<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 export function createWalkerAssistant({ model, name, provider, timeoutMs = WALKER_TIMEOUT_MS }: { model: AgentModel; name?: string; provider?: WalkerModel; timeoutMs?: number }): WalkerAssistant {
   return {
     provider,
-    async reply(status, source, words, now, limitMs = timeoutMs, cancel, toolResults = [], recipients = [], navigation, help = { offer: false, open: null }, screenViews = []) {
+    async reply(status, source, words, now, limitMs = timeoutMs, cancel, toolResults = [], recipients = [], navigation, help = { offer: false, open: null }, screenViews = [], speechPace = "normal") {
       const started = Date.now();
       const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, limitMs)));
       const signal = cancel ? AbortSignal.any([deadlineSignal, cancel]) : deadlineSignal;
@@ -332,7 +344,7 @@ export function createWalkerAssistant({ model, name, provider, timeoutMs = WALKE
       const views = source === "walker" ? screenViews : [];
       let request: AgentRequest = {
         system: PROMPTS[routes ? "tools" : source === "page" ? "page" : "none"],
-        context: walkerContext(status, source, words, now, toolResults, recipients, routes ? navigation : undefined, help, views),
+        context: walkerContext(status, source, words, now, toolResults, recipients, routes ? navigation : undefined, help, views, speechPace),
         retry: null,
         schema: replySchemaFor(views, help.offer, routes),
       };

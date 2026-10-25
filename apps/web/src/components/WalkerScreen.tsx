@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { WalkerModel, WalkerStatusView } from "@walker/contracts";
+import { SpeechPaceSchema, type WalkerModel, type WalkerStatusView } from "@walker/contracts";
 import { PRODUCT_NAME } from "@/lib/brand";
 import { useNow } from "@/lib/useNow";
 import { useWalkerPage, type WalkerPage } from "@/lib/useWalkerPage";
@@ -12,11 +12,14 @@ import { createFakeWalker, type FakeWalkerControls } from "@/lib/walkerFake";
 import {
   APPLIED_WORD,
   NOT_LIVE_AFTER_MS,
+  PACE_NOTE,
+  PACE_WORD,
   appliedState,
   cueWord,
   drawingCaption,
   formatCode,
   formatCountdown,
+  paceOf,
   pairCommand,
   partRows,
   presence,
@@ -304,6 +307,7 @@ function Paired({ page, walker, phones, typedBy }: { page: WalkerPage; walker: W
         <LiveWalkerDiagram rows={rows} caption={caption} tagSimulated={!walker.simulator} />
         <div className={styles.cards}>
           <Alerts walker={walker} />
+          <Pace page={page} walker={walker} />
           <Obstacles page={page} walker={walker} />
           <section className={`${styles.card} ${styles.partsCard}`} aria-labelledby="parts-heading">
             <h2 id="parts-heading" className={styles.cardTitle}>
@@ -370,6 +374,38 @@ function Alerts({ walker }: { walker: WalkerStatusView }) {
         </svg>
         {APPLIED_WORD[state]}
       </p>
+    </section>
+  );
+}
+
+/** Slower / Normal / Faster, as native radios, so arrow keys and screen readers work as they do anywhere. */
+function Pace({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }) {
+  const pace = paceOf(page.paces, walker.device_id);
+  if (!pace) return null;
+  // While a change is saving it shows as chosen; a failure puts the server's pace back, with the error.
+  const shown = page.pacing ?? pace;
+  return (
+    <section className={styles.card} aria-labelledby="pace-heading">
+      <h2 id="pace-heading" className={styles.cardTitle}>
+        Speaking pace
+      </h2>
+      <fieldset className={styles.paces} aria-describedby="pace-note">
+        <legend className="visually-hidden">How fast Sophi talks</legend>
+        {SpeechPaceSchema.options.map((p) => (
+          <label key={p} className={styles.pace}>
+            <input type="radio" name="speech-pace" value={p} checked={shown === p} onChange={() => void page.setPace(p)} />
+            {PACE_WORD[p]}
+          </label>
+        ))}
+      </fieldset>
+      <p id="pace-note" className={styles.meta}>
+        {PACE_NOTE}
+      </p>
+      {page.paceError ? (
+        <p className={styles.alertLine} role="alert">
+          {page.paceError}
+        </p>
+      ) : null}
     </section>
   );
 }

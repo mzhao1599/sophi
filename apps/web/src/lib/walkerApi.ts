@@ -1,14 +1,18 @@
 import {
   AnswerProposalResponseSchema,
   PairingCodeResponseSchema,
+  SpeechPaceResponseSchema,
   WalkerErrorSchema,
   WalkerListResponseSchema,
   WalkerTurnResponseSchema,
   type AnswerProposalResponse,
   type PairingCodeResponse,
   type ProposalView,
+  type SpeechPace,
+  type SpeechPaceResponse,
   type WalkerActivityView,
   type WalkerErrorCode,
+  type WalkerSpeechPaceView,
   type WalkerStatusView,
   type WalkerTurnResponse,
 } from "@walker/contracts";
@@ -30,16 +34,19 @@ export interface WalkerPageApi {
   /** A typed question. Reusing `clientTurnId` gets the stored answer back and runs nothing again. */
   sendTurn(deviceId: string, clientTurnId: string, text: string): Promise<WalkerTurnResponse>;
   answerProposal(deviceId: string, proposalId: string, answer: "confirm" | "decline"): Promise<AnswerProposalResponse>;
+  /** How fast Sophi talks in Cartesia's voice, in force from its next line, with no Confirm. */
+  setSpeechPace(deviceId: string, pace: SpeechPace): Promise<SpeechPaceResponse>;
   /** Deletes the walker, its turns, configurations and proposals, and revokes its credential. */
   forgetWalker(deviceId: string): Promise<void>;
   /** The server's clock minus this browser's, in milliseconds: 0 until a response says otherwise. */
   clockOffsetMs(): number;
 }
 
-/** The list response as the page uses it: `activity` is optional in the contract, so it defaults to none. */
+/** The list response as the page uses it: `activity` and `speech_paces` are optional in the contract, so they default to none. */
 export interface WalkerList {
   walkers: WalkerStatusView[];
   activity: WalkerActivityView[];
+  speech_paces: WalkerSpeechPaceView[];
 }
 
 /**
@@ -155,7 +162,7 @@ export function createWalkerApi(fetchImpl: typeof fetch = (...args) => fetch(...
   return {
     async listWalkers(signal) {
       const list = await call(BASE, { method: "GET", signal }, WalkerListResponseSchema, DEADLINE_MS.poll);
-      return { walkers: list.walkers, activity: list.activity ?? [] };
+      return { walkers: list.walkers, activity: list.activity ?? [], speech_paces: list.speech_paces ?? [] };
     },
     createPairingCode() {
       return call(`${BASE}/pairing-codes`, { method: "POST" }, PairingCodeResponseSchema, DEADLINE_MS.action);
@@ -175,6 +182,9 @@ export function createWalkerApi(fetchImpl: typeof fetch = (...args) => fetch(...
         AnswerProposalResponseSchema,
         DEADLINE_MS.action,
       );
+    },
+    setSpeechPace(deviceId, pace) {
+      return call(`${walker(deviceId)}/speech-pace`, { method: "PUT", body: JSON.stringify({ speech_pace: pace }) }, SpeechPaceResponseSchema, DEADLINE_MS.action);
     },
     async forgetWalker(deviceId) {
       await call(walker(deviceId), { method: "DELETE" }, null, DEADLINE_MS.action);

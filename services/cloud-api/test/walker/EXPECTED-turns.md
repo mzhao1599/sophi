@@ -72,6 +72,22 @@ Cartesia's speech-to-text turns the clip into words before Claude reads them; th
 | The whole walker turn *(review)* | The server's part, from reading the upload to the reply and its audio, stays within 8 s, leaving time for the audio's download before the Pi's 10 s: the model gets at most 8 s and only what's left of the budget, the voice at most 3 s and only what's left |
 | *(review)* Speech Cartesia returns as `WAVE_FORMAT_EXTENSIBLE`, or with no samples | Refused like other unplayable audio, matching the Pi's player: `speech: null`, `voiced_by: "walker"` |
 
+## Speaking pace (stubbed model and fetch; not yet heard live)
+
+| Case | Expected |
+| --- | --- |
+| A walker at `normal` (every new walker), any reply | The Cartesia request has no `generation_config`, the same body as above; the model's context has `speech_pace: "normal"` |
+| "Please talk slower" by Talk, the model returning `speech_pace: "slower"` | Pace set to `slower` at once, with no proposal and no new configuration version. Reply "Okay, I'll talk more slowly now. Ask for normal speed any time.", `answered_by: "fixed"`, reason `pace_slower`, and that line's own Cartesia request carries `generation_config: { speed: 0.8 }` |
+| Any later reply on that walker | `generation_config: { speed: 0.8 }`; the context says `speech_pace: "slower"` |
+| The model asks for the pace already in force | "I'm already talking at my normal speed." (or slowly, fast), reason `pace_unchanged`, nothing changes |
+| A typed page turn asking to talk faster | Pace set to `faster`, reply "Okay, I'll talk faster now. …", not spoken |
+| `POST /devices/{id}/speech` on a `faster` walker | `generation_config: { speed: 1.2 }` |
+| A server with no Cartesia voice | "I can't change how fast I talk right now.", reason `pace_no_voice`, pace unchanged |
+| `speech_pace` together with `cues_change` or a `tool_call` | Off the reply schema: retried once, then the fixed line; pace unchanged and no proposal |
+| The same `client_turn_id` again after the pace was set back | The stored reply, and the pace stays as it is now |
+| `setSpeechPace` / `PUT /walkers/{id}/speech-pace` with the owner cookie | `{ speech_pace }`, listed in `speech_paces` on `GET /walkers`; another owner gets `404 not_found`, no cookie or a device credential `401 unauthenticated`, a number or other word `400 invalid_request` |
+| Forget the walker | Its pace goes with its row: the store holds nothing with its id |
+
 ## Routes and privacy
 
 | Case | Expected |

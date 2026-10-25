@@ -12,6 +12,8 @@ import { createFakeWalker } from "@/lib/walkerFake";
 import {
   CONNECTION_BACK,
   OUT_OF_TIME,
+  PACE_WORD,
+  paceOf,
   typedNotice,
   ZONE_MAX_SHOWN_AGE_MS,
   announcements,
@@ -407,6 +409,23 @@ describe("real API client", () => {
     const api = createWalkerApi(async () => answers.shift()!);
     expect((await api.listWalkers()).activity).toEqual([activity]);
     expect((await api.listWalkers()).activity).toEqual([]);
+  });
+
+  it("passes the speaking paces through (none from an older server, so no card), and sets one by PUT", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const paces = [{ device_id: id(1), speech_pace: "slower" }];
+    const answers = [json(200, { walkers: [status()], speech_paces: paces }), json(200, { walkers: [status()] }), json(200, { speech_pace: "faster" })];
+    const api = createWalkerApi(async (url, init) => {
+      calls.push({ url: String(url), init: init! });
+      return answers.shift()!;
+    });
+    const listed = await api.listWalkers();
+    expect(listed.speech_paces).toEqual(paces);
+    expect(paceOf(listed.speech_paces, id(1))).toBe("slower");
+    expect(paceOf((await api.listWalkers()).speech_paces, id(1))).toBeNull();
+    expect(await api.setSpeechPace(id(1), "faster")).toEqual({ speech_pace: "faster" });
+    expect([calls[2]!.init.method, calls[2]!.url, calls[2]!.init.body]).toEqual(["PUT", `/api/v1/walkers/${id(1)}/speech-pace`, JSON.stringify({ speech_pace: "faster" })]);
+    expect(Object.values(PACE_WORD)).toEqual(["Slower", "Normal", "Faster"]);
   });
 
   it("turns errors into codes, keeps a closed proposal, and reads anything else as unavailable", async () => {

@@ -235,4 +235,11 @@ alter table walker_turns drop constraint walker_turns_heard_by_check;
 alter table walker_turns add constraint walker_turns_heard_by_check check (heard_by in ('typed', 'cartesia'));
 `,
   },
+  {
+    id: "0008_walker_speech_pace",
+    sql: `
+-- How fast Sophi talks in Cartesia's voice (SpeechPaceSchema). On the walker's own row, so forgetting the walker deletes it.
+alter table walker_devices add column speech_pace text not null default 'normal' check (speech_pace in ('slower', 'normal', 'faster'));
+`,
+  },
 ];

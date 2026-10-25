@@ -1,4 +1,4 @@
-import { PAIRING_LOCK_WINDOW_MS } from "@walker/contracts";
+import { PAIRING_LOCK_WINDOW_MS, type SpeechPace } from "@walker/contracts";
 import { CareDbError, type CareDbClient } from "./care-db";
 import type {
   CircleInviteRecord,
@@ -146,6 +146,10 @@ export class SpacetimeCircleStore implements WalkerStore {
 
   writeLocationSharing(deviceId: string, enabled: boolean) {
     return this.base.writeLocationSharing(deviceId, enabled);
+  }
+
+  writeSpeechPace(deviceId: string, pace: SpeechPace) {
+    return this.base.writeSpeechPace(deviceId, pace);
   }
 
   /**

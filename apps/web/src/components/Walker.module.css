@@ -277,6 +277,31 @@
   stroke-dasharray: 3 3;
 }
 
+/* Slower / Normal / Faster: the radios wrap at large text sizes, each a full-height target. */
+.paces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pace {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  font-size: 18px;
+}
+
+.pace input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
 .rows {
   display: grid;
 }
