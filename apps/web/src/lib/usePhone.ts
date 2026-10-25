@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { membershipMoved, openLive, phoneRows, withLiveCircle, PHONE_VIEWS, type LiveStatus, type PhoneLiveRows } from "./careLive";
+import { helpRowsKey, membershipMoved, openLive, phoneRows, withLiveCircle, PHONE_HELP_VIEWS, PHONE_VIEWS, type LiveStatus, type PhoneLiveRows } from "./careLive";
 import { PhoneApiError, type PhoneApi, type PhoneFailure, type PhoneHome } from "./phoneApi";
 import { NOT_IN_CIRCLE, joinError, pollEvery } from "./phoneView";
 
@@ -38,8 +38,10 @@ export function usePhone(api: PhoneApi): Phone {
   const [joining, setJoining] = useState(false);
   const [live, setLive] = useState<LiveStatus>("off");
   const [liveRows, setLiveRows] = useState<PhoneLiveRows | null>(null);
-  // Whether the live rows include help requests (`my_help`); until then a request is only seen by polling.
-  const helpLive = false;
+  // Whether the live rows include help requests (`my_help`); until then (or with a module without it) a request is
+  // only seen by polling, every 2 s.
+  const [helpSubscribed, setHelpSubscribed] = useState(false);
+  const helpLive = live === "live" && helpSubscribed;
   // One request at a time. A refresh asked for while one is running runs once more after it, so a refresh after
   // an action (asking for help, answering) always ends with an answer the server gave after that action.
   const running = useRef<Promise<void> | null>(null);
@@ -101,13 +103,25 @@ export function usePhone(api: PhoneApi): Phone {
         setHome((h) => withLiveCircle(h, rows));
       },
       setLive,
+      { views: PHONE_HELP_VIEWS, onExtra: setHelpSubscribed },
     );
     return () => {
       handle.close();
       setLive("off");
       setLiveRows(null);
+      setHelpSubscribed(false);
     };
   }, [api, linked]);
+
+  // Any change to a help row (asked, someone showing or coming, closed, deleted): fetch the server's home at once.
+  // Compared with the last key, not a first-run flag (Strict Mode runs effects twice); the first rows only set it.
+  const helpKey = helpRowsKey(liveRows, helpSubscribed);
+  const lastHelpKey = useRef<string | null>(null);
+  useEffect(() => {
+    const before = lastHelpKey.current;
+    lastHelpKey.current = helpKey;
+    if (before !== null && helpKey !== null && before !== helpKey) void refresh();
+  }, [helpKey, refresh]);
 
   // Approved, removed, or replaced: what the live rows say about this phone wins, so ask the server now.
   useEffect(() => {
