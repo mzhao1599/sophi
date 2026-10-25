@@ -88,7 +88,9 @@ Unchanged from `get_weather` and `get_location`: coordinates go from the Pi to O
 
 ## Live results (2026-10-24)
 
-**Passed three runs in a row, but only with a fix to the server's reply check** that isn't committed yet (it's in the `show-on-screen` worktree for review). Without it, 2 of 4 runs failed. Nothing here ran on the real Pi, a real GPS receiver or the panel.
+**Passed three runs in a row twice:** first with a fix to the server's reply check (runs 5 to 7; without that fix, 2 of 4 runs failed), then again on `7afcfd1`, after the answer and simulated-weather changes (runs 8 to 10). The fix is committed as `bfa908c`. Nothing here ran on the real Pi, a real GPS receiver or the panel.
+
+### First pass: runs 1 to 7
 
 **Setup.** Everything ran on one Mac, 2026-10-24 between 21:29 and 21:51 PDT:
 - the server: `next dev` from this branch (at `e839814`), with the in-memory store and Max's Gemini key. Spoken turns went to `gemini-3.7-flash`, with `gemini-3.6-flash` as the backup after 4.5 s (the server's defaults). There was no Cartesia key, so the walker spoke in its own voice;
@@ -125,12 +127,44 @@ In run 5's sensors turn, the main model took more than 4.5 s on the continuation
 
 From run 3 on, a preload in the server process logged each Gemini reply: only the model name, status, time, finish reason and reply text, never the key or the audio. It showed both models answering a `show_on_screen` step with `"reply": ""` next to a correct `tool_call`. The reply check (`WalkerReplySchema`, reply at least one character) rejected that. Each model then retried, which added about 2 s to every show turn. When both retries came back bad, the turn failed. In run 3 the backup's retry also lost the transcript and answered "I didn't catch that…", and that answer was used. Across runs 3 to 7, 15 of 18 logged first attempts at a turn's first show step had an empty reply. The model's reply is never spoken on that step, because the step line is the server's own. The prompt's rule "never say something is on the screen until a `show_on_screen` result says so" is a likely reason the model leaves it empty.
 
-**The fix** (`services/cloud-api/src/walker/assistant.ts`, not committed): an empty `reply` is accepted when the model asks for `show_on_screen` and something was heard (a non-empty transcript). Everywhere else a reply is still required, so an empty answer is still retried and can never be spoken. No prompt was changed. Two tests and two rows in `test/walker/EXPECTED-turns.md` cover it: the first test fails without the fix. The cloud suite passes (265) and typechecks.
+**The fix** (`services/cloud-api/src/walker/assistant.ts`, committed as `bfa908c`; runs 5 to 7 ran it uncommitted on top of `e839814`): an empty `reply` is accepted when the model asks for `show_on_screen` and something was heard (a non-empty transcript). Everywhere else a reply is still required, so an empty answer is still retried and can never be spoken. No prompt was changed. Two tests and two rows in `test/walker/EXPECTED-turns.md` cover it: the first test fails without the fix. The cloud suite passes (265) and typechecks.
 
-**Seen in these runs, not fixed:**
+**Seen in these runs** (the first, second and third points were addressed in `7afcfd1`; see the second pass):
 - The answers don't say what's on the card. `gemini-3.7-flash` said "I am showing the weather on the screen." in every run, not "It's on your screen: 64 degrees and partly cloudy." So she hears "Putting that on your screen." and then much the same line again. `gemini-3.6-flash` did include the values ("…64 degrees and partly cloudy skies"), but its answers were never the ones used. On the sensors continuation it also said "1500 millimetres".
 - The backup asked for the same card again after its result 2 times out of 9 continuation replies, both in one turn (run 5). The prompt already says to reuse a tool only when a fresh observation is needed. If this matters, one fix is for the server to treat a repeat of a view already in `tool_results` as the end of the tool loop.
 - With `--gps`, the weather card still says "Weather data from Open-Meteo" over the simulated sample. The Simulated tag sits only on the "Near you, from GPS" line. On the real Pi the credit is true; in the simulator it isn't.
 - A show turn is two model calls, so the answer took 3.6 to 5.4 s (9.7 s once) after letting go of Talk. That's slower than the 4 s design target. The step line comes sooner, at 1.7 to 3.1 s.
+
+### Second pass: runs 8 to 10 (`7afcfd1`)
+
+The same setup and the same two clips, 2026-10-24 between 22:00 and 22:05 PDT. The server and the Pi bundle were both rebuilt from `7afcfd1`. That head includes the reply-check fix (`bfa908c`). It also changes two things. The Screen prompt rule now tells the model not to repeat that the thing is on the screen, and to answer in one sentence with the main fact from the result, saying simulated when the result does. A simulated weather card now reads "Simulated weather, not a forecast" with a Simulated tag, and credits no provider. All three runs passed, back to back.
+
+| Run | Weather: step / answer | Sensors: step / answer | Cleared | Result |
+| --- | --- | --- | --- | --- |
+| 8 | 2.8 s / 4.8 s | 2.2 s / 4.4 s | 31.5 s, 31.7 s | pass |
+| 9 | 2.4 s / 4.1 s | 2.3 s / 4.4 s | 31.7 s, 31.7 s | pass |
+| 10 | 2.2 s / 4.2 s | 1.9 s / 3.7 s | 31.6 s, 31.9 s | pass |
+
+The checks were the same as in the first pass, and every turn met them: the `show_on_screen` log line with the right view and `shown=true`, the step line, the `showing:weather` or `showing:sensors` card, the answer as its caption, and the clock back 30 s after the answer played. The weather card read "64°", "Partly cloudy skies, wind 8 mph" and "Simulated weather, not a forecast", with a Simulated tag and no Open-Meteo credit.
+
+Every final answer came from `gemini-3.7-flash` on its first attempt (server log). None says "on the screen", and each one states the main fact:
+
+| Run | Weather answer | Sensors answer |
+| --- | --- | --- |
+| 8 | "It shows simulated weather of 64 degrees with partly cloudy skies." | "The nearest reading is 1500 millimetres. These readings are simulated." |
+| 9 | "The simulated weather is 64 degrees Fahrenheit with partly cloudy skies." | "The nearest reading is 1500 millimetres. These readings are simulated." |
+| 10 | "It shows simulated weather of 64 degrees Fahrenheit with partly cloudy skies." | "The nearest reading right now is 1500 millimetres in front. These readings are simulated." |
+
+The server adds "These readings are simulated." The model's sensors answer didn't say simulated itself; the backup's usually did.
+
+From the Gemini reply log:
+- **Repeat requests:** no model asked for the same card again after its result (0 of 12 continuation replies, 6 per model).
+- **Empty step replies:** 11 of 12 first attempts at the step had an empty reply. All were accepted, with no retries.
+- **Speed:** with no retry and no repeat, every answer arrived 3.7 to 4.8 s after letting go of Talk, and the step line 1.9 to 2.8 s after.
+
+**Seen in the second pass, not changed:**
+- **Units:** the spoken sensors answer says "1500 millimetres" while the card says "150 cm". The walker's result gives the model millimetres (`devices/pi/src/show.ts`, the result words), but the card and the obstacle screen use centimetres.
+- **Caption paging:** the 75-character caption pages break mid-sentence. Run 10's weather caption showed "It shows simulated weather of 64 degrees Fahrenheit with" and then "partly cloudy skies." on the next page.
+- **Tag layout:** on the simulated weather card, the Simulated tag wraps onto a line of its own under "Simulated weather, not a forecast", which already says the same thing.
 
 Logs, Gemini replies and screenshots are in the session's scratch folder, not the repo.
