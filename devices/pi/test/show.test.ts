@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SCREEN_SHOW_MS, ScreenStateSchema, ShowCardSchema, type DeviceTurnRequest, type ScreenState, type ShowCard } from "@walker/contracts";
-import { captionPages } from "@walker/walker-screen/view";
+import { SHOWING_CAPTION_CHARS, showingCaptionPages } from "@walker/walker-screen/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SCREEN_ANSWER_HOLD_MS, SCREEN_ZONES_MIN_MS, ZONE_VALIDITY_MS } from "../src/constants";
 import { describeGpsLocation, lookUpPlace } from "../src/location";
@@ -409,9 +409,10 @@ describe("SH11: the answer's caption page rides under the card", () => {
   const card: ShowCard = { view: "parts", parts: [{ module_id: "base.walker", health: "ok", simulated: true }] };
   const reply = "Fake cloud: it's on your screen now. The real assistant isn't connected in this run, so this reply says so on every page it has.";
 
-  it("turns with the answering screen's pages, through its hold; null when captions are off", async () => {
-    const pages = captionPages(reply, settings.text_size);
+  it("paged by showingCaptionPages (75 characters at every size), turning on those pages' clock, through the hold; null when captions are off", async () => {
+    const pages = showingCaptionPages(reply);
     expect(pages.length).toBeGreaterThan(1);
+    expect(pages.every((p) => [...p].length <= SHOWING_CAPTION_CHARS)).toBe(true);
     const clock = new FakeClock();
     const states: ScreenState[] = [];
     const m = new ScreenMachine({ clock, simulator: true, settings, localTime: () => null, onState: (s) => states.push(s), onError: (e) => { throw e; } });

@@ -1,5 +1,5 @@
 import { SCREEN_SHOW_MS, type AppliedScreenSettings, type Cue, type MotionState, type ScreenContent, type ScreenHoldDirection, type ScreenLink, type ScreenState, type ShowCard } from "@walker/contracts";
-import { captionPages } from "@walker/walker-screen/view";
+import { captionPages, showingCaptionPages } from "@walker/walker-screen/view";
 import type { TalkState } from "../bus";
 import type { Cancel, Clock } from "../clock";
 import {
@@ -220,11 +220,13 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   const showLive = model.showing !== null && model.talk !== "recording" && ((showEnds = showEndsAt(model.showing, model.answer)) === null || now < showEnds);
   if (showLive && showEnds !== null) soonest.push(showEnds);
 
-  // The answer as captions: on the answering screen, or as the caption under a card.
+  // The answer as captions: on the answering screen, or as the caption under a card. Under a card the reply is
+  // paged by `showingCaptionPages` (75 characters a page at every text size, so a page fits the line the card
+  // leaves), and those pages set the timing.
   let answering: Extract<ScreenContent, { state: "answering" }> | null = null;
   let caption: string | null = null;
   if (model.answer && (model.talk === "idle" || showLive)) {
-    const pages = captionPages(model.answer.reply, settings.text_size);
+    const pages = showLive ? showingCaptionPages(model.answer.reply) : captionPages(model.answer.reply, settings.text_size);
     const ends = answerEndsAt(model.answer, pages, settings.captions, model.offer !== null);
     if (ends === null || now < ends) {
       const { page, nextInMs } = pageAt(pages, now - model.answer.startedMono);
