@@ -208,7 +208,7 @@ Since 2026-10-25 Claude answers every walker question too, typed or spoken (`ser
 **Before mentioning Claude in the demo:**
 1. Put `ANTHROPIC_API_KEY` in `apps/web/.env.local` (and on Render, where the walker uses it too). With the key the onboarding agent runs by default; `ONBOARDING_ENGINE=deterministic` turns it off.
 2. Rehearse: `REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse`. It must pass every path on all 3 runs with every reply from the model.
-3. Rebuild and start as in the script's setup checklist. The notice must name "Anthropic's Claude", and each reply must say "Read by Claude". Mention Claude only after that check.
+3. Rebuild and start as in the script's setup checklist. The terminal must print `[onboarding-agent] outcome=agent` after the first answer. Mention Claude only after that check.
 4. Check Anthropic's current commercial terms on retention and training, and update judge Q&A 1 and 2 in the script to match.
 
 **The 2-minute cut:** the Microsoft cut, with the named community in the first sentence and the "where it could go wrong" answer in place of the path-to-production line.

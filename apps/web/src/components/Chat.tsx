@@ -184,9 +184,9 @@ export function Chat({
                 <span className="visually-hidden">Assistant: </span>
                 <Words text={m.text} animate={!reduced && baseline !== null && i >= baseline} />
               </p>
-              {agentName && m.answeredBy ? (
+              {agentName && m.answeredBy === "fixed" ? (
                 <p className={styles.engine} data-by={m.answeredBy}>
-                  {m.answeredBy === "model" ? `Read by ${agentName}` : "Fixed questions: the model's reply didn't come through"}
+                  Fixed questions: the model&apos;s reply didn&apos;t come through
                 </p>
               ) : null}
             </div>

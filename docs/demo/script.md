@@ -10,7 +10,7 @@ This is the script for showing the website to judges at Cal Hacks: a click seque
 
 ## Click sequence (website only)
 
-Every input and click, with nothing to say. Use it to rehearse, or alongside the 3-minute script below. Wait for each reply to appear before typing the next line (about 2 to 5 seconds; "Read by Claude" shows under each one).
+Every input and click, with nothing to say. Use it to rehearse, or alongside the 3-minute script below. Wait for each reply to appear before typing the next line (about 2 to 5 seconds).
 
 1. Open <http://localhost:3004> (start it with the setup checklist below).
 2. Click the text box, type the line below and press Enter:
@@ -93,7 +93,7 @@ The 3-minute script uses L1 to L5, then "Show My Walker"†. The 60-second cut u
 
 **The intended walker** after L5 (and after L7): hand controls and obstacle sensors on; robot arms and arm lift suggested but off until she switches them on; voice "You Said No"†; location sharing "Not Available Yet"†. After L1 alone (the 60-second cut): hand controls and obstacle sensors on, robot arms suggested but off, voice off ("Off"†, since she hasn't said anything about it).
 
-**How to tell which engine answered.** On screen: under each reply the model worded, a quiet note says "Read by Claude"†. A reply from the fixed questions instead says "Fixed questions: the model's reply didn't come through"†. A turn falls back when the model errors, runs past the 15-second deadline, or gives two unusable replies, and the next turn tries the model again. Backup: the terminal running the site prints `[onboarding-agent] outcome=agent …` for each model turn, or `outcome=fallback` with a reason. Carry on after a fallback: the rehearsal shows the same lines light the same parts either way. Never present a fallback turn as the model's; the note under it already says so.
+**How to tell which engine answered.** On screen: a reply from the fixed questions says "Fixed questions: the model's reply didn't come through"† under it; a reply Claude worded has no note (the "Read by Claude" note was removed on 2026-10-25). The deterministic engine shows no note either, so check which engine runs in the terminal (setup step 7). A turn falls back when the model errors, runs past the 15-second deadline, or gives two unusable replies, and the next turn tries the model again. Backup: the terminal running the site prints `[onboarding-agent] outcome=agent …` for each model turn, or `outcome=fallback` with a reason. Carry on after a fallback: the rehearsal shows the same lines light the same parts either way. Never present a fallback turn as the model's; the note under it already says so.
 
 ## The 3-minute script
 
@@ -112,7 +112,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 > "No diagnosis, no form. She said what's hard, and the walker drew the parts that help."
 
-1. Thinking dots† show for about 2 to 5 seconds, then the reply fades in word by word†, with "Read by Claude"† under it.
+1. Thinking dots† show for about 2 to 5 seconds, then the reply fades in word by word†.
 2. On the drawing, the parts arrive one at a time with their names: hand controls and obstacle sensors on, the robot arms dashed.
 3. Say nothing for about 3 seconds while it draws, then say the line.
 
@@ -120,7 +120,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 > "This is Sophi. The line under the box says Anthropic's Claude reads her answers, and Anthropic may keep a copy. Wren is made up, so nothing real goes with them. Each reply says who read it."
 
-1. Point at the name in the header, Sophi†, then at the line under the text box†, then at "Read by Claude"†.
+1. Point at the name in the header, Sophi†.
 
 **0:36 to 0:47. Where she'll use it (L2)**
 
@@ -258,7 +258,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 ## Judge Q&A
 
-**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†. Each answer is also sent to Anthropic's API, and the line under the text box says so before anyone types: "Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy."† Once sent, deleting here can't recall it from Anthropic. That's why the demo uses a made-up persona.
+**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†. Each answer is also sent to Anthropic's API. The page doesn't say so on screen (that line was removed on 2026-10-25), so say it here if asked. Once sent, deleting here can't recall it from Anthropic. That's why the demo uses a made-up persona.
 
 **2. Does Anthropic use it?** [Fill in from the setup checklist, step 8.] Say only what Anthropic's terms for this key's account say about keeping and using API inputs; until someone has read them, say "we haven't checked Anthropic's retention terms for this key yet, so the laptop only gets Wren's made-up lines."
 
@@ -332,7 +332,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= pnpm --filter @walker/web exec next dev --port 3004
    ```
 
-7. **Engine check.** The header says Sophi†. The line under the text box† must read "Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy."† After the first answer, the reply shows "Read by Claude"† and the terminal prints `[onboarding-agent] outcome=agent …`. If there's no line under the text box, the deterministic engine is running: fix `.env.local`, rebuild and restart, and don't mention Claude.
+7. **Engine check.** The header says Sophi†. After the first answer, the terminal prints `[onboarding-agent] outcome=agent …`. If it doesn't, the deterministic engine is running: fix `.env.local`, rebuild and restart, and don't mention Claude.
 8. **Terms check.** Read what Anthropic's terms for the key's account say about keeping and using API inputs, and write the answer into Q&A 2.
 9. **Run it through once.** Run the whole 3-minute script once, end to end, including the test payment and the success page. This checks Claude and Stripe on the venue network (and, in development mode, compiles every page). Then reset (step 13).
 10. **Browser.** Use a separate browser profile with no saved data, so Stripe's email field can't autofill a real address. Close every other tab: email, chat, Messages, password managers, other localhost tabs (another project may use ports 3000 to 3003; the only localhost tab should be this demo on port 3004), any editor showing `.env.local`, and the vercel.app tab. Turn on Do Not Disturb.
@@ -350,7 +350,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 Design changes for the demo, sent to the redesign session. Status checked against the code on `main` (`daea268`).
 
 1. **Done.** A "you said no" state: Voice shows "You Said No"† with a struck dot, and its panel quotes her decline.
-2. **Done.** A note under each reply saying which engine answered: "Read by Claude"† or "Fixed questions: the model's reply didn't come through"†.
+2. **Done.** A note under a reply that came from the fixed questions: "Fixed questions: the model's reply didn't come through"†.
 3. **Done.** New parts arrive one at a time, with their names.
 4. **Done.** Her words come first in a part's panel: "You said"†, then "Why it's suggested:"†.
 5. **Done.** The success page ends on her drawn walker, with "Demo order: no money moved"†.

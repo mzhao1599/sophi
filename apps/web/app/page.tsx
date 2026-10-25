@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { openingQuestion } from "@walker/cloud-api";
 import { DemoScreen } from "@/components/DemoScreen";
-import { agentName, agentNotice, screenAccess } from "@/server/onboarding";
+import { agentName, screenAccess } from "@/server/onboarding";
 
 /**
  * The demo: one page with the guided chat and the walker. Rendered per request, because the data
@@ -10,5 +10,5 @@ import { agentName, agentNotice, screenAccess } from "@/server/onboarding";
  */
 export default async function Home() {
   await connection();
-  return <DemoScreen opening={openingQuestion()} agentNotice={agentNotice} agentName={agentName} {...await screenAccess()} />;
+  return <DemoScreen opening={openingQuestion()} agentName={agentName} {...await screenAccess()} />;
 }
