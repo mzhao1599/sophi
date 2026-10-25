@@ -37,10 +37,13 @@ import {
 import ConfigureReducer from "./configure_reducer";
 
 // Import all procedure arg schemas
+import * as AnswerHelpProcedure from "./answer_help_procedure";
 import * as ApproveJoinProcedure from "./approve_join_procedure";
+import * as AskForHelpProcedure from "./ask_for_help_procedure";
 import * as CircleOfProcedure from "./circle_of_procedure";
 import * as ClaimInviteProcedure from "./claim_invite_procedure";
 import * as ForgetWalkerProcedure from "./forget_walker_procedure";
+import * as HelpOfProcedure from "./help_of_procedure";
 import * as MemberBySecretProcedure from "./member_by_secret_procedure";
 import * as MessagesForProcedure from "./messages_for_procedure";
 import * as PingProcedure from "./ping_procedure";
@@ -50,6 +53,7 @@ import * as SaveMessageProcedure from "./save_message_procedure";
 import * as SweepCircleProcedure from "./sweep_circle_procedure";
 
 // Import all table schema definitions
+import MyHelpRow from "./my_help_table";
 import MyMembershipRow from "./my_membership_table";
 import MyMessagesRow from "./my_messages_table";
 import MyPeopleRow from "./my_people_table";
@@ -60,6 +64,13 @@ import OwnerMembersRow from "./owner_members_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  myHelp: __table({
+    name: 'my_help',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyHelpRow),
   myMembership: __table({
     name: 'my_membership',
     indexes: [
@@ -104,10 +115,13 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("answer_help", AnswerHelpProcedure.params, AnswerHelpProcedure.returnType),
   __procedureSchema("approve_join", ApproveJoinProcedure.params, ApproveJoinProcedure.returnType),
+  __procedureSchema("ask_for_help", AskForHelpProcedure.params, AskForHelpProcedure.returnType),
   __procedureSchema("circle_of", CircleOfProcedure.params, CircleOfProcedure.returnType),
   __procedureSchema("claim_invite", ClaimInviteProcedure.params, ClaimInviteProcedure.returnType),
   __procedureSchema("forget_walker", ForgetWalkerProcedure.params, ForgetWalkerProcedure.returnType),
+  __procedureSchema("help_of", HelpOfProcedure.params, HelpOfProcedure.returnType),
   __procedureSchema("member_by_secret", MemberBySecretProcedure.params, MemberBySecretProcedure.returnType),
   __procedureSchema("messages_for", MessagesForProcedure.params, MessagesForProcedure.returnType),
   __procedureSchema("ping", PingProcedure.params, PingProcedure.returnType),
