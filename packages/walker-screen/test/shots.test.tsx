@@ -87,10 +87,13 @@ function measure(): Measured {
   if (main.dataset.size === "main" && mainLines > 2) problems.push(`main line takes ${mainLines} lines`);
   if (main.dataset.size === "nav" && mainLines > (main.dataset.wraps === "true" ? 2 : 1)) problems.push(`"${main.textContent}" takes ${mainLines} lines`);
   // The ellipsis backstop never fires on a fixture: the view shortened the line enough.
-  // (A line box is shorter than the glyphs, so a clamped block's height is allowed half a line of slack.)
+  // One line: its text's own width (scrollWidth rounds, and an ellipsis shows at a fraction of a pixel over).
+  // More: a line box is shorter than the glyphs, so a clamped block's height is allowed half a line of slack.
   for (const el of root.querySelectorAll<HTMLElement>("[data-max-lines]")) {
     const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
-    const clipped = el.dataset.maxLines === "1" ? el.scrollWidth > el.clientWidth + 1 : el.scrollHeight > el.clientHeight + lineHeight / 2;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const clipped = el.dataset.maxLines === "1" ? range.getBoundingClientRect().width > el.clientWidth : el.scrollHeight > el.clientHeight + lineHeight / 2;
     if (clipped) problems.push(`"${el.textContent}" is clipped`);
   }
   const map = root.querySelector<HTMLElement>(".ws-map");

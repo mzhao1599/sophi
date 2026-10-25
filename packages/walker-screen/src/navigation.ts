@@ -96,9 +96,10 @@ export const WORD_EM: Record<string, number> = {
 const FIT_SLACK_PX = 8;
 /**
  * Average width of a character of regular text, as a share of the font size: street and place names measured
- * 0.45 to 0.51 (Lenox Avenue) in Chromium on the bundled font. A line of more than one keeps 15% for wrapping.
+ * 0.45 to 0.51 (Lenox Avenue) in Chromium on the bundled font, so 0.52 keeps a little room. A line of more than
+ * one keeps 15% for wrapping.
  */
-const CHAR_EM = 0.5;
+const CHAR_EM = 0.52;
 
 export function navColumns(textSize: TextSize): { left: number; right: number } {
   const left = NAV_COLUMN_PX[textSize];
@@ -125,6 +126,40 @@ export function phaseLine(text: string, textSize: TextSize): { px: number; wraps
 export function fitChars(width: number, px: number, lines: number): number {
   const perLine = Math.floor(width / (CHAR_EM * px));
   return lines === 1 ? perLine : Math.floor(perLine * lines * 0.85);
+}
+
+/** Street-type words, shortened the usual way, when a street's name is too long for its line. */
+const STREET_WORDS: Record<string, string> = {
+  Avenue: "Ave",
+  Street: "St",
+  Boulevard: "Blvd",
+  Road: "Rd",
+  Drive: "Dr",
+  Place: "Pl",
+  Lane: "Ln",
+  Court: "Ct",
+  Parkway: "Pkwy",
+  Highway: "Hwy",
+  Terrace: "Ter",
+};
+
+/**
+ * A street's name for one line of `max` characters: as it is when it fits; else with its street-type words
+ * shortened ("Lakeshore Ave"); else cut at a word with an ellipsis. The screen reader hears the whole instruction.
+ */
+export function streetForLine(street: string, max: number): string {
+  const name = street.trim().replace(/\s+/g, " ");
+  if ([...name].length <= max) return name;
+  const short = name
+    .split(" ")
+    .map((word) => STREET_WORDS[word] ?? word)
+    .join(" ");
+  if ([...short].length <= max) return short;
+  const chars = [...short];
+  const cut = chars.slice(0, max - 1).join("");
+  // Cut at the last whole word (the one that ends exactly at the cut counts).
+  const space = chars[max - 1] === " " ? cut.length : cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 /** About how many characters of body text fit one line of the right column. */

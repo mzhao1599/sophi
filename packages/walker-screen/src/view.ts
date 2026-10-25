@@ -29,6 +29,7 @@ import {
   navMap,
   navMapHeight,
   phaseLine,
+  streetForLine,
   turnWordPx,
   type NavMap,
 } from "./navigation";
@@ -666,7 +667,7 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
       // Arriving is the next thing: the distance beside the arrow says what is left, so the place goes under the map.
       info.push({ text: shorten(content.destination, fitChars(left, sizes.smallest, 3)), size: "detail", maxLines: 3 });
     } else {
-      if (content.street) lines.push({ text: shorten(content.street, fitChars(right, sizes.body, 1)), size: "body", maxLines: 1 });
+      if (content.street) lines.push({ text: streetForLine(content.street, fitChars(right, sizes.body, 1)), size: "body", maxLines: 1 });
       info.push(detail(`${distanceWords(content.remaining_m)} to go`), detail(minutesLeftWords(content.remaining_min)));
     }
     announce = content.instruction;

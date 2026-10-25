@@ -154,6 +154,12 @@ const BASES: Base[] = [
     name: "navigating-arrive-next-longest",
     screen: nav({ destination: LONGEST_PLACE, instruction: "Arrive at the Lake Merritt Boating Center.", maneuver: "arrive", street: null, to_step_m: 30, remaining_m: 30, remaining_min: 0 }, 72, null),
   },
+  // Every other maneuver word, so each is drawn and measured at every size (illustrative streets).
+  { name: "navigating-ahead", screen: nav({ instruction: "Continue onto Grand Avenue.", maneuver: "straight", street: "Grand Avenue", to_step_m: 120 }) },
+  { name: "navigating-right", screen: nav({ instruction: "Turn right onto Bellevue Avenue.", maneuver: "right", street: "Bellevue Avenue" }) },
+  { name: "navigating-slight-left", screen: nav({ instruction: "Bear slightly left onto the path.", maneuver: "slight_left", street: null }) },
+  { name: "navigating-sharp-left", screen: nav({ instruction: "Turn sharp left onto Perkins Street.", maneuver: "sharp_left", street: "Perkins Street" }) },
+  { name: "navigating-sharp-right", screen: nav({ instruction: "Turn sharp right onto Lakeshore Avenue.", maneuver: "sharp_right", street: "Lakeshore Avenue" }) },
   { name: "navigating-rerouting", screen: nav({ phase: "rerouting", position: [37.80835, -122.25745] }, 20, 26), strip: { simulator: true } },
   { name: "navigating-off-route-longest", screen: nav({ phase: "off_route", destination: LONGEST_PLACE, position: [37.80835, -122.25745] }, 20, 26), strip: { simulator: true } },
   { name: "navigating-no-position", screen: nav({ phase: "no_position", to_step_m: null, position: null, simulated: false }, 13, 20) },

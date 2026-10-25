@@ -33,6 +33,7 @@ import {
   minutesLeftWords,
   navColumns,
   navMap,
+  streetForLine,
   turnWordPx,
   worldPx,
   MIN_FRAGMENT_WORDS,
@@ -501,7 +502,18 @@ describe("walking directions", () => {
       }
     }
     expect(turnWordPx("Left", "largest")).toBe(96);
+    // Each word is drawn by a fixture, so the shots check measures it at every size.
+    const drawn = new Set(screenFixtures().map((f) => (f.state.screen.state === "navigating" ? f.state.screen.maneuver : null)));
+    for (const maneuver of ManeuverSchema.options) expect(drawn.has(maneuver), maneuver).toBe(true);
     expect(turnWordPx("Turn around", "large")).toBeLessThan(88);
+  });
+
+  it("N7: a long street's type is shortened first ('Lakeshore Ave'), then the name is cut at a word", () => {
+    expect(streetForLine("Lakeshore Avenue", 16)).toBe("Lakeshore Avenue");
+    expect(streetForLine("Lakeshore Avenue", 15)).toBe("Lakeshore Ave");
+    expect(streetForLine("Martin Luther King Junior Way", 15)).toBe("Martin Luther…");
+    expect(streetForLine("Martin Luther King Jr Boulevard", 22)).toBe("Martin Luther King Jr…");
+    expect(streetForLine("Martin Luther King Jr Boulevard", 26)).toBe("Martin Luther King Jr Blvd");
   });
 
   it("N7: the longest street and place are shortened to fit their lines, at every size", () => {
