@@ -619,7 +619,7 @@ export type OwnerPhonesResponse = z.infer<typeof OwnerPhonesResponseSchema>;
  */
 export function caregiverConsentLine(caregiverName: string, walkerUserName: string | null): string {
   const who = walkerUserName ?? "The person who uses this walker";
-  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), and see a recent GPS position only if location sharing is turned on later.`;
+  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), see a recent GPS position only if location sharing is turned on later, and watch the walker's camera live only while camera sharing is on.`;
 }
 
 /** POST /api/v1/walkers/{id}/circle/joins/{member_id}: the owner approves a waiting caretaker. Declining is DELETE on the member. */

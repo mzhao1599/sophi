@@ -38,6 +38,7 @@ export {
   type TurnEvent,
   type WalkerServiceOptions,
 } from "./walker/service";
+export { CAMERA_RECHECK_MS, CameraRelay, CameraService, cameraPart, sharedCameraRelay, type CameraFrame, type CameraServiceOptions } from "./walker/camera";
 export { CircleError, CircleService, isCircleError, type CircleServiceOptions, type MemberCaller, type MessageEvent } from "./walker/circle";
 export { WALKER_SYSTEM_PROMPT, createWalkerAssistant, type WalkerAssistant, type Words } from "./walker/assistant";
 export { createCartesiaVoice, type WalkerVoice } from "./walker/speech";

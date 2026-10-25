@@ -12,7 +12,8 @@ Type=simple
 User=steady
 Group=steady
 # audio: ALSA mic and speaker. dialout: the ESP32 serial ports. gpio: /dev/gpiochip* for gpiomon.
-SupplementaryGroups=audio dialout gpio
+# video: /dev/video* for the live camera (WALKER_CAMERA_DEVICE).
+SupplementaryGroups=audio dialout gpio video
 # ALSA device names and GPIO pins (see steady-walker.env.example).
 EnvironmentFile=/etc/steady-walker.env
 Environment=WALKER_STATE_DIR=/var/lib/steady-walker

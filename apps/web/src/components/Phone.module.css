@@ -787,3 +787,35 @@
     background: CanvasText;
   }
 }
+
+/* ---- Live camera (CameraCard.tsx) ---- */
+
+.cameraFrame {
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-inner);
+  background: var(--wash);
+}
+
+.cameraFrame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* A still picture is dimmed as well as labelled in words beside it, never shown as live. */
+.cameraFrame[data-live="false"] img {
+  opacity: 0.45;
+}
+
+.cameraWatching {
+  padding: 12px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-left: 4px solid var(--live);
+  border-radius: var(--radius-inner);
+  background: var(--card-solid);
+  font-size: 1.25rem;
+  font-weight: 700;
+}

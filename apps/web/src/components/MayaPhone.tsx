@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "re
 import { PhoneApiError, type PhoneApi, type PhoneMember } from "@/lib/phoneApi";
 import { BATTERY_LINE, counterLine, newCountLine, newId, presenceWord, sendError, unseen, walkerTitle, walkerUserOf } from "@/lib/phoneView";
 import { cueWord, partRows } from "@/lib/walkerView";
+import { CameraWatch } from "./CameraCard";
 import { NearbySample } from "./NearbySample";
 import styles from "./Phone.module.css";
 
@@ -68,7 +69,7 @@ export function MayaPhone({
         ))}
       </nav>
       <div className={`${styles.screen} ${styles.fade}`} key={screen}>
-        {screen === "walker" ? <WalkerStatus home={home} /> : null}
+        {screen === "walker" ? <WalkerStatus home={home} api={api} announce={announce} /> : null}
         {screen === "messages" ? <Thread home={home} api={api} refresh={refresh} announce={announce} /> : null}
         {screen === "nearby" ? <NearbySample role="caregiver" heading="Nearby" headingId={HEADING} /> : null}
       </div>
@@ -76,7 +77,7 @@ export function MayaPhone({
   );
 }
 
-function WalkerStatus({ home }: { home: PhoneMember }) {
+function WalkerStatus({ home, api, announce }: { home: PhoneMember; api: PhoneApi; announce(text: string): void }) {
   const w = home.walker;
   const rows = partRows(w.parts ?? []);
   return (
@@ -94,6 +95,7 @@ function WalkerStatus({ home }: { home: PhoneMember }) {
         </p>
         {w.simulator ? <p className={styles.meta}>This walker is the simulator running on a computer, not a Pi.</p> : null}
       </div>
+      {api.camera ? <CameraWatch camera={api.camera} herName={walkerUserOf(home)?.name ?? "Her"} announce={announce} /> : null}
       <section className={styles.card} aria-labelledby="alerts-title">
         <h2 id="alerts-title" className={styles.cardTitle}>
           Alerts in force

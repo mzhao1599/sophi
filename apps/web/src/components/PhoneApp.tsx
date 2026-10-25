@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { PRODUCT_NAME } from "@/lib/brand";
+import { createCameraApi } from "@/lib/cameraApi";
 import { createPhoneApi, type PhoneApi, type PhoneHome, type PhoneRole } from "@/lib/phoneApi";
 import { createPreviewPhone } from "@/lib/phoneFake";
 import { CANT_REACH, JOIN_NOTICE, codeDigits } from "@/lib/phoneView";
@@ -20,7 +21,7 @@ const HEADING = "app-heading";
  * already linked, and says "Preview" on every screen.
  */
 export function PhoneApp({ preview = null }: { preview?: PhoneRole | null }) {
-  const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : createPhoneApi()));
+  const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : { ...createPhoneApi(), camera: createCameraApi() }));
   useEffect(() => {
     if (!preview) return;
     let live = true;

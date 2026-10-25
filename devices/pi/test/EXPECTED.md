@@ -472,3 +472,28 @@ Written before the tests, from the motion contract (`lift.home`, `lift.move`, `l
 | E17 | lift.json missing, valid, not JSON, failing the schema, version 1, an installation the schema forbids; `createPiMotion` with a malformed one | Read as missing, ok, or invalid with the reason ("lift.json is malformed: it isn't JSON", "lift.json is malformed (config.max_speed_mm_s: ...)"). Malformed: no client, no lift handler registered, "the lift is off" logged with the reason, and a lift target refused `part_missing` "this walker has no lift: lift.json is malformed: it isn't JSON". Valid: the client is built and registered as the lift handler. |
 
 Mutation checks (run by hand, results in the PR): the screen's hold not routed to the client, the client's `tick` not called from the control loop, `lift.stop` not sent on a motion.stop, the lift's verdict skipped when preparing, `lift.stop` not sent when a fault latches, a release keeping the taught gripper goal, bench mode waiving the lift's hardware stop, the acceleration and homing-speed limit skipped, no `lift.stop` on a repeated fault, and `lift.clear` dropping every lift fault must each fail a test.
+
+## Live camera (`src/camera/`, added 2026-10-24; ffmpeg's test source and recorded frames only)
+
+`test/camera.test.ts`. Times come from the fake clock; ffmpeg is a fake child in the capture rows; the cloud is a fake in the link rows and a real local HTTP server in CL1. No camera, Pi or real server was used for these rows. Contract: `packages/contracts/src/camera.ts`.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| CJ1 | A stream of JPEGs split at every possible byte boundary | The same frames come out, byte for byte, in order, whatever the chunking. |
+| CJ2 | Garbage before, between and after frames; a frame cut off mid-scan followed by a new SOI | Garbage is skipped; the cut frame is dropped; the frames around it come out whole. |
+| CJ3 | A frame with stuffed bytes (`FF 00`) and restart markers (`FF D0`–`FF D7`) in its scan, and an APP segment holding `FF D9` | None of them ends the frame; only the EOI after the scan does. |
+| CJ4 | A frame longer than CAMERA_FRAME_MAX_BYTES | Dropped (counted), never emitted, and the next frame comes out whole. |
+| CJ5 | A frame without a DHT segment | `withHuffmanTables` inserts the standard Annex K tables (one 418-byte DHT segment: 12 + 12 + 162 + 162 values) right before SOS; a frame that has a DHT, or that can't be parsed, is returned unchanged. ffmpeg decodes the result to the same pixels as the original with tables (checked by hand with framemd5, see the README). |
+| CC1 | Capture started (camera source) | Spawns `ffmpeg … -f v4l2 -input_format mjpeg -video_size 640x480 -framerate 15 -i <device> -c:v copy -f mjpeg pipe:1`; test pattern spawns lavfi `testsrc2` encoded to MJPEG. Only the newest frame is kept, numbered from 1, with DHT added. `start()` twice spawns once. |
+| CC2 | ffmpeg exits while wanted | Logged with its exit code only; restarted after 1 s, then 2 s, 4 s… up to 30 s; the delay resets after a frame arrives. |
+| CC3 | `stop()` | SIGTERM, then SIGKILL after 2 s if it hasn't exited; the newest frame is dropped; no restart. A child that failed to spawn (no pid) is never signalled. |
+| CL1 | HTTP client against a local server | The wait is `GET /api/v1/devices/{id}/camera?source=…` with the Bearer credential; a frame is `POST …/camera/frames` with `Content-Type: image/jpeg`, the source header and the JPEG bytes as the body. A 401 is `unauthorized`. |
+| CL2 | Wait answers `wanted: false` | Asked again at once; the camera never starts. |
+| CL3 | Wait answers `wanted: true` | The camera starts; each new frame is posted once (a frame already sent isn't sent again), one request at a time, at most CAMERA_MAX_FPS (10) a second. |
+| CL4 | A frame's answer is `keep_sending: false` | The camera stops and the link waits again. |
+| CL5 | A 401 on the wait or a frame | The camera stops; nothing more is sent with that credential; a new credential (re-pairing) starts it again. |
+| CL6 | The wait fails (unreachable, 500) | Retried after 2 s, doubling to 30 s; reset after a good answer. |
+| CL7 | Frame posts keep failing | Retried every 0.5 s; after 10 s of failures the camera stops and the link waits again. |
+| CL8 | No credential | Nothing is sent; checked again every 5 s. |
+| CL9 | `stop()` | The open request is aborted and the camera stops; nothing is sent afterwards. |
+| CL10 | Wanted, but the camera gives no frame for 5 s | The camera stops and the link waits again (a wait still wanted starts it again). |

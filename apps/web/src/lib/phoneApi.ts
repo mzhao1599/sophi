@@ -28,6 +28,7 @@ import {
   type PresetReplyId,
 } from "@walker/contracts";
 import type { z } from "zod";
+import type { CameraApi } from "./cameraApi";
 
 /**
  * The circle's client, in one file: what the two-phone app (/app) and the owner's "Phones" panel on /walker
@@ -80,6 +81,8 @@ export interface PhoneApi {
   sendPreset(clientMessageId: string, preset: PresetReplyId, toMemberId: string): Promise<PhoneMessage>;
   /** A live connection to the circle in SpacetimeDB, or null when the server keeps it itself (the fake has none). */
   live?(): Promise<CareLiveAccess | null>;
+  /** The walker's live camera (cameraApi.ts); the fake has none, so previews show no camera card. */
+  camera?: CameraApi;
 }
 
 /** What the owner's page asks about the phones linked to one walker. */
@@ -114,7 +117,7 @@ const BASE = "/api/v1/circle";
 export const PHONE_DEADLINE_MS = 8_000;
 
 /** One request: a deadline, the cookie, the contract's error envelope, and the answer checked against `schema` (null: no body). */
-async function circleCall<T>(fetchImpl: typeof fetch, path: string, init: RequestInit, schema: z.ZodType<T> | null): Promise<T> {
+export async function circleCall<T>(fetchImpl: typeof fetch, path: string, init: RequestInit, schema: z.ZodType<T> | null): Promise<T> {
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), PHONE_DEADLINE_MS);
   const onAbort = () => deadline.abort();

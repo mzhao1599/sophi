@@ -178,6 +178,8 @@ WALKER_TEST_DATABASE_URL=postgres://walker@127.0.0.1:55432/postgres pnpm --filte
 
 Each test run makes its own database and drops it afterwards; a URL that isn't on this machine is refused. `fsync=off` is for a throwaway cluster only: on a slow disk, each file sync otherwise takes seconds. Without `WALKER_TEST_DATABASE_URL` the Postgres cases skip with a message saying so. The expected results are in [`test/walker/EXPECTED.md`](test/walker/EXPECTED.md).
 
+**The live camera's relay** ([`src/walker/camera.ts`](src/walker/camera.ts)). `CameraRelay` is one per server process (`sharedCameraRelay()`, on `globalThis` for the same reason as the activity log) and holds, per walker: which phone of hers turned sharing on, when the walker's camera link last asked, the open watches, and the newest frame while anyone watches. Nothing of it reaches the store, so a restart turns sharing off. `CameraService` checks the walker's credential through `WalkerService.resolve` and a phone's cookie through the store, as the circle does; a watch re-checks every 5 s that the caretaker and her phone are still in, and turns her sharing off if her phone has left. Tests: `test/walker/camera.test.ts` (memory store, fake timers). Routes and consent: [interfaces](../../docs/interfaces.md#the-live-camera-added-2026-10-24).
+
 ## Walker assistant
 
 One question and its answer (`WalkerService.turn`, routes `POST /devices/{id}/turns` and `POST /walkers/{id}/turns`).
