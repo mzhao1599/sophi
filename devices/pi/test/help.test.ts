@@ -184,13 +184,19 @@ describe("the chord and who owns Confirm", () => {
     const h = await booted();
     h.fake.script = [{ reply: "Fake cloud: short sounds? Press Confirm.", proposeCues: ["sound"] }];
     await talk(h);
+    expect(h.service.openProposal).not.toBeNull();
+    // A second question is waiting for its answer, so the Talk press below cancels it and leaves Talk idle.
+    h.client.hold.add("turn");
+    await talk(h);
+    expect(h.service.talk).toBe("waiting");
     h.press("confirm", "pressed");
     h.press("confirm", "released");
     await h.clock.advance(100);
     h.press("talk", "pressed");
+    h.press("talk", "released");
     await h.clock.advance(1000);
+    expect(h.spoken("local_reply")).toContain(LINES.cancelled);
     expect(h.client.calls.filter((c) => c.startsWith("answer:"))).toEqual([]);
-    expect(h.service.talk).toBe("recording");
     expect(h.speaker.cues).not.toContain("help");
   });
 
