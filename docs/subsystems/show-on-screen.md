@@ -34,7 +34,7 @@ All in `packages/contracts`, validated on both sides:
 
 ## The cloud (services/cloud-api)
 
-**Built and tested (2026-10-24), against a fake model.** Not yet run against Gemini, a Pi or a screen. Code: `src/walker/assistant.ts`, `service.ts` and `hedge.ts`; the expected results are in `test/walker/EXPECTED-turns.md` ("Pulling something up on the walker's screen") and the tests in `test/walker/turn.test.ts`.
+**Built and tested (2026-10-24), against a fake model,** then run live with Gemini against the Pi simulator and its screen page (see [Live results](#live-results-2026-10-24)). Not yet run against the real Pi. Code: `src/walker/assistant.ts`, `service.ts` and `hedge.ts`; the expected results are in `test/walker/EXPECTED-turns.md` ("Pulling something up on the walker's screen") and the tests in `test/walker/turn.test.ts`.
 
 - **Offered per turn.** The JSON schema sent to the model is built for each turn (`walkerReplyJsonSchema(views)`). It offers `{name: "show_on_screen", view}`, with `view` limited to that turn's `screen.views`, only on a walker turn that carries `screen`. A walker turn without `screen` (an older Pi, or no screen page connected) and every page turn get the schema without it, so the model is never told about a card the walker can't fill. The backup model gets the same views.
 - **Checked again on the server.** The reply parser accepts the contract's `WalkerToolCallSchema`, so the server sees any view the model names and refuses one the turn didn't list: the fixed line "I can't show that on this walker's screen right now." (rule `show_unavailable`), with no `tool_call`. A page turn that asks for it gets "Please use Talk on the walker for that request." (rule `device_tool_only`), as with the other device tools.
@@ -53,7 +53,7 @@ All in `packages/contracts`, validated on both sides:
 - **The screen machine** (`src/screen/machine.ts`) has the `showing` layer: obstacle, then motion, then listening, then the card, then thinking and answering. `caption` is the answer's current caption page for as long as the answering screen would show it (its pages and its 3 s hold), paged by `showingCaptionPages` (75 characters at every text size) and timed by those pages; null with captions off or no answer up. The card goes SCREEN_SHOW_MS after the answer has played (or after it was drawn, if none was playing), at a Talk press, or when a newer card replaces it; a later answer never brings it back. The sensors card follows each reading under the obstacle screen's SCREEN_ZONES_MIN_MS throttle, rounded to 10 mm, and a zone whose reading stops counting turns unknown on time.
 - **Logs**: one line, `show_on_screen` with the view, whether it was shown, and the milliseconds.
 - **Fake cloud and simulator**: a `.walk` script's `key show-<view>` makes the fake cloud's next turn ask for that view, only if the walker listed it; its continuation relays the walker's result word for word. `walker simulate --gps` adds a SIMULATED GPS receiver (its position is never shared) and SIMULATED weather and address samples that say so; no internet. `test/sim/show-weather.walk` passed three real-time runs in a row on 2026-10-24 in the simulator on a Mac, with a headless Chromium (chrome-headless-shell) on the page and the screen piece's real card layouts (and runs on a fake clock in the suite).
-- **Not checked yet**: a live turn against the real server with Gemini (the cloud piece), the real card layouts, the Pi and the panel.
+- **Not checked yet**: the real Pi and the panel. A live turn with Gemini has run only in the simulator on a Mac ([Live results](#live-results-2026-10-24)).
 
 ## The screen (packages/walker-screen)
 
@@ -84,4 +84,53 @@ Unchanged from `get_weather` and `get_location`: coordinates go from the Pi to O
 - Cloud: the tool is offered only on a walker turn carrying `screen`, only with its views; a page turn gets the Talk line; a view not listed is refused; the step line is "Putting that on your screen."; the continuation's answer is the model's; existing tool tests still pass.
 - Pi: `screen.views` matches what the walker has; each view's card is built from local data; the card shows over thinking and answering with the caption, and clears on Talk, a newer card and after `SCREEN_SHOW_MS`; an obstacle still takes the screen first; the message's words never appear in a turn request; failures show nothing. A `.walk` script: ask, see `showing weather`, hear the answer, card clears. Three runs in a row.
 - Screen: every card fits at Largest with the longest strings, announces once, and shows Simulated where flagged.
-- Live (the check a harness can't make): the Pi simulator against a local server with Gemini, "Show me the weather" and "Show me what the sensors see", three runs in a row.
+- Live (the check a harness can't make): the Pi simulator against a local server with Gemini, "Show me the weather" and "Show me what the sensors see", three runs in a row. Results below.
+
+## Live results (2026-10-24)
+
+**Passed three runs in a row, but only with a fix to the server's reply check** that isn't committed yet (it's in the `show-on-screen` worktree for review). Without it, 2 of 4 runs failed. Nothing here ran on the real Pi, a real GPS receiver or the panel.
+
+**Setup.** Everything ran on one Mac, 2026-10-24 between 21:29 and 21:51 PDT:
+- the server: `next dev` from this branch (at `e839814`), with the in-memory store and Max's Gemini key. Spoken turns went to `gemini-3.7-flash`, with `gemini-3.6-flash` as the backup after 4.5 s (the server's defaults). There was no Cartesia key, so the walker spoke in its own voice;
+- the walker: the Pi simulator (`walker simulate --server … --screen --gps --mic-file …`), bundled from the same commit and freshly paired for each run. `--gps` means a SIMULATED GPS fix and a SIMULATED weather sample (64°F, partly cloudy, wind 8 mph), with no internet involved. The obstacle sensors were the simulator's two simulated zones at 1500 mm;
+- the screen page: open in headless Chromium (chrome-headless-shell, Playwright) at 800x480 for the whole run. A small script logged each scene change and screenshotted every card;
+- the voice: synthetic clips from macOS `say` (16 kHz mono), "Show me the weather." and "Show me what the sensors see.", with Talk held for 2 s. Nothing played aloud.
+
+A `.walk` script drove each run: boot, then a weather turn and a sensors turn. For each turn it waited for "Putting that on your screen.", the `showing` screen, the answer, no clock for 25 s, then the clock again.
+
+**Timings** run from letting go of Talk to the step line arriving, and then to the answer arriving, both on the walker (from its log). "Cleared" is the time from the answer arriving to the clock returning.
+
+| Run | Weather: step / answer | Sensors: step / answer | Cleared | Result |
+| --- | --- | --- | --- | --- |
+| 5 | 2.9 s / 5.4 s | 3.1 s / 9.7 s (see below) | 31.3 s, 31.6 s | pass |
+| 6 | 2.3 s / 4.1 s | 2.8 s / 4.6 s | 31.3 s, 31.7 s | pass |
+| 7 | 2.8 s / 5.2 s | 1.7 s / 3.6 s | 31.3 s, 31.7 s | pass |
+
+In every turn of those runs:
+- the walker logged `show_on_screen view="weather"` (or `"sensors"`) `shown=true`, and spoke the step line "Putting that on your screen.";
+- the screen showed `showing:weather` (64°, "Partly cloudy skies", "Wind 8 mph", "Near you, from GPS" with a Simulated tag, "Weather data from Open-Meteo") or `showing:sensors` ("Front left · 150 cm" over both zones, each tagged Simulated), with the step line and then the answer as the caption;
+- the card went back to the clock about 31.5 s after the answer arrived: 30 s (`SCREEN_SHOW_MS`) after the walker finished playing the answer.
+
+Every final answer came from `gemini-3.7-flash` on its first attempt (server log). The answers were the same in all three runs:
+- weather: "I am showing the weather on the screen.";
+- sensors: "I am showing the obstacle sensors on the screen. These readings are simulated." The server adds the second sentence.
+
+In run 5's sensors turn, the main model took more than 4.5 s on the continuation, so the backup's reply was used, and it asked for `show_on_screen` `sensors` a second time. The walker showed the card again, and the main model answered the next step, which made 9.7 s in all.
+
+**What failed first, and why.** Runs 1 to 4 used the code as merged:
+- run 1 passed (7.0 s and 7.1 s);
+- run 2 failed on sensors with the fixed line "I can't answer that right now. Your alerts are set to buzzing and speech." (server: `reason=invalid_reply attempts=2`, 5.0 s);
+- run 3 failed on weather with "I didn't catch that. Please speak again while holding the Talk button.", and no card;
+- run 4 passed (6.3 s and 6.9 s).
+
+From run 3 on, a preload in the server process logged each Gemini reply: only the model name, status, time, finish reason and reply text, never the key or the audio. It showed both models answering a `show_on_screen` step with `"reply": ""` next to a correct `tool_call`. The reply check (`WalkerReplySchema`, reply at least one character) rejected that. Each model then retried, which added about 2 s to every show turn. When both retries came back bad, the turn failed. In run 3 the backup's retry also lost the transcript and answered "I didn't catch that…", and that answer was used. Across runs 3 to 7, 15 of 18 logged first attempts at a turn's first show step had an empty reply. The model's reply is never spoken on that step, because the step line is the server's own. The prompt's rule "never say something is on the screen until a `show_on_screen` result says so" is a likely reason the model leaves it empty.
+
+**The fix** (`services/cloud-api/src/walker/assistant.ts`, not committed): an empty `reply` is accepted when the model asks for `show_on_screen` and something was heard (a non-empty transcript). Everywhere else a reply is still required, so an empty answer is still retried and can never be spoken. No prompt was changed. Two tests and two rows in `test/walker/EXPECTED-turns.md` cover it: the first test fails without the fix. The cloud suite passes (265) and typechecks.
+
+**Seen in these runs, not fixed:**
+- The answers don't say what's on the card. `gemini-3.7-flash` said "I am showing the weather on the screen." in every run, not "It's on your screen: 64 degrees and partly cloudy." So she hears "Putting that on your screen." and then much the same line again. `gemini-3.6-flash` did include the values ("…64 degrees and partly cloudy skies"), but its answers were never the ones used. On the sensors continuation it also said "1500 millimetres".
+- The backup asked for the same card again after its result 2 times out of 9 continuation replies, both in one turn (run 5). The prompt already says to reuse a tool only when a fresh observation is needed. If this matters, one fix is for the server to treat a repeat of a view already in `tool_results` as the end of the tool loop.
+- With `--gps`, the weather card still says "Weather data from Open-Meteo" over the simulated sample. The Simulated tag sits only on the "Near you, from GPS" line. On the real Pi the credit is true; in the simulator it isn't.
+- A show turn is two model calls, so the answer took 3.6 to 5.4 s (9.7 s once) after letting go of Talk. That's slower than the 4 s design target. The step line comes sooner, at 1.7 to 3.1 s.
+
+Logs, Gemini replies and screenshots are in the session's scratch folder, not the repo.
