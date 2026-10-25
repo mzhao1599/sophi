@@ -169,7 +169,8 @@ describe("E11: the lift's hold control on the walker screen, end to end", () => 
     expect(t.saw("lift ended lift.move stopped")).toBe(true);
     await t.wait(100);
     expect(t.h.coordinator.state()).toMatchObject({ mode: "ready", active: null, last_command: { kind: "lift.move", outcome: "stopped" } });
-    expect(t.shown).toBe("motion_holding");
+    // 58dfc86: a stop shows no "Stopped" page; the screen underneath (unpaired here) comes back.
+    expect(t.shown).toBe("not_set_up");
     const at = t.lift().position_mm!;
     expect(at).toBeLessThan(SIM_TRAY_HEIGHT_MM);
     // Pressing the control again moves nothing: that request never resumes, and there is no control on screen.

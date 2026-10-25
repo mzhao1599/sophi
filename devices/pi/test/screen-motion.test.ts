@@ -124,7 +124,10 @@ describe("D19: motion in the screen's priority", () => {
   it("obstacle, running or fault, her own Talk, the pending target, the offer, Done, Stopped, offline, the clock", () => {
     expect(name({ obstacle, motion: running, talk: "recording" })).toBe("obstacle");
     expect(name({ motion: running, talk: "recording", answer, offer, done, link: "offline" })).toBe("motion_running");
-    expect(name({ motion: faulted, talk: "recording", answer, offer, done, link: "offline" })).toBe("motion_fault");
+    // 58dfc86: a fault page yields to her own new Talk turn (the fault stays latched in the coordinator), but
+    // still comes before an offer, Done, offline and the clock.
+    expect(name({ motion: faulted, talk: "recording", answer, offer, done, link: "offline" })).toBe("listening");
+    expect(name({ motion: faulted, offer, done, link: "offline" })).toBe("motion_fault");
     expect(name({ motion: pending, talk: "recording" })).toBe("listening");
     expect(name({ motion: pending, talk: "waiting" })).toBe("thinking");
     expect(name({ motion: pending, answer })).toBe("answering");
@@ -151,7 +154,8 @@ describe("D19: motion in the screen's priority", () => {
       map: { position: [37.809875, -122.257855], route: [[37.809875, -122.257855], [37.805086, -122.257848]], step_at: null, destination_at: [37.805086, -122.257848] },
     };
     expect(name({ navigation, motion: running })).toBe("motion_running");
-    expect(name({ navigation, motion: faulted })).toBe("motion_fault");
+    // 58dfc86: a fault page yields to a route; a running motion and a pending target still come first.
+    expect(name({ navigation, motion: faulted })).toBe("navigating");
     expect(name({ navigation, motion: pending })).toBe("motion_confirm");
     expect(name({ navigation, motionEnded: ended })).toBe("motion_holding");
     expect(name({ navigation, motionEnded: ended }, 4000)).toBe("navigating");
@@ -182,8 +186,8 @@ describe("D19: motion in the screen's priority", () => {
     expect(states.at(-1)!.screen.state).toBe("listening");
     m.talk("idle");
     await flush();
-    // Back underneath: the motion's own "Stopped", for the rest of its time.
-    expect(states.at(-1)!.screen).toEqual({ state: "motion_holding", outcome: "stopped", refusal: null });
+    // Back underneath: 58dfc86 dropped the "Stopped" page, so the clock comes back at once.
+    expect(states.at(-1)!.screen.state).toBe("ambient");
     m.stop();
   });
 });
@@ -315,7 +319,8 @@ describe("D21: after a motion, Done, Stopped or Not started", () => {
     const completed = motion({ last_command: { command_id: skillActive.command_id, kind: "skill.run", outcome: "completed", at: AT } });
     expect(endedBetween(runningSkill, completed)).toEqual({ state: "motion_holding", outcome: "completed", refusal: null });
     const stopped = motion({ last_command: { command_id: skillActive.command_id, kind: "skill.run", outcome: "stopped", at: AT } });
-    expect(endedBetween(runningSkill, stopped)).toEqual({ state: "motion_holding", outcome: "stopped", refusal: null });
+    // 58dfc86: a stop returns to whatever is underneath, with no "Stopped" page.
+    expect(endedBetween(runningSkill, stopped)).toBeNull();
     // Another command's outcome, a fault, or nothing new: nothing is claimed.
     expect(endedBetween(runningSkill, motion({ last_command: { command_id: uuid(99), kind: "skill.run", outcome: "completed", at: AT } }))).toBeNull();
     expect(
@@ -343,13 +348,13 @@ describe("D21: after a motion, Done, Stopped or Not started", () => {
     m.seed({ link: "online" });
     m.motion(motion(movingLift("running")));
     await flush();
-    m.motion(motion({ last_command: { command_id: uuid(70), kind: "lift.move", outcome: "stopped", at: AT } }));
+    m.motion(motion({ last_command: { command_id: uuid(70), kind: "lift.move", outcome: "completed", at: AT } }));
     await flush();
-    expect(states.at(-1)!.screen).toEqual({ state: "motion_holding", outcome: "stopped", refusal: null });
-    // The coordinator keeps publishing (5 a second); nothing new ends, so Stopped stays its time.
+    expect(states.at(-1)!.screen).toEqual({ state: "motion_holding", outcome: "completed", refusal: null });
+    // The coordinator keeps publishing (5 a second); nothing new ends, so Done stays its time.
     for (let t = 200; t < SCREEN_DONE_MS; t += 200) {
       await clock.advance(200);
-      m.motion(motion({ last_command: { command_id: uuid(70), kind: "lift.move", outcome: "stopped", at: AT } }));
+      m.motion(motion({ last_command: { command_id: uuid(70), kind: "lift.move", outcome: "completed", at: AT } }));
     }
     await flush();
     expect(states.at(-1)!.screen.state).toBe("motion_holding");

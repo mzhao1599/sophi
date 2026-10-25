@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CuePolicy, effectiveObstacleCues, type ConfiguredCue } from "../src/cues";
 import type { ModuleView, ZoneView } from "../src/serial/modules";
+import { CUE_MIN_GAP_MS, CUE_REPEAT_MS, OBSTACLE_HAPTIC_MS } from "../src/constants";
 import { FakeClock, captureLogger } from "./support/fakes";
 
 const hand: ModuleView = {
@@ -50,7 +51,7 @@ describe("local cue policy", () => {
     const right = { ...hand, instanceId: "hand-right-01" };
     const p = policy(["vibration", "spoken"], [hand, right]);
     p.cuePolicy.evaluate([p.zone(300)]);
-    expect(p.haptics).toEqual(["hand-left-01 near_obstacle 400", "hand-right-01 near_obstacle 400"]);
+    expect(p.haptics).toEqual([`hand-left-01 near_obstacle ${OBSTACLE_HAPTIC_MS}`, `hand-right-01 near_obstacle ${OBSTACLE_HAPTIC_MS}`]);
     expect(p.sounds()).toBe(0);
   });
 
@@ -83,7 +84,7 @@ describe("local cue policy", () => {
     expect(p.cuePolicy.zoneState("front_left")).toBe("unknown");
   });
 
-  it("C6: near every 100 ms for 10 s cues at 0, 3, 6 and 9 s", async () => {
+  it("C6: near every 100 ms for 10 s cues once every CUE_REPEAT_MS", async () => {
     const p = policy(["sound"]);
     const at: number[] = [];
     for (let t = 0; t < 10_000; t += 100) {
@@ -92,7 +93,7 @@ describe("local cue policy", () => {
       if (p.sounds() > before) at.push(p.clock.monotonic());
       await p.clock.advance(100);
     }
-    expect(at).toEqual([0, 3000, 6000, 9000]);
+    expect(at).toEqual(Array.from({ length: Math.ceil(10_000 / CUE_REPEAT_MS) }, (_, i) => i * CUE_REPEAT_MS));
   });
 
   it("C7: hysteresis holds near between 750 and 900 mm; re-entry cues after 1 s, not before", async () => {
@@ -117,7 +118,9 @@ describe("local cue policy", () => {
   it("one cue covers every zone that is near at that moment", async () => {
     const p = policy(["sound"]);
     p.cuePolicy.evaluate([p.zone(300, "front_left"), p.zone(300, "front_right")]);
-    await p.clock.advance(1500);
+    // Past the minimum gap, before the repeat: neither zone cues again on its own.
+    await p.clock.advance(CUE_REPEAT_MS - 100);
+    expect(CUE_REPEAT_MS - 100).toBeGreaterThanOrEqual(CUE_MIN_GAP_MS);
     p.cuePolicy.evaluate([p.zone(300, "front_left"), p.zone(300, "front_right")]);
     expect(p.sounds()).toBe(1);
   });

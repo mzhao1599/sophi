@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CapabilityManifestSchema } from "@walker/contracts";
 import { toneWav } from "../src/audio/wav";
-import { ESP32_TALK_RELEASE_GRACE_MS } from "../src/constants";
+import { ESP32_TALK_RELEASE_GRACE_MS, OBSTACLE_HAPTIC_MS } from "../src/constants";
 import { LINES } from "../src/notices";
 import { boot, flush, makeHarness, pairInto, type Harness } from "./support/fakes";
 import { lone } from "./support/fakes";
@@ -566,7 +566,7 @@ describe("reports", () => {
     await boot(h);
     h.tof!.readings.front_left = { mm: 300 };
     await h.clock.advance(200);
-    expect(h.named("haptic")).toEqual([{ instanceId: "hand-right-01", pattern: "near_obstacle", durationMs: 400 }]);
+    expect(h.named("haptic")).toEqual([{ instanceId: "hand-right-01", pattern: "near_obstacle", durationMs: OBSTACLE_HAPTIC_MS }]);
     expect(h.speaker.cues).not.toContain("obstacle");
   });
 

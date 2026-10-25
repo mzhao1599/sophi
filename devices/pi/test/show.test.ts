@@ -242,9 +242,9 @@ describe("SH5: the sensors card stays current", () => {
     await flush();
     expect(states.length).toBe(before); // rounds to the same 10 mm: no new revision
     await clock.advance(100);
-    m.zones([zone("front_left", 600, 1100), zone("front_right", 902, 1100)]);
+    m.zones([zone("front_left", 1000, 1100), zone("front_right", 902, 1100)]); // over NEAR_EXIT_MM: no obstacle screen
     await clock.advance(SCREEN_ZONES_MIN_MS);
-    expect(card().zones[0]!.distance).toEqual({ status: "measured", mm: 600 });
+    expect(card().zones[0]!.distance).toEqual({ status: "measured", mm: 1000 });
     expect(states.length).toBe(before + 1);
     expect(states.every((s) => ScreenStateSchema.safeParse(s).success)).toBe(true);
   });
@@ -256,10 +256,10 @@ describe("SH5: the sensors card stays current", () => {
     m.show(sensors);
     await flush();
     await clock.advance(SCREEN_ZONES_MIN_MS);
-    m.zones([zone("front_left", 700, SCREEN_ZONES_MIN_MS)]);
+    m.zones([zone("front_left", 1000, SCREEN_ZONES_MIN_MS)]);
     await clock.advance(SCREEN_ZONES_MIN_MS);
     expect(card().zones).toEqual([
-      { zone: "front_left", distance: { status: "measured", mm: 700 }, simulated: true },
+      { zone: "front_left", distance: { status: "measured", mm: 1000 }, simulated: true },
       { zone: "front_right", distance: { status: "unknown" }, simulated: true },
     ]);
     // No reading since SCREEN_ZONES_MIN_MS: front_left stops counting ZONE_VALIDITY_MS after it.

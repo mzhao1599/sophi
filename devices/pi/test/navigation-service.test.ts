@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { RouteSummarySchema, SHARED_ROUTE_POINTS, type LatLon, type WalkerToolCall } from "@walker/contracts";
 import { CloudError } from "../src/cloud/client";
+import { ROUTE_TOOL_MS } from "../src/constants";
 import { GpsSampler, type GpsResult } from "../src/gps";
 import { attachLogging } from "../src/logging";
 import { NAV_LINES } from "../src/navigation/navigator";
@@ -109,7 +110,7 @@ describe("start_route and stop_route in the turn loop", () => {
       },
       { name: "no fix", make: () => walker({ source: () => stubSource({ onDemand: () => Promise.resolve({ status: "no_fix" }) }) }), text: /no satellite fix yet/ },
       { name: "not connected", make: () => walker({ source: () => stubSource({ connected: () => false }) }), text: "I can't give walking directions because the GPS receiver is not connected." },
-      { name: "past 12 s", make: () => walker({ source: () => stubSource({ onDemand: () => new Promise(() => {}) }) }), text: "I couldn't plan a route in time. Please try again in a moment." },
+      { name: "past ROUTE_TOOL_MS", make: () => walker({ source: () => stubSource({ onDemand: () => new Promise(() => {}) }) }), text: "I couldn't plan a route in time. Please try again in a moment." },
     ];
     for (const c of cases) {
       const h = c.make();
@@ -118,7 +119,7 @@ describe("start_route and stop_route in the turn loop", () => {
       h.press("talk", "pressed");
       await h.clock.advance(1000);
       h.press("talk", "released");
-      await h.clock.advance(c.name === "past 12 s" ? 12_000 : 0);
+      await h.clock.advance(c.name === "past ROUTE_TOOL_MS" ? ROUTE_TOOL_MS : 0);
       await flush();
       const result = lastRequest(h).tool_results?.at(-1)?.text;
       if (typeof c.text === "string") expect(result, c.name).toBe(c.text);

@@ -9,7 +9,7 @@ import { PiSpeaker } from "../src/audio/speech";
 import { Bus } from "../src/bus";
 import { GpioButtons } from "../src/buttons";
 import { CuePolicy } from "../src/cues";
-import { ESP32_TALK_RELEASE_GRACE_MS } from "../src/constants";
+import { CUE_MIN_GAP_MS, CUE_REPEAT_MS, ESP32_TALK_RELEASE_GRACE_MS, NEAR_EXIT_MM } from "../src/constants";
 import { LINES } from "../src/notices";
 import { listSerialPorts, sttyArgs } from "../src/serial/port";
 import { SimulatedPort } from "../src/sim/fakeModules";
@@ -185,7 +185,7 @@ describe("S12: serial writes", () => {
   });
 });
 
-it("C12: a zone flickering between near and invalid cues every 3 s, not every second", async () => {
+it("C12: a zone flickering between near and invalid cues every CUE_REPEAT_MS, not every second", async () => {
   const clock = new FakeClock();
   let sounds = 0;
   const at: number[] = [];
@@ -213,8 +213,13 @@ it("C12: a zone flickering between near and invalid cues every 3 s, not every se
     ]);
     await clock.advance(100);
   }
-  expect(at).toEqual([0, 3000, 6000, 9000]);
-  expect(sounds).toBe(4);
+  // Near on every other 100 ms reading: the first near reading at least CUE_REPEAT_MS after the last cue,
+  // never one every CUE_MIN_GAP_MS as a fresh entry would.
+  const expected: number[] = [];
+  for (let t = 0; t < 10_000; t += 200) if (expected.length === 0 || t - expected.at(-1)! >= CUE_REPEAT_MS) expected.push(t);
+  expect(CUE_REPEAT_MS).toBeGreaterThan(CUE_MIN_GAP_MS);
+  expect(at).toEqual(expected);
+  expect(sounds).toBe(expected.length);
 });
 
 it("W5: the Pi speaker empties its private temp folder at startup", () => {
@@ -303,12 +308,12 @@ describe("second review", () => {
     return { policy, at };
   }
 
-  it("C12: near, clear, invalid, near is a new entry (cues after the 1 s gap, not 3 s)", async () => {
+  it("C12: near, clear, invalid, near is a new entry (cues after the 1 s gap, not CUE_REPEAT_MS)", async () => {
     const clock = new FakeClock();
     const { policy, at } = soundPolicy(clock, true);
     policy.evaluate([zone(clock, 300)]);
     await clock.advance(100);
-    policy.evaluate([zone(clock, 900)]);
+    policy.evaluate([zone(clock, NEAR_EXIT_MM + 50)]);
     await clock.advance(100);
     policy.evaluate([zone(clock, null)]);
     await clock.advance(1000);
