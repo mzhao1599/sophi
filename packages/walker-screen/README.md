@@ -18,6 +18,8 @@ Rules it keeps (from the screen research): text only in colours of 7:1 or better
 
 **Motion** *(added 2026-10-24)*. Four states from the motion contract: a pending Confirm target (`motion_confirm`: the Pi's title and prompt word for word, "Confirm" named over the left handle and no touch Confirm, because only a handle press starts motion), a running motion (`motion_running`: "Stop" over both handles; the lift's "Keep holding"), "Done", "Stopped" or "Not started" after a motion (`motion_holding`), and a latched fault (`motion_fault`: its sentence and "Ask a helper to clear it at the walker."). Every motion screen says "No hardware stop" when the strip's `bench_mode` is on; the strip itself has no bench tag. The view's `hold` is the lift's hold control ("Hold to raise"), present exactly when the contract's `holdControlShown` says; `WalkerScreenView` calls `onHold(true)` on a press and `onHold(false)` on a key's release, and the caller listens for every other release on the whole page (the Pi's `src/screen/hold.ts`). A motion title is never cut: `fitMotionMain` picks the main size, bold body size or bold smallest size from the height left at 800x480, and the screenshot check proves it on the 60-character worst case.
 
+**Stop lift** *(added 2026-10-25)*. While a spoken lift move runs (`lift_moving` on the screen state), the screen keeps its page and draws Stop lift ("Left handle") over the left handle, a band button at the usual 20 mm and label size; on walking directions it sits beside End route. The `ambient-lift-moving` and `navigating-lift-moving` fixtures cover it in the shots check.
+
 ## Checks
 
 ```bash

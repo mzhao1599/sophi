@@ -313,14 +313,6 @@
   max-width: none;
 }
 
-.ws-left .ws-button[data-action="stop_lift"] {
-  width: 140px;
-  min-width: 140px;
-  height: 52px;
-  border-radius: 12px;
-  font-size: 18px;
-}
-
 /* Three buttons and the Talk word share 768 px: their labels drop to the smallest size so none breaks a word. */
 .ws-band[data-buttons="3"] .ws-button {
   font-size: var(--ws-smallest);
@@ -459,8 +451,17 @@
   display: none;
 }
 
+/* A spoken lift move: Stop lift joins End route in the band, at the same 20 mm, and the distance card makes room. */
+.ws-screen[data-layout="navigating"][data-lift-moving="true"] > .ws-band {
+  grid-template-columns: auto auto;
+}
+
 .ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-left {
   display: flex;
+}
+
+.ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-nav-info {
+  max-width: calc(800px - 2 * var(--ws-edge) - 2 * var(--ws-button) - 12px - 8px);
 }
 
 .ws-screen[data-layout="navigating"] .ws-band[data-tall="true"] {
