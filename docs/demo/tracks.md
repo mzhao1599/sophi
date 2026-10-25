@@ -172,7 +172,7 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 
 ### Notice wording
 
-- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types: "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker."
+- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types, when the server has a Claude key: "What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker." Without a Claude key it names only Gemini, as before.
 - **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. What's said goes to Google's Gemini, and Sophi's replies are spoken by Cartesia from their text; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
 - **Said aloud at the Talk beat:** "Sophi's answer is in Cartesia's voice. Only the answer's text goes to Cartesia, never the speaker's voice."
 
@@ -201,9 +201,13 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 
 **What Claude does in Sophi:** the onboarding agent was built for Claude first (`services/cloud-api/src/onboarding/anthropic.ts`: Claude Opus 5.5 at low effort, one structured-output call per turn, the server-side refusal fallback on). It reads the person's words as a fixed list of needs, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement. It never picks a module.
 
+Since 2026-10-24 Claude also answers questions typed to the walker on the "Your walker" page (`services/cloud-api/src/walker/config.ts`, `walkerTypedAssistantFromEnv`), under the same rules as Gemini: the server words every offer, only a Confirm press changes the walker, and "clear" or "safe" in a reply is retried. Spoken questions stay on Gemini, which hears the clip itself; Claude's API takes no audio. "Behind the scenes" names the model that ran each turn, from the server's own record.
+
 **Where it could go wrong, and what Sophi does about it:** the model could misread a need (each part's panel quotes the words it came from, and every switch stays with the person); it could fail or be slow (a 15-second deadline, then the fixed questions, with a note saying so); it could be steered by what someone types (her words are passed as data, and fixed rules choose modules); and people's words leave the laptop (the notice names who reads them before anyone types).
 
 **Status:** the key went into `apps/web/.env.local` on 2026-10-24. The first live run failed every turn in about 0.2 seconds: the adapter sent the beta header `server-side-fallback-2026-10-23`, which the API rejects. `fallbacks: "default"` needs `server-side-fallback-2026-07-01`, which fixed it. Measured on 2026-10-24 (rehearsal, real Claude Opus 5.5, laptop only): 3 runs, 9 of 9 paths passed, 39 model turns, no fallbacks, 1.9 to 5.1 seconds a turn, median 2.5 seconds. Steps 3 and 4 below haven't been done yet, and it hasn't run on Render.
+
+**Typed walker turns on Claude, measured 2026-10-24** (the live walker suite, `WALKER_LIVE=1 WALKER_LIVE_MODES=text pnpm --filter @walker/cloud-api walker-live`, typed lines sent through the page as people type them, real Claude Opus 5.5, laptop only, no voice): 3 runs of beats 2 to 5 plus three fresh wordings and the all-parts-simulated check, every check passed, 15 turns all answered by Claude, 1.7 to 3.8 seconds a turn, median 2.2 seconds; one turn needed its one retry. Beat 3 typed on the page is answered by the server from the sensors ("The obstacle sensors read front: 64 centimetres…"), not in the model's words, by design. Spoken turns on Gemini through the same suite haven't been run since this change, because the laptop has no Gemini key; not yet run on Render, the Pi or the page in a browser.
 
 **To switch the demo to Claude (Max pastes the key):**
 1. Put `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_PROVIDER=anthropic` and `ONBOARDING_ENGINE=agent` in `apps/web/.env.local`.

@@ -137,6 +137,16 @@ describe("behind the scenes: a finished turn with a trace", () => {
     expect(v.stages[1]!.sentence).toBe("Gemini read the question and wrote an answer in 640 milliseconds.");
   });
 
+  it("names Claude when the trace says Claude read a typed question, failures included", () => {
+    const s = status({ turns: [turn({ source: "page", heard_by: "typed", voiced_by: null })] });
+    const typed = { input: "text" as const, clip_ms: null, voiced_by: null, voice_ms: null, model: "claude" as const };
+    const v = build({ status: s, activity: activity({ traces: [trace({ ...typed, model_ms: 2_400 })] }) });
+    expect(rows(v).slice(1, 3)).toEqual(["Claude | 2.4 s | done", "Rules | Claude's own words | done"]);
+    expect(v.stages[1]!.sentence).toBe("Claude read the question and wrote an answer in 2.4 seconds.");
+    const failed = build({ status: s, activity: activity({ traces: [trace({ ...typed, rule: "timeout", answered_by: "fixed", model_ms: 8_000 })] }) });
+    expect(failed.stages[1]).toMatchObject({ label: "Claude", sentence: "Claude timed out after 8 seconds." });
+  });
+
   it("says the walker's own voice when no audio was sent, never that it spoke", () => {
     const v = build({ activity: activity({ traces: [trace({ voiced_by: "walker", voice_ms: null })] }) });
     expect(v.stages.at(-1)).toMatchObject({ label: "Voice", figure: "Walker's own voice" });
@@ -268,6 +278,12 @@ describe("behind the scenes: in flight", () => {
     expect(anyInFlight([activity({ in_flight: [old] })], T0 + IN_FLIGHT_STALE_MS - 1)).toBe(true);
   });
 
+  it("reading: a typed question waiting for Claude, named before the answer comes", () => {
+    const v = build({ ownTurnId: id(202), activity: activity({ in_flight: [flight({ input: "text", clip_ms: null, model: "claude" })] }) });
+    expect(rows(v)).toEqual(["Page sent | typed | done", "Reading | Waiting for Claude… | live"]);
+    expect(v.stages[1]!.sentence).toBe("The server is waiting for Claude.");
+  });
+
   it("shows the newest of several in flight", () => {
     const v = build({ activity: activity({ in_flight: [flight({ client_turn_id: id(203), since: iso(T0 + 4_000) }), flight()] }) });
     expect(v.key).toBe(id(202));
@@ -286,6 +302,11 @@ describe("behind the scenes: without timings", () => {
       "Voice | Sent in Cartesia's voice | done",
     ]);
     expect(v.totalMs).toBeNull();
+  });
+
+  it("with no activity, doesn't guess which model read a typed question", () => {
+    const v = build({ activity: undefined, status: status({ turns: [turn({ source: "page", heard_by: "typed", voiced_by: null })] }) });
+    expect(rows(v).slice(1, 3)).toEqual(["The model | ran | done", "Rules | The model's own words | done"]);
   });
 
   it("a fixed reply from status alone says only 'Fixed reply', with no code it can't know", () => {

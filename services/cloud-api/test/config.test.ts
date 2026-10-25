@@ -3,7 +3,7 @@ import { MemorySessionStore, OnboardingService } from "../src";
 import { AGENT_REPLY_JSON_SCHEMA } from "../src/onboarding/agent";
 import { agentNoticeClause, agentProviderFromEnv, engineFromEnv } from "../src/onboarding/config";
 import { createGeminiModel, thinkingFor } from "../src/onboarding/gemini";
-import { backupThinkingFor } from "../src/walker/config";
+import { backupThinkingFor, walkerAgentFromEnv, walkerTypedModelFromEnv } from "../src/walker/config";
 
 interface Captured {
   url: string;
@@ -216,5 +216,20 @@ describe("agent provider selection", () => {
     expect(unknown.kind).toBe("deterministic");
     expect(unknown.warnings.join(" ")).toContain('"openai"');
     expect([...missing.warnings, ...none.warnings, ...unknown.warnings].join(" ")).not.toMatch(/a-key|g-key/);
+  });
+});
+
+describe("who answers the walker's typed turns", () => {
+  it("is Claude with a Claude key, unless WALKER_TYPED_PROVIDER says gemini; spoken turns stay on Gemini", () => {
+    expect(walkerTypedModelFromEnv({ ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" })).toBe("claude");
+    expect(walkerTypedModelFromEnv({ ANTHROPIC_API_KEY: "a" })).toBe("claude");
+    expect(walkerTypedModelFromEnv({ ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g", WALKER_TYPED_PROVIDER: "gemini" })).toBe("gemini");
+    expect(walkerTypedModelFromEnv({ GEMINI_API_KEY: "g" })).toBe("gemini");
+    expect(walkerTypedModelFromEnv({ ANTHROPIC_API_KEY: "none" })).toBeNull();
+    expect(walkerTypedModelFromEnv({})).toBeNull();
+
+    const both = walkerAgentFromEnv({ ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
+    expect([both.typed?.provider, both.assistant?.provider]).toEqual(["claude", "gemini"]);
+    expect(walkerAgentFromEnv({ GEMINI_API_KEY: "g" }).typed).toBeNull();
   });
 });
