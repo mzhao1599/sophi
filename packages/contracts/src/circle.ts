@@ -137,10 +137,14 @@ export const ScreenChoicesSchema = z.strictObject({
 });
 export type ScreenChoices = z.infer<typeof ScreenChoicesSchema>;
 
-/** What a walker's screen starts with: also what the screen draws before its first feed. */
+/**
+ * What a walker's screen starts with: also what the screen draws before its first feed. Dark by default
+ * (2026-10-24): the screen is on all day, and a dark page gives off less light and glare. On the walker's
+ * backlit LCD it saves little power: the backlight's brightness is what draws the power, not the colours.
+ */
 export const DEFAULT_SCREEN_CHOICES: ScreenChoices = {
   text_size: "large",
-  theme: "light",
+  theme: "dark",
   greeting_name: null,
   captions: true,
   read_messages_aloud: false,

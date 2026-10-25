@@ -381,10 +381,10 @@ describe("her circle's states", () => {
 describe("the web app's Preview", () => {
   it("draws the same state with draft settings", () => {
     const s = state({ state: "listening" });
-    const v = screenView(s, { ...settings, text_size: "largest", theme: "dark" });
-    expect(v).toMatchObject({ textSize: "largest", theme: "dark" });
+    const v = screenView(s, { ...settings, text_size: "largest", theme: "light" });
+    expect(v).toMatchObject({ textSize: "largest", theme: "light" });
     expect(v.sizes.main).toBe(120);
-    expect(screenView(s).theme).toBe("light");
+    expect(screenView(s).theme).toBe("dark");
   });
 });
 

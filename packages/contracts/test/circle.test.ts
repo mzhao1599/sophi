@@ -174,7 +174,7 @@ describe("settings, voices and suggestions", () => {
     expect(choices).toEqual({ ...DEFAULT_SCREEN_CHOICES, text_size: "largest" });
     expect(voice).toBe("standard");
     expect(applySuggestionChange(DEFAULT_SCREEN_CHOICES, "standard", { kind: "voice", voice: "calm" }).voice).toBe("calm");
-    expect(changesNothing(DEFAULT_SCREEN_CHOICES, "standard", { kind: "theme", theme: "light" })).toBe(true);
+    expect(changesNothing(DEFAULT_SCREEN_CHOICES, "standard", { kind: "theme", theme: "dark" })).toBe(true);
     expect(changesNothing(DEFAULT_SCREEN_CHOICES, "standard", { kind: "greeting", greeting_name: null })).toBe(true);
     expect(changesNothing(DEFAULT_SCREEN_CHOICES, "standard", { kind: "greeting", greeting_name: "Nan" })).toBe(false);
     expect(changesNothing(DEFAULT_SCREEN_CHOICES, "calm", { kind: "voice", voice: "calm" })).toBe(true);
