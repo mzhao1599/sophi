@@ -22,13 +22,25 @@ export interface MapPin {
 const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
+/** The ringed point the map is drawn around: the sample's start, or (help) her walker's shared GPS fix. */
+export interface MapCenter {
+  at: SamplePoint;
+  title: string;
+  body: string;
+}
+
+const SAMPLE_START: MapCenter = { at: SAMPLE_AREA.start, title: "Starting point", body: SAMPLE_AREA.startLabel };
+
 /**
- * A real street map of the sample's neighbourhood with a numbered pin for each sample card. It only adds a
- * picture: every pin's name and description are also in the list under it, which is the path for a screen
- * reader. The tiles come from OpenStreetMap's servers for SAMPLE_AREA, a fixed place, so no position of the phone or
- * the walker is sent. One-finger drags scroll the page on a touch screen; the + and − buttons zoom.
+ * A real street map with a ringed centre point and a numbered pin for each sample card. It only adds a
+ * picture: every pin's name and description are also in the text beside it, which is the path for a screen
+ * reader. For the sample, the tiles come from OpenStreetMap's servers for SAMPLE_AREA, a fixed place, so no
+ * position of the phone or the walker is sent. With `center` set to her walker's shared GPS fix (a caretaker's
+ * help card, only while she shares her location), the tiles fetched are for her area, so OpenStreetMap's tile
+ * server sees which area is shown; the caption says so. One-finger drags scroll the page on a touch screen;
+ * the + and − buttons zoom.
  */
-export function NearbyMap({ pins, label }: { pins: readonly MapPin[]; label: string }) {
+export function NearbyMap({ pins, label, center = SAMPLE_START }: { pins: readonly MapPin[]; label: string; center?: MapCenter }) {
   const box = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
 
@@ -69,13 +81,15 @@ export function NearbyMap({ pins, label }: { pins: readonly MapPin[]; label: str
         m.addTo(map);
       };
 
-      marker(SAMPLE_AREA.start, `<span class="${styles.startPin}"></span>`, "Starting point", SAMPLE_AREA.startLabel);
+      marker(center.at, `<span class="${styles.startPin}"></span>`, center.title, center.body);
       for (const p of pins) {
         marker(p.at, `<span class="${styles.pin}" data-kind="${p.kind}">${p.n}</span>`, `${p.n}. ${p.name}`, p.detail);
       }
-      map.fitBounds(L.latLngBounds([SAMPLE_AREA.start, ...pins.map((p) => p.at)].map(([a, b]) => [a, b] as [number, number])), {
-        padding: [28, 28],
-      });
+      if (pins.length === 0) map.setView([center.at[0], center.at[1]], 16);
+      else
+        map.fitBounds(L.latLngBounds([center.at, ...pins.map((p) => p.at)].map(([a, b]) => [a, b] as [number, number])), {
+          padding: [28, 28],
+        });
 
       cleanup = () => map.remove();
     });
@@ -83,7 +97,7 @@ export function NearbyMap({ pins, label }: { pins: readonly MapPin[]; label: str
       cancelled = true;
       cleanup();
     };
-  }, [pins, reduce]);
+  }, [pins, reduce, center.at[0], center.at[1], center.title, center.body]);
 
   return <div ref={box} className={styles.map} role="region" aria-label={label} />;
 }

@@ -217,6 +217,13 @@ export const DeviceTurnRequestSchema = z.strictObject({
   /** Present on a continuation. The first step's transcript is sent as text; no audio is replayed. */
   tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
   original_audio: z.boolean().optional(),
+  /**
+   * This walker can ask for help after a countdown ("Asking for help" below; added 2026-10-24). The server offers
+   * the model its `ask_for_help` tool only on a turn that carries it, so an older Pi never gets `ask_for_help`. The
+   * walker sends it on every request of a turn, continuations included, but only once a GET /devices/{id}/help has
+   * answered `200` in this run: an older server refuses an unknown field on this strict request.
+   */
+  can_ask_for_help: z.literal(true).optional(),
 }).refine((r) => !r.tool_results || (r.input.type === "text" && r.original_audio !== undefined), { message: "A continuation carries the original question as text.", path: ["tool_results"] });
 export type DeviceTurnRequest = z.infer<typeof DeviceTurnRequestSchema>;
 
@@ -468,6 +475,12 @@ export const WalkerTurnResponseSchema = z
     motion_offer: z.strictObject({ preset: LiftPresetSchema }).optional(),
     /** A draft only. The Pi reads this back and requires a fresh Confirm press before POSTing it. */
     message_offer: z.strictObject({ client_message_id: id, to_member_id: id, to_name: z.string().trim().min(1).max(12), text: z.string().trim().min(1).max(30).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u) }).optional(),
+    /**
+     * She asked for help by voice (the model's `ask_for_help`, only on a turn that carried `can_ask_for_help`). Not a
+     * request yet: the Pi says the reply, counts down HELP_COUNTDOWN_MS that any handle press stops, and only then
+     * POSTs /devices/{id}/help itself. The model never creates one. Added 2026-10-24.
+     */
+    ask_for_help: z.literal(true).optional(),
   })
   // A replayed turn may come back without its audio, so only speech implies Cartesia, not the reverse.
   .refine((r) => r.speech === null || r.turn.voiced_by === "cartesia", {
@@ -475,6 +488,10 @@ export const WalkerTurnResponseSchema = z
     path: ["turn", "voiced_by"],
   })
   .refine((r) => r.turn.source === "walker" || r.speech === null, { message: "Page turns aren't spoken.", path: ["speech"] })
+  .refine((r) => !r.ask_for_help || (r.proposal === null && !r.message_offer && !r.motion_offer && !r.tool_call && r.turn.source === "walker"), {
+    message: "Asking for help ends a walker turn alone: no proposal, message draft, lift offer or tool call with it.",
+    path: ["ask_for_help"],
+  })
   .refine((r) => r.proposal === null || r.proposal.client_turn_id === r.turn.client_turn_id, {
     message: "A turn's proposal is the one that turn opened.",
     path: ["proposal", "client_turn_id"],
@@ -567,6 +584,125 @@ export const WalkerListResponseSchema = z.strictObject({
 });
 export const WalkerResponseSchema = z.strictObject({ walker: WalkerStatusViewSchema });
 
+// ---- Asking for help (added 2026-10-24, docs/subsystems/help.md) ----
+//
+// The shared view of one help request lives here, not in circle.ts, because the walker's own routes answer with
+// the walker error envelope (WalkerErrorSchema), which must carry it on `409 help_closed`. circle.ts has the
+// phone routes, the screen states and the rest of the help design.
+
+/** How long both handle buttons must be held together before the walker asks for help. */
+export const HELP_HOLD_MS = 2_000;
+/**
+ * Two handle presses this close together are one chord. A Confirm press that would start something (a motion
+ * target, a proposal, a message draft, arming "I'm okay") waits this long and is dropped if Talk goes down in
+ * it; a press that stops motion never waits.
+ */
+export const HELP_CHORD_WINDOW_MS = 250;
+/** After a voice request, the walker counts down this long ("Press any button to stop") before it asks. */
+export const HELP_COUNTDOWN_MS = 8_000;
+/** The walker retries a help request it couldn't send (same `client_help_id`) for this long, then says it couldn't. */
+export const HELP_SEND_RETRY_MS = 120_000;
+/** The walker asks for its help request's state this often while one is open or sending. */
+export const HELP_POLL_MS = 2_000;
+/** An open help request nobody closes closes itself (`expired`) this long after she asked. */
+export const HELP_OPEN_MAX_MS = 60 * 60_000;
+/** A closed one is still shown (walker and phones: "Rose says she's okay") this long after it closed. */
+export const HELP_CLOSED_SHOWN_MS = 5 * 60_000;
+/** Every help request is deleted this long after she asked, open or not. */
+export const HELP_RETENTION_MS = 24 * 60 * 60_000;
+/** On the walker, a first Confirm on an open help request arms "Tell Maya you're okay?"; a second within this closes it. */
+export const HELP_OKAY_ARMED_TTL_MS = 30_000;
+
+/** Where she asked: both handle buttons held, her voice (after the countdown), or her own phone. */
+export const HelpSourceSchema = z.enum(["handles", "voice", "phone"]);
+export type HelpSource = z.infer<typeof HelpSourceSchema>;
+
+/**
+ * How it closed. `okay`: she said she's okay (her phone, or Confirm twice on the walker). `with_her`: a caretaker
+ * said they're with her. `expired`: HELP_OPEN_MAX_MS passed with nobody closing it.
+ */
+export const HelpClosedHowSchema = z.enum(["okay", "with_her", "expired"]);
+export type HelpClosedHow = z.infer<typeof HelpClosedHowSchema>;
+
+/** A phone in her circle, as a help request names it: names are typed by the owner and may repeat, ids don't. */
+export const HelpPersonSchema = z.strictObject({
+  member_id: id,
+  /** CircleNameSchema's rule (circle.ts): one line, 1 to 12 characters. */
+  name: z.string().trim().min(1).max(12).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u),
+});
+export type HelpPerson = z.infer<typeof HelpPersonSchema>;
+
+const MAX_HELP_PEOPLE = 8;
+const helpPeople = (min: number) =>
+  z
+    .array(HelpPersonSchema)
+    .min(min)
+    .max(MAX_HELP_PEOPLE)
+    .refine((list) => new Set(list.map((p) => p.member_id)).size === list.length, "Each phone appears once.");
+
+/**
+ * One help request as the walker and every phone in the circle see it. No exact times: `age_seconds` by the
+ * server's clock, like the location fix. Nobody is "told" until a phone shows it, so the words follow the fields:
+ * `sent_to` is "Sent to Maya's phone", `shown_to` is "It's showing on Maya's phone", `coming` is "Maya is on the way".
+ */
+export const HelpViewSchema = z
+  .strictObject({
+    help_id: id,
+    source: HelpSourceSchema,
+    age_seconds: z.int().min(0).max(HELP_RETENTION_MS / 1_000),
+    /** The approved caretaker phones when she asked, in joining order; fixed then. A phone removed later stays named. */
+    sent_to: helpPeople(1),
+    /**
+     * Caretaker phones whose app has received it while it was open (a GET /api/v1/circle answer carried it), first
+     * first. It means the app had it on screen, not that a person read it.
+     */
+    shown_to: helpPeople(0),
+    /** Caretakers who answered "I'm on my way", first answer first. */
+    coming: helpPeople(0),
+    /**
+     * Null while open. `by`: who closed it. A caretaker for `with_her`; her phone for `okay`, or null when she said it
+     * on the walker with no phone of hers in the circle; null for `expired`.
+     */
+    closed: z.strictObject({ how: HelpClosedHowSchema, by: HelpPersonSchema.nullable() }).nullable(),
+  })
+  .refine((h) => h.closed === null || h.closed.how !== "with_her" || h.closed.by !== null, {
+    message: "A caretaker who says they're with her is named.",
+    path: ["closed", "by"],
+  })
+  .refine((h) => h.closed === null || h.closed.how !== "expired" || h.closed.by === null, {
+    message: "Nobody closed an expired request.",
+    path: ["closed", "by"],
+  });
+export type HelpView = z.infer<typeof HelpViewSchema>;
+
+/**
+ * POST /api/v1/devices/{id}/help (the walker's credential). One open request per walker: asking again while one
+ * is open returns it (`200`) and records the new `client_help_id` as another name for it, so a retry after a lost
+ * answer never opens a second one; a repeated `client_help_id` returns its request even once closed; a new one is
+ * `201`. `409 no_caretaker` when no approved caretaker phone is in: nothing is sent or kept. Device help routes
+ * answer errors in the walker envelope (WalkerErrorSchema).
+ */
+export const DeviceAskForHelpRequestSchema = z.strictObject({ client_help_id: id, source: z.enum(["handles", "voice"]) });
+export type DeviceAskForHelpRequest = z.infer<typeof DeviceAskForHelpRequestSchema>;
+
+/** The answer to every help call that names or makes one request (device and phone). */
+export const HelpResponseSchema = z.strictObject({ help: HelpViewSchema });
+export type HelpResponse = z.infer<typeof HelpResponseSchema>;
+
+/**
+ * GET /api/v1/devices/{id}/help: the walker's open request, or the newest one closed within HELP_CLOSED_SHOWN_MS,
+ * or null. The walker polls it after each heartbeat, and every HELP_POLL_MS while it has one open, so a request
+ * made on her phone and a caretaker's answer both reach the walker. A `200` here is also how the walker learns the
+ * server knows help, before its turns carry `can_ask_for_help`.
+ */
+export const DeviceHelpStatusResponseSchema = z.strictObject({ help: HelpViewSchema.nullable() });
+export type DeviceHelpStatusResponse = z.infer<typeof DeviceHelpStatusResponseSchema>;
+
+// POST /api/v1/devices/{id}/help/{help_id}/okay, no body: her second Confirm press on the walker. Closes it `okay`
+// (`by` her phone, or null with no phone of hers in). → HelpResponseSchema. `409 help_closed` with the request as
+// it stands when it was already closed; the walker treats one closed `okay` as its own success (a retry whose
+// first try got through).
+
 // ---- Errors ----
 
 export const WalkerErrorCodeSchema = z.enum([
@@ -584,6 +720,10 @@ export const WalkerErrorCodeSchema = z.enum([
   "proposal_closed",
   "rate_limited",
   "unavailable",
+  /** Asking for help with no approved caretaker phone in the circle: nothing was sent. */
+  "no_caretaker",
+  /** Answering a help request that is already closed; the body carries it as it stands. */
+  "help_closed",
 ]);
 export type WalkerErrorCode = z.infer<typeof WalkerErrorCodeSchema>;
 
@@ -596,6 +736,8 @@ export const WALKER_ERROR_STATUS: Record<WalkerErrorCode, number> = {
   pairing_locked: 429,
   walker_limit: 409,
   proposal_closed: 409,
+  no_caretaker: 409,
+  help_closed: 409,
   rate_limited: 429,
   unavailable: 503,
 };
@@ -606,6 +748,8 @@ export const WalkerErrorSchema = z.strictObject({
     message: z.string(),
     trace_id: z.string(),
     proposal: ProposalViewSchema.optional(),
+    /** `help_closed`: the help request as it stands. */
+    help: HelpViewSchema.optional(),
   }),
 });
 export type WalkerError = z.infer<typeof WalkerErrorSchema>;

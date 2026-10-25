@@ -1,14 +1,18 @@
 import {
   AnswerProposalResponseSchema,
   ConfigurationResponseSchema,
+  DeviceHelpStatusResponseSchema,
   DeviceMessagesResponseSchema,
   DeviceSpeechResponseSchema,
+  HelpResponseSchema,
   DeviceSendMessageResponseSchema,
   HeartbeatResponseSchema,
   PairDeviceResponseSchema,
   WalkerErrorSchema,
   WalkerTurnResponseSchema,
   type AnswerProposalResponse,
+  type DeviceAskForHelpRequest,
+  type HelpView,
   type DeviceMessagesResponse,
   type DeviceTurnRequest,
   type DeviceSendMessageRequest,
@@ -32,6 +36,8 @@ export const DEVICE_ROUTES = {
   turns: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/turns`,
   speech: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/speech`,
   messages: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/messages`,
+  help: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/help`,
+  helpOkay: (deviceId: string, helpId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/help/${encodeURIComponent(helpId)}/okay`,
   proposal: (deviceId: string, proposalId: string) =>
     `/api/v1/devices/${encodeURIComponent(deviceId)}/proposals/${encodeURIComponent(proposalId)}`,
 } as const;
@@ -39,7 +45,7 @@ export const DEVICE_ROUTES = {
 /**
  * Why a cloud call failed. `unreachable` and `timeout` count toward going offline; `unauthorized` (401
  * `unauthenticated`) means the credential was revoked or is unknown and the walker must be paired again;
- * `proposal_closed` (409) carries the proposal as it stands.
+ * `proposal_closed` (409) carries the proposal as it stands; `help_closed` (409) carries the help request as it stands.
  */
 export type CloudErrorKind =
   | "unreachable"
@@ -47,6 +53,7 @@ export type CloudErrorKind =
   | "cancelled"
   | "unauthorized"
   | "proposal_closed"
+  | "help_closed"
   | "server_error"
   | "rejected"
   | "bad_response";
@@ -59,6 +66,7 @@ export class CloudError extends Error {
     readonly status?: number,
     readonly code?: WalkerErrorCode,
     readonly proposal?: ProposalView,
+    readonly help?: HelpView,
   ) {
     super(message);
   }
@@ -73,6 +81,12 @@ export interface CloudClient {
   /** Her newest incoming messages from caretakers (GET on the messages route); an older server answers 404. */
   incomingMessages(signal: AbortSignal): Promise<DeviceMessagesResponse>;
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal): Promise<AnswerProposalResponse>;
+  /** Asks her caretakers for help (POST on the help route): the request, new (201) or the one already open (200). */
+  askForHelp(body: DeviceAskForHelpRequest, signal: AbortSignal): Promise<HelpView>;
+  /** The open request, or the newest closed within HELP_CLOSED_SHOWN_MS, or null; an older server answers 404. */
+  helpStatus(signal: AbortSignal): Promise<HelpView | null>;
+  /** Her second Confirm press: closes it `okay`. `409 help_closed` (kind `help_closed`) carries it as it stands. */
+  helpOkay(helpId: string, signal: AbortSignal): Promise<HelpView>;
 }
 
 /** Plain HTTP is allowed only to this machine (the simulator's fake cloud); everything else needs HTTPS. */
@@ -96,6 +110,9 @@ export function errorFromResponse(status: number, body: unknown): CloudError {
   if (status === 401) return new CloudError("unauthorized", "The server doesn't accept this walker's credential.", status, code);
   if (status === 409 && code === "proposal_closed") {
     return new CloudError("proposal_closed", "That proposal is no longer open.", status, code, parsed.success ? parsed.data.error.proposal : undefined);
+  }
+  if (status === 409 && code === "help_closed") {
+    return new CloudError("help_closed", "That help request is already closed.", status, code, undefined, parsed.success ? parsed.data.error.help : undefined);
   }
   if (status >= 500) return new CloudError("server_error", `Server error ${status}.`, status, code);
   return new CloudError("rejected", message, status, code);
@@ -223,6 +240,21 @@ export class HttpCloudClient implements CloudClient {
 
   incomingMessages(signal: AbortSignal) {
     return request(this.server, DEVICE_ROUTES.messages(this.deviceId), { method: "GET", credential: this.credential, signal }, DeviceMessagesResponseSchema);
+  }
+
+  async askForHelp(body: DeviceAskForHelpRequest, signal: AbortSignal) {
+    const response = await request(this.server, DEVICE_ROUTES.help(this.deviceId), { method: "POST", body, credential: this.credential, signal }, HelpResponseSchema);
+    return response.help;
+  }
+
+  async helpStatus(signal: AbortSignal) {
+    const response = await request(this.server, DEVICE_ROUTES.help(this.deviceId), { method: "GET", credential: this.credential, signal }, DeviceHelpStatusResponseSchema);
+    return response.help;
+  }
+
+  async helpOkay(helpId: string, signal: AbortSignal) {
+    const response = await request(this.server, DEVICE_ROUTES.helpOkay(this.deviceId, helpId), { method: "POST", credential: this.credential, signal }, HelpResponseSchema);
+    return response.help;
   }
 
   async voiceLine(text: string, signal: AbortSignal): Promise<Buffer | null> {

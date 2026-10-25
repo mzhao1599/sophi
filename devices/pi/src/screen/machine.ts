@@ -1,6 +1,6 @@
 import type { AppliedScreenSettings, Cue, MotionState, ScreenContent, ScreenHoldDirection, ScreenLink, ScreenState } from "@walker/contracts";
 import { captionPages } from "@walker/walker-screen/view";
-import type { TalkState } from "../bus";
+import type { HelpScreen, TalkState } from "../bus";
 import type { Cancel, Clock } from "../clock";
 import {
   CAPTION_CHARS_PER_S,
@@ -27,6 +27,8 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  *   2. motion she must know about now: something moving (and that any handle button stops it, or that letting
  *      go of the lift stops it), or a latched motion fault (with its clearing target, if one is pending)
  *   3. what she is doing: listening (Talk held), thinking (her turn is with Sophi), then answering (captions)
+ *   3b. asking for help (src/help.ts): her hold, the countdown, or the request (sending, not sent, open, closed).
+ *      Under her Talk, so a turn shows and then help comes back; above everything below (the contract's order)
  *   4. the pending motion Confirm target ("Bring the cup? Park the walker…"), with the lift's hold control
  *   5. Sophi's offer: today's model offer, until it is settled or closes
  *   6. Done / Nothing changed, for a few seconds after Confirm settles an offer; and after a motion, Done,
@@ -109,6 +111,8 @@ export interface ScreenModel {
   motionEnded: { content: MotionHolding; untilMono: number } | null;
   /** The caretaker's message being read aloud, or read last. */
   message: ScreenMessage | null;
+  /** What the help layer shows (src/help.ts decides it), or null. */
+  help: HelpScreen | null;
 }
 
 /** How long one caption page shows: its characters at the speaking rate, and never less than the minimum. */
@@ -181,6 +185,7 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   let under: ScreenContent;
   if (motion.safety) under = motion.safety;
   else if (doing) under = doing;
+  else if (model.help) under = model.help;
   else if (motion.pending) under = motion.pending;
   else if (model.offer) under = { state: "model_offer", proposal_id: model.offer.proposal_id, from_cues: model.offer.from_cues, cues: model.offer.cues };
   else if (model.done && now < model.done.untilMono) {
@@ -225,7 +230,7 @@ export interface ScreenMachineDeps {
  * state, so the page never flashes an in-between screen. The clock is redrawn on the minute.
  */
 export class ScreenMachine {
-  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null };
+  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, help: null };
   private revision = -1;
   private last: ScreenState | null = null;
   private lastKey = "";
@@ -283,6 +288,21 @@ export class ScreenMachine {
   answerSpoken(id: number): void {
     if (this.model.answer?.id !== id || this.model.answer.spokenMono !== null) return;
     this.model.answer.spokenMono = this.deps.clock.monotonic();
+    this.changed();
+  }
+
+  /**
+   * The help layer. Her hold or the countdown starting drops the last answer, any Done and a message (as a Talk
+   * press does), so the countdown shows from its first second; a request arriving from a poll drops nothing.
+   */
+  help(screen: HelpScreen | null): void {
+    const gesture = (h: HelpScreen | null) => h?.state === "help_hold" || h?.state === "help_countdown";
+    if (gesture(screen) && !gesture(this.model.help)) {
+      this.model.answer = null;
+      this.model.done = null;
+      this.model.message = null;
+    }
+    this.model.help = screen;
     this.changed();
   }
 

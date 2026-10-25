@@ -95,12 +95,38 @@ export const Config = __t.object("Config", {
 });
 export type Config = __Infer<typeof Config>;
 
+export const HelpRequest = __t.object("HelpRequest", {
+  helpId: __t.string(),
+  deviceId: __t.string(),
+  clientHelpIds: __t.string(),
+  source: __t.string(),
+  sentTo: __t.string(),
+  shownTo: __t.string(),
+  coming: __t.string(),
+  createdAt: __t.string(),
+  closedAt: __t.option(__t.string()),
+  closedHow: __t.option(__t.string()),
+  closedBy: __t.option(__t.string()),
+  rev: __t.u64(),
+  seq: __t.u64(),
+});
+export type HelpRequest = __Infer<typeof HelpRequest>;
+
+export const HelpRevView = __t.object("HelpRevView", {
+  helpId: __t.string(),
+  rev: __t.u64(),
+});
+export type HelpRevView = __Infer<typeof HelpRevView>;
+
 export const JoinTry = __t.object("JoinTry", {
   id: __t.u64(),
   addressKey: __t.string(),
   at: __t.string(),
 });
 export type JoinTry = __Infer<typeof JoinTry>;
+
+export const MyHelp = __t.object("MyHelp", {});
+export type MyHelp = __Infer<typeof MyHelp>;
 
 export const MyMembership = __t.object("MyMembership", {});
 export type MyMembership = __Infer<typeof MyMembership>;

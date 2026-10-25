@@ -6,6 +6,7 @@ import {
   CIRCLE_INVITE_TTL_MS,
   CIRCLE_MESSAGE_RETENTION_MS,
   CreateInviteResponseSchema,
+  HelpResponseSchema,
   MAX_CIRCLE_MEMBERS,
   MAX_LIVE_MESSAGES,
   MAX_OPEN_INVITES,
@@ -25,6 +26,8 @@ import {
   type CircleErrorCode,
   type CircleInvite,
   type CircleMember,
+  type HelpResponse,
+  type HelpView,
   type JoinCircleRequest,
   type LocationSharingRequest,
   type OwnerPhonesResponse,
@@ -32,13 +35,26 @@ import {
   type PhoneWalkerView,
   type PhoneMessageView,
   type PhonePerson,
+  type PhoneAskForHelpRequest,
   type PhoneSendMessageRequest,
 } from "@walker/contracts";
+import { HELP_CLOSED_MESSAGE, HELP_NOT_FOUND_MESSAGE, NO_CARETAKER_MESSAGE, answerHelp, askForHelp, helpView, logHelp, type HelpEvent } from "./help";
 import { isOnline } from "./rules";
 import type { OwnerCaller } from "./service";
 import { storable } from "./service";
 import { partViews } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleInviteRecord, type CircleMemberRecord, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+import {
+  SECRET_PATTERN,
+  newSecret,
+  sha256,
+  sweepCircleThrottled,
+  type CircleInviteRecord,
+  type CircleMemberRecord,
+  type CircleMessageRecord,
+  type DeviceRecord,
+  type HelpAnswer,
+  type WalkerStore,
+} from "./store";
 
 /**
  * The two-phone circle (circle.ts, "The two-phone app"): the owner's page adds her own phone or a
@@ -53,6 +69,8 @@ export class CircleError extends Error {
   constructor(
     readonly code: CircleErrorCode,
     message: string,
+    /** For `help_closed`: the help request as it stands. */
+    readonly help?: HelpView,
   ) {
     super(message);
   }
@@ -86,6 +104,8 @@ export interface CircleServiceOptions {
   /** Set when this server must not serve walkers: every call answers 503 with it. */
   blocked?: string;
   onMessage?: (event: MessageEvent) => void;
+  /** One event per help ask or answer (help.ts): ids, outcomes and timings, never names or locations. */
+  onHelp?: (event: HelpEvent) => void;
   /** Set when the circle lives in SpacetimeDB: a signed connection for one subject (`member:<id>`, `owner:<device id>`). */
   liveAccess?: (subject: string) => CareLiveAccess;
 }
@@ -99,6 +119,7 @@ export class CircleService {
   private readonly randomCode: () => string;
   private readonly blocked: string | undefined;
   private readonly onMessage: (event: MessageEvent) => void;
+  private readonly onHelp: (event: HelpEvent) => void;
   private readonly liveAccess: ((subject: string) => CareLiveAccess) | undefined;
 
   constructor(
@@ -110,6 +131,7 @@ export class CircleService {
     this.randomCode = options.randomCode ?? (() => String(randomInt(0, 1_000_000)).padStart(6, "0"));
     this.blocked = options.blocked;
     this.onMessage = options.onMessage ?? logMessage;
+    this.onHelp = options.onHelp ?? logHelp;
     this.liveAccess = options.liveAccess;
   }
 
@@ -276,6 +298,49 @@ export class CircleService {
     return PhoneSendMessageResponseSchema.parse({ message: messageView(saved.message, member.member_id, names) });
   }
 
+  // ---- Asking for help (docs/subsystems/help.md; the walker's own routes are in WalkerService) ----
+
+  /** Her own phone's "Ask for help". A caretaker's phone can't ask. `created` picks 201 or 200. */
+  async askForHelp(caller: MemberCaller, request: PhoneAskForHelpRequest): Promise<{ created: boolean; response: HelpResponse }> {
+    const member = await this.member(caller);
+    if (member.state !== "member" || member.role !== "walker_user") throw new CircleError("not_allowed", "Only her own phone can ask for help here.");
+    const now = this.now();
+    const result = await askForHelp(
+      this.store,
+      { help_id: this.randomId(), device_id: member.device_id, client_help_id: request.client_help_id, source: "phone", asked_by_member_id: member.member_id },
+      now,
+      this.onHelp,
+    );
+    if (result.outcome === "no_caretaker") throw new CircleError("no_caretaker", NO_CARETAKER_MESSAGE);
+    // Her phone was removed between reading its cookie and the ask.
+    if (result.outcome === "not_found") throw unauthenticated();
+    return { created: result.outcome === "created", response: HelpResponseSchema.parse({ help: helpView(result.help, now) }) };
+  }
+
+  /** A caretaker's "I'm on my way". Repeating it changes nothing. */
+  async helpComing(caller: MemberCaller, helpId: string): Promise<HelpResponse> {
+    const member = await this.member(caller);
+    if (member.state !== "member" || member.role !== "caregiver") throw new CircleError("not_allowed", "Only a caretaker's phone can say they're on the way.");
+    return this.answerHelp(member, helpId, { kind: "coming", member_id: member.member_id });
+  }
+
+  /** Her phone's "I'm okay now" (`okay`), or a caretaker's "I'm with her" (`with_her`). */
+  async helpOkay(caller: MemberCaller, helpId: string): Promise<HelpResponse> {
+    const member = await this.member(caller);
+    if (member.state !== "member") throw new CircleError("not_allowed", "The owner hasn't let this phone in yet.");
+    return this.answerHelp(member, helpId, { kind: "close", how: member.role === "walker_user" ? "okay" : "with_her", member_id: member.member_id });
+  }
+
+  private async answerHelp(member: CircleMemberRecord, helpId: string, answer: HelpAnswer): Promise<HelpResponse> {
+    const now = this.now();
+    const result = await answerHelp(this.store, member.device_id, helpId, answer, member.role, now, this.onHelp);
+    if (result.outcome === "not_found") throw new CircleError("not_found", HELP_NOT_FOUND_MESSAGE);
+    if (result.outcome === "not_member") throw unauthenticated();
+    const view = HelpResponseSchema.parse({ help: helpView(result.help, now) });
+    if (result.outcome === "closed") throw new CircleError("help_closed", HELP_CLOSED_MESSAGE, view.help);
+    return view;
+  }
+
   // ---- Shared ----
 
   private async homeFor(member: CircleMemberRecord, now: Date): Promise<PhoneHomeResponse> {
@@ -288,10 +353,12 @@ export class CircleService {
     const device = await this.store.circleDevice(member.device_id);
     // Forgotten between the member read and this one: the cascade took the member too.
     if (!device) throw unauthenticated();
-    const [configuration, circle, messages] = await Promise.all([
+    const [configuration, circle, messages, help] = await Promise.all([
       this.store.currentConfiguration(device.device_id),
       this.store.circleOf(device.device_id, now),
       this.store.messagesFor(device.device_id, member.member_id, now),
+      // A caretaker's answer that carries an open request is how `shown_to` learns its app has it.
+      this.store.helpOf(device.device_id, now, member.role === "caregiver" ? member.member_id : null),
     ]);
     const online = isOnline(device.last_heartbeat_at, now);
     const names = new Map(circle.members.map((m) => [m.member_id, m.name]));
@@ -311,6 +378,8 @@ export class CircleService {
       },
       people: circle.members.filter((m) => m.state === "member").map(person),
       messages: messages.map((m) => messageView(m, member.member_id, names)),
+      // Her phone and every approved caretaker see the walker's request, a caretaker who joined after the ask too.
+      help: help ? helpView(help, now) : null,
     });
   }
 

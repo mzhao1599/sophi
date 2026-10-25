@@ -4,6 +4,7 @@ import { toneWav } from "../src/audio/wav";
 import { ESP32_TALK_RELEASE_GRACE_MS } from "../src/constants";
 import { LINES } from "../src/notices";
 import { boot, flush, makeHarness, pairInto, type Harness } from "./support/fakes";
+import { lone } from "./support/fakes";
 
 const answers = (h: Harness, answer = "confirm") => h.client.calls.filter((c) => c === `answer:${answer}`);
 
@@ -220,7 +221,7 @@ describe("Confirm", () => {
     await boot(h);
     await withProposal(h);
     const id = h.service.openProposal!.proposal_id;
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(answers(h)).toHaveLength(1);
     expect(h.device()?.proposals.at(-1)).toMatchObject({ proposal_id: id, state: "confirmed", configuration_version: 2 });
@@ -244,20 +245,21 @@ describe("Confirm", () => {
   it("B8: with nothing open, Confirm plays the nothing-to-confirm sound and sends nothing", async () => {
     const h = makeHarness();
     await boot(h);
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.speaker.cues).toEqual(["nothing_to_confirm"]);
     expect(h.client.calls.filter((c) => c.startsWith("answer"))).toEqual([]);
     expect(h.store.pendingEvents(h.clock.monotonic())).toContainEqual(expect.objectContaining({ kind: "local_reply", text: "Nothing to confirm." }));
   });
 
-  it("B9: Confirm is ignored while recording", async () => {
+  it("B9: Confirm is ignored while recording (the keyboard; held buttons make the help chord, GH3)", async () => {
     const h = makeHarness();
     await boot(h);
     await withProposal(h);
-    h.press("talk", "pressed");
+    h.press("talk", "pressed", "keyboard");
     await flush();
-    h.press("confirm");
+    h.press("confirm", "pressed", "keyboard");
+    await flush();
     await flush();
     expect(h.client.calls.filter((c) => c.startsWith("answer"))).toEqual([]);
     expect(h.service.talk).toBe("recording");
@@ -268,8 +270,8 @@ describe("Confirm", () => {
     await boot(h);
     await withProposal(h);
     h.client.hold.add("answer:confirm");
-    h.press("confirm");
-    h.press("confirm");
+    await lone(h);
+    await lone(h);
     await flush();
     expect(answers(h)).toHaveLength(1);
   });
@@ -281,7 +283,7 @@ describe("Confirm", () => {
       await withProposal(h);
       const device = h.device()!;
       device.proposals = device.proposals.map((p) => ({ ...p, state }));
-      h.press("confirm");
+      await lone(h);
       await flush();
       expect(answers(h), state).toHaveLength(1);
       expect(h.speaker.cues.at(-1), state).toBe("nothing_to_confirm");
@@ -297,7 +299,7 @@ describe("Confirm", () => {
     await withProposal(h);
     const device = h.device()!;
     h.fake.answer(device, h.service.openProposal!.proposal_id, "confirm");
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(answers(h)).toHaveLength(1);
     expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);
@@ -312,6 +314,7 @@ describe("Confirm", () => {
     await talk(h);
     h.press("talk", "pressed");
     await flush();
+    h.press("talk", "released");
     expect(h.spoken("local_reply")).toEqual([LINES.cancelled]);
     h.client.releaseHeld();
     await flush();
@@ -322,7 +325,7 @@ describe("Confirm", () => {
     expect(h.service.openProposal).toBeNull();
     await h.clock.advance(10_000);
     expect(answers(h, "decline")).toHaveLength(1);
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.speaker.cues.at(-1)).toBe("nothing_to_confirm");
     expect(answers(h)).toEqual([]);
@@ -334,7 +337,7 @@ describe("Confirm", () => {
     await withProposal(h);
     await goOffline(h);
     expect(h.service.openProposal).toBeNull();
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.spoken("local_reply")).toEqual([LINES.offlineNoSettings]);
     expect(h.client.calls.filter((c) => c.startsWith("answer"))).toEqual([]);
@@ -547,7 +550,7 @@ describe("reports", () => {
     await boot(h);
     h.fake.script = [{ reply: "Fake cloud: switch?", proposeCues: ["sound"] }];
     await talk(h);
-    h.press("confirm");
+    await lone(h);
     await h.clock.advance(5000);
     expect(h.service.configuration?.cues).toEqual(["sound"]);
     expect(h.named("haptic")).toEqual([]);

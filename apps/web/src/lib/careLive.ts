@@ -14,6 +14,8 @@ export interface PhoneLiveRows {
   membership: { member_id: string; state: string } | null;
   people: { member_id: string; name: string; role: string; seq: bigint }[];
   messages: { message_id: string; client_message_id: string; from_member_id: string; to_member_id: string; text: string; seq: bigint }[];
+  /** One row per help request of its walker (`my_help`): no names, places or times, only a revision that goes up on every change. */
+  help: { help_id: string; rev: bigint }[];
 }
 
 export type LiveStatus = "off" | "connecting" | "live" | "lost";
@@ -23,6 +25,11 @@ export interface LiveHandle {
 }
 
 export const PHONE_VIEWS = ["SELECT * FROM my_membership", "SELECT * FROM my_people", "SELECT * FROM my_messages"];
+/**
+ * Optional: a module published before help existed (no `my_help`) refuses it, and the phone subscribes again without
+ * it, keeping the circle's live rows; it then keeps polling every 2 s for help (phoneView.pollEvery).
+ */
+export const PHONE_HELP_VIEWS = ["SELECT * FROM my_help"];
 export const OWNER_VIEWS = ["SELECT * FROM owner_members", "SELECT * FROM owner_invites"];
 
 /** After a first connection that failed, or one SpacetimeDB won't retry, try again this much later. */
@@ -30,7 +37,8 @@ const RETRY_MS = 5_000;
 
 /**
  * Opens one live connection. `onRows` runs after the first full set of rows and after every change (batched
- * to once per task); `onStatus` reports the connection. The SDK reconnects a dropped connection by itself,
+ * to once per task); `onStatus` reports the connection. `extra` views are subscribed with the others: `onExtra(true)`
+ * once they are applied, `onExtra(false)` if the module refuses them (the others are then subscribed alone). The SDK reconnects a dropped connection by itself,
  * asking `access` for a fresh token; a first connection that fails (SpacetimeDB waking up, the server busy)
  * is tried again every RETRY_MS. The SpacetimeDB client is loaded only once the server says there is one.
  */
@@ -39,6 +47,7 @@ export function openLive(
   views: string[],
   onRows: (conn: DbConnection) => void,
   onStatus: (status: LiveStatus) => void,
+  extra?: { views: string[]; onExtra(applied: boolean): void },
 ): LiveHandle {
   let closed = false;
   let conn: DbConnection | undefined;
@@ -83,15 +92,26 @@ export function openLive(
     if (closed) return;
     onStatus("connecting");
     let connected = false;
+    // The extra views go in the same subscription. If the module refuses them (published before they existed), the
+    // connection subscribes again without them, so the circle's live rows keep working.
+    let withExtra = !!extra;
     const subscribe = (c: DbConnection) => {
       c.subscriptionBuilder()
         .onApplied(() => {
           if (closed) return;
+          if (extra) extra.onExtra(withExtra);
           onStatus("live");
           changed();
         })
-        .onError(() => again())
-        .subscribe(views);
+        .onError(() => {
+          if (closed) return;
+          if (withExtra) {
+            withExtra = false;
+            extra?.onExtra(false);
+            subscribe(c);
+          } else again();
+        })
+        .subscribe(withExtra && extra ? [...views, ...extra.views] : views);
     };
     const token = first.token;
     conn = DbConnection.builder()
@@ -109,7 +129,7 @@ export function openLive(
       .onConnectError(() => (connected ? !closed && onStatus("lost") : again()))
       .onDisconnect((_ctx, _error, nextAttempt) => (nextAttempt === undefined ? again() : !closed && onStatus("lost")))
       .build();
-    for (const table of [conn.db.myMembership, conn.db.myPeople, conn.db.myMessages, conn.db.ownerMembers, conn.db.ownerInvites]) {
+    for (const table of [conn.db.myMembership, conn.db.myPeople, conn.db.myMessages, conn.db.myHelp, conn.db.ownerMembers, conn.db.ownerInvites]) {
       table.onInsert(changed);
       table.onDelete(changed);
       table.onUpdate?.(changed);
@@ -137,8 +157,13 @@ export function phoneRows(conn: DbConnection): PhoneLiveRows {
     messages: [...conn.db.myMessages.iter()]
       .map((m) => ({ message_id: m.messageId, client_message_id: m.clientMessageId, from_member_id: m.fromMemberId, to_member_id: m.toMemberId, text: m.text, seq: m.seq }))
       .sort(bySeq),
+    help: [...conn.db.myHelp.iter()].map((h) => ({ help_id: h.helpId, rev: h.rev })),
   };
 }
+
+/** A key that changes exactly when a help row is added, changed or removed; null before `my_help` is subscribed. */
+export const helpRowsKey = (live: PhoneLiveRows | null, subscribed: boolean): string | null =>
+  live && subscribed ? live.help.map((h) => `${h.help_id}:${h.rev}`).sort().join(",") : null;
 
 /**
  * The phone's home with its circle from the live rows: the people and messages as SpacetimeDB has them now,

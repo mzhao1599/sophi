@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type {
   CapabilityManifest,
+  HelpClosedHow,
+  HelpSource,
   PhoneRole,
   ProposalView,
   SensorSnapshot,
@@ -8,7 +10,7 @@ import type {
   WalkerEventView,
   WalkerTurnView,
 } from "@walker/contracts";
-import { CIRCLE_ITEM_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS } from "@walker/contracts";
+import { CIRCLE_ITEM_RETENTION_MS, HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS } from "@walker/contracts";
 import { decideAnswer, shouldExpire, type Answer } from "./rules";
 
 /**
@@ -151,6 +153,72 @@ export type InviteClaimResult =
   | { ok: true; member: CircleMemberRecord }
   | { ok: false; reason: "locked" | "busy" | "code_invalid" | "circle_full" | "walker_user_taken" };
 
+// ---- Help requests (docs/subsystems/help.md; migration 0005) ----
+
+/** A phone as a help request names it: its member id and its name then (names may repeat; ids don't). */
+export interface HelpPersonRecord {
+  member_id: string;
+  name: string;
+}
+
+/** Ids a request keeps for retries: its own and the newest asks made while it was open. */
+export const HELP_ALIASES_KEPT = 50;
+
+/** One help request as stored. The service projects it to the contract's HelpView. */
+export interface HelpRecord {
+  help_id: string;
+  device_id: string;
+  /** Its own client_help_id first, then each one an ask made while it was open (so a retry finds it), newest kept. */
+  client_help_ids: string[];
+  source: HelpSource;
+  /** The approved caretaker phones when she asked, in joining order. Fixed then; never empty. */
+  sent_to: HelpPersonRecord[];
+  /** Caretaker phones whose GET /circle carried it while open, first first, each once. */
+  shown_to: HelpPersonRecord[];
+  /** Who answered "I'm on my way", first answer first, each once. */
+  coming: HelpPersonRecord[];
+  created_at: string;
+  /**
+   * Null while open. `at` is the hour's end for `expired`, not when it was noticed. `by` is null for `expired` and for
+   * the walker's okay with no phone of hers in.
+   */
+  closed: { at: string; how: HelpClosedHow; by: HelpPersonRecord | null } | null;
+}
+
+/** She asks: from the walker (`asked_by_member_id` null) or her phone (its member id, checked again at write time). */
+export interface HelpAsk {
+  help_id: string;
+  device_id: string;
+  client_help_id: string;
+  source: HelpSource;
+  created_at: string;
+  asked_by_member_id: string | null;
+}
+
+export type HelpAskResult =
+  /** `existing`: a request with this client_help_id, or the walker's open one (which now keeps this id too). */
+  | { outcome: "created" | "existing"; help: HelpRecord }
+  /** No approved caretaker: nothing was stored. */
+  | { outcome: "no_caretaker" }
+  /** The walker is gone, or the asking phone isn't her approved phone any more. */
+  | { outcome: "not_found" };
+
+/**
+ * `coming`: a caretaker's "I'm on my way". `close`: `okay` (her phone; or the walker, `member_id` null, closed by
+ * her phone if it is in, else by nobody) or `with_her` (a caretaker).
+ */
+export type HelpAnswer = { kind: "coming"; member_id: string } | { kind: "close"; how: "okay" | "with_her"; member_id: string | null };
+
+export type HelpAnswerResult =
+  /** `unchanged`: a repeated "on my way" (or one past MAX_CIRCLE_MEMBERS answers); nothing changed. */
+  | { outcome: "answered" | "unchanged"; help: HelpRecord }
+  /** Already closed (the first close wins): the request as it stands. */
+  | { outcome: "closed"; help: HelpRecord }
+  /** No such request on this walker. */
+  | { outcome: "not_found" }
+  /** The answering phone isn't a member of this walker any more. */
+  | { outcome: "not_member" };
+
 /**
  * The circle's storage. Every read and write names the device id the service already resolved (by the
  * owner's hash, or from the member found by its cookie's hash), so one walker's circle never reaches another's.
@@ -192,8 +260,30 @@ export interface CircleStore {
   saveMessage(message: CircleMessageRecord, maxLive: number, now: Date): Promise<{ message: CircleMessageRecord; created: boolean } | "cleared" | null>;
   /** Unexpired, uncleared messages to or from this member, oldest first. */
   messagesFor(deviceId: string, memberId: string, now: Date): Promise<CircleMessageRecord[]>;
-  /** Deletes expired invites and messages, and caretakers' joins that lapsed before `lapsedBefore`. */
+  /**
+   * Deletes expired invites and messages, caretakers' joins that lapsed before `lapsedBefore`, and help requests
+   * HELP_RETENTION_MS after she asked (open or not); closes open ones past HELP_OPEN_MAX_MS.
+   */
   sweepCircle(now: Date, lapsedBefore: Date): Promise<void>;
+
+  /**
+   * In one step: this walker's open request past HELP_OPEN_MAX_MS closes `expired`; a phone ask needs her phone
+   * still in (`not_found`); a request with this client_help_id comes back, then the open one (`existing`); with no
+   * approved caretaker, `no_caretaker` and nothing kept; otherwise it is saved, `sent_to` the approved caretakers now.
+   * An ask that finds the open request (not by its id) adds its client_help_id to that request.
+   */
+  askForHelp(ask: HelpAsk, now: Date): Promise<HelpAskResult>;
+  /**
+   * In one step: the request must be this walker's; one past HELP_OPEN_MAX_MS closes `expired` first; a phone
+   * must still be a member; a closed one comes back `closed`; otherwise the answer is applied.
+   */
+  answerHelp(deviceId: string, helpId: string, answer: HelpAnswer, now: Date): Promise<HelpAnswerResult>;
+  /**
+   * The open request (expiring it first if due), or the newest closed within HELP_CLOSED_SHOWN_MS, or null. With
+   * `shownTo` (a phone's GET /circle), in the same step: an open request adds that phone to `shown_to` once, if it is
+   * an approved caretaker of this walker.
+   */
+  helpOf(deviceId: string, now: Date, shownTo?: string | null): Promise<HelpRecord | null>;
 }
 
 /** The circle's sweep runs at most this often per server process and store. */
@@ -292,6 +382,8 @@ interface MemoryDevice extends DeviceRecord {
   invites: CircleInviteRecord[];
   /** Oldest first. A cleared one has no text left and is kept only until it expires. */
   messages: (CircleMessageRecord & { cleared: boolean })[];
+  /** Oldest first. */
+  helps: HelpRecord[];
 }
 
 type MemoryMember = CircleMemberRecord & { secret_hash: string; replaces_member_id: string | null };
@@ -365,6 +457,7 @@ export class MemoryWalkerStore implements WalkerStore {
       members: [],
       invites: [],
       messages: [],
+      helps: [],
     };
     this.devices.set(device.device_id, record);
     return { ok: true, device: publicDevice(record), configuration: copy(configuration) };
@@ -623,7 +716,72 @@ export class MemoryWalkerStore implements WalkerStore {
       d.invites = d.invites.filter((i) => ms(i.expires_at) > now.getTime());
       d.messages = d.messages.filter((m) => ms(m.expires_at) > now.getTime());
       d.members = d.members.filter((m) => m.state === "member" || m.expires_at === null || ms(m.expires_at) >= lapsedBefore.getTime());
+      d.helps = d.helps.filter((h) => ms(h.created_at) > now.getTime() - HELP_RETENTION_MS);
+      for (const h of d.helps) expireHelp(h, now);
     }
+  }
+
+  // ---- Help requests. Synchronous after the first line, so each is one step. ----
+
+  async askForHelp(ask: HelpAsk, now: Date): Promise<HelpAskResult> {
+    const d = this.devices.get(ask.device_id);
+    if (!d) return { outcome: "not_found" };
+    for (const h of d.helps) expireHelp(h, now);
+    if (ask.asked_by_member_id !== null && !d.members.some((m) => m.member_id === ask.asked_by_member_id && m.role === "walker_user" && m.state === "member")) {
+      return { outcome: "not_found" };
+    }
+    const prior = d.helps.find((h) => h.client_help_ids.includes(ask.client_help_id));
+    if (prior) return { outcome: "existing", help: copy(prior) };
+    const open = d.helps.find((h) => h.closed === null);
+    if (open) {
+      open.client_help_ids = keepIds(open.client_help_ids, ask.client_help_id);
+      return { outcome: "existing", help: copy(open) };
+    }
+    const sentTo = d.members.filter((m) => m.role === "caregiver" && m.state === "member").map(helpPerson);
+    if (sentTo.length === 0) return { outcome: "no_caretaker" };
+    const help: HelpRecord = {
+      help_id: ask.help_id,
+      device_id: ask.device_id,
+      client_help_ids: [ask.client_help_id],
+      source: ask.source,
+      sent_to: sentTo,
+      shown_to: [],
+      coming: [],
+      created_at: ask.created_at,
+      closed: null,
+    };
+    d.helps.push(help);
+    return { outcome: "created", help: copy(help) };
+  }
+
+  async answerHelp(deviceId: string, helpId: string, answer: HelpAnswer, now: Date): Promise<HelpAnswerResult> {
+    const d = this.devices.get(deviceId);
+    const h = d?.helps.find((x) => x.help_id === helpId);
+    if (!d || !h) return { outcome: "not_found" };
+    expireHelp(h, now);
+    const by = answer.member_id === null ? undefined : d.members.find((m) => m.member_id === answer.member_id && m.state === "member");
+    if (answer.member_id !== null && !by) return { outcome: "not_member" };
+    if (h.closed) return { outcome: "closed", help: copy(h) };
+    if (answer.kind === "coming") {
+      if (!by || h.coming.some((c) => c.member_id === by.member_id) || h.coming.length >= MAX_CIRCLE_MEMBERS) return { outcome: "unchanged", help: copy(h) };
+      h.coming.push(helpPerson(by));
+      return { outcome: "answered", help: copy(h) };
+    }
+    const closer = by ?? d.members.find((m) => m.role === "walker_user" && m.state === "member");
+    h.closed = { at: now.toISOString(), how: answer.how, by: closer ? helpPerson(closer) : null };
+    return { outcome: "answered", help: copy(h) };
+  }
+
+  async helpOf(deviceId: string, now: Date, shownTo: string | null = null) {
+    const d = this.devices.get(deviceId);
+    if (!d) return null;
+    for (const h of d.helps) expireHelp(h, now);
+    const open = d.helps.find((h) => h.closed === null);
+    const viewer = shownTo === null ? undefined : d.members.find((m) => m.member_id === shownTo && m.role === "caregiver" && m.state === "member");
+    if (open && viewer && !open.shown_to.some((p) => p.member_id === viewer.member_id) && open.shown_to.length < MAX_CIRCLE_MEMBERS) open.shown_to.push(helpPerson(viewer));
+    const shown = (h: HelpRecord) => h.closed !== null && ms(h.closed.at) > now.getTime() - HELP_CLOSED_SHOWN_MS;
+    const found = open ?? [...d.helps].reverse().filter(shown).sort((a, b) => ms(b.closed!.at) - ms(a.closed!.at))[0];
+    return found ? copy(found) : null;
   }
 
   private device(deviceId: string): MemoryDevice {
@@ -642,6 +800,22 @@ export class MemoryWalkerStore implements WalkerStore {
   private current(d: MemoryDevice): WalkerConfiguration {
     return d.configurations.reduce((a, b) => (b.version > a.version ? b : a));
   }
+}
+
+/** Open past HELP_OPEN_MAX_MS: closed `expired` as of the hour's end. */
+function expireHelp(h: HelpRecord, now: Date) {
+  const end = ms(h.created_at) + HELP_OPEN_MAX_MS;
+  if (h.closed === null && end <= now.getTime()) h.closed = { at: new Date(end).toISOString(), how: "expired", by: null };
+}
+
+/** A request's ids with one more: its own first, then the newest, HELP_ALIASES_KEPT in all. */
+export function keepIds(ids: string[], id: string): string[] {
+  const all = [...ids, id];
+  return all.length <= HELP_ALIASES_KEPT ? all : [all[0]!, ...all.slice(-(HELP_ALIASES_KEPT - 1))];
+}
+
+function helpPerson(m: CircleMemberRecord): HelpPersonRecord {
+  return { member_id: m.member_id, name: m.name };
 }
 
 function publicDevice(d: MemoryDevice): DeviceRecord {
