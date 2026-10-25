@@ -2,6 +2,7 @@ import { CueSchema, LiftPresetSchema, LIFT_VOICE_TRIAL_MAX_MM, MODULE_CATALOG, S
 import { z } from "zod";
 import type { AgentFailure, AgentModel, AgentReply, AgentRequest } from "../onboarding/agent";
 import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
+import { tidyModelText } from "../model-text";
 
 /**
  * The walker assistant's model step: one structured-output call per attempt, to Claude (config.ts). A spoken
@@ -33,7 +34,7 @@ const ModelToolCallSchema = z.union([
   WalkerToolCallSchema,
   /** Offered only on a walker turn that can ask for help (HelpTurn.offer); the service ignores it anywhere else. */
   z.strictObject({ name: z.literal("ask_for_help") }),
-  z.strictObject({ name: z.literal("send_message"), to_member_id: z.uuid(), text: z.string().trim().min(1).max(30) }),
+  z.strictObject({ name: z.literal("send_message"), to_member_id: z.uuid(), text: z.string().transform(tidyModelText).pipe(z.string().min(1).max(30)) }),
   z.strictObject({ name: z.literal("set_lift_height"), preset: LiftPresetSchema }),
   z.strictObject({ name: z.literal("move_lift"), direction: z.enum(["up", "down"]), distance_mm: z.number().int().min(1).max(LIFT_VOICE_TRIAL_MAX_MM) }),
 ]);
@@ -45,7 +46,8 @@ export const WalkerReplySchema = z.strictObject({
   /** A copy of the person's words (person_words); the service keeps its own copy, so this only gates show_on_screen. */
   transcript: z.string().trim().max(MAX_TRANSCRIPT),
   /** Empty only with tool_call ask_for_help or a lookup step (SERVER_WORDED_LOOKUPS): the server words that step's reply. */
-  reply: z.string().trim().max(MAX_REPLY),
+  /** Tidied first (tidyModelText), so a stray brace or doubled full stop is never spoken or shown. */
+  reply: z.string().transform(tidyModelText).pipe(z.string().max(MAX_REPLY)),
   topics: z.array(TopicSchema).max(6),
   cues_change: z.strictObject({ cues: z.array(CueSchema).min(1).max(4) }).nullable(),
   /** The pace they asked Sophi to talk at; the server applies it at once and words the reply. Optional for stub replies. */

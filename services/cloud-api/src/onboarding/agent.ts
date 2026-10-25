@@ -15,6 +15,7 @@ import {
   type TurnEngine,
 } from "./engine";
 import { QUESTIONS, getQuestion } from "./questions";
+import { tidyModelText } from "../model-text";
 
 /**
  * The onboarding agent. For a text or answer turn, a model reads the user's typed words as need tags,
@@ -78,11 +79,12 @@ export const AgentReplySchema = z.strictObject({
   declined_tags: z.array(NeedTagSchema),
   covered: z.array(QuestionIdSchema),
   next: z.union([QuestionIdSchema, z.literal("done")]),
-  prompt: z.string().trim().pipe(QuestionSchema.shape.prompt).nullable(),
-  detail: z.string().trim().min(1).max(MAX_DETAIL).nullable(),
+  // The model's words are tidied first (tidyModelText): a stray brace or doubled full stop never reaches the page.
+  prompt: z.string().transform(tidyModelText).pipe(QuestionSchema.shape.prompt).nullable(),
+  detail: z.string().transform(tidyModelText).pipe(z.string().min(1).max(MAX_DETAIL)).nullable(),
   option_ids: z.array(z.enum(OPTION_IDS)),
   /** Empty when the question follows on without one. */
-  ack: z.string().trim().max(MAX_ACK),
+  ack: z.string().transform(tidyModelText).pipe(z.string().max(MAX_ACK)),
 });
 export type AgentReplyOutput = z.infer<typeof AgentReplySchema>;
 

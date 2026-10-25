@@ -598,6 +598,23 @@ describe("agent reply schema", () => {
     expect(properties.next!.enum).toContain("done");
     expect(AgentReplySchema.safeParse(reply({ prompt: "x".repeat(49), next: "places" })).success).toBe(false);
   });
+
+  it("tidies the model's words before they are checked and shown", async () => {
+    // The live model's own output on 2026-10-25: a doubled full stop, and a stray brace, after "isn't built yet".
+    const { model, calls } = stub([
+      reply({ next: "places", prompt: "Where will you mostly use it?}", detail: "It changes which sensors fit..", option_ids: ["home"], ack: "You'd like to know what's in your way.." }),
+      reply({ next: "feedback", prompt: "How should it get your attention?", detail: "For example, a buzz.", option_ids: ["vibration"], ack: "Location sharing isn't built yet.}" }),
+    ]);
+    const { service } = setup(model);
+    const c = await conversation(service);
+    const first = await c.send({ type: "text", text: "Knowing what's in my way" });
+    expect(first.assistant_text).toBe("You'd like to know what's in your way. Where will you mostly use it?");
+    expect(c.view.current_question?.prompt).toBe("Where will you mostly use it?");
+    const second = await c.send({ type: "text", text: "At home." });
+    expect(second.assistant_text).toBe("Location sharing isn't built yet. How should it get your attention?");
+    // Tidied, not retried: one model call per turn.
+    expect(calls).toHaveLength(2);
+  });
 });
 
 describe("Anthropic model client", () => {
