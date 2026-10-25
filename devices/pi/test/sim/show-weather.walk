@@ -1,0 +1,27 @@
+# "Show me the weather" against the FAKE cloud (test/EXPECTED.md, SH13). The fake cloud asks the walker to
+# show_on_screen the weather; the walker fills the card from its SIMULATED GPS and SIMULATED weather sample
+# (--gps: no internet), puts it on the screen and returns its result; the fake cloud relays that result.
+# The walker offers the screen only while a page is connected, so a browser must have the page open.
+# Run (from devices/pi), with a headless browser on the printed http://127.0.0.1:8740/:
+#   node dist/walker.mjs simulate --screen --gps --script test/sim/show-weather.walk
+# test/show.test.ts also runs this file on a fake clock.
+
+# Boot, and give the page time to connect.
+expect spoke Sophi is on.
+expect link online
+expect screen ambient
+wait 4000
+
+# Ask: the card shows over "One moment" and the captions, and the answer relays the walker's result.
+key show-weather
+key t
+expect screen listening
+wait 1500
+key t
+expect screen showing
+expect spoke Fake cloud: Showing the weather on the screen: Simulated weather, not a real forecast: 64 degrees
+
+# The card stays SCREEN_SHOW_MS (30 s) after the answer has played, then the clock comes back.
+absent 25000 screen ambient
+expect 15000 screen ambient
+key q

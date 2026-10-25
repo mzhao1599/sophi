@@ -1,4 +1,4 @@
-import type { Cue, MotionState, ProposalView, ScreenContent, ScreenStateName } from "@walker/contracts";
+import type { Cue, MotionState, ProposalView, ScreenContent, ScreenStateName, ShowCard } from "@walker/contracts";
 import type { ScreenHoldEvent } from "./screen/server";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
@@ -62,6 +62,11 @@ export interface BusEvents {
   circleMessage: { id: number; message_id: string; from_name: string; text: string };
   /** That message finished playing, or was stopped. */
   circleMessageSpoken: { id: number };
+  /**
+   * A card Sophi pulled up for her (`show_on_screen`), built by the Pi from its own data, for the walker screen.
+   * A message card holds someone's words and a location card her address: never log it or send it anywhere else.
+   */
+  show: { card: ShowCard };
   /** The open proposal changed (another id, or none). A heartbeat repeating the same one sends nothing. */
   offer: { proposal: ProposalView | null };
   /**
