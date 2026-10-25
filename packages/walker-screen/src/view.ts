@@ -394,15 +394,12 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
       // Talk was let go and the answer hasn't come: words only, nothing that moves (no spinner, no dots).
       return { key: "thinking", main: { text: "One moment", size: "main" }, lines: [body("Your question is with Sophi.")] };
     case "answering": {
-      // The same names as the /walker page (apps/web/src/lib/walkerView.ts). The walker's model is Claude.
-      const source = content.source === "model" ? "Answered by Claude" : content.source === "fixed" ? "Answered by the fixed replies" : "On the walker, offline reply";
       const mapCredit = content.reply.startsWith("Your GPS puts you near ") ? detail("Map data © OpenStreetMap contributors") : null;
-      if (!settings.captions) return { key: "answering", main: { text: "Sophi is answering", size: "main" }, lines: [detail(source)], center: { lines: mapCredit ? [mapCredit] : [] } };
+      if (!settings.captions) return { key: "answering", main: { text: "Sophi is answering", size: "main" }, lines: [], center: { lines: mapCredit ? [mapCredit] : [] } };
       const pages = captionPages(content.reply, textSize);
       const page = Math.min(content.page, pages.length - 1);
       const lines: ViewLine[] = [];
       if (content.heard) lines.push(detail(`You said: ${shorten(content.heard, HEARD_CHARS)}`));
-      lines.push(detail(source));
       return {
         key: `answering:${page}`,
         main: { text: pages[page] ?? "", size: "body" },
@@ -522,7 +519,7 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
         main: { text: clock?.time ?? "Sophi", size: "main" },
         lines,
         center: {
-          lines: content.alerts ? [detail(`Alerts: ${listWords(content.alerts.map((c) => CUE_WORD[c]))}`)] : [],
+          lines: [],
           // TODO(circle piece): the "My screen" button, once it does something (see "offline").
           buttons: [],
         },

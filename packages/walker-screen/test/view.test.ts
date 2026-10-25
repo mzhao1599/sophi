@@ -118,10 +118,10 @@ describe("controls that aren't built are not shown", () => {
 });
 
 describe("the walker's own states", () => {
-  it("ambient: the time, the part of the day, her greeting and the alerts, and no My screen yet", () => {
+  it("ambient: the time, the part of the day and her greeting, without an alerts line", () => {
     const v = screenView(state({ state: "ambient", alerts: ["sound", "spoken"] }, { settings: { ...settings, greeting_name: "Nan" } }));
     expect(v.main.text).toBe("7:42");
-    expect(texts(v)).toEqual(["7:42", "Good evening, Nan", "Saturday evening", "Alerts: short sounds and speech"]);
+    expect(texts(v)).toEqual(["7:42", "Good evening, Nan", "Saturday evening"]);
     expect(v.strip.time).toBeNull();
     expect(buttons(v)).toEqual([]); // "My screen" comes back with the circle piece, once it does something
     expect(v.left).toBeNull();
@@ -145,11 +145,11 @@ describe("the walker's own states", () => {
     expect(v.left).toBeNull();
   });
 
-  it("answering: captions paged at her size, what she said, and where the reply came from", () => {
+  it("answering: captions paged at her size and what she said", () => {
     const v = screenView(state({ state: "answering", heard: "Is there anything in front of me right now?", reply: SAMPLE_REPLY, source: "model", page: 1 }));
     const pages = captionPages(SAMPLE_REPLY, "large");
     expect(v.main).toEqual({ text: pages[1], size: "body" });
-    expect(v.lines.map((l) => l.text)).toEqual(["You said: Is there anything in…", "Answered by Claude"]);
+    expect(v.lines.map((l) => l.text)).toEqual(["You said: Is there anything in…"]);
     expect(v.center.lines.map((l) => l.text)).toEqual([`2 of ${pages.length}`]);
     expect(v.left).toBeNull();
     // A page past the end shows the last one.
@@ -158,7 +158,7 @@ describe("the walker's own states", () => {
 
   it("answering with captions off says only that Sophi is answering", () => {
     const v = screenView(state({ state: "answering", heard: "hi", reply: "Hello.", source: "walker", page: 0 }, { settings: { ...settings, captions: false } }));
-    expect(texts(v)).toEqual(["Sophi is answering", "On the walker, offline reply"]);
+    expect(texts(v)).toEqual(["Sophi is answering"]);
   });
 
   it("Sophi's offer: the question, the alerts it makes, Confirm lit, no touch button", () => {

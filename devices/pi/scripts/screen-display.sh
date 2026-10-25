@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sets the Pi's display settings for the walker's 800x480 HDMI screen. Run by `install-pi.sh --screen`, or
 # by hand: sudo ./scripts/screen-display.sh [--force-on | --remove] [boot folder, default /boot/firmware]
-# Not yet run on the Pi (written 2026-10-23); test/screen-kiosk.test.ts runs it on copies of the stock files.
+# Run on the Pi on 2026-10-25; reboot behavior has not yet been checked.
 #
 # Why these settings (devices/pi/README.md, "The screen"): a Pi 5 on Raspberry Pi OS trixie drives HDMI with
 # the kernel's KMS driver, which ignores the old hdmi_group / hdmi_mode / hdmi_cvt lines in config.txt

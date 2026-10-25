@@ -5,7 +5,7 @@
 # It sets the display settings (scripts/screen-display.sh, which backs up each file it changes), creates the
 # `sophi-screen` user, installs its PAM file, the placeholder page, the wait script and the sophi-screen unit,
 # and enables the unit. It stops at the first failure; its last line of output is then the reason, which
-# install-pi.sh prints as "Screen not installed: <reason>". Written 2026-10-23; not yet run on the Pi.
+# install-pi.sh prints as "Screen not installed: <reason>". Run on the Pi on 2026-10-25.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"

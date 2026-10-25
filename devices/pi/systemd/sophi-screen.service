@@ -1,6 +1,6 @@
 # The walker's screen: Chromium full screen on the 800x480 panel, inside cage (a Wayland "kiosk" compositor
-# that shows one app and nothing else). Installed by `install-pi.sh --screen`. Written 2026-10-23; NOT YET
-# RUN ON THE PI. devices/pi/README.md ("The screen") has the install, check and troubleshooting steps.
+# that shows one app and nothing else). Installed on the Pi on 2026-10-25.
+# devices/pi/README.md ("The screen") has the install, check and troubleshooting steps.
 #
 # It is independent of the walker service: steady-walker.service never waits for it, and nothing here waits
 # for or stops steady-walker. With no screen plugged in, or no page yet, sophi-screen-wait.sh (the main

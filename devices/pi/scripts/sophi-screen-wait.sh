@@ -6,7 +6,7 @@
 # never waits for a screen. Without a screen, or before the walker service serves its page, it just keeps
 # waiting (one journal line each time what it's waiting for changes); nothing here touches the walker service.
 # SOPHI_SCREEN_WAIT_SECONDS sets a time limit, after which it exits 1 (for tests; unset on the Pi).
-# Not yet run on the Pi (written 2026-10-23); test/screen-kiosk.test.ts runs it on a Mac.
+# Run on the Pi on 2026-10-25; the owner saw the live Sophi interface.
 #
 # The kiosk shows only local pages: a file:// page on the Pi, or the walker service's own page on
 # http://127.0.0.1. Any other address is refused, so the screen can never be pointed at a web site.
