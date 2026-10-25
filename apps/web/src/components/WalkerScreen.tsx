@@ -299,7 +299,8 @@ function Paired({ page, walker, phones, typedBy }: { page: WalkerPage; walker: W
 
       {/* Dimmed while Sophi's server can't be reached, so old readings don't look current. */}
       <section className={styles.walker} data-stale={live ? undefined : ""} aria-label="What the walker reports">
-        <LiveWalkerDiagram rows={rows} caption={caption} />
+        {/* A simulator walker says "Simulator" once, above; its parts don't each repeat it. */}
+        <LiveWalkerDiagram rows={rows} caption={caption} tagSimulated={!walker.simulator} />
         <div className={styles.cards}>
           <Alerts walker={walker} />
           <Obstacles page={page} walker={walker} />
@@ -315,7 +316,7 @@ function Paired({ page, walker, phones, typedBy }: { page: WalkerPage; walker: W
                   <li key={r.key} className={styles.row}>
                     <span className={styles.rowTop}>
                       <span className={styles.rowName}>{r.name}</span>
-                      {r.simulated ? <span className={styles.tag}>Simulated</span> : null}
+                      {r.simulated && !walker.simulator ? <span className={styles.tag}>Simulated</span> : null}
                     </span>
                     <span className={styles.rowWords}>
                       {[r.healthWord, r.inConfiguration ? null : "Not in your setup"].filter(Boolean).join(", ")}
@@ -389,7 +390,7 @@ function Obstacles({ page, walker }: { page: WalkerPage; walker: WalkerStatusVie
             <li key={z.key} className={styles.zone}>
               <span className={styles.rowTop}>
                 <span className={styles.rowName}>{z.name}</span>
-                {z.simulated ? <span className={styles.tag}>Simulated</span> : null}
+                {z.simulated && !walker.simulator ? <span className={styles.tag}>Simulated</span> : null}
               </span>
               <span className={styles.distance} data-measured={z.measured}>
                 {z.value}

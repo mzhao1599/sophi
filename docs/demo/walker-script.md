@@ -21,7 +21,7 @@ The onboarding demo's script is [script.md](script.md); it stays the source for 
   - on 2026-10-24: the Pi ran from the walker's battery through its 5 V converter (power draw not measured; the Pi reset when a third USB hub, or the GPS straight into the Pi, was plugged in, cause not found). Both hand boards (`hand-right-01`, `hand-left-01`) said hello and were healthy, "Sophi is on." played, Talk on the right handle gave two answered turns, and the left handle gave the Confirm press cue. Pressing Confirm to answer an offer hasn't been tried on the Pi. After a full power cycle the handles' USB ports took about six minutes to open ([hardware record](../../hardware/current-build.md));
   - the paired Pi asked the server for Cartesia's voice for its own lines and got audio back (2026-10-24); nobody has listened to it yet.
 
-**What is simulated:** in the Mac rehearsal, the whole walker: the simulator stands in for the buttons, microphone and speaker, the hand controls and the obstacle sensors. The page labels every one of them "Simulated", and the whole walker "Simulator". On the real Pi, the obstacle sensors are still simulated or missing, and the page labels whatever is simulated.
+**What is simulated:** in the Mac rehearsal, the whole walker: the simulator stands in for the buttons, microphone and speaker, the hand controls and the obstacle sensors. The page says so once, with the "Simulator" badge and "This walker is the simulator running on a computer, not a Pi.", and draws each stand-in part in dashed green; since 2026-10-25 it no longer repeats "Simulated" on each part. On the real Pi, the obstacle sensors are still simulated or missing, and the page tags whatever is simulated "Simulated".
 
 **Built during the event, not yet run on the real walker:**
 - the walker's 5-inch screen: run only in the simulator under headless Chromium at 800 by 480. The kiosk that shows it full screen hasn't been installed on the Pi, and nothing has been seen on the panel;
@@ -45,7 +45,7 @@ Nothing in this script presents a simulated or planned part as working.
 
 | Beat | Presenter does | The walker says or does | The page | The walker's screen † |
 | --- | --- | --- | --- | --- |
-| 1. Boot | Starts the walker | "Sophi is on." | Online, each part with its health and "Simulated", the "Simulator" badge, alerts "Applied" | The clock and the alerts in force; "Online" in the strip |
+| 1. Boot | Starts the walker | "Sophi is on." | Online, each part with its health, the "Simulator" badge, alerts "Applied" | The clock and the alerts in force; "Online" in the strip |
 | 2. Ask | Holds Talk: "What can you help me with?" | Answers out loud | "You said (as heard by Cartesia)", the reply, "In Cartesia's voice" | "Listening", "One moment", then the reply as captions, "Answered by Claude" |
 | 3. Obstacles | Hand in front of the sensor, then asks "Is anything in front of me?" | Buzzes the handle at once (local) †, then reads the distances, written by the server, with "These readings are simulated." † | Front left about 30 cm, "Simulated"; the reply "Answered by the fixed replies" † | "Something close", "Front left · 30 cm", "Simulated"; then the captions |
 | 4. Change a setting | Asks "Stop buzzing me, use short sounds instead.", then presses Confirm | "I can switch your alerts from buzzing to short sounds. Press Confirm to do it.", then "Done. Obstacle alerts now use short sounds." † A hand in front now gives the short sound, no buzz † | The offer card, then "Version 2", "Short sounds", "Applied" | "Short sounds?", "Confirm" over the left handle, then "Done" |
@@ -78,7 +78,7 @@ The reply's text reaches the walker 1.9 to 4.6 seconds after you let go on the s
 3. Within about 2 seconds the page shows:
    - "Online";
    - the drawing with each part and its health: Hand controls, Obstacle sensors, Voice, Walker and coordinator, each "Healthy";
-   - in the simulator, every part also says "Simulated", and the "Simulator" badge shows with "This walker is the simulator running on a computer, not a Pi.";
+   - in the simulator, the "Simulator" badge shows with "This walker is the simulator running on a computer, not a Pi." (once, not on each part);
    - "Alerts": "Vibration in the handles", "Spoken messages", "Applied".
 4. The obstacle readings appear about 5 seconds after boot ("No obstacle sensors reporting." until the first reading arrives).
 5. **The screen** †: the clock, with the time once the Pi's clock has synced ("Sophi" before that), the day and the alerts in force ("Alerts: buzz and speech"). The strip says "Online", and "Simulator" on the simulator.
@@ -104,7 +104,7 @@ The reply's text reaches the walker 1.9 to 4.6 seconds after you let go on the s
 1. Put a hand in front of the sensor. In the simulator, press `n` (a hand at 30 cm, front left).
 2. The handle buzzes at once †. In the rehearsal the buzz went out within 0.1 s of the hand; the simulator logs "SIMULATED handle buzz".
 3. **The screen** †: "Something close", "Front left · 30 cm" and a "Simulated" tag. This screen comes before everything else, as long as the hand is there and for 1 second after.
-4. Within a few seconds (the walker reports every 5 seconds) the page's "Obstacles" shows "Front left 30 cm", "Simulated".
+4. Within a few seconds (the walker reports every 5 seconds) the page's "Obstacles" shows "Front left 30 cm" (with "Simulated" on the real Pi's simulated sensors; the simulator's page says it once, at the top).
 5. Talk: **"Is anything in front of me?"** Let go, then take your hand away (simulator: `f`). The answer reads the readings the walker sent when you let go, and taking the hand away lets the screen show the captions.
 6. The walker answers with the server's own line, built from those readings †. In the simulator, which has two zones:
 
@@ -180,6 +180,13 @@ The page's distance comes from the walker's report every 5 seconds, so it can re
 ### Segment 7. Two phones (2:30 to 3:30) †
 
 The care loop: the person who walks with the walker (Rose) and her caretaker (Maya), each on a phone. Both names are made up. Everything here is † until it has run on two real phones against Render three times in a row; so far it ran in a headless browser on a local server, before the opt-in GPS sharing was added. It works the same with the simulator or the real Pi.
+
+**Stage version (2026-10-25): two sample screens, no live phones.** There's no time in the demo to work the phones, so the laptop shows two fixed screens side by side for a glance, each in its own half of the screen:
+
+- left, <https://sophi.work/sample/rose>: Rose's phone with her messages from Maya;
+- right, <https://sophi.work/sample/caretaker>: Maya's phone with Rose's walk to the Boating Center on a map.
+
+Both are made-up data with one "Sample" tag in the corner, and neither needs a walker, a code or a login. Open them in one browser, one window per half. Say they're samples. If asked about the map: Maya's real phone today shows the walker's latest GPS fix only while Rose shares it; the route and the time left are a sample of where that goes. The live two-phone path below stays for a longer demo or for questions.
 
 **Who holds what.**
 - **The presenter** stands at the walker, holds Rose's phone, and works the laptop with the "Your walker" page (the family's page, on the projector).

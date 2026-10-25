@@ -35,7 +35,16 @@ const INKED: readonly DrawState[] = ["on", "degraded"];
  * doesn't have aren't drawn. Hidden from screen readers: the caption and the parts list say the same in
  * words. Labels show from 560px wide; narrower, the parts list beside it carries the words.
  */
-export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption }: { rows: readonly PartRow[]; caption: string }) {
+export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({
+  rows,
+  caption,
+  tagSimulated = true,
+}: {
+  rows: readonly PartRow[];
+  caption: string;
+  /** False when the whole walker is the simulator and the page says so once: no "Simulated" tag on each part. */
+  tagSimulated?: boolean;
+}) {
   const reduced = useReducedMotion();
   const [live, setLive] = useState(false);
   useLayoutEffect(() => setLive(true), []);
@@ -80,6 +89,9 @@ export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption
   const canvasRef = useRef<HTMLDivElement>(null);
   const spotEls = useRef(new Map<ModuleId, HTMLDivElement>());
   const [labelY, setLabelY] = useState<Partial<Record<ModuleId, number>>>({});
+  // How far the lowest label runs past the drawing, in px: the figure grows by that much so it never covers
+  // the cards below it (a narrow drawing with four tall labels on one side).
+  const [spill, setSpill] = useState(0);
   const shownIds = shown.map((s) => s.id).join();
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -89,11 +101,18 @@ export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption
       if (canvas.offsetHeight === 0) return;
       const unit = H / canvas.offsetHeight;
       const next: Partial<Record<ModuleId, number>> = {};
+      let bottom = H;
       for (const side of ["left", "right"] as const) {
         const spots = SPOTS.filter((s) => s.side === side && ids.includes(s.id));
-        const at = spreadLabels(spots.map((s) => ({ want: s.labelY, size: (spotEls.current.get(s.id)?.offsetHeight ?? 0) * unit })), 0, H);
-        spots.forEach((s, i) => (next[s.id] = at[i]));
+        const sizes = spots.map((s) => (spotEls.current.get(s.id)?.offsetHeight ?? 0) * unit);
+        const at = spreadLabels(spots.map((s, i) => ({ want: s.labelY, size: sizes[i]! })), 0, H);
+        spots.forEach((s, i) => {
+          next[s.id] = at[i];
+          bottom = Math.max(bottom, at[i]! + sizes[i]! / 2);
+        });
       }
+      const px = Math.ceil((bottom - H) / unit);
+      setSpill((was) => (Math.abs(was - px) < 2 ? was : px));
       setLabelY((was) => (Object.keys(next).every((id) => Math.abs((was[id as ModuleId] ?? -1) - next[id as ModuleId]!) < 0.05) ? was : next));
     };
     place();
@@ -106,7 +125,7 @@ export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption
 
   return (
     <figure className={styles.figure} data-variant="live" data-live={live || undefined}>
-      <div ref={canvasRef} className={styles.canvas}>
+      <div ref={canvasRef} className={styles.canvas} style={spill > 0 ? { marginBottom: spill } : undefined}>
         <svg className={styles.leaders} viewBox={`${-SIDE} 0 ${WIDE_W} ${H}`} aria-hidden="true" focusable="false">
           {placed.map((s) => (
             <g key={s.id} className={styles.leader} data-state={state.get(s.id)}>
@@ -164,7 +183,7 @@ export const LiveWalkerDiagram = memo(function LiveWalkerDiagram({ rows, caption
               <span className={styles.spotText}>
                 <span className={styles.spotName}>{byId.get(s.id)!.name}</span>
                 <span className={styles.spotState}>{byId.get(s.id)!.words}</span>
-                {byId.get(s.id)!.simulated ? (
+                {tagSimulated && byId.get(s.id)!.simulated ? (
                   <span className={page.tag} style={{ justifySelf: s.side === "left" ? "end" : "start" }}>
                     Simulated
                   </span>
