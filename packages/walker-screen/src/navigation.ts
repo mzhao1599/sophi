@@ -34,15 +34,22 @@ import { screenSizes } from "./sizes";
  * 54, 57 and 63 px. A phase sentence ("Finding the way again") takes the whole right column: one line as large
  * as fits up to the cap, or two lines in bold at her body size when one line would be smaller than that.
  *
- * The band, right column: Talk over the right handle (118 px with its mark) and 12 px, then Repeat (131 px of
- * words, 153 px of button) and End route (two lines in 147 px), 22 px apart, labels at the smallest size: 455
- * px at most, in 472 at Large. Every region is measured at every text size, with the longest street (60
+ * The band, right column: End route alone (147 px square, its label at the smallest size); the left handle
+ * repeats the instruction. Every region is measured at every text size, with the longest street (60
  * characters) and place name (100 characters) the contract allows, by test/shots.test.tsx.
+ *
+ * Since 2026-10-25 the map is drawn under the whole screen and these regions are cards over it (screen.css):
+ * the strip along the top (its card grows to 52 px with the dashed Simulator tag), the right column's card from
+ * 62 px down to 6 px above End route (2 px border and padding, so 251 px inside at every size), and the
+ * distance left at the left column's foot, as wide as its lines up to End route. navMap puts her dot in the
+ * middle of the open left column (`focus`), not the middle of the screen, which the right card covers.
  *
  * Text under 40 px: only "© OpenStreetMap contributors" on the map, a licence credit (16 px, 7:1 on its own
  * card), which the shots check finds on every map.
  */
 
+/** Where the cards below the strip start: 6 px padding, the 50 px strip and an 8 px gap. */
+export const NAV_TOP_PX = 6 + 50 + 8;
 export const NAV_SIDE_PX = 410;
 export const NAV_ONE_PX = NAV_SIDE_PX - 8 - 147;
 export const NAV_COLUMN_GAP_PX = 16;
@@ -242,9 +249,17 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  * the start of the route ahead), at MAP_ZOOM, or MAP_ZOOM_OUT when the next point (the step, else the
  * destination) would be off the part that shows (`visibleHeight` tall, centred). Tiles cover the whole frame,
  * and the page centres the frame in the map's box, so her dot stays in the middle whatever height the box
- * gets. Markers and the route are in the frame's pixels. Pure: the same state draws the same map.
+ * gets. Markers and the route are in the frame's pixels. Pure: the same state draws the same map. `focus` moves
+ * her (before the pan ahead) off the frame's middle: the full-screen map puts her in the part the cards leave open.
  */
-export function navMap(map: NavigatingScreen["map"], width: number, height: number, visibleHeight = height, followAhead = false): NavMap {
+export function navMap(
+  map: NavigatingScreen["map"],
+  width: number,
+  height: number,
+  visibleHeight = height,
+  followAhead = false,
+  focus: MapPoint = { x: width / 2, y: height / 2 },
+): NavMap {
   const centre = map.position ?? map.route[0]!;
   const next = map.step_at ?? map.destination_at;
   const frame = (zoom: number) => {
@@ -255,7 +270,7 @@ export function navMap(map: NavigatingScreen["map"], width: number, height: numb
     const distance = Math.hypot(dx, dy);
     // The full-screen view pans toward the next turn, keeping nearby route ahead in view.
     const advance = followAhead && distance > 0 ? Math.min(120, distance * 0.4) / distance : 0;
-    const origin = { x: c.x + dx * advance - width / 2, y: c.y + dy * advance - height / 2 };
+    const origin = { x: c.x + dx * advance - focus.x, y: c.y + dy * advance - focus.y };
     const at = (p: LatLon): MapPoint => {
       const w = worldPx(p, zoom);
       return { x: round1(w.x - origin.x), y: round1(w.y - origin.y) };
