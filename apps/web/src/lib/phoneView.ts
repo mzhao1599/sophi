@@ -10,6 +10,8 @@ import { cueList } from "./walkerView";
 
 /** How often the app asks the server for news while it's on screen. */
 export const PHONE_POLL_MS = 2_000;
+/** With live updates from SpacetimeDB, the circle comes pushed; this is only for the walker's status (online, alerts, parts, GPS). */
+export const PHONE_LIVE_POLL_MS = 10_000;
 
 /** A random v4 UUID. `crypto.randomUUID` exists only on https pages, and a phone on the venue's LAN may be on plain http. */
 export function newId(): string {

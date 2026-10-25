@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomInt } from "node:crypto";
 import {
   ApproveJoinResponseSchema,
   CIRCLE_ERROR_STATUS,
+  CareLiveResponseSchema,
   CIRCLE_INVITE_TTL_MS,
   CIRCLE_MESSAGE_RETENTION_MS,
   CreateInviteResponseSchema,
@@ -19,6 +20,8 @@ import {
   PhoneSendMessageResponseSchema,
   type AddPhoneRequest,
   type ApproveJoinRequest,
+  type CareLiveAccess,
+  type CareLiveResponse,
   type CircleErrorCode,
   type CircleInvite,
   type CircleMember,
@@ -83,6 +86,8 @@ export interface CircleServiceOptions {
   /** Set when this server must not serve walkers: every call answers 503 with it. */
   blocked?: string;
   onMessage?: (event: MessageEvent) => void;
+  /** Set when the circle lives in SpacetimeDB: a signed connection for one subject (`member:<id>`, `owner:<device id>`). */
+  liveAccess?: (subject: string) => CareLiveAccess;
 }
 
 /** Keys the hash of a client address for the join lockout, apart from pairing's (its own count, same limits). */
@@ -94,6 +99,7 @@ export class CircleService {
   private readonly randomCode: () => string;
   private readonly blocked: string | undefined;
   private readonly onMessage: (event: MessageEvent) => void;
+  private readonly liveAccess: ((subject: string) => CareLiveAccess) | undefined;
 
   constructor(
     private readonly store: WalkerStore,
@@ -104,6 +110,7 @@ export class CircleService {
     this.randomCode = options.randomCode ?? (() => String(randomInt(0, 1_000_000)).padStart(6, "0"));
     this.blocked = options.blocked;
     this.onMessage = options.onMessage ?? logMessage;
+    this.liveAccess = options.liveAccess;
   }
 
   // ---- The owner's page ----
@@ -155,6 +162,12 @@ export class CircleService {
     return ApproveJoinResponseSchema.parse({ member: memberView(member) });
   }
 
+  /** The owner's page's live connection to this walker's circle; `live: null` when the circle isn't in SpacetimeDB. */
+  async ownerLive(caller: OwnerCaller, deviceId: string): Promise<CareLiveResponse> {
+    const device = await this.ownerDevice(caller, deviceId);
+    return CareLiveResponseSchema.parse({ live: this.liveAccess?.(`owner:${device.device_id}`) ?? null });
+  }
+
   /** Removes a phone (or declines a waiting caretaker), deleting every message to or from it at once. */
   async removeMember(caller: OwnerCaller, deviceId: string, memberId: string): Promise<void> {
     const device = await this.ownerDevice(caller, deviceId);
@@ -200,6 +213,8 @@ export class CircleService {
     }
     // Her phone is in now, so its earlier membership goes now; a caretaker's goes when the owner approves.
     if (old && claim.member.state === "member") await this.store.removeMember(old.device_id, old.member_id);
+    // A new phone of hers starts with GPS sharing off, even if turning it off failed when her last phone left.
+    if (claim.member.role === "walker_user") await this.store.writeLocationSharing(claim.member.device_id, false);
     return { secret, home: await this.homeFor(claim.member, now) };
   }
 
@@ -207,6 +222,12 @@ export class CircleService {
   async home(caller: MemberCaller): Promise<PhoneHomeResponse> {
     const member = await this.member(caller);
     return this.homeFor(member, this.now());
+  }
+
+  /** This phone's live connection (waiting or in); `live: null` when the circle isn't in SpacetimeDB. */
+  async phoneLive(caller: MemberCaller): Promise<CareLiveResponse> {
+    const member = await this.member(caller);
+    return CareLiveResponseSchema.parse({ live: this.liveAccess?.(`member:${member.member_id}`) ?? null });
   }
 
   /** Her approved phone alone can enable or revoke caregiver GPS sharing. */
@@ -274,6 +295,7 @@ export class CircleService {
     ]);
     const online = isOnline(device.last_heartbeat_at, now);
     const names = new Map(circle.members.map((m) => [m.member_id, m.name]));
+    const herPhoneIn = circle.members.some((m) => m.role === "walker_user" && m.state === "member");
     return PhoneHomeResponseSchema.parse({
       membership: "member",
       me: person(member),
@@ -284,7 +306,8 @@ export class CircleService {
         alerts: configuration.cues,
         parts: member.role === "caregiver" ? partViews(device, configuration, online) : null,
         battery: "not_measured",
-        ...(device.location_sharing_enabled ? { location_sharing_enabled: true, location: visibleLocation(device, member.role, online, now) } : {}),
+        // Sharing counts only while her own phone is in: if turning it off failed when her phone left, it stays hidden.
+        ...(device.location_sharing_enabled && herPhoneIn ? { location_sharing_enabled: true, location: visibleLocation(device, member.role, online, now) } : {}),
       },
       people: circle.members.filter((m) => m.state === "member").map(person),
       messages: messages.map((m) => messageView(m, member.member_id, names)),

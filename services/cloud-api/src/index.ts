@@ -43,6 +43,18 @@ export { WALKER_SYSTEM_PROMPT, createWalkerAssistant, type WalkerAssistant, type
 export { createCartesiaVoice, type WalkerVoice } from "./walker/speech";
 export { CIRCLE_SWEEP_EVERY_MS, MemoryWalkerStore, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./walker/store";
 export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
+export { SpacetimeCircleStore } from "./walker/spacetime-store";
+export {
+  CARE_DB_AUDIENCE,
+  CareDbClient,
+  CareDbError,
+  careDbConfigFromEnv,
+  careDbDiscovery,
+  careDbJwks,
+  careLiveAccess,
+  mintCareToken,
+  type CareDbConfig,
+} from "./walker/care-db";
 export { WALKER_MIGRATIONS } from "./walker/migrations";
 export { buildStatusView } from "./walker/status";
 export { ActivityLog, MAX_IN_FLIGHT } from "./walker/activity";

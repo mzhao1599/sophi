@@ -65,7 +65,7 @@ NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_
 | `/api/v1/checkout/status` | Whether the mock purchase button is on, and why not |
 | `/api/v1/walkers/…` | The walker API for the owner's page (`walker_owner` cookie): pairing codes, the owner's walkers and their status, Confirm or Decline, Forget, and typed questions to the assistant; see [interfaces](../../docs/interfaces.md#cloud-api-surface) |
 | `/api/v1/devices/…` | The walker API for the Pi (`Authorization: Bearer` credential): pair, heartbeat, configuration, voice or text questions, the Confirm button |
-| `/api/v1/health` | Render's health check: `200` once the walker store is ready, `503` while its database can't be reached |
+| `/api/v1/health` | Render's health check: `200` once the walker store is ready, `503` while its database can't be reached. `care_db` says whether the circle's SpacetimeDB answers (`ok`, `unreachable`, or `off` without it); it never fails the check |
 | `/checkout/success` | Where Stripe returns after a test payment: the ordered walker drawn again, "Demo order: no money moved", the modules read from the Checkout Session on the server, and **Set up another walker** (deletes this tab's demo answers and opens a fresh first frame) |
 | `/checkout/cancelled` | Where Stripe's back link returns: the same "demo, no money moved" notice |
 | `/walker` | **Your walker**, the always-on assistant's page: pair a walker, watch it live, read and join its conversation, confirm or decline what it offers ([guide](../../docs/subsystems/web-and-onboarding.md#your-walker-page)). Uses the owner routes `/api/v1/walkers/...`; typed questions use the built assistant turn route (`POST /api/v1/walkers/{id}/turns`) |
@@ -208,12 +208,12 @@ Both are on Render's free plan. The web service spins down after 15 minutes with
    - **CARTESIA_API_KEY**: paste your Cartesia key if you have one. If you don't yet, leave it empty. If Render won't continue with it empty, type `none`: the server treats that as no key, and the walker speaks replies with its own voice. Put the real key in later under **steady-walker → Environment**.
    These two go only into Render. Never paste them into chat, a file in the repository, or a commit.
 6. Click **Deploy Blueprint**. The database takes a minute or two, then the web service builds (pnpm install and `next build`, several minutes on the free plan).
-7. When **steady-walker** shows **Live**, copy its address from the top of its page (something like `https://steady-walker.onrender.com`; Render adds a suffix if the name is taken) and open `/api/v1/health` on it. It should say `{"status":"ok","walker_store":"postgres"}`.
+7. When **steady-walker** shows **Live**, copy its address from the top of its page (something like `https://steady-walker.onrender.com`; Render adds a suffix if the name is taken) and open `/api/v1/health` on it. It should say `{"status":"ok","walker_store":"postgres","care_db":"off"}` (`"care_db":"ok"` once the circle is on SpacetimeDB: [services/care-db](../../services/care-db/README.md#deploying-maincloud-and-render)).
 8. Send that address to the lead, who checks pairing, a heartbeat and the walker routes over HTTPS.
 
 If this Mac's network filter blocks the `onrender.com` address (it blocked the new `vercel.app` one), open it on a phone instead.
 
-**Moved repository.** The code's home is now **mzhao1599/sophi**. The Render services were first created from an earlier private repository, which is frozen and gets no new commits. So in Render, connect **steady-walker** (and the Blueprint, if Render shows it separately) to **mzhao1599/sophi**, branch **main**. Then check two things: the latest deploy names a commit that exists in sophi, and `/api/v1/health` still says `{"status":"ok","walker_store":"postgres"}`. The database is not tied to a repository, so it stays as it is.
+**Moved repository.** The code's home is now **mzhao1599/sophi**. The Render services were first created from an earlier private repository, which is frozen and gets no new commits. So in Render, connect **steady-walker** (and the Blueprint, if Render shows it separately) to **mzhao1599/sophi**, branch **main**. Then check two things: the latest deploy names a commit that exists in sophi, and `/api/v1/health` still says `"status":"ok","walker_store":"postgres"`. The database is not tied to a repository, so it stays as it is.
 
 ### After that
 

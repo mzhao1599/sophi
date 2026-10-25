@@ -11,11 +11,12 @@ import {
   type CircleErrorCode,
   type PhoneHomeResponse,
 } from "@walker/contracts";
-import { CIRCLE_SWEEP_EVERY_MS, CircleService, WalkerService, isCircleError, isWalkerError, type MemberCaller, type MessageEvent, type OwnerCaller } from "../../src";
-import { Clock, SKIP_POSTGRES, manifest, memoryHarness, postgresHarness, snapshot, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
+import { CIRCLE_SWEEP_EVERY_MS, CircleService, WalkerService, isCircleError, isWalkerError, sha256, type MemberCaller, type MessageEvent, type OwnerCaller } from "../../src";
+import { Clock, SKIP_POSTGRES, SKIP_SPACETIME, manifest, memoryHarness, postgresHarness, snapshot, spacetimeHarness, spacetimeTestServer, turn, uuid, walkerTestDatabaseUrl, type StoreHarness } from "./support";
 
 /**
- * The two-phone circle (circle.ts, "The two-phone app"), against the in-memory store and Postgres.
+ * The two-phone circle (circle.ts, "The two-phone app"), against the in-memory store, Postgres, and SpacetimeDB
+ * (SpacetimeCircleStore over the care-db module, with the walker's own rows in memory).
  * Expected, written before the run:
  * - her own phone is in on the code alone; a caretaker waits for the owner's approval, which lapses after 5 minutes;
  * - owner routes need the owner's own walker; member calls need a known cookie;
@@ -394,7 +395,18 @@ function describeCircle(name: string, makeHarness: () => Promise<StoreHarness>) 
       expect(await h.dump()).not.toContain("Lunch at noon?");
     });
 
-    it("deletes the whole circle when the walker is forgotten", async () => {
+    it("starts her new phone with GPS sharing off, even if turning it off failed when her last phone left", async () => {
+      const { w, rose } = await twoPhones();
+      expect(await circle.locationSharing(phone(rose.secret), { enabled: true, consent: true })).toEqual({ enabled: true });
+      const herId = rose.id;
+      await circle.removeMember(owner(w.secret), w.deviceId, herId);
+      // As if the walker's write had failed after the circle committed (two databases with SpacetimeDB).
+      await h.store().writeLocationSharing(w.deviceId, true);
+      await addAndJoin(w, "walker_user", "Rose");
+      expect((await h.store().deviceForOwner(w.deviceId, sha256(w.secret)))?.location_sharing_enabled).toBe(false);
+    });
+
+        it("deletes the whole circle when the walker is forgotten", async () => {
       const { w, rose, maya } = await twoPhones();
       await circle.sendMessage(phone(maya.secret), { client_message_id: uuid(), text: "Lunch at noon?" });
       await walkers.forget(owner(w.secret), w.deviceId);
@@ -415,5 +427,14 @@ if (walkerTestDatabaseUrl) {
 } else {
   describe.skip(SKIP_POSTGRES, () => {
     it("needs a local cluster", () => {});
+  });
+}
+
+if (spacetimeTestServer) {
+  const server = spacetimeTestServer;
+  describeCircle("spacetime", () => spacetimeHarness(server));
+} else {
+  describe.skip(SKIP_SPACETIME, () => {
+    it("needs a local spacetime server", () => {});
   });
 }

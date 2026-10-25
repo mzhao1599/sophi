@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
-import { CircleService, isCircleError, sharedWalkerBackend, type MemberCaller } from "@walker/cloud-api";
+import { CircleService, careLiveAccess, isCircleError, sharedWalkerBackend, type MemberCaller } from "@walker/cloud-api";
 import { CIRCLE_ERROR_STATUS, type CircleError, type CircleErrorCode } from "@walker/contracts";
 import { rememberTraceId, traceIdOf, walkerJson } from "./walker";
 
@@ -17,10 +17,14 @@ const MEMBER_COOKIE_PATH = "/api/v1/circle";
 /** A phone stays in until the owner removes it, so the cookie lasts as long as browsers allow (400 days). */
 const MEMBER_COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
 
-/** The circle's service for one request, on the walkers' shared store. */
+/** The circle's service for one request, on the walkers' shared store (with live access when it is in SpacetimeDB). */
 export function circleService(): CircleService {
   const backend = sharedWalkerBackend();
-  return new CircleService(backend.store, { blocked: backend.blocked });
+  const care = backend.care;
+  return new CircleService(backend.store, {
+    blocked: backend.blocked,
+    liveAccess: care ? (subject) => careLiveAccess(care, subject, new Date()) : undefined,
+  });
 }
 
 export function memberCaller(request: NextRequest): MemberCaller {

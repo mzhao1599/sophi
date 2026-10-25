@@ -3,15 +3,18 @@ import { DEFAULT_GEMINI_MODEL, createGeminiModel, geminiModelName, thinkingFor }
 import { ActivityLog } from "./activity";
 import { WALKER_TIMEOUT_MS, createWalkerAssistant, type WalkerAssistant } from "./assistant";
 import { createHedgedAssistant } from "./hedge";
+import { CareDbClient, careDbConfigFromEnv, type CareDbConfig } from "./care-db";
 import { PostgresWalkerStore } from "./postgres-store";
+import { SpacetimeCircleStore } from "./spacetime-store";
 import { createCartesiaVoice, type WalkerVoice } from "./speech";
 import { MemoryWalkerStore, type WalkerStore } from "./store";
 
 /** Where walkers are kept, chosen by walkerBackendFromEnv. */
 export type WalkerBackend =
-  | { kind: "postgres" | "memory"; store: WalkerStore; blocked?: undefined }
+  /** `care`: the circle lives in SpacetimeDB (SpacetimeCircleStore), with these settings. */
+  | { kind: "postgres" | "memory"; store: WalkerStore; blocked?: undefined; care?: CareDbConfig }
   /** Production without a database: every walker route answers 503 with `blocked`. */
-  | { kind: "off"; store: WalkerStore; blocked: string };
+  | { kind: "off"; store: WalkerStore; blocked: string; care?: undefined };
 
 /**
  * Chooses the walker store from the server's environment:
@@ -20,8 +23,18 @@ export type WalkerBackend =
  * - Not set, outside production: the in-memory store, for local runs.
  * - Not set in production (such as the Vercel onboarding site): walkers are off, because a paired
  *   walker's credential must survive a restart. Onboarding is unaffected.
+ *
+ * With the four SPACETIME_* settings as well (careDbConfigFromEnv), the circle moves to SpacetimeDB and the
+ * rest stays where it is (SpacetimeCircleStore).
  */
 export function walkerBackendFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void = console.warn): WalkerBackend {
+  const backend = baseBackendFromEnv(env, warn);
+  const care = careDbConfigFromEnv(env, warn);
+  if (!care || backend.kind === "off") return backend;
+  return { kind: backend.kind, store: new SpacetimeCircleStore(backend.store, new CareDbClient(care)), care };
+}
+
+function baseBackendFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void): WalkerBackend {
   const url = env.DATABASE_URL?.trim();
   if (url) {
     // Render's free Postgres has no connection pooler, so keep this small.
