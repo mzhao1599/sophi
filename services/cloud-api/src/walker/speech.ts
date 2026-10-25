@@ -16,7 +16,7 @@ export const DEFAULT_CARTESIA_MODEL = "sonic-3.6";
 export const DEFAULT_CARTESIA_VOICE = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";
 
 export interface WalkerVoice {
-  /** The reply as 16 kHz mono 16-bit WAV in base64, or null when it couldn't be made in time. */
+  /** The reply as mono 16-bit WAV (16 kHz unless the voice was made with another rate) in base64, or null when it couldn't be made in time. */
   speak(text: string, signal: AbortSignal): Promise<string | null>;
 }
 
@@ -24,11 +24,13 @@ export interface CartesiaVoiceOptions {
   apiKey: string;
   voiceId?: string;
   model?: string;
+  /** 16 kHz is what the walker's player takes; the onboarding page asks for 24 kHz, which sounds clearer on a laptop. */
+  sampleRate?: 16_000 | 24_000;
   /** For tests: answers requests instead of the network. */
   fetch?: typeof fetch;
 }
 
-export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, model = DEFAULT_CARTESIA_MODEL, fetch: fetchImpl = fetch }: CartesiaVoiceOptions): WalkerVoice {
+export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, model = DEFAULT_CARTESIA_MODEL, sampleRate = 16_000, fetch: fetchImpl = fetch }: CartesiaVoiceOptions): WalkerVoice {
   return {
     async speak(text, signal) {
       try {
@@ -39,7 +41,7 @@ export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, 
             model_id: model,
             transcript: text,
             voice: { id: voiceId },
-            output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: 16_000 },
+            output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: sampleRate },
             language: "en",
           }),
           signal,
@@ -49,7 +51,7 @@ export function createCartesiaVoice({ apiKey, voiceId = DEFAULT_CARTESIA_VOICE, 
           return null;
         }
         const audio = await readCapped(response, SPEECH_MAX_BYTES);
-        return audio && isWav16kMono(audio) ? audio.toString("base64") : null;
+        return audio && (wavMonoBytes(audio, sampleRate) ?? 0) > 0 ? audio.toString("base64") : null;
       } catch {
         // A timeout, a dropped connection or a bad key: the walker speaks for itself.
         return null;
@@ -130,17 +132,17 @@ async function readCapped(response: Response, maxBytes: number): Promise<Buffer 
  * and what the Pi's player accepts (devices/pi readWav), so a reply sent as speech is one it can play.
  */
 export function isWav16kMono(wav: Buffer): boolean {
-  return (wav16kMonoBytes(wav) ?? 0) > 0;
+  return (wavMonoBytes(wav, 16_000) ?? 0) > 0;
 }
 
 /** The clip's length in milliseconds, from the samples actually there (16 kHz mono 16-bit is 32 bytes a millisecond). */
 export function wav16kMonoMs(wav: Buffer): number | null {
-  const bytes = wav16kMonoBytes(wav);
+  const bytes = wavMonoBytes(wav, 16_000);
   return bytes === null ? null : Math.round(bytes / 32);
 }
 
-/** The bytes of samples in a 16 kHz mono 16-bit PCM WAV, or null when it isn't one. */
-function wav16kMonoBytes(wav: Buffer): number | null {
+/** The bytes of samples in a mono 16-bit PCM WAV at `rate` samples a second, or null when it isn't one. */
+function wavMonoBytes(wav: Buffer, rate: number): number | null {
   if (wav.length < 12 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") return null;
   let fmtOk: boolean | null = null;
   for (let at = 12; at + 8 <= wav.length; ) {
@@ -148,7 +150,7 @@ function wav16kMonoBytes(wav: Buffer): number | null {
     const size = wav.readUInt32LE(at + 4);
     const body = at + 8;
     if (id === "fmt " && size >= 16 && body + 16 <= wav.length) {
-      fmtOk = wav.readUInt16LE(body) === 1 && wav.readUInt16LE(body + 2) === 1 && wav.readUInt32LE(body + 4) === 16_000 && wav.readUInt16LE(body + 14) === 16;
+      fmtOk = wav.readUInt16LE(body) === 1 && wav.readUInt16LE(body + 2) === 1 && wav.readUInt32LE(body + 4) === rate && wav.readUInt16LE(body + 14) === 16;
     } else if (id === "data") {
       // Streaming encoders may leave the size at 0xFFFFFFFF; what counts is the samples actually there.
       return fmtOk === true ? Math.max(0, Math.min(wav.length, body + size) - body) : null;

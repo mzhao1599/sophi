@@ -38,7 +38,7 @@ export {
 export { CAMERA_RECHECK_MS, CameraRelay, CameraService, cameraPart, sharedCameraRelay, type CameraFrame, type CameraServiceOptions } from "./walker/camera";
 export { CircleError, CircleService, isCircleError, type CircleServiceOptions, type MemberCaller, type MessageEvent } from "./walker/circle";
 export { WALKER_SYSTEM_PROMPT, createWalkerAssistant, type WalkerAssistant, type Words } from "./walker/assistant";
-export { createCartesiaEars, createCartesiaVoice, type WalkerEars, type WalkerVoice } from "./walker/speech";
+export { createCartesiaEars, createCartesiaVoice, isWav16kMono, wav16kMonoMs, type WalkerEars, type WalkerVoice } from "./walker/speech";
 export { CIRCLE_SWEEP_EVERY_MS, MemoryWalkerStore, newSecret, sha256, sweepCircleThrottled, type DeviceRecord, type WalkerStore } from "./walker/store";
 export { PostgresWalkerStore, PostgresStoreError } from "./walker/postgres-store";
 export { SpacetimeCircleStore } from "./walker/spacetime-store";

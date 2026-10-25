@@ -20,6 +20,8 @@ The onboarding agent does not silently change a confirmed configuration. A later
 
 Target [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/). Implement semantic headings, landmarks, real buttons/labels, keyboard operability, visible focus, logical tab order, readable contrast, scalable text, no information conveyed by color alone, and sufficient target size/spacing. Every voice interaction has a text equivalent; every important sound has visible text, and useful haptic/visual alternatives should be considered on device. Streaming chat updates should announce meaningfully through a controlled live region without reading partial tokens constantly. Keep motion subtle and honor reduced-motion preferences. Do not auto-start microphone capture.
 
+**As built (2026-10-25):** onboarding can be answered by voice and read aloud through Cartesia when the server has its key. The microphone is a press-to-start, press-to-send toggle beside Send, never press-and-hold. Its state is `aria-pressed`, a `role="status"` line says "Listening", and the listening ring stops moving under reduced motion. What was heard appears as your reply, so the text equivalent is always on screen. Typing and the tap replies are unchanged. Details: [apps/web](../../apps/web/README.md#how-demo-mode-works).
+
 Test with keyboard only, browser zoom, at least one screen reader, a mobile viewport, and a user or teammate who does not know the flow. An automated accessibility check is useful but cannot replace those checks. The UI should make slow agent responses, retries, errors, and offline/device-unavailable states understandable.
 
 ## Suggested page map
