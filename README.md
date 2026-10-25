@@ -1,3 +1,13 @@
+## Tracks
+
+Sophi is entered in these Cal Hacks 2026 special tracks. The [track guide](docs/demo/tracks.md) has what each one asks for and how far each part has been tested.
+
+- **Microsoft: Built for the Real World**, and its Customer Impact Award. Sophi's agent helps people who use walkers do more on their own. It asks about their day instead of a diagnosis, fixed rules pick the parts, and on the walker the model can only offer a change that the person confirms with a button press.
+- **Cartesia: Best Use of Cartesia.** Cartesia is Sophi's voice. When you hold Talk on the handle, its Ink speech-to-text turns what you say into words, and its Sonic voice speaks every answer through the walker's speaker. Onboarding can be answered by voice and read aloud in the same voice.
+- **Anthropic.** Claude does all of Sophi's model work. It runs the onboarding conversation that suggests parts, and it answers every question asked on the walker, with Claude Haiku answering and Claude Opus asked as a backup when Haiku is slow.
+- **Spacetime.** The care circle, the family and caretaker phones around the walker, runs on SpacetimeDB. Every join, approval and message is a SpacetimeDB transaction, and it reaches the other phones as soon as it commits.
+- **Meta: Bringing People Closer Together with AI.** Sophi helps a walker user keep going out on their own while their family stays close. They ask Sophi for help with their hands on the handles, and the care circle's phones let family see whether the walker is on and trade short messages with them.
+
 <p align="center">
   <img src="docs/assets/sophi-banner.webp" alt="Sophi: the physical augmentation walker. A red rolling walker fitted with two robot arms on a vertical lift, handle controls and sensors." width="100%">
 </p>
