@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CueListSchema, PartViewSchema, SpeechSchema } from "./walker";
+import { CueListSchema, HELP_COUNTDOWN_MS, HelpClosedHowSchema, HelpViewSchema, PartViewSchema, SpeechSchema } from "./walker";
 import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
 import { MotionFaultCodeSchema, MotionRefusalSchema, confirmPrompt } from "./motion";
 
@@ -729,98 +729,27 @@ export type LocationSharingRequest = z.infer<typeof LocationSharingRequestSchema
 // ---- Asking for help (added 2026-10-24, docs/subsystems/help.md) ----
 //
 // She asks her caretakers for help from the walker (both handle buttons held, or by voice after a countdown she
-// can stop) or from her own phone (one big button). Every approved caretaker phone in the circle is told at once
-// and can answer "I'm on my way". It closes when she says she's okay (her phone, or Confirm twice on the
+// can stop) or from her own phone (one big button). It is sent to every approved caretaker phone in the circle,
+// shows on each one whose app is open, and each can answer "I'm on my way". It closes when she says she's okay (her phone, or Confirm twice on the
 // walker), when a caretaker says they're with her, or after HELP_OPEN_MAX_MS. Sophi never calls an emergency
 // number and sends no SMS: it tells the caretaker phones that have the app open (no push notifications yet).
 // The caretaker sees her location only through the existing opt-in (`PhoneWalkerView.location`); asking for
 // help never turns sharing on. The walker never says "emergency" (the screen's calm-wording rule).
 
-/** How long both handle buttons must be held together before the walker asks for help. */
-export const HELP_HOLD_MS = 2_000;
-/** After a voice request, the walker counts down this long ("Press any button to stop") before it asks. */
-export const HELP_COUNTDOWN_MS = 8_000;
-/** The walker retries a help request it couldn't send (same `client_help_id`) for this long, then says it couldn't. */
-export const HELP_SEND_RETRY_MS = 120_000;
-/** The walker asks for its help request's state this often while one is open or sending. */
-export const HELP_POLL_MS = 2_000;
-/** An open help request nobody closes closes itself (`expired`) this long after she asked. */
-export const HELP_OPEN_MAX_MS = 60 * 60_000;
-/** A closed one is still shown (walker and phones: "Rose says she's okay") this long after it closed. */
-export const HELP_CLOSED_SHOWN_MS = 5 * 60_000;
-/** Every help request is deleted this long after she asked, open or not. */
-export const HELP_RETENTION_MS = 24 * 60 * 60_000;
-/** On the walker, a first Confirm on an open help request arms "Tell Maya you're okay?"; a second within this closes it. */
-export const HELP_OKAY_ARMED_TTL_MS = 30_000;
-
-/** Where she asked: both handle buttons held, her voice (after the countdown), or her own phone. */
-export const HelpSourceSchema = z.enum(["handles", "voice", "phone"]);
-export type HelpSource = z.infer<typeof HelpSourceSchema>;
-
-/**
- * How it closed. `okay`: she said she's okay (her phone, or Confirm twice on the walker). `with_her`: a caretaker
- * said they're with her. `expired`: HELP_OPEN_MAX_MS passed with nobody closing it.
- */
-export const HelpClosedHowSchema = z.enum(["okay", "with_her", "expired"]);
-export type HelpClosedHow = z.infer<typeof HelpClosedHowSchema>;
-
-/**
- * One help request as the walker and every phone in the circle see it. No exact times: `age_seconds` by the
- * server's clock, like the location fix. `told` is fixed when she asks (the approved caretakers then, in joining
- * order); a caretaker removed later stays named here until the request is deleted.
- */
-export const HelpViewSchema = z
-  .strictObject({
-    help_id: id,
-    source: HelpSourceSchema,
-    age_seconds: z.int().min(0).max(HELP_RETENTION_MS / 1_000),
-    told: z.array(CircleNameSchema).min(1).max(MAX_CIRCLE_MEMBERS),
-    /** Caretakers who answered "I'm on my way", first answer first; each once. */
-    coming: z.array(CircleNameSchema).max(MAX_CIRCLE_MEMBERS),
-    /** Null while open. `by_name` is who closed it (her name or a caretaker's), null for `expired`. */
-    closed: z.strictObject({ how: HelpClosedHowSchema, by_name: CircleNameSchema.nullable() }).nullable(),
-  })
-  .refine((h) => new Set(h.coming).size === h.coming.length, { message: "Each caretaker is coming once.", path: ["coming"] })
-  .refine((h) => h.closed === null || (h.closed.how === "expired") === (h.closed.by_name === null), {
-    message: "Only an expired request has nobody who closed it.",
-    path: ["closed", "by_name"],
-  });
-export type HelpView = z.infer<typeof HelpViewSchema>;
-
-/**
- * POST /api/v1/devices/{id}/help (the walker's credential). One open request per walker: asking again while one
- * is open returns it (`200`), and so does a repeated `client_help_id` (even once closed); a new one is `201`.
- * `409 no_caretaker` when no approved caretaker phone is in: nobody was told, and nothing is kept.
- */
-export const DeviceAskForHelpRequestSchema = z.strictObject({ client_help_id: id, source: z.enum(["handles", "voice"]) });
-export type DeviceAskForHelpRequest = z.infer<typeof DeviceAskForHelpRequestSchema>;
-
-/** The answer to every help call that names or makes one request (device and phone). */
-export const HelpResponseSchema = z.strictObject({ help: HelpViewSchema });
-export type HelpResponse = z.infer<typeof HelpResponseSchema>;
-
-/**
- * GET /api/v1/devices/{id}/help: the walker's open request, or the newest one closed within HELP_CLOSED_SHOWN_MS,
- * or null. The walker polls it after each heartbeat, and every HELP_POLL_MS while it has one open, so a request
- * made on her phone and a caretaker's answer both reach the walker.
- */
-export const DeviceHelpStatusResponseSchema = z.strictObject({ help: HelpViewSchema.nullable() });
-export type DeviceHelpStatusResponse = z.infer<typeof DeviceHelpStatusResponseSchema>;
-
-// POST /api/v1/devices/{id}/help/{help_id}/okay, no body: her second Confirm press on the walker. Closes it `okay`,
-// `by_name` her phone's name (the walker's name when her phone isn't in). → HelpResponseSchema; `409 help_closed`
-// with the request as it stands when it was already closed.
+// The shared shapes (HelpViewSchema, the HELP_* timings, the device routes' bodies) are in walker.ts, so the
+// walker's error envelope can carry a request. The phone routes are below.
 
 /** POST /api/v1/circle/help, from her own phone only (`not_allowed` from a caretaker). Same rules as the walker's. */
 export const PhoneAskForHelpRequestSchema = z.strictObject({ client_help_id: id });
 export type PhoneAskForHelpRequest = z.infer<typeof PhoneAskForHelpRequestSchema>;
 
 // POST /api/v1/circle/help/{help_id}/coming, no body, a caretaker's phone only: "I'm on my way". Repeating it
-// changes nothing. → HelpResponseSchema; `409 help_closed` once closed.
+// changes nothing. → HelpResponseSchema; `409 help_closed` once closed. Phone help routes answer errors in the
+// circle envelope (CircleErrorSchema).
 // POST /api/v1/circle/help/{help_id}/okay, no body: from her phone, "I'm okay now" (`okay`); from a caretaker's
 // phone, "I'm with Rose" (`with_her`). → HelpResponseSchema; `409 help_closed` once closed.
 
-/** The words the walker says and shows for help, fixed in Pi code (never a model's). `names` joins told or coming. */
+/** Names joined the way the walker says them ("Maya", "Maya and Sam", "Maya, Sam and Lee"), for its fixed lines. */
 export function helpNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
@@ -1087,7 +1016,9 @@ const motionStates = [
 // ---- Asking for help on the walker screen (added 2026-10-24, docs/subsystems/help.md) ----
 //
 // The Pi decides; the screen draws. Help needs no touch control: the handles start it, stop a countdown and
-// say "I'm okay", so there is no ScreenAction for it. Calm words only, as everywhere on this screen.
+// say "I'm okay", so there is no ScreenAction for it (her phone is the touch path). Calm words only, as everywhere
+// on this screen. While help_hold, help_countdown or an open request shows, help owns Confirm: a pending motion
+// target, a model offer and a message draft are not answered by it (docs/subsystems/help.md, "Confirm during help").
 
 const helpStates = [
   /** Both handle buttons are down and HELP_HOLD_MS hasn't passed: "Keep holding to ask for help." Letting go sends nothing. */
@@ -1100,21 +1031,23 @@ const helpStates = [
       /** Sent and not yet answered by the server. `retrying`: the last try failed ("No internet yet. Still trying."). */
       z.strictObject({ phase: z.literal("sending"), retrying: z.boolean() }),
       /**
-       * Nobody was told. `no_caretaker`: no caretaker phone is linked. `offline`: HELP_SEND_RETRY_MS of tries
+       * Nothing was sent. `no_caretaker`: no caretaker phone is linked. `offline`: HELP_SEND_RETRY_MS of tries
        * failed. `failed`: the server refused it for another reason.
        */
       z.strictObject({ phase: z.literal("not_sent"), why: z.enum(["no_caretaker", "offline", "failed"]) }),
       /**
-       * The server has it: "Maya has been told." or "Maya is on her way." `confirm_okay`: her first Confirm armed
-       * it ("Press Confirm again to tell Maya you're okay.").
+       * The server has it: "Sent to Maya's phone.", then "It's showing on Maya's phone.", then "Maya is on the way."
+       * `confirm_okay`: her first Confirm armed it ("Press Confirm again to tell Maya you're okay.").
        */
       z.strictObject({
         phase: z.literal("open"),
-        told: z.array(CircleNameSchema).min(1).max(MAX_CIRCLE_MEMBERS),
+        /** Names only: the screen never needs member ids. */
+        sent_to: z.array(CircleNameSchema).min(1).max(MAX_CIRCLE_MEMBERS),
+        shown_to: z.array(CircleNameSchema).max(MAX_CIRCLE_MEMBERS),
         coming: z.array(CircleNameSchema).max(MAX_CIRCLE_MEMBERS),
         confirm_okay: z.boolean(),
       }),
-      /** Closed, shown for a while: "You told Maya you're okay.", "Maya says she's with you.", or that it ended. */
+      /** Closed, shown for a while: her okay, a caretaker with her (named), or that it ended. */
       z.strictObject({ phase: z.literal("closed"), how: HelpClosedHowSchema, by_name: CircleNameSchema.nullable() }),
     ]),
   }),
