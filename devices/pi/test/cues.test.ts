@@ -50,7 +50,7 @@ describe("local cue policy", () => {
     const right = { ...hand, instanceId: "hand-right-01" };
     const p = policy(["vibration", "spoken"], [hand, right]);
     p.cuePolicy.evaluate([p.zone(300)]);
-    expect(p.haptics).toEqual(["hand-left-01 near_obstacle 400", "hand-right-01 near_obstacle 400"]);
+    expect(p.haptics).toEqual(["hand-left-01 near_obstacle 1000", "hand-right-01 near_obstacle 1000"]);
     expect(p.sounds()).toBe(0);
   });
 
@@ -83,7 +83,7 @@ describe("local cue policy", () => {
     expect(p.cuePolicy.zoneState("front_left")).toBe("unknown");
   });
 
-  it("C6: near every 100 ms for 10 s cues at 0, 3, 6 and 9 s", async () => {
+  it("C6: near every 100 ms for 10 s cues every 1.5 s", async () => {
     const p = policy(["sound"]);
     const at: number[] = [];
     for (let t = 0; t < 10_000; t += 100) {
@@ -92,7 +92,7 @@ describe("local cue policy", () => {
       if (p.sounds() > before) at.push(p.clock.monotonic());
       await p.clock.advance(100);
     }
-    expect(at).toEqual([0, 3000, 6000, 9000]);
+    expect(at).toEqual([0, 1500, 3000, 4500, 6000, 7500, 9000]);
   });
 
   it("C7: hysteresis holds near between 750 and 900 mm; re-entry cues after 1 s, not before", async () => {
@@ -117,7 +117,7 @@ describe("local cue policy", () => {
   it("one cue covers every zone that is near at that moment", async () => {
     const p = policy(["sound"]);
     p.cuePolicy.evaluate([p.zone(300, "front_left"), p.zone(300, "front_right")]);
-    await p.clock.advance(1500);
+    await p.clock.advance(1000);
     p.cuePolicy.evaluate([p.zone(300, "front_left"), p.zone(300, "front_right")]);
     expect(p.sounds()).toBe(1);
   });

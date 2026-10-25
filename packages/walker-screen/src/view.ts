@@ -22,7 +22,7 @@ import {
 import {
   MANEUVER_WORD,
   NAV_ARROW_PX,
-  NAV_SIDE_PX,
+  NAV_TOP_PX,
   PHASE_WORDS,
   detailLines,
   distanceWords,
@@ -30,6 +30,7 @@ import {
   minutesLeftWords,
   navColumns,
   navMap,
+  navMapHeight,
   phaseLine,
   streetForLine,
   turnWordPx,
@@ -835,6 +836,9 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
     announce = `${main}.`;
   }
   const fitted = guiding ? { px: turnWordPx(main, textSize), wraps: false } : phaseLine(main, textSize);
+  // The map fills the screen; her dot goes in the middle of the left column, between the strip and the distance left.
+  const infoLines = info.reduce((n, l) => n + Math.min(l.maxLines ?? 1, detailLines(l.text, textSize)), 0);
+  const focus = { x: 16 + left / 2, y: NAV_TOP_PX + navMapHeight(infoLines) / 2 };
   return {
     key: `navigating:${content.phase}:${content.instruction}`,
     main: { text: main, size: "nav" },
@@ -848,7 +852,7 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
       arrowPx: NAV_ARROW_PX[textSize],
       mainPx: fitted.px,
       mainWraps: fitted.wraps,
-      map: navMap(content.map, 800, 480, 480, true),
+      map: navMap(content.map, 800, 480, 480, true, focus),
       simulated: content.simulated,
       info,
     },

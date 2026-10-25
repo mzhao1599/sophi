@@ -46,6 +46,8 @@ interface Base {
   screen: ScreenContent;
   choices?: Partial<ScreenChoices>;
   strip?: Partial<StatusStrip>;
+  /** A spoken lift move is running: the screen keeps its page and adds Stop lift over the left handle. */
+  liftMoving?: boolean;
 }
 
 const HEARD = "Is there anything in front of me right now?";
@@ -212,6 +214,7 @@ const BASES: Base[] = [
   // The walker's own states first.
   { name: "ambient", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan" } },
   { name: "ambient-long-greeting", screen: { state: "ambient", alerts: ["vibration", "sound", "spoken"] }, choices: { greeting_name: LONG } },
+  { name: "ambient-lift-moving", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan" }, liftMoving: true },
   { name: "ambient-no-clock", screen: { state: "ambient", alerts: null }, choices: { greeting_name: "Nan" }, strip: { clock: null } },
   { name: "ambient-dark-simulator", screen: { state: "ambient", alerts: ["vibration", "spoken"] }, choices: { greeting_name: "Nan", theme: "dark" }, strip: { simulator: true } },
   { name: "listening", screen: { state: "listening" } },
@@ -226,6 +229,7 @@ const BASES: Base[] = [
   // Walking directions (added 2026-10-24): every phase, the demo's route, and the longest street (60
   // characters) and place name (100) the contract allows.
   { name: "navigating", screen: nav({}), strip: { simulator: true } },
+  { name: "navigating-lift-moving", screen: nav({}), strip: { simulator: true }, liftMoving: true },
   { name: "navigating-dark", screen: nav({}), choices: { theme: "dark" }, strip: { simulator: true } },
   {
     name: "navigating-real-gps-path",
@@ -373,6 +377,7 @@ export function screenFixtures(): ScreenFixture[] {
         v: 1,
         revision: i,
         screen: base.screen,
+        ...(base.liftMoving ? { lift_moving: true } : {}),
         settings: {
           version: 3,
           ...DEFAULT_SCREEN_CHOICES,

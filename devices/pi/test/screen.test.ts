@@ -46,7 +46,7 @@ describe("D1: the screen's priority", () => {
   it("the offer screen carries today's proposal; ambient the alerts in force; every state passes the contract", () => {
     const content = pickScreen({ ...base, offer }, 0, settings).content;
     expect(content).toEqual({ state: "model_offer", ...offer });
-    expect(pickScreen(base, 0, settings).content).toEqual({ state: "ambient", alerts: ["vibration"] });
+    expect(pickScreen(base, 0, settings).content).toEqual({ state: "ambient", alerts: ["vibration"], companion_code: null });
   });
 });
 
@@ -104,7 +104,7 @@ describe("D3: captions page as the reply is spoken, then go", () => {
     expect(answering).toEqual(pages.map((_, i) => i));
     expect(states.at(-1)!.screen.state).toBe("answering");
     await clock.advance(1);
-    expect(states.at(-1)!.screen).toEqual({ state: "ambient", alerts: null });
+    expect(states.at(-1)!.screen).toEqual({ state: "ambient", alerts: null, companion_code: null });
     expect(states.find((s) => s.screen.state === "answering")!.screen).toMatchObject({ heard: "what can you do", source: "model" });
   });
 
@@ -139,7 +139,7 @@ describe("D3: captions page as the reply is spoken, then go", () => {
     await clock.advance(SCREEN_DONE_MS);
     expect(names()).toEqual(["ambient", "answering", "done", "ambient"]);
     expect(states[2]!.screen).toEqual({ state: "done", result: { kind: "alerts", cues: ["sound"] }, change_back: false });
-    expect(states[3]!.screen).toEqual({ state: "ambient", alerts: ["sound"] });
+    expect(states[3]!.screen).toEqual({ state: "ambient", alerts: ["sound"], companion_code: null });
   });
 });
 
@@ -314,7 +314,7 @@ describe("D6: the demo beats, screen state by screen state", () => {
     expect(answers.at(-1)).toMatchObject({ source: "walker", reply: expect.stringContaining("I'm offline right now.") });
     expect(h.states.find((s) => s.screen.state === "done")!.screen).toEqual({ state: "done", result: { kind: "alerts", cues: ["sound"] }, change_back: false });
     expect(h.states.find((s) => s.screen.state === "obstacle")!.screen).toMatchObject({ zone: "front_left", distance: { mm: 300 }, simulated: true });
-    expect(h.states.at(-1)!.screen).toEqual({ state: "ambient", alerts: ["sound"] });
+    expect(h.states.at(-1)!.screen).toEqual({ state: "ambient", alerts: ["sound"], companion_code: null });
     // D8: every state the walker sent passes the contract, revisions count up by one, and Simulator is on.
     for (const [i, s] of h.states.entries()) {
       expect(ScreenStateSchema.safeParse(s).success).toBe(true);
@@ -400,7 +400,7 @@ describe("D16: Done only once the change is in force", () => {
     expect(h.spoken("confirm_result")).toEqual(["Confirmed. The change will apply in a moment."]);
     expect(h.names().slice(-2)).toEqual(["model_offer", "ambient"]);
     expect(h.states.some((s) => s.screen.state === "done")).toBe(false);
-    expect(h.states.at(-1)!.screen).toEqual({ state: "ambient", alerts: ["vibration", "spoken"] });
+    expect(h.states.at(-1)!.screen).toEqual({ state: "ambient", alerts: ["vibration", "spoken"], companion_code: null });
   });
 
   it("a confirmed change that is applied shows Done with the new configuration's own cues, straight from the offer", async () => {
