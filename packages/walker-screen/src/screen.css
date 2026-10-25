@@ -313,6 +313,14 @@
   max-width: none;
 }
 
+.ws-left .ws-button[data-action="stop_lift"] {
+  width: 140px;
+  min-width: 140px;
+  height: 52px;
+  border-radius: 12px;
+  font-size: 18px;
+}
+
 /* Three buttons and the Talk word share 768 px: their labels drop to the smallest size so none breaks a word. */
 .ws-band[data-buttons="3"] .ws-button {
   font-size: var(--ws-smallest);
@@ -449,6 +457,10 @@
 .ws-screen[data-layout="navigating"] .ws-left,
 .ws-screen[data-layout="navigating"] .ws-right {
   display: none;
+}
+
+.ws-screen[data-layout="navigating"][data-lift-moving="true"] .ws-left {
+  display: flex;
 }
 
 .ws-screen[data-layout="navigating"] .ws-band[data-tall="true"] {

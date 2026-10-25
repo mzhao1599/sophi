@@ -348,6 +348,17 @@ interface Draft {
 }
 
 type ConfirmedCommand = Exclude<MotionCommand, { kind: "motion.stop" } | { kind: "teleop.stop" }>;
+/** Local Talk was held for the request; this is not a fabricated Confirm press. */
+type VoiceLiftCommand = {
+  kind: "lift.move";
+  command_id: string;
+  target_id: string;
+  target_mm: number;
+  prepared_by: "walker_local";
+  initiated_by: "talk";
+  started_at: string;
+};
+type LiftRunCommand = (ConfirmedCommand & { kind: "lift.home" | "lift.move" }) | VoiceLiftCommand;
 
 type Active =
   | {
@@ -403,7 +414,7 @@ type Active =
   | {
       /** A lift home or move: the LiftClient runs it; it ends on the client's `ended` event. */
       kind: "lift";
-      command: ConfirmedCommand & { kind: "lift.home" | "lift.move" };
+      command: LiftRunCommand;
       requestId: string;
       startedMono: number;
       /** The client keeps the lift's own deadline (LIFT_HOMING_TIMEOUT_MS, motionTimeoutMs(distance / speed)). */
@@ -782,7 +793,7 @@ export class MotionCoordinator {
       this.buttonsSeen.set(key, event.source === "keyboard" ? { down: false, releasedAt: nowMono } : { down: true, releasedAt: seen?.releasedAt ?? baseline });
       if (!this.stopped) {
         // Anything running, a torque on included, is stopped by the press, and the press is motion's alone.
-        if (this.active || this.commandBusy) {
+        if ((this.active || this.commandBusy) && !(this.active?.kind === "lift" && "initiated_by" in this.active.command && event.button === "talk")) {
           this.stopMotion("handle_press", `${event.button} press (${event.source})`);
           claimed = true;
         } else if (event.button === "confirm" && this.pending && !this.helpOwnsConfirm) {
@@ -929,6 +940,39 @@ export class MotionCoordinator {
       return null;
     }
     return this.pending?.target ?? null;
+  }
+
+  /** Start only a lift move from a completed local Talk turn. The cloud supplies a bounded target offer;
+   * the Pi computes its absolute target and enforces the installed limits and live interlocks. */
+  startSpokenLift(raw: unknown): { ok: true } | { ok: false; refusal: MotionRefusal } {
+    if (this.stopped) return { ok: false, refusal: "part_missing" };
+    const parsed = MotionOfferRequestSchema.safeParse(raw);
+    if (!parsed.success || (parsed.data.target.kind !== "lift.relative" && parsed.data.target.kind !== "lift.preset"))
+      return { ok: false, refusal: "out_of_range" };
+    const lift = this.lift;
+    if (!lift) return { ok: false, refusal: "part_missing" };
+    const at = lift.state(this.mono()).position_mm;
+    if (at === null) return { ok: false, refusal: "lift_not_homed" };
+    const offer = parsed.data.target;
+    const height = offer.kind === "lift.relative" ? at + offer.delta_mm : LIFT_PRESET_HEIGHTS_MM[offer.preset];
+    const action = { kind: "lift.move" as const, target_mm: height };
+    const refusal = this.liftRefusalFor(action, "prepare")?.refusal ?? (this.pending ? "confirm_busy" : null);
+    if (refusal) return { ok: false, refusal };
+    const now = this.mono();
+    const command: VoiceLiftCommand = { ...action, command_id: this.newId(), target_id: this.newId(), prepared_by: "walker_local", initiated_by: "talk", started_at: iso(this.deps.clock.now()) };
+    const started = lift.start(action, this.liftInputs(), now, "voice");
+    if (!started.ok) return { ok: false, refusal: started.refusal };
+    this.active = { kind: "lift", command, requestId: started.requestId, startedMono: now, deadlineMono: Infinity, lastStepMono: now, lastBenchLog: -Infinity };
+    this.event("command", "lift.move started from local Talk");
+    this.publish(true);
+    return { ok: true };
+  }
+
+  /** The screen Stop button is effective only for the lift started by Talk. */
+  stopSpokenLift(): boolean {
+    if (this.active?.kind !== "lift" || !("initiated_by" in this.active.command)) return false;
+    this.stopMotion("walker_screen", "screen Stop lift");
+    return true;
   }
 
   /** `walker motion stop`: always allowed, never waits for Confirm. */
@@ -1445,7 +1489,7 @@ export class MotionCoordinator {
   }
 
   private activeState(active: Active): NonNullable<MotionState["active"]> {
-    const base = { command_id: active.command.command_id, target_id: active.command.target_id, started_at: active.command.confirm.pressed_at };
+    const base = { command_id: active.command.command_id, target_id: active.command.target_id, started_at: "initiated_by" in active.command ? active.command.started_at : active.command.confirm.pressed_at };
     switch (active.kind) {
       case "arm.go_to_pose":
         return { ...base, kind: "arm.go_to_pose", arm: active.command.arm, pose: active.command.pose };
@@ -1460,7 +1504,7 @@ export class MotionCoordinator {
         // never resumes (the client never names it in a heartbeat again).
         const now = this.lift?.active();
         const running = !!now && now.requestId === active.requestId && now.held && now.phase !== "stopping";
-        const lift = { ...base, phase: running ? ("running" as const) : ("stopping" as const), hold_source: running ? ("screen_hold_control" as const) : null };
+        const lift = { ...base, phase: running ? ("running" as const) : ("stopping" as const), hold_source: running ? ("initiated_by" in active.command ? "local_voice_request" as const : "screen_hold_control" as const) : null, ...("initiated_by" in active.command ? { initiated_by: "talk" as const } : {}) };
         return active.command.kind === "lift.home" ? { ...lift, kind: "lift.home" } : { ...lift, kind: "lift.move", target_mm: active.command.target_mm };
       }
     }
@@ -2949,7 +2993,7 @@ export class MotionCoordinator {
     }
   }
 
-  private refuseCommand(command: ConfirmedCommand, refusal: MotionRefusal, detail: string | null, request: OperatorRequest | null): void {
+  private refuseCommand(command: ConfirmedCommand | VoiceLiftCommand, refusal: MotionRefusal, detail: string | null, request: OperatorRequest | null): void {
     this.deps.log.info("motion command refused", { kind: command.kind, prepared_by: command.prepared_by, refusal, detail: detail ?? undefined });
     this.recordLast(command, "refused", refusal);
     this.event("command", `${command.kind} refused:${refusal} ${command.prepared_by}`);
@@ -2958,7 +3002,7 @@ export class MotionCoordinator {
     this.publish(true);
   }
 
-  private recordLast(command: ConfirmedCommand, outcome: "refused" | "completed" | "stopped" | "faulted", refusal?: MotionRefusal): void {
+  private recordLast(command: ConfirmedCommand | VoiceLiftCommand, outcome: "refused" | "completed" | "stopped" | "faulted", refusal?: MotionRefusal): void {
     this.lastCommand = { command_id: command.command_id, kind: command.kind, outcome, ...(refusal ? { refusal } : {}), at: iso(this.deps.clock.now()) };
   }
 
@@ -3105,7 +3149,7 @@ export class MotionCoordinator {
    * queues it; the next control tick writes the heartbeat naming it and the command. It runs only while the
    * screen's hold control holds it.
    */
-  private startLift(command: ConfirmedCommand & { kind: "lift.home" | "lift.move" }, request: OperatorRequest | null): void {
+  private startLift(command: LiftRunCommand, request: OperatorRequest | null): void {
     const lift = this.lift;
     if (!lift) return this.refuseCommand(command, "part_missing", "this walker has no lift", request);
     const action: LiftAction = command.kind === "lift.home" ? { kind: "lift.home" } : { kind: "lift.move", target_mm: command.target_mm };

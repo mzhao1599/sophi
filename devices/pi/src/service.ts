@@ -97,6 +97,8 @@ export interface ServiceDeps {
     /** Help owns Confirm (help.md): withdraw a pending target (a "Let go?" stays) and refuse new ones until false. */
     helpActive?(active: boolean): void;
     requestOffer?(raw: unknown): unknown | null;
+    startSpokenLift?(raw: unknown): { ok: true } | { ok: false; refusal: string };
+    stopSpokenLift?(): boolean;
   };
   newId?: () => string;
 }
@@ -723,10 +725,11 @@ export class WalkerService {
       });
       if (reply.motion_offer) {
         const offer = reply.motion_offer;
-        const target = this.deps.motion?.requestOffer?.({ target: "preset" in offer
+        const result = this.deps.motion?.startSpokenLift?.({ target: "preset" in offer
           ? { kind: "lift.preset", preset: offer.preset }
           : { kind: "lift.relative", delta_mm: offer.delta_mm } });
-        if (!target) this.sayAnswer(reply.turn.heard, "The lift isn't ready for that height yet.", "fixed", "reply");
+        if (result?.ok) void this.say("Moving lift now.", "notice");
+        else this.sayAnswer(reply.turn.heard, result?.refusal === "out_of_range" ? "That move is outside the lift's range." : "The lift isn't ready to move.", "fixed", "reply");
         return;
       }
       const message = reply.message_offer;
@@ -900,6 +903,10 @@ export class WalkerService {
 
   /** The walker screen's End route and Repeat, acted on only when they were drawn on the route's screen. */
   private screenPressed(action: string, state: string | null): void {
+    if (action === "stop_lift") {
+      this.deps.motion?.stopSpokenLift?.();
+      return;
+    }
     if (this.stopped || state !== "navigating" || !this.navigator?.active()) return;
     if (action === "end_route") {
       this.navigator.stop("ended on the screen");

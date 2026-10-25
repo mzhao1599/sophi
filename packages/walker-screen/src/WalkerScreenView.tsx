@@ -53,6 +53,7 @@ export function WalkerScreenView({
       data-theme={view.theme}
       data-text-size={view.textSize}
       data-layout={view.nav ? "navigating" : undefined}
+      data-lift-moving={view.left?.kind === "button" && view.left.button.action === "stop_lift" ? "true" : undefined}
       style={style}
       aria-label={label}
     >
@@ -130,6 +131,7 @@ function Button({ button, onPress }: { button: ViewButton; onPress?: ((action: S
     <button
       type="button"
       className="ws-button"
+      data-action={button.action}
       data-primary={button.primary ? "true" : "false"}
       aria-pressed={button.pressed === undefined ? undefined : button.pressed}
       aria-disabled={button.disabled ? "true" : undefined}
