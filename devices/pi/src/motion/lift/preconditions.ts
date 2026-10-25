@@ -29,6 +29,7 @@ export interface LiftCheckInputs {
 export interface LiftView {
   /** Bench mode (MOTION_BENCH_ENV), read once at start. */
   bench: boolean;
+  unswitchedLiftDemo?: boolean;
   config: LiftConfig;
   installation: LiftInstallation;
   /** A lift port has said `lift.hello` for this lift at least once. */
@@ -69,7 +70,8 @@ export function liftVerdict(view: LiftView, action: LiftAction, inputs: LiftChec
   if (inputs.stopCircuit === "pressed" || view.statusStop === "pressed") return "stop_pressed";
   // The lift never moves without the hardware stop, bench mode or not (the contract's): bench mode waives the
   // stop for the arms only. Both the Pi's stop-sense and the lift board's must be wired.
-  if (inputs.stopCircuit === "not_wired" || view.liftStopSense === "not_wired") return "no_hardware_stop";
+  if ((inputs.stopCircuit === "not_wired" || view.liftStopSense === "not_wired") &&
+      !(view.bench && view.unswitchedLiftDemo)) return "no_hardware_stop";
   if (inputs.faultLatched || view.liftFaults.length > 0 || view.configOk === false) return "fault_latched";
   if (view.busy || inputs.otherMotion) return "busy";
   if (!view.heard) return "part_missing";

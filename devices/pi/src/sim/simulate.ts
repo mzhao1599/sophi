@@ -20,6 +20,7 @@ import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "./fakeClo
 import { NetworkSwitch, SwitchableCloudClient, type NetworkMode } from "./networkSwitch";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
+import { HELP_HOLD_MS } from "@walker/contracts";
 import { ScriptRunner, parseScript } from "./script";
 import { LIFT_HELP, LIFT_KEYS, LiftSim, liftSimBench } from "./liftSim";
 import { MOTION_HELP, MOTION_KEYS, MotionSim, type MotionSimHand } from "./motionSim";
@@ -64,6 +65,8 @@ const HELP = `Keys: t Talk (press to start, press again to send; a terminal can'
       c Confirm   n hand in front of the ToF   f nothing in front   i invalid reading
       x ToF stops responding / comes back   o network down / up   g network hangs / up (the walker's own requests)
       m a fake caretaker ("Maya") sends a message (fake cloud only)
+      h both handle buttons held 2.5 s (asking for help)   + the fake cloud's next turn asks for help by voice
+      , Maya's (fake) phone shows the request   . Maya: "I'm on my way"   / Maya: "I'm with Rose"   ; Rose's phone asks
       r fake cloud forgets this walker (401)   p pair again   ? help   q quit`;
 
 class SilentSpeaker implements Speaker {
@@ -290,6 +293,44 @@ export async function simulate(options: SimulateOptions): Promise<number> {
         if (!fake || !credential) return log.warn("the m key needs the fake cloud and a paired walker");
         fake.sendFromCaretaker(credential.device_id, "Maya", "Dinner at six. I'll get you.");
         return log.info("FAKE caretaker Maya sent a message (sample words, no real phone)");
+      }
+      // Asking for help. The chord goes through the simulated hand board, the real ESP32 path: both down, then up.
+      case "chord-down":
+        hand.press("talk", "pressed");
+        hand.press("confirm", "pressed");
+        return log.info("SIMULATED handle: Talk and Confirm down");
+      case "chord-up":
+        hand.press("talk", "released");
+        hand.press("confirm", "released");
+        return log.info("SIMULATED handle: Talk and Confirm up");
+      case "h":
+        press("chord-down");
+        setTimeout(() => press("chord-up"), HELP_HOLD_MS + 500);
+        return;
+      case "+":
+      case "help-next-turn":
+        if (!fake) return log.warn("the + key needs the fake cloud");
+        fake.script.unshift({ reply: "Fake cloud: asking for help.", askForHelp: true });
+        return log.info("FAKE cloud: the next turn answers as a voice request for help");
+      case ",":
+      case "help-shown":
+      case ".":
+      case "help-coming":
+      case "/":
+      case "help-with-her":
+      case ";":
+      case "help-phone": {
+        const credential = store.readCredential();
+        if (!fake || !credential) return log.warn("the help keys need the fake cloud and a paired walker");
+        try {
+          if (key === "," || key === "help-shown") fake.helpShownOn(credential.device_id, "Maya");
+          else if (key === "." || key === "help-coming") fake.helpComing(credential.device_id, "Maya");
+          else if (key === "/" || key === "help-with-her") fake.helpWithHer(credential.device_id, "Maya");
+          else fake.helpFromPhone(credential.device_id);
+          return log.info("FAKE caretaker phone (made up, no real phone)", { action: key });
+        } catch (error) {
+          return log.warn("fake help action not done", { error: (error as Error).message });
+        }
       }
       case "r": {
         const credential = store.readCredential();

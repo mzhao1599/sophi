@@ -39,6 +39,12 @@ import {
   DeviceMessagesResponseSchema,
   type DeviceMessagesResponse,
   WALKER_MESSAGES_KEPT,
+  DeviceHelpStatusResponseSchema,
+  HelpResponseSchema,
+  type DeviceAskForHelpRequest,
+  type DeviceHelpStatusResponse,
+  type HelpResponse,
+  type HelpView,
 } from "@walker/contracts";
 import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
@@ -58,7 +64,31 @@ import {
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMemberRecord, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+import {
+  HELP_CLOSED_MESSAGE,
+  HELP_NOT_FOUND_MESSAGE,
+  NO_CARETAKER_MESSAGE,
+  NO_CARETAKER_VOICE_LINE,
+  answerHelp,
+  askForHelp,
+  helpContextLine,
+  helpCountdownLine,
+  helpView,
+  isHelpCountdownTurn,
+  logHelp,
+  type HelpEvent,
+} from "./help";
+import {
+  SECRET_PATTERN,
+  newSecret,
+  sha256,
+  sweepCircleThrottled,
+  type CircleMemberRecord,
+  type CircleMessageRecord,
+  type DeviceRecord,
+  type HelpRecord,
+  type WalkerStore,
+} from "./store";
 
 /** How long a turn waits for the circle's people before going on without them. */
 const CIRCLE_FOR_TURN_MS = 1_500;
@@ -66,6 +96,8 @@ const CIRCLE_FOR_TURN_MS = 1_500;
 const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
 const WEATHER_LOOKUP_LINE = "I'll check the weather near you now.";
 const DISTANCE_LOOKUP_LINE = "I'll check the obstacle sensors now.";
+/** The model chose ask_for_help on a walker turn that can't ask (an older Pi, or the circle unreachable this turn). */
+const HELP_UNAVAILABLE_LINE = "I can't ask anyone for help from here right now. If you need help now, call 911 from your phone.";
 
 export class WalkerError extends Error {
   override readonly name = "WalkerError";
@@ -74,6 +106,8 @@ export class WalkerError extends Error {
     message: string,
     /** For `proposal_closed`: the proposal as it stands. */
     readonly proposal?: ProposalView,
+    /** For `help_closed`: the help request as it stands. */
+    readonly help?: HelpView,
   ) {
     super(message);
   }
@@ -121,6 +155,8 @@ export interface WalkerServiceOptions {
    * process (sharedWalkerActivity), since a service is built per request. Without one, nothing is tracked.
    */
   activity?: ActivityLog | null;
+  /** One event per help ask or answer from the walker (help.ts): ids, outcomes and timings, never names. */
+  onHelp?: (event: HelpEvent) => void;
 }
 
 export interface TurnEvent {
@@ -182,6 +218,7 @@ export class WalkerService {
   private readonly turnBudgetMs: number;
   private readonly voiceTimeoutMs: number;
   private readonly activity: ActivityLog | null;
+  private readonly onHelp: (event: HelpEvent) => void;
 
   constructor(
     private readonly store: WalkerStore,
@@ -198,6 +235,7 @@ export class WalkerService {
     this.turnBudgetMs = options.turnBudgetMs ?? TURN_BUDGET_MS;
     this.voiceTimeoutMs = options.voiceTimeoutMs ?? VOICE_TIMEOUT_MS;
     this.activity = options.activity ?? null;
+    this.onHelp = options.onHelp ?? logHelp;
   }
 
   /** Voice a local Pi line with the same stock voice as replies. No model call or stored turn. */
@@ -346,7 +384,9 @@ export class WalkerService {
     await this.store.expireProposals(device.device_id, this.now());
     const prior = await this.store.findTurn(device.device_id, request.client_turn_id);
     if (prior) {
-      const response = WalkerTurnResponseSchema.parse({ ...prior, speech: null, status: await this.status(device) });
+      // A countdown turn replayed (its answer was lost on the way): the Pi still has to count down.
+      const askAgain = source === "walker" && prior.proposal === null && isHelpCountdownTurn(prior.turn);
+      const response = WalkerTurnResponseSchema.parse({ ...prior, speech: null, status: await this.status(device), ...(askAgain ? { ask_for_help: true } : {}) });
       this.onTurn({ ...turnEvent(device.device_id, source, input.type, prior.turn), replayed: true, ms: Date.now() - started });
       return response;
     }
@@ -390,18 +430,23 @@ export class WalkerService {
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
-    const members = await this.circleForTurn(device.device_id, now);
+    const circle = await this.circleForTurn(device.device_id, now, source === "walker");
+    const members = circle?.members ?? [];
     const recipients = members.filter((m) => m.state === "member" && m.role === "caregiver").map((m) => ({ member_id: m.member_id, name: m.name }));
+    // The tool is offered on her own Talk turns from a walker that can count down, once the circle is known (with no
+    // caretaker it answers with the fixed no-caretaker line). Never on the owner's page.
+    const canAsk = source === "walker" && "can_ask_for_help" in request && request.can_ask_for_help === true;
+    const help = { offer: canAsk && circle !== null, open: source === "walker" && circle?.help ? helpContextLine(circle.help) : null };
     const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
     const toolResults: WalkerToolResult[] = "tool_results" in request
       ? (request.tool_results ?? []).map((r) => r.name === "get_distance" ? { name: r.name, text: distanceLine(status) } : r)
       : [];
     const assistant = this.assistantFor(request);
-    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients) : null;
+    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients, help) : null;
 
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
     const tool = toolCall?.name;
-    const nextTool = source === "walker" && tool && tool !== "send_message" && toolResults.length < WALKER_MAX_TOOL_CALLS ? tool : null;
+    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "ask_for_help" && tool !== "set_lift_height" && toolResults.length < WALKER_MAX_TOOL_CALLS ? tool : null;
     if (nextTool) {
       const heard = input.type === "audio" ? result?.ok ? result.reply.transcript.trim() : "" : input.text;
       const line = nextTool === "get_location" ? LOCATION_LOOKUP_LINE : nextTool === "get_weather" ? WEATHER_LOOKUP_LINE : DISTANCE_LOOKUP_LINE;
@@ -417,16 +462,30 @@ export class WalkerService {
       });
     }
     const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance");
+    const motionOffer = source === "walker" && toolCall?.name === "set_lift_height" && !status.open_proposal ? { preset: toolCall.preset } : null;
     const messageRecipient = source === "walker" && toolCall?.name === "send_message" ? recipients.find((r) => r.member_id === toolCall.to_member_id) : undefined;
     const validMessage = messageRecipient && toolCall?.name === "send_message" ? DeviceSendMessageRequestSchema.safeParse({ client_message_id: this.randomId(), to_member_id: messageRecipient.member_id, text: toolCall.text }) : null;
     const canSend = members.some((m) => m.role === "walker_user" && m.state === "member");
     const messageOffer = validMessage?.success && messageRecipient && !status.open_proposal && canSend ? { ...validMessage.data, to_name: messageRecipient.name } : null;
     const unhandledTool = tool !== null && tool !== undefined;
-    const decided = messageOffer
+    // Asking for help: the server words the reply, and the Pi counts down and asks itself. Nothing is created here.
+    const caretakerNames = recipients.map((r) => r.name);
+    const helpAsked = tool === "ask_for_help" && help.offer && caretakerNames.length > 0;
+    const decided = tool === "ask_for_help"
+      ? helpAsked
+        ? { reply: helpCountdownLine(caretakerNames), answered_by: "fixed" as const, reason: "ask_for_help", proposal: null }
+        : help.offer
+          ? { reply: NO_CARETAKER_VOICE_LINE, answered_by: "fixed" as const, reason: "no_caretaker", proposal: null }
+          : source === "page"
+            ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
+            : { reply: HELP_UNAVAILABLE_LINE, answered_by: "fixed" as const, reason: "help_not_offered", proposal: null }
+      : motionOffer
+      ? { reply: "I'll check whether the lift can offer that height.", answered_by: "fixed" as const, reason: "lift_offer", proposal: null }
+      : messageOffer
       ? { reply: `Send to ${messageOffer.to_name}: ${messageOffer.text}. Press Confirm to send.`, answered_by: "model" as const, reason: "message_offer", proposal: null }
       : source === "page" && tool === "get_distance"
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
-      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message")
+      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height")
         ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
       : tool === "send_message"
         ? { reply: "I couldn't prepare that message. Check that both phones have joined your circle and try again.", answered_by: "fixed" as const, reason: "message_unavailable", proposal: null }
@@ -444,7 +503,7 @@ export class WalkerService {
     const voiceStarted = Date.now();
     let voiceCalled = false;
     const speech =
-      source === "walker"
+      source === "walker" && !motionOffer
         ? await this.speak(decided.reply, left(), () => {
             voiceCalled = true;
             flight?.stage("voicing");
@@ -470,12 +529,17 @@ export class WalkerService {
     const after = await this.status(device);
     const stored = await this.store.findTurn(device.device_id, request.client_turn_id);
     // Another upload of this turn saved first: its turn and proposal are the answer, without this one's audio.
+    const proposal = stored?.proposal ?? saved.proposal;
+    // Another upload that saved first is answered as a replay is: a countdown turn still counts down.
+    const askNow = saved.created ? helpAsked : source === "walker" && proposal === null && isHelpCountdownTurn(saved.turn);
     const response = WalkerTurnResponseSchema.parse({
       turn: saved.turn,
-      proposal: stored?.proposal ?? saved.proposal,
+      proposal,
       speech: saved.created && speech ? { mime: "audio/wav", data_base64: speech } : null,
       status: after,
-      ...(saved.created && messageOffer ? { message_offer: messageOffer } : {}),
+      ...(saved.created && messageOffer && !helpAsked ? { message_offer: messageOffer } : {}),
+      ...(saved.created && motionOffer ? { motion_offer: motionOffer } : {}),
+      ...(askNow ? { ask_for_help: true } : {}),
     });
     const event: TurnEvent = {
       ...turnEvent(device.device_id, source, input.type, saved.turn),
@@ -557,6 +621,53 @@ export class WalkerService {
     });
   }
 
+  // ---- Asking for help from the walker (docs/subsystems/help.md; the phones' routes are in CircleService) ----
+
+  /**
+   * The walker asks: both handle buttons held, or the voice countdown reached zero. `created` picks 201 or 200.
+   * Asking while one is open returns it and keeps this client_help_id for it, so a retry never opens a second.
+   */
+  async askForHelp(caller: DeviceCaller, deviceId: string, request: DeviceAskForHelpRequest): Promise<{ created: boolean; response: HelpResponse }> {
+    const device = await this.helpDevice(caller, deviceId);
+    const now = this.now();
+    const result = await askForHelp(
+      this.store,
+      { help_id: this.randomId(), device_id: device.device_id, client_help_id: request.client_help_id, source: request.source, asked_by_member_id: null },
+      now,
+      this.onHelp,
+    );
+    if (result.outcome === "no_caretaker") throw new WalkerError("no_caretaker", NO_CARETAKER_MESSAGE);
+    // Forgotten between finding the walker and the ask.
+    if (result.outcome === "not_found") throw notFound();
+    return { created: result.outcome === "created", response: HelpResponseSchema.parse({ help: helpView(result.help, now) }) };
+  }
+
+  /** The walker's poll: its open request, or the newest closed within HELP_CLOSED_SHOWN_MS, or null. */
+  async help(caller: DeviceCaller, deviceId: string): Promise<DeviceHelpStatusResponse> {
+    const device = await this.helpDevice(caller, deviceId);
+    const now = this.now();
+    const help = await this.store.helpOf(device.device_id, now);
+    return DeviceHelpStatusResponseSchema.parse({ help: help ? helpView(help, now) : null });
+  }
+
+  /** Her second lone Confirm on the walker: closes it `okay`, by her phone if it is in, else by nobody. */
+  async helpOkay(caller: DeviceCaller, deviceId: string, helpId: string): Promise<HelpResponse> {
+    const device = await this.helpDevice(caller, deviceId);
+    const now = this.now();
+    const result = await answerHelp(this.store, device.device_id, helpId, { kind: "close", how: "okay", member_id: null }, "walker", now, this.onHelp);
+    if (result.outcome === "not_found" || result.outcome === "not_member") throw new WalkerError("not_found", HELP_NOT_FOUND_MESSAGE);
+    const view = HelpResponseSchema.parse({ help: helpView(result.help, now) });
+    if (result.outcome === "closed") throw new WalkerError("help_closed", HELP_CLOSED_MESSAGE, undefined, view.help);
+    return view;
+  }
+
+  /** The walker by its credential, then the circle's throttled sweep (so expired requests are deleted as messages are). */
+  private async helpDevice(caller: DeviceCaller, deviceId: string): Promise<DeviceRecord> {
+    const device = await this.resolve(caller, deviceId);
+    await sweepCircleThrottled(this.store, this.now());
+    return device;
+  }
+
   /** Confirm or decline by id, from the walker's Confirm button or the page. The first answer wins. */
   async answer(caller: WalkerCaller, deviceId: string, proposalId: string, request: AnswerProposalRequest): Promise<AnswerProposalResponse> {
     const device = await this.resolve(caller, deviceId);
@@ -622,17 +733,22 @@ export class WalkerService {
    * because of the circle (it may live in SpacetimeDB, apart from the walker): without it the turn just has
    * no one to message.
    */
-  private async circleForTurn(deviceId: string, now: Date): Promise<CircleMemberRecord[]> {
+  private async circleForTurn(deviceId: string, now: Date, withHelp: boolean): Promise<{ members: CircleMemberRecord[]; help: HelpRecord | null } | null> {
+    // Her open help request only on her own walker turns (the model's one line); never on the owner's page.
+    const read = async () => {
+      const [circle, help] = await Promise.all([this.store.circleOf(deviceId, now), withHelp ? this.store.helpOf(deviceId, now) : null]);
+      return { members: circle.members, help };
+    };
     // Only a circle kept apart from the walker (SpacetimeCircleStore, found by shape) gets the deadline and the
     // fallback; with the walker's own store, the turn reads its circle as before.
-    if (!("pingCare" in this.store)) return (await this.store.circleOf(deviceId, now)).members;
+    if (!("pingCare" in this.store)) return await read();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("circle_timeout")), CIRCLE_FOR_TURN_MS)));
-      return (await Promise.race([this.store.circleOf(deviceId, now), late])).members;
+      return await Promise.race([read(), late]);
     } catch (error) {
       console.warn(`[walker] turn without the circle (${error instanceof Error ? error.message.slice(0, 80) : "unknown"})`);
-      return [];
+      return null;
     } finally {
       clearTimeout(timer);
     }
@@ -667,6 +783,11 @@ export function applyRules(
 ): { reply: string; answered_by: "model" | "fixed"; reason: string | null; proposal: ProposalView | null } {
   if (!result?.ok) return { reply: withReminder(fallbackLine(status), status), answered_by: "fixed", reason: result?.reason ?? "no_model", proposal: null };
   const out = result.reply;
+  // An empty reply is valid only beside ask_for_help; when the turn didn't take it (no words were made out), say
+  // the fixed line rather than nothing.
+  if (out.reply.length === 0 && !out.topics.includes("arms") && !out.cues_change) {
+    return { reply: withReminder(fallbackLine(status), status), answered_by: "fixed", reason: "empty_reply", proposal: null };
+  }
   if (out.topics.includes("arms")) return { reply: withReminder(armsLine(manifest), status), answered_by: "fixed", reason: "arms", proposal: null };
   if (out.cues_change) {
     const current = status.configuration;

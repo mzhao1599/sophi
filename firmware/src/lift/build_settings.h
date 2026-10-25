@@ -26,15 +26,19 @@
 #ifndef WALKER_LIFT_HW_INVERTER
 #define WALKER_LIFT_HW_INVERTER 0
 #endif
-// The GPIO level on DIR+ that moves the carriage UP. Wrong, homing drives up into the top switch and fails
-// with homing_failed (safe), so the bench procedure finds it before the screw is coupled.
+// The GPIO level on DIR+ expected to move the carriage UP. Level 1 moved the coupled carriage downward
+// in one short bench check; level 0 still needs a short direction check before longer travel.
 #ifndef WALKER_LIFT_DIR_UP_LEVEL
-#define WALKER_LIFT_DIR_UP_LEVEL 1
+#define WALKER_LIFT_DIR_UP_LEVEL 0
 #endif
 // 1: the stop switch's second (normally closed) contact is wired to the stop-sense pin. 0 only for a bench
 // build without it: lift.hello then says "not_wired", and the Pi refuses motion outside bench mode.
 #ifndef WALKER_LIFT_STOP_SENSE
 #define WALKER_LIFT_STOP_SENSE 1
+#endif
+// One-off supervised demo: no switches, an estimated origin journaled on this ESP32.
+#ifndef WALKER_LIFT_ESTIMATED_DEMO
+#define WALKER_LIFT_ESTIMATED_DEMO 0
 #endif
 // 1 lets lift.enable false free the motor away from the bottom switch (rule 6). Set only after the drop test
 // passed and is recorded in hardware/current-build.md, or with a brake fitted.
@@ -56,17 +60,21 @@ static_assert(WALKER_LIFT_DISABLE_SAFE == 0 || WALKER_LIFT_DISABLE_SAFE == 1, "W
 static_assert(WALKER_LIFT_DIR_UP_LEVEL == 0 || WALKER_LIFT_DIR_UP_LEVEL == 1,
               "WALKER_LIFT_DIR_UP_LEVEL must be 0 or 1");
 static_assert(WALKER_LIFT_STOP_SENSE == 0 || WALKER_LIFT_STOP_SENSE == 1, "WALKER_LIFT_STOP_SENSE must be 0 or 1");
+static_assert(WALKER_LIFT_ESTIMATED_DEMO == 0 || WALKER_LIFT_ESTIMATED_DEMO == 1,
+              "WALKER_LIFT_ESTIMATED_DEMO must be 0 or 1");
+static_assert(!WALKER_LIFT_ESTIMATED_DEMO || !WALKER_LIFT_STOP_SENSE,
+              "the estimated demo build has no wired stop sense");
 
 namespace walker {
 namespace lift {
 namespace build {
 
 // ---- Pins (README "Lift board: wiring" says why each) ----
-constexpr uint8_t kStepPin = 25;       // through the stop switch's cutting contact to the driver's PUL+
-constexpr uint8_t kDirPin = 26;        // DIR+
-constexpr uint8_t kEnablePin = 27;     // ENA+
+constexpr uint8_t kStepPin = 33;       // directly to PUL+ on the bench; through the stop contact when fitted
+constexpr uint8_t kDirPin = 25;        // DIR+
+constexpr uint8_t kEnablePin = 26;     // ENA+
 constexpr uint8_t kBottomPin = 32;     // bottom (home) switch, normally closed to GND
-constexpr uint8_t kTopPin = 33;        // top switch, normally closed to GND
+constexpr uint8_t kTopPin = 27;        // optional top switch, normally closed to GND
 constexpr uint8_t kStopSensePin = 13;  // the stop switch's sense contact, normally closed to GND
 
 // Rule 1: never a strapping pin (GPIO 0, 2, 5, 12, 15) or a flash pin (6 to 11); every input needs the
@@ -82,10 +90,12 @@ constexpr uint8_t kEnableLevel = WALKER_LIFT_ENA_ENABLE_LEVEL;
 constexpr uint8_t kDisableLevel = WALKER_LIFT_ENA_ENABLE_LEVEL == 0 ? 1 : 0;
 constexpr bool kStopSenseWired = WALKER_LIFT_STOP_SENSE == 1;
 constexpr bool kDisableSafe = WALKER_LIFT_DISABLE_SAFE == 1;
+constexpr bool kEstimatedDemo = WALKER_LIFT_ESTIMATED_DEMO == 1;
 
 // The configuration built into this firmware and reported in lift.hello (placeholders, not measured):
 // soft limits 5 to 600 mm, 20 mm/s and 50 mm/s² (MOTION_LIMITS.normal), top switch position unmeasured.
-constexpr LiftSettings kSettings{WALKER_LIFT_MICROSTEPS, 5000, 600000, 20000, 50000, false, 0,
+constexpr LiftSettings kSettings{WALKER_LIFT_MICROSTEPS, 5000, kEstimatedDemo ? 710000u : 600000u,
+                                 kEstimatedDemo ? 10000u : 20000u, kEstimatedDemo ? 25000u : 50000u, false, 0,
                                  WatchdogDriverAction::Hold, kStopSenseWired, kDisableSafe};
 static_assert(settingsValid(kSettings), "the lift's built-in limits break the contract");
 

@@ -5,6 +5,7 @@ import { PhoneApiError, type PhoneApi, type PhoneMember } from "@/lib/phoneApi";
 import { BATTERY_LINE, counterLine, newCountLine, newId, presenceWord, sendError, unseen, walkerTitle, walkerUserOf } from "@/lib/phoneView";
 import { cueWord, partRows } from "@/lib/walkerView";
 import { CameraWatch } from "./CameraCard";
+import { MayaHelpCard } from "./HelpScreens";
 import { NearbySample } from "./NearbySample";
 import styles from "./Phone.module.css";
 
@@ -15,7 +16,8 @@ const HEADING = "maya-heading";
 /**
  * The caretaker's phone: whether her walker is online, its part health and the alerts in force; messages
  * with her phone; and the sample of people nearby. A recent GPS position appears only while she has opted
- * in on her own phone. There is no "suggest a change" here: the server has no route for one yet.
+ * in on her own phone. There is no "suggest a change" here: the server has no route for one yet. A request for
+ * help from her leads the app, above the sections, while it is open and for 5 minutes after it closed.
  */
 export function MayaPhone({
   home,
@@ -54,6 +56,7 @@ export function MayaPhone({
 
   return (
     <>
+      <MayaHelpCard home={home} api={api} refresh={refresh} announce={announce} />
       <nav aria-label="Sections" className={styles.nav}>
         {tabs.map((t) => (
           <button

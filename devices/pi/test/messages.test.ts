@@ -56,7 +56,7 @@ describe("her messages: read aloud by the walker", () => {
     // No heartbeat event carries the words, and nothing else was asked of the cloud.
     expect(JSON.stringify(h.device()!.events)).not.toContain("Dinner");
     expect(JSON.stringify(h.store.pendingEvents(h.clock.monotonic()))).not.toContain("Dinner");
-    expect(h.client.calls.filter((c) => c !== "heartbeat" && c !== "messages")).toEqual([]);
+    expect(h.client.calls.filter((c) => c !== "heartbeat" && c !== "messages" && c !== "help:status")).toEqual([]);
   });
 
   it("CM4: a message that arrives while Talk is held waits until after the reply", async () => {

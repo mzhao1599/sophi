@@ -1,0 +1,39 @@
+# Asking for help with both handle buttons, against the FAKE cloud (test/EXPECTED.md, GW2). The chord goes through
+# the simulated hand board (the real ESP32 path); the caretaker is the fake cloud's help keys (a made-up Maya).
+# Run: node dist/walker.mjs simulate --screen --script test/sim/help-chord.walk
+
+expect spoke Sophi is on.
+expect link online
+expect heartbeat ok
+wait 3000
+
+# 1. Let go at 1.9 s: the help cue and the hold, then nothing sent or said.
+chord 1900
+expect cue help
+expect help help_hold
+expect help none
+absent 3000 spoke Asking for help.
+
+# 2. Held 2.5 s: asked, sent; Maya says she's with Rose; closed, then the clock.
+chord 2500
+expect spoke Asking for help.
+expect spoke Sent to Maya's phone.
+expect help help open
+key help-with-her
+expect 8000 spoke Maya says they're with you.
+expect help help closed with_her
+expect 15000 help none
+expect screen ambient
+
+# 3. A voice countdown stopped by Confirm at about 3 s: nothing is sent.
+key +
+key t
+expect mic open
+wait 1200
+key t
+expect help help_countdown 8
+wait 3000
+key c
+expect spoke Okay. I didn't ask anyone.
+expect help none
+absent 8000 spoke Asking for help.

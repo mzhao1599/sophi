@@ -1,5 +1,5 @@
 // Obstacle sensor firmware (one board): four VL53L1X time-of-flight sensors behind a TCA9548A I2C
-// multiplexer, reported to the Pi as perception.zones. Not yet run on hardware; wiring is in
+// multiplexer, reported to the Pi as perception.zones. Wiring is in
 // firmware/README.md. These are proximity readings for cues, not collision avoidance: a zone that can't
 // be trusted is sent as invalid (unknown), never as clear.
 #include <Arduino.h>
@@ -14,14 +14,15 @@
 
 namespace {
 
-// ---- Wiring (assumptions until the board is wired; see firmware/README.md) ----
-constexpr int kSdaPin = 21;
-constexpr int kSclPin = 22;
+// This assembled board crosses the default I2C pins: GPIO22 -> mux SDA, GPIO21 -> mux SCL.
+constexpr int kSdaPin = 22;
+constexpr int kSclPin = 21;
 // Placeholder: 100 kHz standard mode, the safe choice for sensor leads of unmeasured length.
 constexpr uint32_t kI2cHz = 100000;
-// TCA9548A with A0, A1 and A2 tied low. Sensor i sits on channel i and keeps the VL53L1X's default
-// address 0x29, so no XSHUT pins are needed.
+// TCA9548A with A0, A1 and A2 tied low. The channel map below reflects the assembled mux;
+// each sensor keeps the VL53L1X's default address 0x29, so no XSHUT pins are needed.
 constexpr uint8_t kMuxAddress = 0x70;
+constexpr uint8_t kMuxChannels[walker::kZoneCount] = {2, 3, 6, 7}; // Physical zone order needs confirmation.
 
 // ---- Sensor settings (placeholders, not measured) ----
 // Long distance mode with a 50 ms timing budget, one measurement every 50 ms (20 Hz per sensor).
@@ -50,7 +51,7 @@ size_t nextRetry = 0;
 
 bool selectChannel(size_t channel) {
   Wire.beginTransmission(kMuxAddress);
-  Wire.write(static_cast<uint8_t>(1u << channel));
+  Wire.write(static_cast<uint8_t>(1u << kMuxChannels[channel]));
   return Wire.endTransmission() == 0;
 }
 

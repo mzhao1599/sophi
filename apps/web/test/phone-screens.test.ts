@@ -65,11 +65,11 @@ describe("Join", () => {
 });
 
 describe("Rose's phone (simple mode)", () => {
-  it("home: at most four huge tiles, named by their words, and nothing that changes the walker", async () => {
+  it("home: at most four huge tiles, named by their words, Get help first, and nothing that changes the walker", async () => {
     const html = await rose("home");
     expect(text(html)).toContain("Hello, Rose");
     const names = buttons(html).map((b) => b.name);
-    expect(names).toEqual(["My walker On", "Message Maya 1 new message", "People nearby Sample"]);
+    expect(names).toEqual(["Get help Ask Maya", "My walker On", "Message Maya 1 new message", "People nearby Sample"]);
     expect(names.length).toBeLessThanOrEqual(4);
     expect(html).not.toMatch(/<input|<textarea|Suggest|Confirm|Change/);
   });

@@ -16,6 +16,7 @@ import { SimulatedPort } from "../src/sim/fakeModules";
 import { StateStore } from "../src/store";
 import { SERVICE_VERSION } from "../src/version";
 import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from "./support/fakes";
+import { lone } from "./support/fakes";
 
 /** Rows added from the break-it review (test/EXPECTED.md, marked "review"). */
 
@@ -42,7 +43,7 @@ describe("B18: a late heartbeat answer never overrides newer knowledge of the pr
     h.client.releaseHeld();
     await flush();
     expect(h.service.openProposal).not.toBeNull();
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);
   });
@@ -55,13 +56,13 @@ describe("B18: a late heartbeat answer never overrides newer knowledge of the pr
     h.client.late.add("heartbeat");
     await h.clock.advance(5000); // answered with the proposal still open, delivered later
     h.client.late.delete("heartbeat");
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.service.openProposal).toBeNull();
     h.client.releaseHeld();
     await flush();
     expect(h.service.openProposal).toBeNull();
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.client.calls.filter((c) => c === "answer:confirm")).toHaveLength(1);
     expect(h.speaker.cues.at(-1)).toBe("nothing_to_confirm");
@@ -261,7 +262,7 @@ it("P8: a configuration that can't be saved still applies", async () => {
   h.store.writeConfiguration = () => {
     throw new Error("read-only file system");
   };
-  h.press("confirm");
+  await lone(h);
   await flush();
   expect(h.service.configuration).toMatchObject({ version: 2, cues: ["sound"] });
   expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);

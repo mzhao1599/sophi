@@ -35,7 +35,7 @@ The cloud holds durable conversation state and makes task-level decisions. The P
 | Cloud API | Identity, agent loop, context retrieval, policy checks, task proposals, device command requests, audit trail | Direct serial access or sole safety enforcement |
 | Pi runtime | USB discovery, command routing, sensor fusion for display, camera capture, motor guard, watchdog, offline behavior | Diagnosing a disability or trusting cloud output as an actuator command |
 | Hand ESP32s | Buttons, trigger, haptics, health reports | Free-form agent logic |
-| Perception ESP32 | ToF sampling, quality filtering, near-obstacle alerts, local haptic pattern request | Claims that a path is clear based only on sparse ToF sensors |
+| Perception ESP32 | ToF sampling and quality reports to the Pi | Claims that a path is clear based only on sparse ToF sensors |
 | Voice ESP32 | Button/mic/speaker transport if chosen | Keeping the only copy of a conversation or depending on cloud for a stop signal |
 | Manipulation controller | Bounded task execution, kinematics, motion feedback, fault handling | Starting from an LLM sentence without a local guard and user signal |
 
@@ -57,7 +57,7 @@ The cloud holds durable conversation state and makes task-level decisions. The P
 
 ### Obstacle proximity
 
-The perception ESP32 measures ToF sensors, rejects invalid/stale readings, and reports zones with timestamps. A conservative near-obstacle condition triggers local haptics through a direct ESP32 path or the Pi; the cloud is not in this loop. A haptic cue is advisory. The system must not claim collision avoidance or safe navigation until that behavior is actually validated with users and hardware.
+The perception ESP32 measures ToF sensors and reports zone readings and quality to the Pi. The Pi ignores stale or invalid readings and sends a near-obstacle cue to the hand on the matching side (`right` to right, `left` to left), with sound as a fallback if that hand cannot buzz. The cloud is not in this loop. A haptic cue is advisory. The system must not claim collision avoidance or safe navigation until that behavior is actually validated with users and hardware.
 
 ### Manipulation
 

@@ -769,6 +769,205 @@
   }
 }
 
+/* ---- Asking for help (docs/subsystems/help.md) ----
+   Marked by a shape (the ringed raised hand) and words, with a heavier ink border; never by colour alone, and
+   calm: no red, nothing that flashes or pulses. */
+
+.helpMark {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.helpMark *,
+.helpTile .tileIcon * {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.helpTile {
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow-float);
+}
+
+.helpBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  box-shadow: var(--shadow-float);
+}
+
+.helpBanner[data-open="false"] {
+  border: 2px dashed var(--control-edge);
+  box-shadow: none;
+}
+
+.helpScreen .bigNote {
+  margin-top: -4px;
+}
+
+.helpStatus {
+  display: grid;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+}
+
+.askButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: max(120px, 7rem);
+  padding: 16px 24px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius-card);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  box-shadow: var(--shadow-float);
+}
+
+.askButton .helpMark {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.askButton[aria-disabled="true"],
+.helpActions [aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.confirm {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 2px solid var(--control-edge);
+  border-radius: var(--radius-card);
+  background: var(--wash);
+}
+
+.confirm .h2:focus {
+  outline: none;
+}
+
+.confirm .h2:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* The Call 911 link: an ordinary secondary button-shaped link, last on the screen. */
+.call {
+  justify-self: start;
+  color: var(--text-strong);
+  text-decoration: none;
+}
+
+.call svg {
+  width: 1.2em;
+  height: 1.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.callBig {
+  min-height: max(64px, 3.5rem);
+  font-size: 1.375rem;
+}
+
+.helpCard {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius-card);
+  background: var(--card-solid);
+  box-shadow: var(--shadow-float);
+  font-size: 1.0625rem;
+}
+
+.helpCard[data-open="false"] {
+  border: 2px dashed var(--control-edge);
+  box-shadow: none;
+}
+
+.helpCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.helpCardTitle:focus {
+  outline: none;
+}
+
+.helpCardTitle:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.helpLead {
+  font-size: 1.1875rem;
+  font-weight: 700;
+}
+
+.helpComing {
+  font-weight: 700;
+}
+
+.helpActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.helpActions > * {
+  flex: 1 1 10rem;
+}
+
+/* Preview only: the controls that play the other side on the fake circle. */
+.previewControls {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1.5px dashed var(--control-edge);
+  border-radius: var(--radius-card);
+}
+
+.previewButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.previewButtons .secondary {
+  min-height: 44px;
+  padding: 6px 14px;
+  font-size: 0.9375rem;
+}
+
 @media (forced-colors: active) {
   .tile,
   .message,
@@ -780,8 +979,18 @@
   .startPin,
   .tag,
   .navItem,
-  .back {
+  .back,
+  .helpBanner,
+  .helpStatus,
+  .helpCard,
+  .askButton,
+  .confirm {
     border: 1px solid CanvasText;
+  }
+  .helpTile,
+  .helpCard[data-open="true"],
+  .helpBanner[data-open="true"] {
+    border-width: 3px;
   }
   .dot[data-online="true"] {
     background: CanvasText;

@@ -5,6 +5,7 @@ import { PRESET_ORDER, PRESET_REPLIES, PhoneApiError, type PhoneApi, type PhoneM
 import {
   alertsSentence,
   caregiverOf,
+  helpTileLine,
   incoming,
   newCountLine,
   newId,
@@ -14,10 +15,11 @@ import {
   unseen,
 } from "@/lib/phoneView";
 import { CameraSharing, CameraWatchingLine } from "./CameraCard";
+import { HelpBanner, HelpIcon, RoseHelp } from "./HelpScreens";
 import { NearbySample } from "./NearbySample";
 import styles from "./Phone.module.css";
 
-export type RoseScreen = "home" | "walker" | "messages" | "nearby";
+export type RoseScreen = "home" | "help" | "walker" | "messages" | "nearby";
 
 const HEADING = "rose-heading";
 const SEEN_KEY = "sophi-app-seen";
@@ -40,8 +42,8 @@ function saveSeen(seen: Set<string>) {
 }
 
 /**
- * Her own phone, in simple mode: at most four huge tiles, one action each, no typing. Nothing here changes
- * the walker; only the walker's own Confirm does that.
+ * Her own phone, in simple mode: four huge tiles, one action each, no typing. Get help comes first. Nothing
+ * here changes the walker; only the walker's own Confirm does that.
  */
 export function RosePhone({
   home,
@@ -88,12 +90,22 @@ export function RosePhone({
       {api.camera ? <CameraWatchingLine camera={api.camera} /> : null}
       {screen === "home" ? (
         <>
+          {home.help ? <HelpBanner help={home.help} /> : null}
           <div className={styles.screen}>
             <h1 id={HEADING} tabIndex={-1} className={styles.title}>
               Hello, {home.me.name}
             </h1>
           </div>
           <ul className={styles.tiles}>
+            <li>
+              <button type="button" className={`${styles.tile} ${styles.helpTile}`} onClick={() => go("help")}>
+                <HelpIcon />
+                <span className={styles.tileText}>
+                  <span className={styles.tileLabel}>Get help</span>
+                  <span className={styles.tileSub}>{helpTileLine(home)}</span>
+                </span>
+              </button>
+            </li>
             <li>
               <button type="button" className={styles.tile} onClick={() => go("walker")}>
                 <WalkerIcon />
@@ -137,6 +149,7 @@ export function RosePhone({
           Back
         </button>
       )}
+      {screen === "help" ? <RoseHelp home={home} api={api} refresh={refresh} announce={announce} headingId={HEADING} /> : null}
       {screen === "walker" ? <MyWalker home={home} api={api} refresh={refresh} announce={announce} /> : null}
       {screen === "messages" ? <Messages home={home} api={api} refresh={refresh} announce={announce} /> : null}
       {screen === "nearby" ? <NearbySample role="walker_user" heading="People nearby" headingId={HEADING} /> : null}
