@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { WalkerStatusView } from "@walker/contracts";
+import type { WalkerModel, WalkerStatusView } from "@walker/contracts";
 import { surge, useReducedMotion } from "@/lib/motion";
 import { useNow } from "@/lib/useNow";
 import type { WalkerPage } from "@/lib/useWalkerPage";
-import { NOT_CAUGHT, OUT_OF_TIME, TYPED_NOTICE, conversation, cueList, formatCountdown, secondsLeft } from "@/lib/walkerView";
+import { NOT_CAUGHT, OUT_OF_TIME, conversation, cueList, formatCountdown, secondsLeft, typedNotice } from "@/lib/walkerView";
 import { Mark, Words } from "./Chat";
 import demo from "./Demo.module.css";
 import styles from "./Walker.module.css";
@@ -18,7 +18,7 @@ const MAX_TYPED = 500;
  * Confirm and Decline, the data notice, and the text box. The log isn't a live region: the page's one
  * polite region reads each new reply, line and offer once.
  */
-export function WalkerConversation({ page, walker }: { page: WalkerPage; walker: WalkerStatusView }) {
+export function WalkerConversation({ page, walker, typedBy }: { page: WalkerPage; walker: WalkerStatusView; typedBy: WalkerModel | null }) {
   const reduced = useReducedMotion();
   const ids = useId();
   const [text, setText] = useState("");
@@ -138,7 +138,7 @@ export function WalkerConversation({ page, walker }: { page: WalkerPage; walker:
           {page.card ? <OfferCard key={page.card.proposal.proposal_id} page={page} focusIn={focusInOffer} /> : null}
         </div>
         <p id={`${ids}-notice`} className={styles.typedNotice}>
-          {TYPED_NOTICE}
+          {typedNotice(typedBy)}
         </p>
         <form
           className={demo.inputPill}

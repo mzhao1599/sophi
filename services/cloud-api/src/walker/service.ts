@@ -106,6 +106,8 @@ export interface WalkerServiceOptions {
   blocked?: string;
   /** The model step for turns; without one, every turn gets a fixed line. */
   assistant?: WalkerAssistant | null;
+  /** The model step for typed turns (Claude, when set up); without one, typed turns use `assistant`. */
+  typed?: WalkerAssistant | null;
   /** Sophi's spoken voice for walker turns; without one, the walker speaks replies itself. */
   voice?: WalkerVoice | null;
   /** One event per turn, for the log: ids, outcomes and timings, never words. */
@@ -174,6 +176,7 @@ export class WalkerService {
   private readonly randomCode: () => string;
   private readonly blocked: string | undefined;
   private readonly assistant: WalkerAssistant | null;
+  private readonly typed: WalkerAssistant | null;
   private readonly voice: WalkerVoice | null;
   private readonly onTurn: (event: TurnEvent) => void;
   private readonly turnBudgetMs: number;
@@ -189,6 +192,7 @@ export class WalkerService {
     this.randomCode = options.randomCode ?? (() => String(randomInt(0, 1_000_000)).padStart(6, "0"));
     this.blocked = options.blocked;
     this.assistant = options.assistant ?? null;
+    this.typed = options.typed ?? null;
     this.voice = options.voice ?? null;
     this.onTurn = options.onTurn ?? logTurn;
     this.turnBudgetMs = options.turnBudgetMs ?? TURN_BUDGET_MS;
@@ -354,12 +358,22 @@ export class WalkerService {
 
     const now = this.now();
     // Accepted: the page's companion shows it until it ends, however it ends.
-    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs });
+    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs, model: this.assistantFor(request)?.provider ?? null });
     try {
       return await this.answerTurn(device, source, request, now, started, left, clipMs, flight);
     } finally {
       flight?.end();
     }
+  }
+
+  /**
+   * Who answers this turn. Typed by the person (text with no original_audio): `typed` when set up, so
+   * Claude. Spoken, or the text continuation of a spoken turn after a tool: `assistant`, so Gemini, which
+   * heard the clip. One turn never switches model halfway.
+   */
+  private assistantFor(request: DeviceTurnRequest | PageTurnRequest): WalkerAssistant | null {
+    const typed = request.input.type === "text" && !("original_audio" in request && request.original_audio);
+    return typed && this.typed ? this.typed : this.assistant;
   }
 
   private async answerTurn(
@@ -382,7 +396,8 @@ export class WalkerService {
     const toolResults: WalkerToolResult[] = "tool_results" in request
       ? (request.tool_results ?? []).map((r) => r.name === "get_distance" ? { name: r.name, text: distanceLine(status) } : r)
       : [];
-    const result = this.assistant ? await this.assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients) : null;
+    const assistant = this.assistantFor(request);
+    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients) : null;
 
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
     const tool = toolCall?.name;
@@ -483,6 +498,7 @@ export class WalkerService {
         input: input.type,
         clip_ms: clipMs,
         model_ran: event.attempts > 0,
+        model: event.attempts > 0 ? (result?.provider ?? null) : null,
         model_ms: event.attempts > 0 ? event.model_ms : null,
         rule: event.reason,
         answered_by: event.answered_by,

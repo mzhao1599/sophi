@@ -4096,6 +4096,20 @@
                   "hearing",
                   "voicing"
                 ]
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "gemini"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -4150,6 +4164,20 @@
               },
               "model_ran": {
                 "type": "boolean"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "gemini"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "model_ms": {
                 "anyOf": [
@@ -5089,6 +5117,20 @@
                         "hearing",
                         "voicing"
                       ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "gemini"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -5143,6 +5185,20 @@
                     },
                     "model_ran": {
                       "type": "boolean"
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "gemini"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "model_ms": {
                       "anyOf": [
@@ -5242,6 +5298,14 @@
         "walkers"
       ],
       "additionalProperties": false
+    },
+    "WalkerModelSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "enum": [
+        "claude",
+        "gemini"
+      ]
     },
     "WalkerResponseSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6367,6 +6431,20 @@
             "hearing",
             "voicing"
           ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "claude",
+                "gemini"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -7259,6 +7337,20 @@
         },
         "model_ran": {
           "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "claude",
+                "gemini"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "model_ms": {
           "anyOf": [

@@ -75,7 +75,7 @@ describe("the walker activity log", () => {
   function serviceWith(model: AgentModel | null, extra: { voice?: WalkerVoice; timeoutMs?: number; store?: WalkerStore } = {}) {
     return new WalkerService(extra.store ?? store, {
       now: clock.now,
-      assistant: model ? createWalkerAssistant({ model, timeoutMs: extra.timeoutMs }) : null,
+      assistant: model ? createWalkerAssistant({ model, provider: "gemini", timeoutMs: extra.timeoutMs }) : null,
       voice: extra.voice ?? null,
       onTurn: () => {},
       activity: log,
@@ -122,7 +122,7 @@ describe("the walker activity log", () => {
     const hearing = await activityOf(service, w.secret, w.id);
     expect(hearing).toEqual({
       device_id: w.id,
-      in_flight: [{ client_turn_id: request.client_turn_id, input: "audio", since: clock.iso(), clip_ms: 1200, stage: "hearing" }],
+      in_flight: [{ client_turn_id: request.client_turn_id, input: "audio", since: clock.iso(), clip_ms: 1200, stage: "hearing", model: "gemini" }],
       traces: [],
     });
 
@@ -264,6 +264,7 @@ describe("the walker activity log", () => {
       input: "text",
       clip_ms: null,
       model_ran: true,
+      model: "gemini",
       model_ms: expect.any(Number),
       rule: null,
       answered_by: "model",
@@ -277,8 +278,47 @@ describe("the walker activity log", () => {
     expect(traces[3]).toMatchObject({ rule: null, answered_by: "model", proposal_opened: true });
     expect(turns[3]!.proposal?.state).toBe("open");
     expect(traces[4]).toMatchObject({ client_turn_id: page.client_turn_id, input: "text", voiced_by: null, voice_ms: null, rule: null, answered_by: "model" });
-    expect(traces[5]).toMatchObject({ model_ran: false, model_ms: null, rule: "no_model", answered_by: "fixed" });
+    expect(traces[5]).toMatchObject({ model_ran: false, model: null, model_ms: null, rule: "no_model", answered_by: "fixed" });
     expect(traces[5]!.at).toBe(clock.iso());
+  });
+
+  it("sends typed turns to the typed model, and spoken ones and their tool continuations to the main one, naming each", async () => {
+    const hold = gate();
+    const claude = stubModel({ reply: "Claude here.", topics: ["other"] }, (call) => (call === 1 ? hold.promise : Promise.resolve()));
+    const gemini = stubModel({ reply: "Gemini here.", transcript: "Which parts work?", topics: ["other"] });
+    const service = new WalkerService(store, {
+      now: clock.now,
+      assistant: createWalkerAssistant({ model: gemini.model, provider: "gemini" }),
+      typed: createWalkerAssistant({ model: claude.model, provider: "claude" }),
+      onTurn: () => {},
+      activity: log,
+    });
+    const w = await walker(service);
+
+    // In flight, the page already knows a typed question is with Claude.
+    const page = fromPage("Are my handles working?");
+    const pending = service.turn(owner(w.secret), w.id, page);
+    await claude.entered[0]!.promise;
+    expect((await activityOf(service, w.secret, w.id))!.in_flight).toMatchObject([{ client_turn_id: page.client_turn_id, input: "text", stage: "hearing", model: "claude" }]);
+    hold.open();
+    const replies = [await pending];
+
+    // A tool continuation carries the spoken question as text, flagged original_audio: it stays with Gemini.
+    const continuation: DeviceTurnRequest = { client_turn_id: uuid(), input: { type: "text", text: "Where am I?" }, snapshot: snapshot(clock), tool_results: [{ name: "get_location", text: "Near Main Street." }], original_audio: true };
+    for (const request of [typed("Which parts work?"), spoken(), continuation]) replies.push(await service.turn(device(w.credential), w.id, request));
+
+    expect(replies.map((r) => r.turn.reply.split(".")[0])).toEqual(["Claude here", "Claude here", "Gemini here", "Gemini here"]);
+    expect([claude.calls(), gemini.calls()]).toEqual([2, 2]);
+    expect((await activityOf(service, w.secret, w.id))!.traces.map((t) => t.model)).toEqual(["claude", "claude", "gemini", "gemini"]);
+  });
+
+  it("sends typed turns to the main model when no typed model is set up", async () => {
+    const gemini = stubModel({ reply: "Gemini here.", topics: ["other"] });
+    const service = serviceWith(gemini.model);
+    const w = await walker(service);
+    const r = await service.turn(owner(w.secret), w.id, fromPage("Are my handles working?"));
+    expect(r.turn.reply.startsWith("Gemini here.")).toBe(true);
+    expect((await activityOf(service, w.secret, w.id))!.traces.map((t) => t.model)).toEqual(["gemini"]);
   });
 
   it("holds none of the person's words or the replies", async () => {

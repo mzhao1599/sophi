@@ -78,13 +78,17 @@ Written before the code (2026-10-23). The server keeps one `ActivityLog` per pro
 
 | Case | Expected |
 | --- | --- |
-| A turn while the model is still answering (a slow stub) | The owner's list shows one `in_flight` entry for that walker: its `client_turn_id`, `input`, `since` (the server's clock when the clip or text was accepted), `clip_ms` (from the WAV's samples, 1,200 ms clip → 1200; null for text) and `stage: "hearing"` |
+| A turn while the model is still answering (a slow stub) | The owner's list shows one `in_flight` entry for that walker: its `client_turn_id`, `input`, `since` (the server's clock when the clip or text was accepted), `clip_ms` (from the WAV's samples, 1,200 ms clip → 1200; null for text), `stage: "hearing"` and `model`: the family of the model asked ("gemini", "claude"), null without one |
+| A typed turn (from the page, or text from the walker with no `original_audio`) with a typed model set up | Answered by the typed model (Claude); its in-flight entry and trace say `model: "claude"` |
+| A spoken turn, and the text continuation of a spoken turn after a tool (`original_audio: true`) | Answered by the main model (Gemini), never the typed one, so one turn never switches model; `model: "gemini"` |
+| A typed turn with no typed model set up | Answered by the main model; `model: "gemini"` |
+| The main model with its backup (hedge.ts), on a turn with tool results and message recipients | Both models get the same tool results and recipients |
 | The same turn while Cartesia is making the audio (a slow stub voice) | `stage: "voicing"` |
 | After the turn answers | `in_flight` is empty, and one trace is there |
 | The model throws; the model passes its deadline (fallback line); the walker is forgotten during the model (`saveTurn` returns null, 404); the response fails its schema; the store throws while saving | `in_flight` is empty afterwards every time |
 | A clip that isn't a 16 kHz mono WAV; a replay of a stored `client_turn_id` | Never shows in `in_flight` (it's set only after those checks) and adds no trace |
 | Two uploads of one `client_turn_id` at once | One `in_flight` entry while both run; it stays while the second is still running after the first ends; it clears when both end. One trace (the second saved nothing new) |
-| Trace for the model's own words (typed on the walker, no voice configured) | `model_ran: true`, `model_ms` a number, `rule: null`, `answered_by: "model"`, `proposal_opened: false`, `voiced_by: "walker"`, `voice_ms: null` (no Cartesia call), `input: "text"`, `clip_ms: null`, `at` = when it was saved, `total_ms` a number, `turn_id` and `client_turn_id` the stored turn's |
+| Trace for the model's own words (typed on the walker, no voice configured) | `model_ran: true`, `model: "gemini"` (the stub is set up as Gemini), `model_ms` a number, `rule: null`, `answered_by: "model"`, `proposal_opened: false`, `voiced_by: "walker"`, `voice_ms: null` (no Cartesia call), `input: "text"`, `clip_ms: null`, `at` = when it was saved, `total_ms` a number, `turn_id` and `client_turn_id` the stored turn's |
 | Trace for the arms line | `rule: "arms"`, `answered_by: "fixed"`, `model_ran: true` |
 | Trace for a cues change that would turn alerts off | `rule: "cues_alerts_off"`, `answered_by: "fixed"`, `proposal_opened: false` |
 | Trace for an opened proposal | `proposal_opened: true`, `answered_by: "model"`, `rule: null` |
