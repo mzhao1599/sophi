@@ -1,0 +1,31 @@
+# Walking directions on the walker screen, against the FAKE cloud (docs/subsystems/navigation.md). The
+# position is the SIMULATED one and the maps are the recorded responses, as in navigation.walk.
+# Run (from devices/pi): node dist/walker.mjs simulate --screen --script test/sim/navigation-screen.walk
+# and open the printed http://127.0.0.1:8740/ at 800x480 to watch.
+
+expect spoke Sophi is on.
+expect link online
+expect screen ambient
+
+# A route starts: the screen shows it once the Pi has said its first line's place.
+fake tool start_route Lake Merritt Boating Center
+key t
+expect screen listening
+wait 1200
+key t
+expect navigation guiding
+expect spoke Walking to the Lake Merritt Boating Center
+expect 20000 screen navigating
+wait 3000
+
+# "Stop the directions": Talk takes the screen while she asks, then the clock once the route has ended.
+fake tool stop_route
+key t
+expect screen listening
+wait 1200
+key t
+expect spoke Fake cloud: Stopped the directions to the Lake Merritt Boating Center.
+expect navigation none
+expect 30000 screen ambient
+
+key q
