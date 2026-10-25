@@ -4,7 +4,7 @@
 
 This is the script for showing the website to judges at Cal Hacks: a click sequence for the website alone, a 3-minute main script, a 60-second cut, the persona's exact lines, what each line should do with both onboarding engines, the honesty lines, judge Q&A, the setup checklist, and the rehearsal results. How to frame it for each sponsor track, with a 2-minute cut per track, is in [tracks.md](tracks.md). `pnpm --filter @walker/cloud-api rehearse` re-runs the rehearsal below (see "Rehearse on a model" in tracks.md).
 
-**What is real today:** the website. A person types what they need, the onboarding assistant asks short questions, the walker drawing lights up suggested modules, and the person switches modules, saves the walker and orders it through Stripe's test mode. **What is planned:** the walker hardware (frame, hand controls, obstacle sensors, voice module, robot arms, arm lift) and location sharing. The parts are ordered; nothing is assembled or tested yet. Nothing in this script presents a planned part as working.
+**What is real today:** the website. A person types what they need, the onboarding assistant asks short questions, the walker photo lights up suggested modules, and the person switches modules, saves the walker and orders it through Stripe's test mode. **What is planned:** the walker hardware (frame, hand controls, obstacle sensors, voice module, robot arms, arm lift) and location sharing. The parts are ordered; nothing is assembled or tested yet. Nothing in this script presents a planned part as working.
 
 **Labels marked † are UI labels.** They were checked against the code on `main` (`daea268`, the redesign) on 2026-10-23, not on the live page (the name and its line changed to Sophi on 2026-10-23); the lead does the live page check. A polish change may still move small things (the logo mark, the Next.js badge), so re-check any † label that looks different on the day.
 
@@ -105,16 +105,17 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 > "This is Wren. She's made up. She says: 'I keep bumping into things, small buttons are hard, and I'd like help picking things up.'"
 
-1. The first frame shows "Let's build your walker."†, the bare frame and "Your walker starts as just the frame. Tell us what's hard."†
+0. The page opens on the Sophi logo; the walker slides in beside it and the card fades into the page after about three seconds (a click or any key skips it).
+1. The first frame shows "Let's build your walker."†, the prototype's photo with only the walker frame in colour, and "Your walker starts as just the frame. Tell us what's hard."†
 2. Read L1 aloud from the box as part of the line. Press Enter.
 
-**0:10 to 0:23. The walker draws itself**
+**0:10 to 0:23. The walker lights up**
 
-> "No diagnosis, no form. She said what's hard, and the walker drew the parts that help."
+> "No diagnosis, no form. She said what's hard, and the walker lit up the parts that help."
 
 1. Thinking dots† show for about 2 to 5 seconds, then the reply fades in word by word†.
-2. On the drawing, the parts arrive one at a time with their names: hand controls and obstacle sensors on, the robot arms dashed.
-3. Say nothing for about 3 seconds while it draws, then say the line.
+2. On the photo, the parts arrive one at a time with their names: hand controls come up in colour and obstacle sensors are labelled on, the robot arms half way with a dashed dot.
+3. Say nothing for about 3 seconds while they arrive, then say the line.
 
 **0:23 to 0:36. Name it, and say where her words go**
 
@@ -166,7 +167,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 > "The arms and lift are planned and experimental, so they start off. She decides: on. Now every part shows its true state: hers on, Voice 'You Said No', location 'Not Available Yet'."
 
 1. Press Escape to close the panel.
-2. In "All modules"† beside the drawing, switch on "Robot arms"†, then "Arm lift"†. Both turn solid on the drawing.
+2. In "All modules"† beside the drawing, switch on "Robot arms"†, then "Arm lift"†. Both come up in colour on the photo.
 3. Point along the drawing: the frame, hand controls, obstacle sensors, robot arms and arm lift on; Voice "You Said No"†; Location sharing "Not Available Yet"†. The line under "Your walker"† now reads "5 modules · $1,675 sample total"†.
 
 **2:01 to 2:10. No mouse needed (accessibility, 10 seconds)**
@@ -203,7 +204,7 @@ Same setup: a fresh page with L1 already typed in the box.
 
 **0:10 to 0:21**
 
-> "No diagnosis, no form. She said what's hard, and the walker drew the parts that help."
+> "No diagnosis, no form. She said what's hard, and the walker lit up the parts that help."
 
 1. Thinking dots†, then the reply fades in†. Hand controls and obstacle sensors arrive on, robot arms dashed.
 2. Pause about 2 seconds, then say the line.

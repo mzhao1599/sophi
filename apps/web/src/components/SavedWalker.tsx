@@ -20,6 +20,7 @@ export function SavedWalker({ selected }: { selected: readonly ModuleId[] }) {
       highlight={null}
       onHighlight={nothing}
       caption={`The walker in this demo order: ${selected.map(nameOf).join(", ")}.`}
+      view="front"
     />
   );
 }

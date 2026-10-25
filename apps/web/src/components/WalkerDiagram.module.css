@@ -158,6 +158,80 @@
   cursor: pointer;
 }
 
+/* ---- Photo: the real prototype in place of the drawing ---- */
+
+/* The whole photo fades in where the drawing would draw itself, and waits for the page like the lines. */
+.photo {
+  animation: photo-in 700ms var(--ease-out) 150ms both;
+}
+
+.figure:not([data-live]) .photo {
+  opacity: 0;
+  animation: none;
+}
+
+/* Every module starts as a grey shadow of itself, in the gap it leaves in the plain walker. */
+.photoGhost {
+  opacity: 0.4;
+  filter: grayscale(1) brightness(0.7) contrast(0.8);
+}
+
+.photoFrame[data-highlight] {
+  filter: drop-shadow(0 0 4px var(--live-glow));
+}
+
+.photoLit {
+  opacity: 0;
+  transition: opacity 360ms var(--ease-out);
+}
+
+/* Worth considering: half way up, no glow. On: full colour, with a glow that blooms as it arrives. */
+.photoPart[data-state="suggested"] .photoLit {
+  opacity: 0.55;
+  transition-delay: var(--delay);
+}
+
+.photoPart[data-state="on"] .photoLit {
+  opacity: 1;
+  filter: drop-shadow(0 0 3px var(--live-glow)) drop-shadow(0 0 1px var(--live-soft));
+  animation: part-in 900ms var(--ease-out) var(--delay) both;
+}
+
+.photoPart[data-highlight] .photoLit {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px var(--live-glow)) drop-shadow(0 0 1.5px var(--live));
+}
+
+/* Pointer targets for a part's region: invisible, and only live in review. */
+.photoHit {
+  fill: transparent;
+  pointer-events: none;
+}
+
+.photoPart[data-clickable] .photoHit,
+.photoFrame[data-clickable] {
+  cursor: pointer;
+  pointer-events: all;
+}
+
+/* Opacity only: a CSS transform would replace the group's own transform, which places the photo. */
+@keyframes photo-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes part-in {
+  0% {
+    opacity: 0;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  45% {
+    opacity: 1;
+    filter: drop-shadow(0 0 9px var(--live-glow)) drop-shadow(0 0 2px var(--live));
+  }
+}
+
 .part[data-highlight] .ghost path,
 .part[data-highlight] .ink path {
   stroke-width: 2;
@@ -625,6 +699,10 @@ button.hotspot:hover,
 }
 
 @media (prefers-color-scheme: dark) {
+  /* A faint rim of light, so the black arms and lift still read against the dark page. */
+  .photo {
+    filter: drop-shadow(0 0 0.8px rgb(255 255 255 / 0.5));
+  }
   button.hotspot:hover {
     filter: brightness(1.12);
   }
@@ -784,6 +862,16 @@ button.hotspot:hover,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .photo,
+  .photoPart[data-state="on"] .photoLit {
+    animation: none;
+  }
+  .photoLit {
+    transition: none;
+  }
+  .photoPart[data-state="suggested"] .photoLit {
+    transition-delay: 0s;
+  }
   .part[data-state="suggested"] .ghost path,
   .part[data-state="simulated"] .ghost path,
   .part[data-state="degraded"] .ghost path {

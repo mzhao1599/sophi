@@ -21,6 +21,7 @@ import { noticeLine } from "@/lib/chat";
 import { Chat, type FocusRequest } from "./Chat";
 import { CheckoutButton } from "./CheckoutButton";
 import { ContourField } from "./ContourField";
+import { Intro } from "./Intro";
 import { ModuleList } from "./ModuleList";
 import { Legend, WalkerDiagram } from "./WalkerDiagram";
 import { WalkerMark } from "./WalkerMark";
@@ -52,7 +53,12 @@ const SHEET_DELAY_MS = 1200;
 
 export function DemoScreen({ opening, agentName = null, voice = false, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
   const o = useOnboarding({ notice: account ? "account" : "demo", resumeId });
-  return <DemoView o={o} opening={opening} agentName={agentName} voice={voice} account={account} />;
+  return (
+    <>
+      <Intro />
+      <DemoView o={o} opening={opening} agentName={agentName} voice={voice} account={account} />
+    </>
+  );
 }
 
 const FIRST_FRAME = "Your walker starts as just the frame. Tell us what's hard.";
@@ -237,6 +243,7 @@ export function DemoView({ o, opening, agentName = null, voice = false, account 
               onHighlight={() => undefined}
               caption={caption}
               note={note}
+              view="front"
             />
           </div>
         </div>
@@ -303,6 +310,7 @@ export function DemoView({ o, opening, agentName = null, voice = false, account 
                   highlight={highlight}
                   onHighlight={setHighlight}
                   caption={caption}
+                  view="side"
                 />
                 <ModuleList states={states} problems={problems} frozen={frozen} onToggle={toggle} onHighlight={setHighlight} />
               </div>

@@ -19,6 +19,7 @@ const isLit = (state: PartState) => LIT.includes(state);
 export const STAGGER = 0.36;
 import { ModuleSwitch } from "./ModuleSwitch";
 import styles from "./WalkerDiagram.module.css";
+import { PHOTO_SCALE, PHOTO_VIEWS, PHOTO_X, layerSrc, points, type PhotoViewId } from "./walkerPhotos";
 
 /*
  * Coordinates. The walker is drawn in a 320 x 380 box. On a wide stage, a label column of 120 units
@@ -229,22 +230,31 @@ export interface WalkerDiagramProps {
   caption: string;
   /** Shown under the drawing: the first frame's line, or the legend. */
   note?: ReactNode;
+  /** A photo of the real prototype in place of the line drawing, from this side. */
+  view?: PhotoViewId;
 }
 
 /**
- * The walker seen from the front, as a fine line drawing: a schematic, not to scale. The frame draws
+ * The walker, as a photo of the real prototype (`view`) or as a fine line drawing. In the photo the
+ * plain walker shows in colour and every module starts greyed out; a module that's on comes up in
+ * colour with a warm glow, and one worth considering comes up half way. Labels and their dots say the
+ * same in shape and words, so state never rests on colour alone.
+ *
+ * The drawing is the walker seen from the front, a schematic, not to scale. The frame draws
  * itself on load; a module draws in, with a warm glow, when it is on, and stays a faint dashed outline
  * when it isn't, so state never rests on colour alone. The drawing is hidden from screen readers: the
  * caption says the same in words, and in review each module is a real button that opens a small panel
  * with its switch. The module list beside it is an equal path for the same choices.
  */
-export function WalkerDiagram({ recs, facts, states, review, problems, frozen, onToggle, highlight, onHighlight, caption, note }: WalkerDiagramProps) {
+export function WalkerDiagram({ recs, facts, states, review, problems, frozen, onToggle, highlight, onHighlight, caption, note, view }: WalkerDiagramProps) {
   const [open, setOpen] = useState<ModuleId | null>(null);
   const spotRefs = useRef(new Map<ModuleId, HTMLDivElement>());
   const buttonRefs = useRef(new Map<ModuleId, HTMLButtonElement>());
   const recById = new Map(recs.map((r) => [r.module_id, r]));
   const shown = review ? open : null;
   const reduced = useReducedMotion();
+  const photo = view ? PHOTO_VIEWS[view] : null;
+  const spots = photo?.spots ?? SPOTS;
   // The pen starts when the page is live, so the lines wait for it rather than starting on first paint.
   const [live, setLive] = useState(false);
   useLayoutEffect(() => setLive(true), []);
@@ -309,10 +319,10 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
   const labelled = (id: ModuleId) => review || (id !== "base.walker" && isLit(states[id]));
 
   return (
-    <figure className={styles.figure} data-review={review || undefined} data-live={live || undefined}>
+    <figure className={styles.figure} data-review={review || undefined} data-live={live || undefined} data-photo={photo ? true : undefined}>
       <div className={styles.canvas}>
         <svg className={styles.leaders} viewBox={`${-SIDE} 0 ${WIDE_W} ${H}`} aria-hidden="true" focusable="false">
-          {SPOTS.filter((s) => labelled(s.id)).map((s) => (
+          {spots.filter((s) => labelled(s.id)).map((s) => (
             <g key={s.id} className={styles.leader} data-state={states[s.id]} data-highlight={lit(s.id) || undefined}>
               <path d={leader(s)} pathLength={1} style={{ animationDelay: `${labelDelay(s.id)}s` }} />
               <circle cx={s.anchor[0]} cy={s.anchor[1]} r="2.5" style={{ animationDelay: `${labelDelay(s.id)}s` }} />
@@ -320,49 +330,61 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
           ))}
         </svg>
 
-        <svg className={styles.drawing} viewBox={`0 0 ${DRAW_W} ${H}`} aria-hidden="true" focusable="false">
-          <g className={styles.frame} data-highlight={lit("base.walker") || undefined} onClick={review ? () => setOpen("base.walker") : undefined}>
-            {FRAME_STEPS.map((st, i) => (
-              <path key={i} d={st.d} pathLength={1} style={{ "--at": `${FRAME_START + st.at}s`, "--dur": `${st.dur}s` } as React.CSSProperties} />
-            ))}
-          </g>
-          {MODULE_ORDER.map((id) => (
-            <g
-              key={id}
-              className={styles.part}
-              data-state={states[id]}
-              data-highlight={lit(id) || undefined}
-              data-clickable={review || undefined}
-              style={{ "--delay": `${plan[id]?.delay ?? 0}s` } as React.CSSProperties}
-              // A bonus for pointer users: the drawn part opens the same panel as its hotspot button.
-              onClick={review ? () => setOpen((o) => (o === id ? null : id)) : undefined}
-              onPointerEnter={review ? () => onHighlight(id) : undefined}
-              onPointerLeave={review ? () => onHighlight(null) : undefined}
-            >
-              <g className={styles.ghost}>
-                {MODULES[id].map((st, i) => (
-                  <path key={i} d={st.d} />
-                ))}
-              </g>
-              {/* Keyed by when it last turned on, so the ink draws in again each time. */}
-              <g key={plan[id]?.key ?? 0} className={styles.ink}>
-                {MODULE_STEPS[id].map((st, i) => (
-                  <path key={i} d={st.d} pathLength={1} style={{ "--at": `${st.at}s`, "--dur": `${st.dur}s` } as React.CSSProperties} />
-                ))}
-              </g>
-            </g>
-          ))}
-          {reduced || !live ? null : (
-            <>
-              <Pen steps={FRAME_STEPS} delay={FRAME_START} tone="ink" />
-              {MODULE_ORDER.filter((id) => states[id] === "on" && plan[id]).map((id) => (
-                <Pen key={`${id}-${plan[id]!.key}`} steps={MODULE_STEPS[id]} delay={plan[id]!.delay} tone="live" />
+        {view ? (
+          <PhotoWalker
+            view={view}
+            states={states}
+            plan={plan}
+            lit={lit}
+            review={review}
+            onOpen={(id) => setOpen((o) => (o === id && id !== "base.walker" ? null : id))}
+            onHighlight={onHighlight}
+          />
+        ) : (
+          <svg className={styles.drawing} viewBox={`0 0 ${DRAW_W} ${H}`} aria-hidden="true" focusable="false">
+            <g className={styles.frame} data-highlight={lit("base.walker") || undefined} onClick={review ? () => setOpen("base.walker") : undefined}>
+              {FRAME_STEPS.map((st, i) => (
+                <path key={i} d={st.d} pathLength={1} style={{ "--at": `${FRAME_START + st.at}s`, "--dur": `${st.dur}s` } as React.CSSProperties} />
               ))}
-            </>
-          )}
-        </svg>
+            </g>
+            {MODULE_ORDER.map((id) => (
+              <g
+                key={id}
+                className={styles.part}
+                data-state={states[id]}
+                data-highlight={lit(id) || undefined}
+                data-clickable={review || undefined}
+                style={{ "--delay": `${plan[id]?.delay ?? 0}s` } as React.CSSProperties}
+                // A bonus for pointer users: the drawn part opens the same panel as its hotspot button.
+                onClick={review ? () => setOpen((o) => (o === id ? null : id)) : undefined}
+                onPointerEnter={review ? () => onHighlight(id) : undefined}
+                onPointerLeave={review ? () => onHighlight(null) : undefined}
+              >
+                <g className={styles.ghost}>
+                  {MODULES[id].map((st, i) => (
+                    <path key={i} d={st.d} />
+                  ))}
+                </g>
+                {/* Keyed by when it last turned on, so the ink draws in again each time. */}
+                <g key={plan[id]?.key ?? 0} className={styles.ink}>
+                  {MODULE_STEPS[id].map((st, i) => (
+                    <path key={i} d={st.d} pathLength={1} style={{ "--at": `${st.at}s`, "--dur": `${st.dur}s` } as React.CSSProperties} />
+                  ))}
+                </g>
+              </g>
+            ))}
+            {reduced || !live ? null : (
+              <>
+                <Pen steps={FRAME_STEPS} delay={FRAME_START} tone="ink" />
+                {MODULE_ORDER.filter((id) => states[id] === "on" && plan[id]).map((id) => (
+                  <Pen key={`${id}-${plan[id]!.key}`} steps={MODULE_STEPS[id]} delay={plan[id]!.delay} tone="live" />
+                ))}
+              </>
+            )}
+          </svg>
+        )}
 
-        {SPOTS.map((s) => {
+        {spots.map((s) => {
           if (!labelled(s.id)) return null;
           const entry = getCatalogEntry(MODULE_CATALOG, s.id);
           const label = stateLabel(s.id, states[s.id], review);
@@ -443,6 +465,74 @@ export function WalkerDiagram({ recs, facts, states, review, problems, frozen, o
         </div>
       ) : null}
     </figure>
+  );
+}
+
+/**
+ * The photo layers, in the drawing's box: each module's part as a grey shadow, the plain walker in colour
+ * over them, then each module's part in colour when it's on. The layers come from one photo, split by
+ * scripts/walker-photos.mjs, so they line up pixel for pixel. Hidden from assistive tech like the
+ * drawing; in review a pointer can open a part's panel from the photo too.
+ */
+function PhotoWalker({
+  view,
+  states,
+  plan,
+  lit,
+  review,
+  onOpen,
+  onHighlight,
+}: {
+  view: PhotoViewId;
+  states: Record<ModuleId, PartState>;
+  plan: Partial<Record<ModuleId, { delay: number; key: number }>>;
+  lit(id: ModuleId): boolean;
+  review: boolean;
+  onOpen(id: ModuleId): void;
+  onHighlight(id: ModuleId | null): void;
+}) {
+  const photo = PHOTO_VIEWS[view];
+  const parts = MODULE_ORDER.filter((id) => photo.regions[id]);
+  const layer = (id: ModuleId | "frame") => <image href={layerSrc(view, id)} width={photo.width} height={photo.height} />;
+  return (
+    <svg className={styles.drawing} viewBox={`0 0 ${DRAW_W} ${H}`} aria-hidden="true" focusable="false">
+      <g className={styles.photo} transform={`translate(${PHOTO_X} 0) scale(${PHOTO_SCALE})`}>
+        <g className={styles.photoGhost}>
+          {parts.map((id) => (
+            <g key={id}>{layer(id)}</g>
+          ))}
+        </g>
+        <g
+          className={styles.photoFrame}
+          data-highlight={lit("base.walker") || undefined}
+          data-clickable={review || undefined}
+          onClick={review ? () => onOpen("base.walker") : undefined}
+        >
+          {layer("frame")}
+        </g>
+        {parts.map((id) => (
+          <g
+            key={id}
+            className={styles.photoPart}
+            data-state={states[id]}
+            data-highlight={lit(id) || undefined}
+            data-clickable={review || undefined}
+            style={{ "--delay": `${plan[id]?.delay ?? 0}s` } as React.CSSProperties}
+            onClick={review ? () => onOpen(id) : undefined}
+            onPointerEnter={review ? () => onHighlight(id) : undefined}
+            onPointerLeave={review ? () => onHighlight(null) : undefined}
+          >
+            {/* Keyed by when it last turned on, so it comes up again each time. */}
+            <g key={plan[id]?.key ?? 0} className={styles.photoLit}>
+              {layer(id)}
+            </g>
+            {photo.regions[id]!.map((poly, i) => (
+              <polygon key={i} className={styles.photoHit} points={points(poly)} />
+            ))}
+          </g>
+        ))}
+      </g>
+    </svg>
   );
 }
 
