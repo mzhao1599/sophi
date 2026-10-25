@@ -693,8 +693,12 @@ export const HELP_RETENTION_MS = 24 * 60 * 60_000;
 /** On the walker, a first Confirm on an open help request arms "Tell Maya you're okay?"; a second within this closes it. */
 export const HELP_OKAY_ARMED_TTL_MS = 30_000;
 
-/** Where she asked: both handle buttons held, her voice (after the countdown), or her own phone. */
-export const HelpSourceSchema = z.enum(["handles", "voice", "phone"]);
+/**
+ * Where it came from: both handle buttons held, her voice (after the countdown), her own phone, or the walker's
+ * fall check (`camera`, added 2026-10-25: the camera's body points looked like a fall, and she didn't stop the
+ * countdown). A `camera` request is the walker's guess, never her words, and the phones say so.
+ */
+export const HelpSourceSchema = z.enum(["handles", "voice", "phone", "camera"]);
 export type HelpSource = z.infer<typeof HelpSourceSchema>;
 
 /**
@@ -762,7 +766,7 @@ export type HelpView = z.infer<typeof HelpViewSchema>;
  * `201`. `409 no_caretaker` when no approved caretaker phone is in: nothing is sent or kept. Device help routes
  * answer errors in the walker envelope (WalkerErrorSchema).
  */
-export const DeviceAskForHelpRequestSchema = z.strictObject({ client_help_id: id, source: z.enum(["handles", "voice"]) });
+export const DeviceAskForHelpRequestSchema = z.strictObject({ client_help_id: id, source: z.enum(["handles", "voice", "camera"]) });
 export type DeviceAskForHelpRequest = z.infer<typeof DeviceAskForHelpRequestSchema>;
 
 /** The answer to every help call that names or makes one request (device and phone). */

@@ -123,7 +123,7 @@ function Linked({ api, preview, circle }: { api: PhoneApi; preview: boolean; cir
   // A caretaker's phone: the first tap unlocks audio for the tone, and the tab title says so while a request is open.
   const caretaker = home?.membership === "member" && home.me.role === "caregiver";
   useEffect(() => (caretaker ? unlockAudioOnFirstTap() : undefined), [caretaker]);
-  const openTitle = home?.membership === "member" && home.me.role === "caregiver" && home.help && !home.help.closed ? helpTitle(herName(home)) : null;
+  const openTitle = home?.membership === "member" && home.me.role === "caregiver" && home.help && !home.help.closed ? helpTitle(herName(home), home.help) : null;
   useEffect(() => {
     if (!openTitle) return;
     const before = document.title;
@@ -276,6 +276,7 @@ function PreviewControls({ circle, home, refresh }: { circle: DemoCircle; home: 
   const controls: [string, () => unknown][] = [
     ["The walker asks", () => circle.walkerAsks("handles")],
     ["Asks by voice", () => circle.walkerAsks("voice")],
+    ["Walker saw a fall", () => circle.walkerAsks("camera")],
     ...caretakers.map((n): [string, () => unknown] => [`${n}: on my way`, () => circle.caretakerAnswers(n, "coming")]),
     ...caretakers.slice(0, 1).map((n): [string, () => unknown] => [`${n}: with Rose`, () => circle.caretakerAnswers(n, "with_her")]),
     ["Rose: okay (walker)", () => circle.walkerOkay()],

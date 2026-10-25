@@ -1216,7 +1216,8 @@
           "type": "string",
           "enum": [
             "handles",
-            "voice"
+            "voice",
+            "camera"
           ]
         }
       },
@@ -1245,7 +1246,8 @@
                   "enum": [
                     "handles",
                     "voice",
-                    "phone"
+                    "phone",
+                    "camera"
                   ]
                 },
                 "age_seconds": {
@@ -2211,7 +2213,8 @@
               "enum": [
                 "handles",
                 "voice",
-                "phone"
+                "phone",
+                "camera"
               ]
             },
             "age_seconds": {
@@ -2374,7 +2377,8 @@
       "enum": [
         "handles",
         "voice",
-        "phone"
+        "phone",
+        "camera"
       ]
     },
     "HelpViewSchema": {
@@ -2391,7 +2395,8 @@
           "enum": [
             "handles",
             "voice",
-            "phone"
+            "phone",
+            "camera"
           ]
         },
         "age_seconds": {
@@ -3511,7 +3516,8 @@
                   "enum": [
                     "handles",
                     "voice",
-                    "phone"
+                    "phone",
+                    "camera"
                   ]
                 },
                 "age_seconds": {

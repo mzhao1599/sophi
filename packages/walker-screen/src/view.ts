@@ -573,6 +573,11 @@ export const HELP_WORDS = {
   okayNotSent: "I couldn't reach the internet. Press Confirm twice to try again.",
   countdown: (seconds: number) => `Asking for help in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`,
   pressToStop: "Press any button to stop.",
+  /**
+   * The fall check saw a possible fall (devices/pi/src/fall), said before the countdown. Spoken only: the screen
+   * shows the countdown, never this line, so the screen's calm-words rule holds.
+   */
+  fallSeen: (seconds: number) => `It looks like you may have fallen. I'll ask for help in ${seconds} seconds. Press any button to stop.`,
 } as const;
 
 /**

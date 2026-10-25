@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { arecordCapture } from "./audio/capture";
 import { PiSpeaker, writeCueSounds } from "./audio/speech";
 import { Bus } from "./bus";
-import { startCameraLink } from "./camera";
+import { startCamera } from "./camera";
 import { GpioButtons, type GpiomonFlavor } from "./buttons";
 import { systemClock } from "./clock";
 import { HttpCloudClient } from "./cloud/client";
@@ -219,8 +219,9 @@ export async function runOnPi(env: NodeJS.ProcessEnv): Promise<number> {
         })
       : null;
   if ("off" in screenPort) log.info("walker screen off", { reason: screenPort.off });
-  // The live camera, only with WALKER_CAMERA_DEVICE set; its failures are logged and never stop the walker.
-  const camera = startCameraLink({ env, clock, log, store });
+  // The live camera, only with WALKER_CAMERA_DEVICE set, and the fall check with WALKER_FALL_CHECK=on; their
+  // failures are logged and never stop the walker.
+  const camera = await startCamera({ env, clock, log, store, onFall: () => service.fallSeen() });
   const signal = await stopSignal;
   log.info("stopping", { signal });
   await camera?.stop();
