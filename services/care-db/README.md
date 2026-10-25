@@ -80,6 +80,7 @@ Without `SPACETIME_TEST_SERVER` both skip with a message.
    ```
 
 2. Make the server's key: `node scripts/care-db.mjs keygen --out <a file outside git>`.
+   The issuer stays `https://steady-walker.onrender.com` even though the site's main address is now `https://sophi.work`: both reach the same server, and a new issuer would mean running `configure` again.
 3. On Render, add `SPACETIME_URI=https://maincloud.spacetimedb.com`, `SPACETIME_DATABASE=sophi-care`, `SPACETIME_ISSUER=https://steady-walker.onrender.com`, and the key as `SPACETIME_JWT_PRIVATE_KEY` (secret).
 4. Deploy. Check `https://steady-walker.onrender.com/.well-known/openid-configuration` and `GET /api/v1/health` (`care_db: "ok"`).
 
