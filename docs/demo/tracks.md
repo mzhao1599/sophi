@@ -27,7 +27,7 @@ Nothing below presents a planned part as working; each cut that needs a planned 
 | MLH: Commit Fellowship | Free, plus a supplemental form | [Commit Fellowship](#mlh-commit-fellowship-free-plus-a-form) |
 | Meta: Bringing People Closer Together with AI | Small: framing, and the phones on stage | [Meta](#meta-bringing-people-closer-together-with-ai-small) |
 | MLH: Best Domain Name from GoDaddy Registry, and Best .Tech Domain Name | Small: register a domain for each, point them at Render | [Domains](#mlh-the-two-domain-name-categories-small) |
-| Spacetime: core real-time backend | Built 2026-10-24: the care circle on SpacetimeDB; needs the Render settings and a check on Render | [Spacetime](#spacetime-the-care-circle-on-spacetimedb-added-2026-10-24) |
+| Spacetime: core real-time backend | Built and live on Render 2026-10-24: the care circle on SpacetimeDB | [Spacetime](#spacetime-the-care-circle-on-spacetimedb-added-2026-10-24) |
 
 ## Before submitting (all tracks)
 
@@ -57,7 +57,7 @@ For the Devpost text. Cal Hacks runs October 23 to 25, 2026. Everything here was
 - **Taught arm skills and "Let go?"** (#80): record a movement with the teaching arm, replay it after a Confirm press, and open the gripper only when the person holding the object presses Confirm, even after a fault. Tested only against simulated servos; the demo's tray task hasn't been taught.
 - **The lift wired into the motion coordinator** (#85): a lift target is prepared at the terminal and starts only on a handle Confirm press while someone holds the screen's hold control and both arms are folded; letting go, any handle press, the stop switch or any fault stops it, and it never moves without the hardware stop. Tested on a Mac against the simulated lift board and simulated servos, including the demo's lift flow in real time 3 of 3; it has never talked to the real lift.
 - **The walker demo script for the screen, the phones and the arms** (#83). Documentation only.
-- **The care circle on SpacetimeDB** (branch `spacetime-care-loop`, 2026-10-24): the phones, codes, approvals and messages in a SpacetimeDB module (`services/care-db`), the server calling its procedures, and the phones and the owner's page getting each change pushed live. Tested against a local SpacetimeDB 2.13 (the 20 circle tests, 6 WebSocket view tests) and in a production build with Postgres, two phones and the owner's page in one browser, 3 of 3. Published to Maincloud as `sophi-care`; not yet run from Render, or on real iPhones.
+- **The care circle on SpacetimeDB** (branch `spacetime-care-loop`, 2026-10-24): the phones, codes, approvals and messages in a SpacetimeDB module (`services/care-db`), the server calling its procedures, and the phones and the owner's page getting each change pushed live. Tested against a local SpacetimeDB 2.13 (the 20 circle tests, 6 WebSocket view tests) and in a production build with Postgres, two phones and the owner's page in one browser, 3 of 3. Published to Maincloud as `sophi-care` and live on Render since 2026-10-24 (three Render runs in a row); not yet on real iPhones.
 - **Test fixes after direct pushes to `main`** (#78, #81, #82, #84): the tests and shape snapshots caught up with Cooper's pushes for opt-in GPS sharing, the location and distance tools, the weather tool and the walker's tool loop. Tests only; those features' own testing isn't recorded on this page.
 
 Before the event (2026-10-23 to the morning of 2026-10-23): the website and its Stripe test checkout, the onboarding agent, the walker assistant and its server on Render, the "Your walker" page and its "Behind the scenes" panel, the Pi service and its simulator, the ESP32 firmware, and the Pi's first run on 2026-10-23.
@@ -338,10 +338,10 @@ These are two different registries, so entering both means two names, for exampl
 
 **Honest limits to say if asked:**
 - Writes go through Sophi's server, which checks who may do what before calling SpacetimeDB; the phones read live from SpacetimeDB.
-- Measured on a local SpacetimeDB 2.13 with a production build on a Mac: approval 42 to 62 ms, messages 24 to 34 ms, removal 15 to 32 ms. Not measured on Maincloud from Render; say "about instant" only after seeing it there.
+- Measured on Render with Maincloud (2026-10-24, three runs in a row, Rose's phone in a browser, Maya and the owner as scripts with their own cookies and a real SpacetimeDB connection): approval reached Maya's open connection in 166 to 178 ms; Maya's message showed on Rose's screen in 456 to 458 ms when Rose's last poll was seconds earlier (787 ms in the run where a poll coincided, so that one may have come by the poll); Rose's reply reached Maya in 286 to 318 ms; removal emptied Maya's views in 150 to 272 ms. Say "under half a second", not "instant".
 - The phones are in one browser for that check, not two real iPhones yet (the same rule as the Microsoft cut's step 3).
 
-**Before entering:** Max adds the four `SPACETIME_*` settings on Render (services/care-db/README.md, "Deploying"), the branch is merged and deployed, `GET /api/v1/health` shows `care_db: "ok"`, and the two-phone path passes three times in a row on Render. Phones linked before the switch join again with new codes.
+**Status (2026-10-24):** on Render. The four `SPACETIME_*` settings are set, `main` is deployed (`45433f7`), `GET /api/v1/health` shows `care_db: "ok"`, and the two-phone path passed three times in a row on Render, with nothing of the test walkers left in Maincloud. Phones linked before the switch join again with new codes. Render's auto-deploy didn't fire for the merges after the service was reconnected to `mzhao1599/sophi`; until that's fixed, deploy each merge by hand (Manual Deploy, Deploy latest commit). Still not done: real iPhones.
 
 ### Watch: Armadin, Elastic, AfterQuery and Annapurna Labs
 

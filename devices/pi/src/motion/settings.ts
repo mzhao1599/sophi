@@ -34,6 +34,7 @@ export interface MotionSettings {
   arms: ArmPortSetting[];
   stopSense: StopSenseSetting;
   bench: boolean;
+  unswitchedLiftDemo?: boolean;
 }
 
 export type MotionSettingsResult = { kind: "off" } | { kind: "error"; reason: string } | { kind: "on"; settings: MotionSettings };
@@ -82,9 +83,14 @@ export function readMotionSettings(env: NodeJS.ProcessEnv): MotionSettingsResult
   if (!bench.ok) return { kind: "error", reason: bench.reason };
   const stopSense = readStopSense(env.WALKER_STOP_SENSE);
   if (!stopSense) return { kind: "error", reason: "WALKER_STOP_SENSE must be gpio:<line> or not_wired" };
-  if (arms.length === 0) return { kind: "off" };
+  const demo = env.WALKER_LIFT_UNSWITCHED_DEMO === "1";
+  if (env.WALKER_LIFT_UNSWITCHED_DEMO && !demo) return { kind: "error", reason: "WALKER_LIFT_UNSWITCHED_DEMO must be 1 or unset" };
+  if (demo && (!bench.bench || stopSense.kind !== "not_wired")) {
+    return { kind: "error", reason: "the unswitched lift demo requires bench mode and no GPIO stop" };
+  }
+  if (arms.length === 0 && !demo) return { kind: "off" };
   if (new Set(arms.map((a) => a.path)).size !== arms.length) return { kind: "error", reason: "two arms name the same port" };
-  return { kind: "on", settings: { arms, stopSense, bench: bench.bench } };
+  return { kind: "on", settings: { arms, stopSense, bench: bench.bench, unswitchedLiftDemo: demo } };
 }
 
 /** The configured arm ports, as written. */

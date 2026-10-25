@@ -93,7 +93,7 @@ interface Port {
   /** A line came from an id another available port holds; logged once. */
   duplicateLogged: boolean;
   /** Which parser reads this port, decided by its first `hello` (serial) or `lift.hello` (lift); null before. */
-  kind: "serial" | "lift" | null;
+  kind: "serial" | "lift" | "hybrid" | null;
   /** Set once a `lift.hello` made this a lift port. */
   liftLink: LiftPortLink | null;
 }
@@ -201,13 +201,14 @@ export class ModuleManager {
    * like a line before hello, and answered with a `hello.request`. True when the line was the lift's.
    */
   private liftLine(port: Port, result: SerialParseResult, text: string | undefined): boolean {
-    if (port.kind === "lift" && port.liftLink) {
+    if ((port.kind === "lift" || port.kind === "hybrid") && port.liftLink) {
+      if (result.ok) return false; // A hybrid port also carries ordinary sensor messages.
       const lift = text === undefined ? null : parseLiftSerialLine(text);
       if (lift?.ok) this.liftHandler?.liftLine(port.liftLink, lift.message);
       else this.liftHandler?.liftLineRefused(port.liftLink, lift ? lift.problem : result.ok ? "malformed" : result.problem);
       return true;
     }
-    if (port.kind === "serial" || text === undefined || result.ok || result.problem !== "unknown_type") return false;
+    if (text === undefined || result.ok || result.problem !== "unknown_type") return false;
     const lift = parseLiftSerialLine(text);
     if (!lift.ok) return false;
     if (lift.message.type !== "lift.hello") {
@@ -218,7 +219,7 @@ export class ModuleManager {
       this.requestHello(port, SERIAL_ANY_MODULE);
       return true;
     }
-    port.kind = "lift";
+    port.kind = port.instanceId ? "hybrid" : "lift";
     port.liftLink = this.liftLink(port);
     this.deps.log.info("lift board said hello", { port: port.conn.id, module: lift.message.module_id, simulated: port.conn.simulated });
     if (!this.liftHandler) this.deps.log.warn("no lift client is running, so the lift board's lines are ignored", { port: port.conn.id });
@@ -407,7 +408,7 @@ export class ModuleManager {
     if (port.instanceId && port.instanceId !== id) this.forget(port.instanceId);
     port.instanceId = id;
     port.wantHello = false;
-    port.kind = "serial";
+    port.kind = port.liftLink ? "hybrid" : "serial";
     // A module answering a hello.request keeps its seq running; a reboot starts it again (or it moved ports).
     // Only a reboot means a button it reported as held is no longer held.
     const rebooted = existing !== undefined && (existing.port !== port || message.seq <= (existing.lastSeq ?? -1));

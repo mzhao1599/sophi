@@ -38,7 +38,7 @@ export function createPiMotion(options: {
   const { settings, clock, log, bus } = options;
   const files = new MotionFiles(options.stateDir, log);
   const liftLoad = files.readLift();
-  const lift = liftLoad.kind === "ok" ? new LiftClient({ log, setup: liftLoad.setup, bench: settings.bench, monotonic: () => clock.monotonic() }) : null;
+  const lift = liftLoad.kind === "ok" ? new LiftClient({ log, setup: liftLoad.setup, bench: settings.bench, unswitchedLiftDemo: settings.unswitchedLiftDemo, monotonic: () => clock.monotonic() }) : null;
   if (lift) options.modules.setLiftHandler(lift);
   const liftAbsent = liftLoad.kind === "invalid" ? liftLoad.reason : "no lift.json";
   if (lift) log.info("lift fitted (lift.json): the motion coordinator drives it");

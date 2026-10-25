@@ -5650,6 +5650,22 @@
             "additionalProperties": false
           }
         },
+        "motion_offer": {
+          "type": "object",
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": [
+                "ground",
+                "up"
+              ]
+            }
+          },
+          "required": [
+            "preset"
+          ],
+          "additionalProperties": false
+        },
         "message_offer": {
           "type": "object",
           "properties": {

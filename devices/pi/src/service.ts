@@ -81,7 +81,7 @@ export interface ServiceDeps {
    * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
    * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
    */
-  motion?: { handlePress(event: ButtonEvent): boolean; ownsConfirm(): boolean };
+  motion?: { handlePress(event: ButtonEvent): boolean; ownsConfirm(): boolean; requestOffer?(raw: unknown): unknown | null };
   newId?: () => string;
 }
 
@@ -588,6 +588,11 @@ export class WalkerService {
         answered_by: reply.turn.answered_by,
         voice: wav ? "server" : "walker",
       });
+      if (reply.motion_offer) {
+        const target = this.deps.motion?.requestOffer?.({ target: { kind: "lift.preset", preset: reply.motion_offer.preset } });
+        if (!target) this.sayAnswer(reply.turn.heard, "The lift isn't ready for that height yet.", "fixed", "reply");
+        return;
+      }
       const message = reply.message_offer;
       if (message && !this.openProposal && !this.deps.motion?.ownsConfirm()) {
         const pending = { body: { client_message_id: message.client_message_id, to_member_id: message.to_member_id, text: message.text }, toName: message.to_name, ready: false, expiresAt: 0 };

@@ -36,7 +36,7 @@ pnpm --filter @walker/walker-screen exec vitest run test/shots.test.tsx
 
 Not measured: sizes assume CSS px equal panel px (devicePixelRatio 1). Check a rendered cap height with a ruler on the panel, at the walker, before relying on them.
 
-**Messages** *(changed 2026-10-24)*. The Pi now shows `message` while it reads a caretaker's message aloud: the words, "From Maya", "Confirm" named over the left handle and "Press Confirm to hear it again." It no longer offers a touch "Done" button, because the Pi doesn't act on screen presses yet. `message_waiting` (the "Read it" notice) is still drawn for the circle piece and not used by the Pi.
+**Messages** *(changed 2026-10-24)*. The Pi now shows `message` while it reads a caretaker's message aloud: the words, "From Maya", "Confirm" named over the left handle and "Press Confirm to hear it again." It no longer offers a touch "Done" button, because the Pi doesn't act on screen presses yet. `message_waiting` (the "Read it" notice) is still drawn for the circle piece and not used by the Pi. The screenshot check passed on every fixture at every text size after the change (2026-10-24, Playwright 1.64.1 with its headless Chromium on a Mac).
 
 **Not shown until built:** the "My screen" button (on the clock and offline screens) is left out until the Pi acts on it (a TODO in `view.ts`; a test checks no fixture offers it). The My screen pages themselves are drawn for the circle piece.
 

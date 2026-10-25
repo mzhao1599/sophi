@@ -413,7 +413,7 @@ function describeTurns(name: string, makeHarness: () => Promise<StoreHarness>) {
       // An older Pi, or one with no position source: no route tools and the old rule.
       expect(offered(olderPi!)).toEqual([]);
       expect(olderPi!.system).toBe(WALKER_SYSTEM_PROMPT);
-      expect(olderPi!.system).toContain("This walker can't navigate, plan routes");
+      expect(olderPi!.system).toContain("This walker cannot navigate, plan routes");
       expect(JSON.parse(olderPi!.context).walking_directions).toBeNull();
       // The page: no route tools; asked for directions, it asks for Talk, and never offers them itself.
       expect(offered(page!)).toEqual([]);

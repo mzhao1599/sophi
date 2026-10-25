@@ -414,7 +414,7 @@ export class WalkerService {
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
     const tool = toolCall?.name;
     const routeTool = tool !== undefined && isRouteTool(tool);
-    const nextTool = source === "walker" && tool && tool !== "send_message" && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
+    const nextTool = source === "walker" && tool && tool !== "send_message" && tool !== "set_lift_height" && toolResults.length < WALKER_MAX_TOOL_CALLS && !routeDone && (!routeTool || navigation) ? tool : null;
     if (nextTool) {
       const heard = input.type === "audio" ? result?.ok ? result.reply.transcript.trim() : "" : input.text;
       const line = LOOKUP_LINE[nextTool];
@@ -430,16 +430,19 @@ export class WalkerService {
       });
     }
     const distanceLookup = result?.ok && result.reply.topics.includes("obstacles") && !result.reply.topics.includes("arms") && !result.reply.cues_change && !toolResults.some((r) => r.name === "get_distance");
+    const motionOffer = source === "walker" && toolCall?.name === "set_lift_height" && !status.open_proposal ? { preset: toolCall.preset } : null;
     const messageRecipient = source === "walker" && toolCall?.name === "send_message" ? recipients.find((r) => r.member_id === toolCall.to_member_id) : undefined;
     const validMessage = messageRecipient && toolCall?.name === "send_message" ? DeviceSendMessageRequestSchema.safeParse({ client_message_id: this.randomId(), to_member_id: messageRecipient.member_id, text: toolCall.text }) : null;
     const canSend = members.some((m) => m.role === "walker_user" && m.state === "member");
     const messageOffer = validMessage?.success && messageRecipient && !status.open_proposal && canSend ? { ...validMessage.data, to_name: messageRecipient.name } : null;
     const unhandledTool = tool !== null && tool !== undefined;
-    const decided = messageOffer
+    const decided = motionOffer
+      ? { reply: "I'll check whether the lift can offer that height.", answered_by: "fixed" as const, reason: "lift_offer", proposal: null }
+      : messageOffer
       ? { reply: `Send to ${messageOffer.to_name}: ${messageOffer.text}. Press Confirm to send.`, answered_by: "model" as const, reason: "message_offer", proposal: null }
       : source === "page" && tool === "get_distance"
         ? { reply: distanceLine(status), answered_by: "fixed" as const, reason: "distance_guard", proposal: null }
-      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || routeTool)
+      : source === "page" && (tool === "get_location" || tool === "get_weather" || tool === "send_message" || tool === "set_lift_height" || routeTool)
         ? { reply: "Please use Talk on the walker for that request.", answered_by: "fixed" as const, reason: "device_tool_only", proposal: null }
       : routeTool && !navigation
         ? { reply: "I can't give walking directions on this walker.", answered_by: "fixed" as const, reason: "route_unavailable", proposal: null }
@@ -459,7 +462,7 @@ export class WalkerService {
     const voiceStarted = Date.now();
     let voiceCalled = false;
     const speech =
-      source === "walker"
+      source === "walker" && !motionOffer
         ? await this.speak(decided.reply, left(), () => {
             voiceCalled = true;
             flight?.stage("voicing");
@@ -491,6 +494,7 @@ export class WalkerService {
       speech: saved.created && speech ? { mime: "audio/wav", data_base64: speech } : null,
       status: after,
       ...(saved.created && messageOffer ? { message_offer: messageOffer } : {}),
+      ...(saved.created && motionOffer ? { motion_offer: motionOffer } : {}),
     });
     const event: TurnEvent = {
       ...turnEvent(device.device_id, source, input.type, saved.turn),
