@@ -15,7 +15,7 @@ import { screenSizes } from "./sizes";
  * | Left column (map, then the distance left), wide | 280 | 264 | 240 |
  * | Right column (the next thing to do, then the band), wide | 472 | 488 | 512 |
  * | Right: the next thing to do (the one thing), tall | 255 | 255 | 255 |
- * | Right: the band (Repeat, End route, Talk), tall | 147 | 147 | 147 |
+ * | Right: the band (End route), tall | 147 | 147 | 147 |
  * | Left: the distance left, two lines at 40 px, tall | 92 | 92 | 92 |
  * | Left: the map, tall (410 - 8 - the distance lines) | 310 | 310 | 310 |
  *

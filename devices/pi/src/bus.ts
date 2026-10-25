@@ -72,7 +72,7 @@ export interface BusEvents {
   navigation: { view: NavigatingScreen | null };
   /**
    * A press on the walker screen (POST /screen/press, validated by the screen server), with the state that was on
-   * screen when it was drawn. The service acts on `end_route` and `repeat_direction` while a route is on.
+   * screen when it was drawn. The service acts on `end_route` (and `repeat_direction`, which today's screen no longer draws) while a route is on, and on `stop_lift` for a spoken lift move.
    */
   screenPress: { action: ScreenAction; revision: number; state: ScreenStateName | null };
   /**

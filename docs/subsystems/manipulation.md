@@ -69,7 +69,7 @@ There is at most **one pending Confirm target** at a time, across everything Con
 
 - **Who may prepare.** The preparers are `walker_screen`, `operator_cli` (the terminal), `offer` (the cloud's id-only request) and `walker_local` (the Pi's own "Let go?"). The policy lists, for each command, who may prepare it.
   - The cloud may offer a locally taught skill or pose by id, a `ground`/`up` lift preset, a signed 1–800 mm relative lift request (`MotionOfferRequestSchema`). The Pi drops unknown skills or poses and refuses unavailable lift offers or targets outside the installed 5–950 mm soft range; it words any Confirm target itself. No cloud text is ever shown or spoken.
-  - A lift move prepared from an offer must have a finite target within the nominal rail (`offerKeepsToPresets`, checked on the Confirm target and command). The Pi and ESP32 also enforce the installed soft limits; `lift.move` stays hold-to-run. A port carries lift lines beside sensor lines only for the shared ToF and lift board; a hand board's port never becomes a lift port.
+  - A lift move prepared from an offer must have a finite target within the nominal rail (`offerKeepsToRail`, checked on the Confirm target and command). The Pi and ESP32 also enforce the installed soft limits. A `lift.move` started from a Confirm target stays hold-to-run; a spoken one skips Confirm and runs on the Pi's Talk lease ("The lift" below). A port carries lift lines beside sensor lines only for the shared ToF and lift board; a hand board's port never becomes a lift port.
 - **Timing, on the Pi's monotonic clock.**
   - A target expires after `WALKER_CONFIRM_WAIT_MS` (30 s).
   - A press is accepted only after the button was seen released for the whole `CONFIRM_ARM_DELAY_MS` (2 s), all after the target appeared, with no reset of that hand module since (`confirmPressVerdict`). Otherwise it is ignored, and the ignored press restarts the window.
@@ -116,7 +116,7 @@ The stop is a **latching (twist-to-release)** switch, wired so it doesn't depend
 - **All arm and lift motion is refused unless the stop reads `released`.** With no stop-sense input it reads `not_wired`, and motion is refused with `no_hardware_stop`.
 - **Bench mode.** `WALKER_MOTION_BENCH=no-hardware-stop` in the Pi's local service environment file is the only way to move without a hardware stop. It is read once at start, never set by the cloud, a model, the screen or a command.
   - Bench mode lowers every speed and torque limit and logs every motion. The contract's label is "Bench mode: no hardware stop" (`BENCH_MODE_LABEL`); since 2026-10-25 every motion screen on the walker shows the shorter "No hardware stop", and the status strip has no bench tag.
-  - It waives the hardware stop, the hand-control requirement, and the lift's guards and drop-test requirements. It never waives the rule: Confirm to start, a hold to keep the lift moving.
+  - It waives the hardware stop, the hand-control requirement, and the lift's guards and drop-test requirements. It never waives the rule: Confirm to start and a hold to keep a Confirm-started lift moving; a spoken lift move still starts only from her own Talk turn, after the Pi's rechecks, and stops on left Confirm or Stop lift.
 
 ## Base stationary (decided)
 

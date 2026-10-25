@@ -86,7 +86,7 @@ import {
   confirmPrompt,
   degreesToTicks,
   isPreparerAllowed,
-  offerKeepsToPresets,
+  offerKeepsToRail,
   jointRangeDegrees,
   jointsOutsideCalibration,
   liftInstallationAllowsMotion,
@@ -505,6 +505,8 @@ describe("Confirm targets", () => {
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_PRESET_HEIGHTS_MM.up } }))).toBe(true);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_RAIL_LENGTH_MM + 1 } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: -1 } }))).toBe(false);
+    expect(offerKeepsToRail({ kind: "lift.move", target_mm: Number.NaN }, "offer")).toBe(false);
+    expect(offerKeepsToRail({ kind: "lift.move" }, "offer")).toBe(false);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up" } })).toBe(true);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up", target_mm: 300 } })).toBe(false);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.move", target_mm: 300 } })).toBe(false);
@@ -601,7 +603,7 @@ describe("motion commands", () => {
     "%s prepared by %s is allowed only when its policy says so",
     (kind, by) => {
       const command = { ...commands[kind], prepared_by: by };
-      expect(ok(MotionCommandSchema, command)).toBe(isPreparerAllowed(kind, by) && offerKeepsToPresets(command, by));
+      expect(ok(MotionCommandSchema, command)).toBe(isPreparerAllowed(kind, by) && offerKeepsToRail(command, by));
     },
   );
 
@@ -667,7 +669,7 @@ describe("command policy (AGENTS.md rule 8)", () => {
 
   it("lets the cloud's offers name only taught skills, poses and lift presets, and the Pi's own follow-up only let go", () => {
     const by = (who: "offer" | "walker_local") => CONFIRMED_KINDS.filter((k) => isPreparerAllowed(k, who)).sort();
-    // lift.move from an offer: only to a preset (offerKeepsToPresets), still behind Confirm and the hold control.
+    // lift.move from an offer: only to a preset (offerKeepsToRail), still behind Confirm and the hold control.
     expect(by("offer")).toEqual(["arm.go_to_pose", "lift.move", "skill.run"]);
     expect(MOTION_COMMAND_POLICY["lift.move"]).toMatchObject({ hold_to_run: true, needs_park: true });
     expect(by("walker_local")).toEqual(["gripper.release"]);
@@ -685,7 +687,8 @@ describe("command policy (AGENTS.md rule 8)", () => {
     }
   });
 
-  it("makes every lift motion hold-to-run, guarded and with the arms stowed", () => {
+  it("makes every Confirm-started lift motion hold-to-run, guarded and with the arms stowed", () => {
+    // A spoken lift.move (58dfc86) skips Confirm and the hold, but the Pi still applies these refusals before it starts.
     for (const kind of MotionCommandKindSchema.options) {
       expect(MOTION_COMMAND_POLICY[kind].hold_to_run).toBe(kind === "lift.home" || kind === "lift.move");
     }
@@ -1009,6 +1012,16 @@ describe("motion state", () => {
     const { target_mm: _, ...home } = liftActive;
     expect(ok(ActiveMotionSchema, { ...home, kind: "lift.home" })).toBe(true);
     expect(ok(ActiveMotionSchema, { ...liftActive, phase: "stopping", hold_source: null })).toBe(true);
+  });
+
+  it("holds a spoken lift move only on its Talk lease, and nothing else on that lease", () => {
+    const spoken = { ...liftActive, hold_source: "local_voice_request", initiated_by: "talk" };
+    const { target_mm: _, ...home } = spoken;
+    expect(ok(ActiveMotionSchema, spoken)).toBe(true);
+    expect(ok(ActiveMotionSchema, { ...spoken, phase: "stopping", hold_source: null })).toBe(true);
+    expect(ok(ActiveMotionSchema, { ...spoken, hold_source: "screen_hold_control" })).toBe(false);
+    expect(ok(ActiveMotionSchema, { ...liftActive, hold_source: "local_voice_request" })).toBe(false);
+    expect(ok(ActiveMotionSchema, { ...home, kind: "lift.home" })).toBe(false);
   });
 
   it.each([
