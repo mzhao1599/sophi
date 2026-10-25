@@ -281,6 +281,25 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 
 **If it stops partway** (a release, a press or a fault), the screen says "Stopping", then "Stopped" †. Say "It stops whenever I let go", and go on only with a new target and a new Confirm. A fault or the stop switch leaves the lift unhomed: home it again, or skip the rest of the lift.
 
+### Segment 9. Walking directions (about 1 minute) †
+
+**Everything here is † until it has run three times in a row against the real server.** Built and tested on the Mac simulator ([navigation guide](../subsystems/navigation.md)); not run on the real Pi, its panel or with a real outdoor GPS fix. The position is the **simulated** one: it starts by Lake Merritt, Oakland, and walks the route at three times walking speed once the walker has said its first line. Say so.
+
+**Before the segment:** the simulator against the server (setup A) with the screen open at 800 by 480 (`--screen`), and the demo area's map tiles warmed once on the venue network: `node devices/pi/dist/walker.mjs tiles --around 37.8098,-122.2575 --sim` (about a minute, real OpenStreetMap tiles). Planning a route needs the internet: Nominatim and OpenStreetMap's walking router, straight from the walker.
+
+> "The walker can also get her somewhere."
+
+1. Hold Talk: **"Where am I right now?"** Sophi: "I'll check your GPS location now." then "Your simulated GPS puts you near 451 Lee Street, Oakland, California." † (the address can differ: it is looked up live).
+2. Hold Talk: **"Can you walk me to the Lake Merritt Boating Center?"** Sophi: "Let me find that." and a short line that she found it †. Then the walker, in its own voice: "On the simulated position: Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs." †
+3. **The screen** †: the street map with the route as a thick line and her dot (dashed ring, "Simulated" tag), and on the right the next turn as a big arrow and word ("Left"), "in 30 m" and the street ("Lenox Avenue"). Repeat and End route between the handles.
+4. As the dot moves: "In 30 meters, turn left onto Lenox Avenue." then "Turn left now." †. Press **Confirm**: it says the next instruction again †.
+5. Hold Talk: **"How much farther is it?"** Sophi answers from the route in progress ("About 600 meters left, around 8 minutes.") †, with no lookup.
+6. Tap **End route** on the screen (or hold Talk: "Please stop the directions."): "Directions stopped." and the screen returns to the clock †.
+
+> "Her position goes only to the map services, straight from the walker. Our server and the model get the place's name and how far, never where she is. And the turn-by-turn voice runs on the walker, so it keeps going without the internet."
+
+**Honesty lines:** the position is simulated indoors, and the screen and the first spoken line both say so; the route is OpenStreetMap's walking route and can include steps or curbs; the walker never steers, it only speaks.
+
 ## Fallbacks
 
 - **The walker's screen doesn't show on the panel:** run the simulator on the laptop with `--screen` (setup A, step 7) and open its address in a browser window sized 800 by 480. Its strip says "Simulator". Say: "This is the walker's screen, drawn by the simulator on this laptop." Never show it as the Pi's screen.

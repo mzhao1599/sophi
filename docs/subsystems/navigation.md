@@ -2,7 +2,7 @@
 
 **For:** whoever builds or demos walking directions on the walker: the Pi service (`devices/pi`), the cloud assistant's tools (`services/cloud-api/src/walker/`), the walker screen (`packages/walker-screen`, `devices/pi/src/screen`) and the shared contract (`packages/contracts`).
 
-**Status (2026-10-24, design, revised after a plan review):** this is the design; nothing below is built until this line says so. The contract (below) is written. "Where am I?" (`get_location`) already exists and is described in the [walker assistant guide](walker-assistant.md#how-a-spoken-question-travels); this adds a simulated position for indoor demos, walking routes, guidance along the way, and the route on the walker's screen.
+**Status (2026-10-24, built, simulator only):** built on branch `navigation` and tested on a Mac: the Pi's unit tests (rows N1 to N30 in [`devices/pi/test/EXPECTED.md`](../../devices/pi/test/EXPECTED.md)), the walker screen's tests and headless screenshots at 800 by 480, the cloud's unit tests, the simulator walking a recorded route in real time (`test/sim/navigation.walk`, `test/sim/navigation-screen.walk`), and Gemini choosing the route tools on synthetic spoken clips. **Not yet run:** on the real Pi, on its 5-inch panel, with the real GPS outdoors, or on Render. Indoors the position is the labelled simulated one. "Where am I?" (`get_location`) already existed and is described in the [walker assistant guide](walker-assistant.md#how-a-spoken-question-travels); this adds a simulated position for indoor demos, walking routes, guidance along the way, and the route on the walker's screen.
 
 ## What she can do
 
@@ -73,13 +73,20 @@ The map is a plain tile grid, no map library: OpenStreetMap's standard tiles at 
 
 ## Privacy
 
-Coordinates go only to Nominatim (search and reverse), the walking router and the tile server, from the Pi. Not to the cloud, Gemini or logs (logs carry the step count and distances rounded to 10 m, never coordinates or place names). The route lives in Pi memory and is gone when it ends or the service stops. The destination words she says go to Gemini as part of her turn (they already do today) and to Nominatim. The model's tool result holds the place's name and distances, never coordinates.
+Coordinates go only to Nominatim (search and reverse), the walking router and the tile server, from the Pi. Not to the cloud, Gemini or logs (logs carry the step count and distances rounded to 10 m, never coordinates or place names). The route lives in Pi memory and is gone when it ends or the service stops. **Map tiles are kept on disk** (`WALKER_TILE_DIR`, owner-only permissions, up to 200 MB, oldest removed first) so the map works offline; which tiles are there shows roughly which areas the screen has drawn, though not when or in what order. Forget does not clear them yet: delete the folder to forget them (`sudo rm -rf /var/lib/steady-walker/tiles` on the Pi). The destination words she says go to Gemini as part of her turn (they already do today) and to Nominatim. The model's tool result holds the place's name and distances, never coordinates.
+
+## Known gaps (2026-10-24)
+
+- **Ending a route offline needs the screen.** "Stop the directions" needs the server; offline, the screen's End route button is the only way, and Confirm only repeats the instruction. A hand-button path to end a route is still to design.
+- **A place or street named with "clear" or "safe"** ("Clear Street", "Safe Harbor Marina") is spoken by the Pi as is, but the cloud's clear-or-safe check would reject the model's reply naming it, and the turn would end with a fixed failure line while the route is on.
+- **A second tool request after a route tool** in the same turn gets "I couldn't finish checking all of that right now." while the route did start.
+- **A cancelled turn ends the route it started,** but a turn that failed (timeout, server error) after the route started keeps it, and the Pi's first line still names the place.
 
 ## Decisions for review (defaults picked; Max can override)
 
 1. **No Confirm to start a route.** She asked out loud, guidance is only speech, and it ends with one word or one tap. A misheard destination is caught by Sophi saying the place's name first. Alternative: read the place back and wait for Confirm (one more beat, slower demo).
 2. **Confirm repeats the next instruction during a route,** instead of replaying her newest message. The screen's message view still replays it.
-3. **Simulated position for the demo.** The real receiver has no indoor fix (2026-10-24). The simulator, and the Pi with `WALKER_GPS_SIMULATED=1`, walk a simulated position along the route, labelled Simulated everywhere. A real-GPS walk outdoors is still unverified.
+3. **Simulated position for the demo.** The real receiver has no indoor fix (2026-10-24). The simulator, and the Pi with `WALKER_GPS_SIMULATED=1`, walk a simulated position along the route, labelled Simulated everywhere: the screen's tag, the first spoken line ("On the simulated position: Walking to …"), the tool result the model reads, and "Your simulated GPS puts you near …". It sets off only once she has heard the first line. Against a real server the simulator uses the live map services; the recorded responses are for the fake cloud and tests. A real-GPS walk outdoors is still unverified.
 4. **Public OpenStreetMap services** (Nominatim, routing.openstreetmap.de, tile.openstreetmap.org) under their usage policies for a single prototype: identified user agent, at most one search a second, no bulk use.
 5. **No route on the owner's page.** The page would need coordinates on the server. The conversation on the page shows Sophi's spoken route summary; the destination's name and distances do reach the server and Gemini, as `navigation.route` and tool results.
 6. **Plain tile grid instead of Leaflet** on the walker screen: no gestures are needed there, and it keeps the page's strict security policy.
