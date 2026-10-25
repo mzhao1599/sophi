@@ -98,18 +98,16 @@ describe("quick replies", () => {
 describe("the notice under the text box", () => {
   const claude = agentNoticeClause("anthropic");
 
-  it("asks to leave out names and medical details for a guest, with and without the model's clause", () => {
-    expect(noticeLine(claude, false)).toBe(
-      "Your answers are kept temporarily for this setup. Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy. Please leave out names and medical details.",
-    );
-    expect(noticeLine(null, false)).toBe("Your answers are kept temporarily for this setup. Please leave out names and medical details.");
+  it("names who reads a guest's answers when the agent runs, and is empty with the fixed questions", () => {
+    expect(noticeLine(claude, false)).toBe("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy.");
+    expect(noticeLine(null, false)).toBe("");
   });
 
-  it("asks the same when signed in, with and without the model's clause", () => {
+  it("says answers are saved to the account when signed in, with and without the model's clause", () => {
     expect(noticeLine(claude, true)).toBe(
-      "Your answers are saved to your account. Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy. Please leave out names and medical details.",
+      "Your answers are saved to your account. Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy.",
     );
-    expect(noticeLine(null, true)).toBe("Your answers are saved to your account. Please leave out names and medical details.");
+    expect(noticeLine(null, true)).toBe("Your answers are saved to your account.");
   });
 });
 
