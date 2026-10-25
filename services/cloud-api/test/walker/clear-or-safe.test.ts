@@ -27,6 +27,14 @@ describe("saysClearOrSafe", () => {
     expect(saysClearOrSafe(reply(text))).toBe(false);
   });
 
+  it("skips a tool step's reply that the server replaces with its own line, but not when nothing was heard", () => {
+    const heard = { transcript: "Walk me to the boathouse." };
+    expect(saysClearOrSafe(reply("I'll find a safe route there.", { ...heard, topics: ["other"], tool_call: { name: "start_route", destination: "the boathouse" } }))).toBe(false);
+    expect(saysClearOrSafe(reply("Stopping now, stay safe.", { ...heard, topics: ["other"], tool_call: { name: "stop_route" } }))).toBe(false);
+    expect(saysClearOrSafe(reply("Checking where you are, safely.", { ...heard, topics: ["other"], tool_call: { name: "get_location" } }))).toBe(false);
+    expect(saysClearOrSafe(reply("I'll find a safe route there.", { topics: ["other"], tool_call: { name: "start_route", destination: "the boathouse" } }))).toBe(true);
+  });
+
   it("skips replies whose words the server replaces: arms and offers", () => {
     expect(saysClearOrSafe(reply("It's safe.", { topics: ["arms"] }))).toBe(false);
     expect(saysClearOrSafe(reply("Sounds are safer.", { topics: ["settings"], cues_change: { cues: ["sound", "spoken"] } }))).toBe(false);

@@ -206,8 +206,15 @@ const CLEAR_OR_SAFE = /\b(clear|clears|cleared|clearance|safe|safer|safest|safet
 const CLEAR_OR_SAFE_NOTE =
   'Server note: your previous reply broke a rule. Never use the words "clear" or "safe" in any form, not even to deny them: a sensor can miss things. Say what was measured and how old the reading is.';
 
+/** Tool steps whose reply the server replaces with its own "I'll check" line, when it heard her words (service.ts, LOOKUP_LINE). */
+const LOOKUP_TOOLS = new Set(["get_location", "start_route", "stop_route"]);
+
 export function saysClearOrSafe(reply: WalkerReply): boolean {
   if (reply.topics.includes("arms") || reply.cues_change || reply.tool_call?.name === "get_distance" || reply.tool_call?.name === "get_weather") return false;
+  // A rejected tool step is retried, and the retry can run out the turn's 8 s ("I'll find a safe route there", seen
+  // live 2026-10-24) though the walker never hears those words. With no transcript the tool is dropped and the reply
+  // is spoken, so that one is still checked.
+  if (reply.tool_call && LOOKUP_TOOLS.has(reply.tool_call.name) && reply.transcript.trim().length > 0) return false;
   return CLEAR_OR_SAFE.test(reply.reply);
 }
 
