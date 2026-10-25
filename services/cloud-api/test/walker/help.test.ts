@@ -235,7 +235,7 @@ function describeHelp(name: string, makeHarness: () => Promise<StoreHarness>) {
     });
 
     it("B6, C4, C5, C6, C7: shown_to records caretaker phones whose answer carried it open, once each", async () => {
-      const { w, rose, maya, maya2 } = await seed();
+      const { w, rose, maya, maya2, ben, cy, zed } = await seed();
       const { response } = await ask(w);
       expect((await status(w))?.shown_to).toEqual([]);
       expect((await homeHelp(rose))?.shown_to).toEqual([]);
@@ -243,6 +243,9 @@ function describeHelp(name: string, makeHarness: () => Promise<StoreHarness>) {
       expect(seen?.shown_to).toEqual([{ member_id: maya.id, name: "Maya" }]);
       expect(ids((await homeHelp(maya))!.shown_to)).toEqual([maya.id]);
       expect(ids((await homeHelp(maya2))!.shown_to)).toEqual([maya.id, maya2.id]);
+      expect(ids((await status(w))!.shown_to)).toEqual([maya.id, maya2.id]);
+      // The store adds only an approved caretaker of this walker, whatever id it is handed.
+      for (const notCaretaker of [rose.id, ben.id, cy.id, zed.id, uuid()]) await h.store().helpOf(w.deviceId, clock.now(), notCaretaker);
       expect(ids((await status(w))!.shown_to)).toEqual([maya.id, maya2.id]);
       // A caretaker approved after she asked sees it, isn't in sent_to, and can answer.
       const ana = await addPhone(w, "caregiver", "Ana");
