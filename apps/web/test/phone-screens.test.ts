@@ -85,15 +85,40 @@ describe("Rose's phone (simple mode)", () => {
     expect(buttons(html).map((b) => b.name)).toEqual(["Back", "Share my location with approved caretakers"]);
   });
 
-  it("messages: the newest from Maya big, then three one-tap replies, no typing", async () => {
-    const html = await rose("messages");
+  it("messages: the whole thread oldest first, who said each, then three one-tap replies, no typing", async () => {
+    const { rose: phone } = await circle();
+    let home = await homeOf(phone);
+    const mayaId = home.people.find((p) => p.role === "caregiver")!.member_id;
+    await phone.sendPreset(newId(), "call_me", mayaId);
+    home = await homeOf(phone);
+    const html = renderToStaticMarkup(createElement(RosePhone, { home, api: phone, refresh: noop, announce: () => undefined, initialScreen: "messages" }));
     const t = text(html);
     expect(t).toContain("Messages with Maya");
-    expect(t).toContain("Dinner at six. I'll get you.");
-    expect(t).toContain("Reply to Maya");
-    // Before the page knows the phone can speak, the message is text, not a button that does nothing.
+    expect(t).toContain("Your walker reads Maya's new messages aloud.");
+    // One ordered list, oldest first, newest last, each saying who in words; then the replies.
+    expect(html).toMatch(/<ol[^>]*aria-label="Messages, newest last"/);
+    const items = [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]!));
+    expect(items.slice(0, 2)).toEqual(["Maya said: Dinner at six. I'll get you.", "You said: Can you call me?"]);
+    expect(html).toMatch(/<li[^>]*data-mine="true"[^>]*>[\s\S]*?Can you call me\?/);
+    expect(t.indexOf("Dinner at six")).toBeLessThan(t.indexOf("Reply to Maya"));
+    expect(html).toMatch(/<h2 id="reply-heading"[^>]*>Reply to <!-- -->Maya<\/h2>|<h2 id="reply-heading"[^>]*>Reply to Maya<\/h2>/);
+    // Before the page knows the phone can speak, her message is text, not a button that does nothing.
+    expect(t).not.toContain("Tap to hear it");
     expect(buttons(html).map((b) => b.name)).toEqual(["Back", "I'm okay", "Can you call me?", "I'm on my way"]);
     expect(html).not.toMatch(/<input|<textarea/);
+  });
+
+  it("messages: no one to message, or nothing from Maya yet", async () => {
+    const { rose: phone } = await circle();
+    const home = await homeOf(phone);
+    const render = (h: PhoneMember) => text(renderToStaticMarkup(createElement(RosePhone, { home: h, api: phone, refresh: noop, announce: () => undefined, initialScreen: "messages" })));
+    const alone = render({ ...home, people: home.people.filter((p) => p.role !== "caregiver"), messages: [] });
+    expect(alone).toContain("No one is linked to message yet.");
+    expect(alone).not.toContain("Reply to");
+    const quiet = render({ ...home, messages: home.messages.filter((m) => m.mine) });
+    expect(quiet).toContain("No messages from Maya yet.");
+    expect(quiet).not.toContain("reads Maya's new messages aloud");
+    expect(quiet).toContain("Reply to Maya");
   });
 
   it("people nearby: tagged Sample in the heading, with the line, and no actions", async () => {

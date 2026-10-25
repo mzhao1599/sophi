@@ -1,0 +1,157 @@
+/*
+ * Rose's Messages screen (RosePhone.tsx), drawn like the stage sample (/sample/rose, Sample.module.css):
+ * the whole thread oldest first and newest last, Maya's messages as white cards on the left and Rose's own
+ * replies as ink bubbles on the right, then her three replies. Scaled up for real use: her text is large and
+ * every reply is at least 64px tall. Sizes are in rem, so they follow the phone's text size (Phone.module.css
+ * sets the root). Colours are the site tokens, which switch for dark mode on their own. Nothing moves.
+ */
+
+.note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-body);
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+.thread {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.item[data-mine] {
+  justify-content: flex-end;
+}
+
+.bubble {
+  display: grid;
+  gap: 6px;
+  max-width: 88%;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 18px 16px;
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: 24px 24px 24px 8px;
+  background: var(--card-solid);
+  box-shadow: var(--shadow-tile);
+  color: var(--text-strong);
+  font: inherit;
+  text-align: left;
+}
+
+/* Her message is a button only where the phone can speak; then its edge says it can be pressed. */
+button.bubble {
+  border-color: var(--control-edge);
+  cursor: pointer;
+}
+
+button.bubble:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--card-solid));
+}
+
+.item[data-mine] .bubble {
+  border-color: transparent;
+  border-radius: 24px 24px 8px 24px;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.who {
+  color: var(--text-meta);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.item[data-mine] .who {
+  color: color-mix(in srgb, var(--on-ink) 75%, transparent);
+}
+
+.text {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.hear {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--live);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.hear svg,
+.note svg {
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.note svg {
+  color: var(--live);
+}
+
+.replies {
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline-strong);
+}
+
+.repliesTitle {
+  color: var(--text-meta);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.replyList {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The sample's pills, grown to a full-width target: at least 64px, or 4rem when her text is bigger. */
+.reply {
+  width: 100%;
+  min-height: max(64px, 4rem);
+  padding: 10px 24px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-pill);
+  background: var(--card-solid);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.reply:active {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.reply[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: default;
+}
