@@ -11,12 +11,31 @@ import {
   ScreenStateSchema,
   confirmPrompt,
   holdControlShown,
+  ManeuverSchema,
+  type NavigatingScreen,
   type ScreenContent,
   type ScreenState,
 } from "@walker/contracts";
 import {
   CAPTION_PAGE_CHARS,
+  DEMO_ROUTE,
   FIXTURE_STATE_NAMES,
+  LONGEST_DESTINATION,
+  LONGEST_STREET,
+  MANEUVER_WORD,
+  NAV_ARROW_PX,
+  NAV_WORD_CAP_PX,
+  TILE_PX,
+  WORD_EM,
+  bodyChars,
+  distanceWords,
+  fitChars,
+  minutesLeftWords,
+  navColumns,
+  navMap,
+  streetForLine,
+  turnWordPx,
+  worldPx,
   HELP_WORDS,
   MIN_FRAGMENT_WORDS,
   PX_PER_MM,
@@ -375,6 +394,164 @@ describe("her circle's states", () => {
     const ask = screenView(state({ state: "my_screen", view: { page: "circle", index: 1, owner_name: "Max", member, count: 2, confirm_remove: true } }));
     expect(texts(ask).slice(0, 2)).toEqual(["Remove?", "Cooper"]);
     expect(buttons(ask).map((b) => b.action)).toEqual(["keep", "remove"]);
+  });
+});
+
+/**
+ * Walking directions on the screen (docs/subsystems/navigation.md, "The screen"), rows written before the code:
+ * N1 guiding: the maneuver's word, "in 30 m" in bold beside the arrow, the street under it, "750 m to go" and
+ *    "about 10 min" under the map, Repeat and End route between the handles, Talk on the right, nothing over the
+ *    left handle; a screen reader hears the whole instruction.
+ * N2 the scene (and what a screen reader hears) changes with the instruction or the phase, never as the metres
+ *    count down or her dot moves; the map and the distances do change.
+ * N3 each phase in words: "Finding the way again", "Can't find the way from here", "Looking for GPS" (with the
+ *    place she is going to), and "You've arrived" with the place; no distances while they aren't true.
+ * N4 distances and times in words: "30 m", "1.3 km", "Now" at 0; "about 1 h 9 min", "under a minute".
+ * N5 an unnamed way draws no street line; arriving next names the place under the map instead of what's left.
+ * N6 every maneuver has a word, drawn on one line beside the arrow, never under the smallest size.
+ * N7 the longest street and place the contract allows are shortened to fit their lines at every size.
+ * N8 the map: Web Mercator tiles that cover the frame, her dot at the centre, zoom 17, one step out when the
+ *    next turn would be off the map, centred on the route with no position; the same state draws the same map.
+ */
+describe("walking directions", () => {
+  const demo = screenFixtures().find((f) => f.name === "navigating--large")!;
+  const screen = demo.state.screen as NavigatingScreen;
+  const at = (over: Partial<NavigatingScreen>, size: "large" | "larger" | "largest" = "large") =>
+    screenView(state({ ...screen, ...over }, { settings: { ...settings, text_size: size } }));
+
+  it("N1: guiding shows the turn, the distance, the street, what's left, and Repeat and End route", () => {
+    const v = at({});
+    expect(v.main).toEqual({ text: "Left", size: "nav" });
+    expect(v.lines).toEqual([
+      { text: "in 30 m", size: "body", strong: true },
+      { text: "Lenox Avenue", size: "body", maxLines: 1 },
+    ]);
+    expect(v.nav?.info.map((l) => l.text)).toEqual(["750 m to go", "about 10 min"]);
+    expect(v.nav).toMatchObject({ turn: "left", simulated: true, columnPx: 280, arrowPx: NAV_ARROW_PX.large, mainPx: NAV_WORD_CAP_PX.large, mainWraps: false });
+    expect(buttons(v).map((b) => [b.action, b.label])).toEqual([
+      ["repeat_direction", "Repeat"],
+      ["end_route", "End route"],
+    ]);
+    expect(v.left).toBeNull();
+    expect(v.right).toBe("Talk");
+    expect(v.announce).toBe("Turn left onto Lenox Avenue.");
+    // Every other screen has no map.
+    expect(screenView(state({ state: "listening" })).nav).toBeNull();
+  });
+
+  it("N2: the scene and the announcement follow the instruction and the phase, not the metres", () => {
+    const a = at({});
+    const b = at({ to_step_m: 20, remaining_m: 740, remaining_min: 9, map: { ...screen.map, position: [37.80989, -122.25792] } });
+    expect(b.sceneKey).toBe(a.sceneKey);
+    expect(b.announce).toBe(a.announce);
+    expect(b.lines[0]!.text).toBe("in 20 m");
+    expect(b.nav!.map.route).not.toBe(a.nav!.map.route);
+    expect(at({ instruction: "Turn right onto Bellevue Avenue.", maneuver: "right", street: "Bellevue Avenue" }).sceneKey).not.toBe(a.sceneKey);
+    expect(at({ phase: "rerouting" }).sceneKey).not.toBe(a.sceneKey);
+  });
+
+  it("N3: each phase in words, with the place, and no distances that aren't true", () => {
+    const rerouting = at({ phase: "rerouting" });
+    expect(texts(rerouting)).toEqual(["Finding the way again", "To Lake Merritt Boating Center"]);
+    expect(rerouting.nav).toMatchObject({ turn: null, info: [] });
+    expect(rerouting.announce).toBe("Finding the way again.");
+    expect(texts(at({ phase: "off_route" }))[0]).toBe("Can't find the way from here");
+    const lost = at({ phase: "no_position", to_step_m: null, map: { ...screen.map, position: null } });
+    expect(texts(lost)).toEqual(["Looking for GPS", "To Lake Merritt Boating Center"]);
+    expect(lost.nav!.map.position).toBeNull();
+    const arrived = at({ phase: "arrived", maneuver: "arrive", street: null, to_step_m: 0, remaining_m: 0, remaining_min: 0 });
+    expect(texts(arrived)).toEqual(["You've arrived", "Lake Merritt Boating Center"]);
+    expect(arrived.announce).toBe("You've arrived: Lake Merritt Boating Center.");
+    // Repeat and End route stay in every phase.
+    for (const phase of ["rerouting", "off_route", "no_position", "arrived"] as const) {
+      expect(buttons(at({ phase })).map((b) => b.action), phase).toEqual(["repeat_direction", "end_route"]);
+    }
+  });
+
+  it("N4: distances and times in words", () => {
+    expect([distanceWords(30), distanceWords(990), distanceWords(1250), distanceWords(4950), distanceWords(12_340)]).toEqual(["30 m", "990 m", "1.3 km", "5 km", "12 km"]);
+    expect(at({ to_step_m: 0 }).lines[0]).toEqual({ text: "Now", size: "body", strong: true });
+    expect(at({ to_step_m: 1250 }).lines[0]!.text).toBe("in 1.3 km");
+    expect(at({ to_step_m: null }).lines.map((l) => l.text)).toEqual(["Lenox Avenue"]);
+    expect([minutesLeftWords(0), minutesLeftWords(1), minutesLeftWords(59), minutesLeftWords(60), minutesLeftWords(69)]).toEqual([
+      "under a minute",
+      "about 1 min",
+      "about 59 min",
+      "about 1\u00a0h",
+      "about 1\u00a0h 9\u00a0min",
+    ]);
+  });
+
+  it("N5: an unnamed way draws no street; arriving next names the place under the map", () => {
+    expect(at({ street: null }).lines.map((l) => l.text)).toEqual(["in 30 m"]);
+    // Arriving is the next thing: "in 30 m" says what is left, so the place goes under the map instead.
+    const next = at({ maneuver: "arrive", street: "Bellevue Avenue", instruction: "Arrive at the Lake Merritt Boating Center." });
+    expect(texts(next)).toEqual(["Arrive", "in 30 m"]);
+    expect(next.nav!.info).toEqual([{ text: "Lake Merritt Boating Center", size: "detail", maxLines: 3 }]);
+    expect(next.nav!.turn).toBe("arrive");
+  });
+
+  it("N6: every maneuver has a word that fits one line beside the arrow, never under 40 px", () => {
+    for (const maneuver of ManeuverSchema.options) {
+      const word = MANEUVER_WORD[maneuver];
+      expect(WORD_EM[word], word).toBeGreaterThan(0);
+      for (const size of ["large", "larger", "largest"] as const) {
+        const px = turnWordPx(word, size);
+        expect(px, `${word} ${size}`).toBeGreaterThanOrEqual(40);
+        expect(px).toBeLessThanOrEqual(NAV_WORD_CAP_PX[size]);
+        expect(WORD_EM[word]! * px, `${word} ${size}`).toBeLessThanOrEqual(navColumns(size).right - NAV_ARROW_PX[size] - 16);
+      }
+    }
+    expect(turnWordPx("Left", "largest")).toBe(96);
+    // Each word is drawn by a fixture, so the shots check measures it at every size.
+    const drawn = new Set(screenFixtures().map((f) => (f.state.screen.state === "navigating" ? f.state.screen.maneuver : null)));
+    for (const maneuver of ManeuverSchema.options) expect(drawn.has(maneuver), maneuver).toBe(true);
+    expect(turnWordPx("Turn around", "large")).toBeLessThan(88);
+  });
+
+  it("N7: a long street's type is shortened first ('Lakeshore Ave'), then the name is cut at a word", () => {
+    expect(streetForLine("Lakeshore Avenue", 16)).toBe("Lakeshore Avenue");
+    expect(streetForLine("Lakeshore Avenue", 15)).toBe("Lakeshore Ave");
+    expect(streetForLine("Martin Luther King Junior Way", 15)).toBe("Martin Luther…");
+    expect(streetForLine("Martin Luther King Jr Boulevard", 22)).toBe("Martin Luther King Jr…");
+    expect(streetForLine("Martin Luther King Jr Boulevard", 26)).toBe("Martin Luther King Jr Blvd");
+  });
+
+  it("N7: the longest street and place are shortened to fit their lines, at every size", () => {
+    for (const size of ["large", "larger", "largest"] as const) {
+      const street = at({ street: LONGEST_STREET }, size).lines.at(-1)!.text;
+      expect([...street].length, size).toBeLessThanOrEqual(bodyChars(size));
+      expect(street.endsWith("…"), size).toBe(true);
+      const to = at({ phase: "off_route", destination: LONGEST_DESTINATION }, size).lines[0]!;
+      expect(to.maxLines).toBe(2);
+      expect([...to.text].length, size).toBeLessThanOrEqual(fitChars(navColumns(size).right, 40, 2));
+      expect(at({ phase: "off_route" }, size).lines[0]!.text, size).toBe("To Lake Merritt Boating Center");
+      // The announcement keeps every word.
+      expect(at({ phase: "arrived", destination: LONGEST_DESTINATION }, size).announce).toContain(LONGEST_DESTINATION);
+    }
+  });
+
+  it("N8: the map is tiles that cover the frame, her dot at the centre, and the same state draws the same map", () => {
+    const m = navMap(screen.map, 280, 410, 310);
+    expect(m.zoom).toBe(17);
+    expect(m.position).toEqual({ x: 140, y: 205 });
+    // The tile under her: the slippy-map formula's (21023, 50645) at zoom 17.
+    expect(m.tiles.map((t) => t.key)).toContain("17/21023/50645");
+    // Every pixel of the frame is under a tile.
+    for (const [x, y] of [[0, 0], [279, 0], [0, 409], [279, 409], [140, 205]] as const) {
+      expect(m.tiles.some((t) => x >= t.left && x < t.left + TILE_PX && y >= t.top && y < t.top + TILE_PX), `${x},${y}`).toBe(true);
+    }
+    expect(m.tiles.length).toBeLessThanOrEqual(9);
+    expect(navMap(screen.map, 280, 410, 310)).toEqual(m);
+    expect(m.route.split(" ")).toHaveLength(screen.map.route.length);
+    // The next turn far away: one step out.
+    const far = navMap({ ...screen.map, step_at: DEMO_ROUTE[DEMO_ROUTE.length - 1]! }, 280, 410, 310);
+    expect(far.zoom).toBe(16);
+    // No position: centred on the route ahead, no dot.
+    const lost = navMap({ ...screen.map, position: null }, 280, 410, 310);
+    expect(lost.position).toBeNull();
+    expect(worldPx(screen.map.route[0]!, 17).x - worldPx(screen.map.route[0]!, 17).x).toBe(0);
+    expect(worldPx([0, 0], 0)).toEqual({ x: 128, y: 128 });
   });
 });
 

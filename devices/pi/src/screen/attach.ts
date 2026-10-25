@@ -1,6 +1,7 @@
 import {
   CircleNameSchema,
   DEFAULT_SCREEN_CHOICES,
+  NavigatingScreenSchema,
   type AppliedScreenSettings,
   type ScreenState,
 } from "@walker/contracts";
@@ -92,6 +93,18 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
   on("settled", ({ result }) => machine.settled(result));
   on("confirming", ({ phase }) => machine.confirm(phase));
   on("motionState", ({ state }) => machine.motion(state));
+  // The Navigator's view is checked against the contract here, so the page never gets a state it would drop (it
+  // keeps the last good one). A view that fails is logged once, by kind only (it holds coordinates and a place
+  // name), and the screen shows no route rather than a stale one.
+  on("navigation", ({ view }) => {
+    if (view === null) return machine.navigation(null);
+    const parsed = NavigatingScreenSchema.safeParse(view);
+    if (!parsed.success) {
+      fail("navigation view", new TypeError("not a NavigatingScreen"));
+      return machine.navigation(null);
+    }
+    machine.navigation(parsed.data);
+  });
   on("help", ({ screen }) => machine.help(screen));
   on("zones", ({ zones }) => {
     const simulated = new Map(deps.modules.modules().map((m) => [m.instanceId, m.simulated]));

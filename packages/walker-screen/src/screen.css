@@ -41,6 +41,10 @@
   --ws-hairline-strong: rgb(20 32 28 / 0.13);
   --ws-control-edge: #7b8581;
   --ws-live: #1f7a50;
+  /* Walking directions' map: the route in a strong blue with a white edge, so it reads on any tile. */
+  --ws-map-paper: #e3e8e5;
+  --ws-route: #1747c4;
+  --ws-route-edge: #ffffff;
   color-scheme: light;
 }
 
@@ -54,6 +58,9 @@
   --ws-hairline-strong: rgb(230 240 235 / 0.13);
   --ws-control-edge: #76817c;
   --ws-live: #5ccb93;
+  --ws-map-paper: #1d2521;
+  --ws-route: #8db4ff;
+  --ws-route-edge: #101513;
   color-scheme: dark;
 }
 
@@ -389,6 +396,240 @@
   white-space: nowrap;
 }
 
+/* ---- Walking directions (navigation.ts has the height and width budget) ---- */
+
+/* Two columns under the strip: the map and the distance left, then the next thing to do over the band. */
+.ws-screen[data-layout="navigating"] {
+  grid-template-columns: var(--ws-nav-col) minmax(0, 1fr);
+  column-gap: 16px;
+}
+
+.ws-screen[data-layout="navigating"] > .ws-strip {
+  grid-column: 1 / -1;
+}
+
+.ws-screen[data-layout="navigating"] > .ws-one {
+  grid-column: 2;
+  grid-row: 2;
+  gap: 8px;
+}
+
+.ws-screen[data-layout="navigating"] > .ws-band {
+  grid-column: 2;
+  grid-row: 3;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* Nothing sits over the left handle here: the map's column does. */
+.ws-screen[data-layout="navigating"] .ws-left {
+  display: none;
+}
+
+/* Repeat and End route beside Talk: labels at the smallest size, so "Repeat" fits its 20 mm button. */
+.ws-screen[data-layout="navigating"] .ws-band .ws-button {
+  font-size: var(--ws-smallest);
+}
+
+.ws-main[data-size="nav"] {
+  font-size: var(--ws-nav-main);
+  white-space: nowrap;
+}
+
+.ws-main[data-size="nav"][data-wraps="true"] {
+  line-height: 1.1;
+  white-space: normal;
+}
+
+.ws-line[data-strong="true"] {
+  color: var(--ws-text-strong);
+  font-weight: 700;
+}
+
+/* A backstop for an unusually wide name: the view shortens every line to fit, and the shots check proves this
+ * never clips a fixture. */
+.ws-line[data-max-lines="1"] {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ws-line[data-max-lines="2"],
+.ws-line[data-max-lines="3"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ws-line[data-max-lines="3"] {
+  -webkit-line-clamp: 3;
+}
+
+.ws-turn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ws-turn-arrow {
+  flex: 0 0 auto;
+  width: var(--ws-nav-arrow);
+  height: var(--ws-nav-arrow);
+  color: var(--ws-text-strong);
+}
+
+.ws-turn-words {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ws-turn-words .ws-line {
+  line-height: 1.1;
+}
+
+.ws-arrow-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ws-arrow-fill {
+  fill: currentColor;
+}
+
+.ws-arrow-hole {
+  fill: var(--ws-paper);
+}
+
+.ws-nav-side {
+  grid-column: 1;
+  grid-row: 2 / 4;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ws-map {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--ws-map-paper);
+}
+
+/* The edge, drawn over the tiles so they keep their pixel grid. */
+.ws-map::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--ws-control-edge);
+  border-radius: 20px;
+  pointer-events: none;
+}
+
+.ws-map-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+.ws-map-tile {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Dark: the same tiles, turned dark, as on the phone's map. */
+.ws-screen[data-theme="dark"] .ws-map-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.92);
+}
+
+.ws-map-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+.ws-route-casing,
+.ws-route {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ws-route-casing {
+  stroke: var(--ws-route-edge);
+  stroke-width: 16;
+}
+
+.ws-route {
+  stroke: var(--ws-route);
+  stroke-width: 9;
+}
+
+/* The next turn: a hollow ring. The place: a filled pin. Her: a ringed dot (the ring dashed when simulated). */
+.ws-map-step {
+  fill: var(--ws-route-edge);
+  stroke: var(--ws-route);
+  stroke-width: 6;
+}
+
+.ws-map-place {
+  fill: var(--ws-ink);
+  stroke: var(--ws-route-edge);
+  stroke-width: 3;
+}
+
+.ws-map-place-hole {
+  fill: var(--ws-route-edge);
+}
+
+.ws-map-me-ring {
+  fill: var(--ws-route-edge);
+  stroke: var(--ws-ink);
+  stroke-width: 5;
+}
+
+.ws-map-me-ring[data-simulated="true"] {
+  stroke-dasharray: 7 5;
+}
+
+.ws-map-me {
+  fill: var(--ws-ink);
+}
+
+/* On the map, each word sits on its own card, so it keeps 7:1 over any tile. */
+.ws-map-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  margin-left: 0;
+  background: var(--ws-card);
+}
+
+.ws-map-credit {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--ws-card);
+  color: var(--ws-text-strong);
+  font-size: var(--ws-credit);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 @keyframes ws-fade {
   from {
     opacity: 0;
@@ -407,6 +648,12 @@
   .ws-tag,
   .ws-switch {
     border-color: CanvasText;
+  }
+
+  .ws-route,
+  .ws-map-step,
+  .ws-map-me-ring {
+    stroke: CanvasText;
   }
 
   .ws-dot[data-shape="filled"],

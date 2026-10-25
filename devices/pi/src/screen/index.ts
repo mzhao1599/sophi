@@ -9,6 +9,7 @@ import type { ModuleManager } from "../serial/modules";
 import type { WalkerService } from "../service";
 import { attachScreen, seedScreen, startingSettings } from "./attach";
 import { startScreenServer, type ScreenServer } from "./server";
+import { TileCache, readTileSettings, type TileMode } from "./tiles";
 
 /** WALKER_SCREEN_PORT: unset for the default, `off` for no screen, or a port from 1024 to 65535. */
 export function readScreenPort(value: string | undefined): { port: number } | { off: string } {
@@ -39,6 +40,11 @@ export interface WalkerScreenOptions {
   greeting?: string;
   /** Log each drawn revision's state name and how long it took to draw (the simulator; never the body). */
   logDrawn?: boolean;
+  /**
+   * Map tiles for walking directions: the cache folder and whether it fetches. By default from WALKER_TILE_DIR
+   * and WALKER_TILES (`readTileSettings` in tiles.ts); `fetch` replaces the network in tests.
+   */
+  tiles?: { dir: string; mode: TileMode; fetch?: typeof globalThis.fetch };
 }
 
 export interface WalkerScreen {
@@ -74,6 +80,11 @@ export async function startWalkerScreen(options: WalkerScreenOptions): Promise<W
     });
     seedScreen(attached.machine, options.service);
     const machine = attached.machine;
+    const tileSettings = options.tiles ?? readTileSettings(process.env, options.simulator);
+    const tiles =
+      tileSettings.mode === "off"
+        ? null
+        : new TileCache({ dir: tileSettings.dir, fetch: tileSettings.mode === "fetch" ? (options.tiles?.fetch ?? globalThis.fetch) : null, log });
     server = await startScreenServer({
       port: options.port,
       assetsDir: options.assetsDir,
@@ -85,13 +96,19 @@ export async function startWalkerScreen(options: WalkerScreenOptions): Promise<W
           log.info("walker screen drawn", { revision: shown.revision, state: sent.state, ms: Math.round(clock.monotonic() - sent.mono) });
         }
       },
-      // The walker's own screens have no buttons that act yet ("My screen" comes with the circle piece).
-      onPress: (press) => log.info("walker screen press not acted on (not built yet)", { action: press.action, revision: press.revision }),
+      // Presses go on the bus with the state that revision drew. Only the route's End route and Repeat act so
+      // far (the service listens); "My screen" comes with the circle piece.
+      onPress: (press) => {
+        const state = sentAt.get(press.revision)?.state ?? null;
+        log.info("walker screen press", { action: press.action, revision: press.revision, state });
+        options.bus.emit("screenPress", { action: press.action, revision: press.revision, state });
+      },
       // The lift's hold control, stamped on receipt: the motion coordinator maps it to the lift's hold lease.
       monotonic: () => clock.monotonic(),
       onHold: (hold) => options.bus.emit("screenHold", hold),
+      tiles,
     });
-    if (server) log.info("walker screen page", { url: server.url });
+    if (server) log.info("walker screen page", { url: server.url, map_tiles: tileSettings.mode });
     // Sophi offers to show something on the screen only while a page is there to draw it.
     const running = server;
     if (running) options.service.setScreen({ connected: () => running.clients() > 0 });

@@ -17,13 +17,16 @@ import { localWallTime } from "../screen/machine";
 import { WalkerService } from "../service";
 import { StateStore } from "../store";
 import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "./fakeCloud";
-import { SIMULATED_LOOKUPS, SimulatedGps } from "./fakeGps";
+import { SIMULATED_LOOKUPS } from "./fakeGps";
 import { ShowViewSchema } from "@walker/contracts";
 import { NetworkSwitch, SwitchableCloudClient, type NetworkMode } from "./networkSwitch";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
 import { HELP_HOLD_MS } from "@walker/contracts";
-import { ScriptRunner, parseScript } from "./script";
+import { ScriptRunner, parseScript, type CommandStep } from "./script";
+import { SimulatedPosition, readWalkSpeedup } from "../navigation/simulated";
+import { mapServicesFromEnv } from "../navigation/osm";
+import { recordedMapServices } from "./fakeMaps";
 import { LIFT_HELP, LIFT_KEYS, LiftSim, liftSimBench } from "./liftSim";
 import { MOTION_HELP, MOTION_KEYS, MotionSim, type MotionSimHand } from "./motionSim";
 import { handControlsConnected } from "../motion/handControls";
@@ -42,7 +45,10 @@ export interface SimulateOptions {
   script?: string;
   /** Also serve the walker screen's page on 127.0.0.1 (WALKER_SCREEN_PORT, default 8740) and print its address. */
   screen?: boolean;
-  /** A SIMULATED GPS receiver and SIMULATED weather and address samples (no internet), for location questions and `show_on_screen`. */
+  /**
+   * SIMULATED weather and address samples (no internet), for location questions and `show_on_screen`. The
+   * position itself is always the SIMULATED one that walks routes (see "SIMULATED position and map services").
+   */
   gps?: boolean;
   /** A SIMULATED lift board, driven by the real lift client under the real motion coordinator (turns on `arms`). */
   lift?: boolean;
@@ -64,6 +70,23 @@ export const FAKE_DEMO_TURNS = [
   },
   { reply: "Fake cloud: the robot arms aren't on this walker, so I can't pick that up." },
 ];
+
+/** Runs a script's `gps ...` and `fake ...` steps against the simulated position and the fake cloud. */
+export function scriptCommand(fake: FakeCloud | null, position: SimulatedPosition): (step: CommandStep) => void {
+  return (step) => {
+    if (step.kind === "fake") {
+      if (!fake) throw new Error("fake steps need the fake cloud (no --server)");
+      fake.script.push(step.tool ? { reply: step.reply, tool: step.tool } : { reply: step.reply });
+      return;
+    }
+    const [a = 0, b = 0] = step.numbers;
+    if (step.action === "at") position.at(a, b);
+    else if (step.action === "walk") position.walk(a);
+    else if (step.action === "off_route") position.offRoute(a);
+    else if (step.action === "pause") position.pause();
+    else position.resume();
+  };
+}
 
 const HELP = `Keys: t Talk (press to start, press again to send; a terminal can't see key release)
       c Confirm   n hand in front of the ToF   f nothing in front   i invalid reading
@@ -97,6 +120,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   const outDir = options.out ?? join(stateDir, "audio-out");
   const store = new StateStore(stateDir, log);
   log.info("SIMULATOR: every part below is simulated; nothing here is the real walker", { state: stateDir, audio: outDir });
+  const steps = options.script ? parseScript(readFileSync(options.script, "utf8")) : null;
 
   // ---- Cloud: the fake one, unless a real server is named ----
   let fake: FakeCloud | null = null;
@@ -120,7 +144,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     }
   } else {
     fake = new FakeCloud(clock);
-    fake.script = FAKE_DEMO_TURNS.map((turn) => ({ ...turn }));
+    // A script that scripts the fake cloud itself (`fake ...` steps) starts with none of the demo's answers.
+    fake.script = steps?.some((step) => step.kind === "fake") ? [] : FAKE_DEMO_TURNS.map((turn) => ({ ...turn }));
     // WALKER_FAKE_TURN_MS: how long the fake cloud takes to answer a turn (0 unless set; at most 10 s).
     const turnDelay = Math.min(10_000, Math.max(0, Number(process.env.WALKER_FAKE_TURN_MS) || 0));
     fakeServer = await startFakeCloudServer(fake, log, turnDelay);
@@ -206,8 +231,32 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     motion = { sim, socket: new OperatorSocket(join(stateDir, "motion.sock"), sim.coordinator, log), actions };
   }
 
+  // ---- SIMULATED position and map services ----
+  // The position always is simulated here. Against a real server the map services are the real public ones: a
+  // recorded route must never reach a real assistant as if it were planned live. With the fake cloud they are the
+  // recorded responses (offline, repeatable). WALKER_SIM_MAPS=live or recorded overrides (recorded against a real
+  // server is for tests only).
+  let speedup: number;
+  try {
+    speedup = readWalkSpeedup(process.env.WALKER_SIM_WALK_SPEEDUP);
+  } catch (error) {
+    log.error((error as Error).message);
+    return 2;
+  }
+  const position = new SimulatedPosition(clock, log, { speedup });
+  const mapsChoice = process.env.WALKER_SIM_MAPS;
+  if (mapsChoice !== undefined && mapsChoice !== "" && mapsChoice !== "live" && mapsChoice !== "recorded") {
+    log.error("WALKER_SIM_MAPS must be live or recorded.");
+    return 2;
+  }
+  const liveMaps = mapsChoice === "live" || (mapsChoice !== "recorded" && Boolean(options.server));
+  const maps = liveMaps ? mapServicesFromEnv(process.env, clock) : recordedMapServices(clock);
+  log.info("SIMULATED GPS position by Lake Merritt, Oakland", {
+    walk_speedup: speedup,
+    maps: liveMaps ? "live OpenStreetMap services" : "recorded responses (only the Lake Merritt Boating Center route)",
+  });
+
   // ---- Service ----
-  const steps = options.script ? parseScript(readFileSync(options.script, "utf8")) : null;
   const runner = steps ? new ScriptRunner(bus) : null;
   // A real cloud's replies can repeat what someone said: log them by length only, as on the Pi.
   attachLogging(bus, log, { replyText: !options.server });
@@ -225,9 +274,12 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     makeCloud: (credential) =>
       new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
     ...(motion ? { motion: motion.sim.coordinator } : {}),
-    ...(options.gps ? { location: new SimulatedGps(), lookups: SIMULATED_LOOKUPS } : {}),
+    location: position,
+    maps,
+    // `--gps`: the labelled sample weather and address instead of the map services (no internet).
+    ...(options.gps ? { lookups: SIMULATED_LOOKUPS } : {}),
   });
-  if (options.gps) log.info("SIMULATED GPS receiver: a made-up fix, and sample weather and address that say they are simulated (no internet)");
+  if (options.gps) log.info("SIMULATED weather and address: samples that say they are simulated (no internet)");
   announce = (text) => service.announce(text);
   proposalOpen = () => service.hasOpenProposal();
   service.start();
@@ -369,9 +421,11 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     }
   };
 
+  const command = scriptCommand(fake, position);
+
   let restoreTty = () => {};
   if (runner && steps) {
-    void runner.run(steps, press, (message) => log.info(`SCRIPT ${message}`)).then((failure) => {
+    void runner.run(steps, press, (message) => log.info(`SCRIPT ${message}`), undefined, command).then((failure) => {
       if (failure) log.error(`SCRIPT FAILED ${failure}`);
       else log.info("SCRIPT PASSED: every step happened in order");
       finish(failure ? 1 : 0);

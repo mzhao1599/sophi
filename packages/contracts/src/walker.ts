@@ -214,16 +214,63 @@ export const TextInputSchema = z.strictObject({ type: z.literal("text"), text: t
 export const ShowViewSchema = z.enum(["weather", "location", "sensors", "message", "parts"]);
 export type ShowView = z.infer<typeof ShowViewSchema>;
 
+/**
+ * Walking directions, run on the Pi (docs/subsystems/navigation.md, added 2026-10-24). `start_route` finds the
+ * place, plans a walking route and starts the Pi's spoken guidance; `stop_route` ends it. Neither moves a
+ * motor. The route in progress reaches the model as `navigation.route` on every device turn, so "How far is
+ * it?" needs no tool. The server offers these tools only to a walker whose turn carries `navigation` (it has
+ * a position source, real or simulated), so an older Pi never receives one. At most one of them runs in a turn.
+ */
+export const ROUTE_TOOLS = ["start_route", "stop_route"] as const;
+
 /** Tools the Pi runs or the cloud computes; `send_message` is separate (`message_offer`). */
-export const WalkerToolNameSchema = z.enum(["get_location", "get_distance", "get_weather", "show_on_screen"]);
+export const WalkerToolNameSchema = z.enum(["get_location", "get_distance", "get_weather", "show_on_screen", ...ROUTE_TOOLS]);
 export type WalkerToolName = z.infer<typeof WalkerToolNameSchema>;
+
+/** The place she asked for, in her words as the model passes them on ("the Lake Merritt Boating Center"). One line. */
+export const RouteDestinationSchema = z.string().trim().min(1).max(80).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u, "One line, no control characters.");
 
 /** A tool request on a device turn response. No coordinates cross this route: the Pi has them, the cloud never. */
 export const WalkerToolCallSchema = z.union([
-  z.strictObject({ name: z.enum(["get_location", "get_distance", "get_weather"]) }),
+  z.strictObject({ name: z.enum(["get_location", "get_distance", "get_weather", "stop_route"]) }),
+  z.strictObject({ name: z.literal("start_route"), destination: RouteDestinationSchema }),
   z.strictObject({ name: z.literal("show_on_screen"), view: ShowViewSchema }),
 ]);
 export type WalkerToolCall = z.infer<typeof WalkerToolCallSchema>;
+
+/**
+ * Where guidance stands. `guiding`: on the route. `rerouting`: she left it and the Pi is planning again.
+ * `off_route`: planning again failed; the Pi tries again later. `no_position`: no position for a while; the
+ * last route stays. `arrived`: within reach of the end (kept for a while, then the route ends).
+ */
+export const NavigationPhaseSchema = z.enum(["guiding", "rerouting", "off_route", "no_position", "arrived"]);
+export type NavigationPhase = z.infer<typeof NavigationPhaseSchema>;
+
+/** The next thing to do, for the screen's big arrow. Built on the Pi from the router's maneuver type and direction. */
+export const ManeuverSchema = z.enum(["straight", "left", "right", "slight_left", "slight_right", "sharp_left", "sharp_right", "u_turn", "arrive"]);
+export type Maneuver = z.infer<typeof ManeuverSchema>;
+
+/** A Pi-cleaned place name from the map service ("Lake Merritt Boating Center"). */
+export const PlaceNameSchema = z.string().trim().min(1).max(100).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u, "One line, no control characters.");
+/** The Pi's sentence for the next thing to do ("Turn left onto Lenox Avenue."). */
+export const InstructionSchema = z.string().trim().min(1).max(120).regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u, "One line, no control characters.");
+
+/**
+ * The route in progress, as the model reads it: names and rounded distances, never coordinates. The Pi sends it
+ * on every device turn (and every continuation) of a walker that can navigate.
+ */
+export const RouteSummarySchema = z.strictObject({
+  destination: PlaceNameSchema,
+  phase: NavigationPhaseSchema,
+  next: InstructionSchema,
+  /** Metres to the next instruction's point, rounded to 10; null without a position. */
+  to_next_m: z.int().min(0).max(100_000).nullable(),
+  remaining_m: z.int().min(0).max(100_000),
+  remaining_min: z.int().min(0).max(1_000),
+  /** The position is the simulated one. */
+  simulated: z.boolean(),
+});
+export type RouteSummary = z.infer<typeof RouteSummarySchema>;
 
 /** Tool results supplied by the paired Pi during one user-initiated turn. Coordinates never appear here. */
 export const WalkerToolResultSchema = z.strictObject({
@@ -240,6 +287,8 @@ export const DeviceTurnRequestSchema = z.strictObject({
   /** Present on a continuation. The first step's transcript is sent as text; no audio is replayed. */
   tool_results: z.array(WalkerToolResultSchema).max(WALKER_MAX_TOOL_CALLS).optional(),
   original_audio: z.boolean().optional(),
+  /** Present when the walker can run ROUTE_TOOLS (it has a position source); `route` is null with no route on. Absent on an older Pi. */
+  navigation: z.strictObject({ route: RouteSummarySchema.nullable() }).optional(),
   /**
    * Present while a screen page is connected to the Pi: the views it can show right now (GPS connected for
    * `weather` and `location`, obstacle sensors for `sensors`, a message held for `message`). The server offers

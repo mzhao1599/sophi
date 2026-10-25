@@ -8,6 +8,7 @@ import { StateStore } from "./store";
 import { realCheckDeps, walkerCheck } from "./check";
 import { readGps } from "./gps";
 import { ARMS_USAGE, armsCommand, liftCommand, motionCommand } from "./motion/cli";
+import { TILES_USAGE, tilesCommand } from "./screen/tilesCli";
 
 const USAGE = `walker: Sophi's always-on walker service
 
@@ -39,6 +40,7 @@ const USAGE = `walker: Sophi's always-on walker service
       --camera (with --server) streams to an approved caretaker's phone while one watches: test-pattern is
       ffmpeg's generated picture, never a camera; a /dev path is a V4L2 camera (Linux only).
 ${ARMS_USAGE}
+${TILES_USAGE}
 
 State folder: --state, else WALKER_STATE_DIR, else ${DEFAULT_STATE_DIR} (run and pair) or a new temp folder (simulate).`;
 
@@ -140,6 +142,14 @@ async function main(argv: string[]): Promise<number> {
       return motionCommand(positional, flags);
     case "lift":
       return liftCommand(positional, flags);
+    case "tiles":
+      return tilesCommand(flags, {
+        env: process.env,
+        fetch: globalThis.fetch,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        out: (line) => process.stdout.write(`${line}\n`),
+        log: createLogger(),
+      });
     case "simulate": {
       const mic = text(flags.get("mic"));
       if (mic !== undefined && mic !== "mac") throw new Error("--mic only takes mac.");

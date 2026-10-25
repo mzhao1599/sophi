@@ -32,6 +32,11 @@ export const SIZES_MM = {
   edge: 2.2,
   /** The presence dot. */
   dot: 3,
+  /**
+   * The map's licence credit ("© OpenStreetMap contributors"), the one text under the smallest size (16 px): a notice
+   * the licence asks for on every map, not something she needs to read.
+   */
+  credit: 2.2,
 } as const;
 
 export interface ScreenSizes {
@@ -44,6 +49,7 @@ export interface ScreenSizes {
   button_gap: number;
   edge: number;
   dot: number;
+  credit: number;
 }
 
 const px = (mm: number, pxPerMm: number) => Math.round(mm * pxPerMm);
@@ -61,6 +67,7 @@ export function screenSizes(textSize: TextSize, pxPerMm: number = PX_PER_MM): Sc
     button_gap: px(SIZES_MM.button_gap, pxPerMm),
     edge: px(SIZES_MM.edge, pxPerMm),
     dot: px(SIZES_MM.dot, pxPerMm),
+    credit: px(SIZES_MM.credit, pxPerMm),
   };
 }
 

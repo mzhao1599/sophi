@@ -1,3 +1,5 @@
+import { cleanName, defaultMapServices, getMapJson, type MapServices } from "./navigation/osm";
+
 /** One user-initiated reverse lookup. Coordinates and the response stay in Pi memory only. */
 type ReverseResult = {
   name?: unknown;
@@ -7,10 +9,9 @@ type ReverseResult = {
   address?: Record<string, unknown>;
 };
 
-const DEFAULT_URL = "https://nominatim.openstreetmap.org/reverse";
-const USER_AGENT = "SophiWalker-CalHacks26/0.1 (https://github.com/mzhao1599/sophi)";
 const CACHE_MS = 5 * 60_000;
-const cache = new Map<string, { at: number; reading: PlaceReading }>();
+/** Per set of map services, so a test's (or the simulator's) answers never mix with the real ones. */
+const caches = new WeakMap<MapServices, Map<string, { at: number; reading: PlaceReading }>>();
 
 /** The nearest address: the sentence `get_location` says, and the cleaned address a `location` card shows (null when there is no reliable one). */
 export interface PlaceReading {
@@ -20,13 +21,8 @@ export interface PlaceReading {
 
 /** A `location` card's line holds at most this many characters (ShowCardSchema). */
 const PLACE_MAX = 120;
-let nextRequestAt = 0;
 
-function spoken(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const clean = value.replace(/[\p{C}<>]/gu, " ").replace(/\s+/g, " ").trim();
-  return clean && clean.length <= 100 ? clean : null;
-}
+const spoken = (value: unknown) => cleanName(value);
 
 function metres(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const radians = Math.PI / 180;
@@ -35,7 +31,7 @@ function metres(lat1: number, lon1: number, lat2: number, lon2: number): number 
   return 12_742_000 * Math.asin(Math.sqrt(a));
 }
 
-function line(result: ReverseResult, latitude: number, longitude: number): PlaceReading {
+function line(result: ReverseResult, latitude: number, longitude: number, simulated: boolean): PlaceReading {
   const address = result.address ?? {};
   const street = spoken(address.road ?? address.pedestrian ?? address.footway);
   const number = spoken(address.house_number);
@@ -46,7 +42,10 @@ function line(result: ReverseResult, latitude: number, longitude: number): Place
   const placeLat = Number(result.lat);
   const placeLon = Number(result.lon);
   const distance = Number.isFinite(placeLat) && Number.isFinite(placeLon) ? metres(latitude, longitude, placeLat, placeLon) : Infinity;
-  if (distance > 200) return { text: "I have a GPS fix, but the map does not show a reliable nearby address.", place: null };
+  // A simulated position says so every time (the demo never passes it off as hers).
+  const gps = simulated ? "simulated GPS" : "GPS";
+  const fix = simulated ? "simulated GPS position" : "GPS fix";
+  if (distance > 200) return { text: `I have a ${fix}, but the map does not show a reliable nearby address.`, place: null };
   const nearby = distance <= 100;
   const isVenue = ["amenity", "tourism", "leisure", "shop", "office", "historic"].includes(String(result.category));
   const venue = nearby && isVenue && place !== street ? place : null;
@@ -54,47 +53,52 @@ function line(result: ReverseResult, latitude: number, longitude: number): Place
   // The card's line: the same words as the sentence, shortened (never invented) to fit.
   const fits = (text: string) => (text && text.length <= PLACE_MAX ? text : null);
   const card = fits(venue && area ? `${venue}, ${area}` : "") ?? fits(area) ?? fits([streetLine, city].filter(Boolean).join(", ")) ?? fits(venue ?? "");
-  if (venue && area) return { text: `Your GPS puts you near ${venue}, around ${area}.`, place: card };
-  if (venue) return { text: `Your GPS puts you near ${venue}.`, place: card };
-  if (area) return { text: `Your GPS puts you near ${area}.`, place: card };
-  return { text: "I have a GPS fix, but the map could not identify an address nearby.", place: null };
+  if (venue && area) return { text: `Your ${gps} puts you near ${venue}, around ${area}.`, place: card };
+  if (venue) return { text: `Your ${gps} puts you near ${venue}.`, place: card };
+  if (area) return { text: `Your ${gps} puts you near ${area}.`, place: card };
+  return { text: `I have a ${fix}, but the map could not identify an address nearby.`, place: null };
 }
 
-/** The public Nominatim endpoint is for a single prototype; configure WALKER_GEOCODER_URL to switch provider. */
-export async function describeGpsLocation(latitude: number, longitude: number, signal: AbortSignal, endpoint = process.env.WALKER_GEOCODER_URL ?? DEFAULT_URL): Promise<string> {
-  return (await lookUpPlace(latitude, longitude, signal, endpoint)).text;
+/** The sentence `get_location` says. */
+export async function describeGpsLocation(
+  latitude: number,
+  longitude: number,
+  signal: AbortSignal,
+  options: { services?: MapServices; simulated?: boolean } = {},
+): Promise<string> {
+  return (await lookUpPlace(latitude, longitude, signal, options)).text;
 }
 
-export async function lookUpPlace(latitude: number, longitude: number, signal: AbortSignal, endpoint = process.env.WALKER_GEOCODER_URL ?? DEFAULT_URL): Promise<PlaceReading> {
+/**
+ * The public Nominatim endpoint is for a single prototype; set WALKER_GEOCODER_URL to switch provider. It shares
+ * the Pi's one Nominatim limiter with the place search (src/navigation/osm.ts).
+ */
+export async function lookUpPlace(
+  latitude: number,
+  longitude: number,
+  signal: AbortSignal,
+  options: { services?: MapServices; simulated?: boolean } = {},
+): Promise<PlaceReading> {
   if (signal.aborted) throw signal.reason;
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     throw new Error("Invalid GPS coordinates.");
   }
-  const key = `${endpoint}:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+  const services = options.services ?? defaultMapServices();
+  const simulated = options.simulated === true;
+  const now = services.clock.monotonic();
+  let cache = caches.get(services);
+  if (!cache) caches.set(services, (cache = new Map()));
+  const key = `${services.reverseUrl}:${simulated}:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
   const prior = cache.get(key);
-  if (prior && Date.now() - prior.at < CACHE_MS) return prior.reading;
-  const url = new URL(endpoint);
-  if (url.protocol !== "https:" || url.username || url.password) throw new Error("Geocoder must use HTTPS.");
+  if (prior && now - prior.at < CACHE_MS) return prior.reading;
+  const url = new URL(services.reverseUrl);
   url.searchParams.set("format", "jsonv2");
   url.searchParams.set("addressdetails", "1");
   url.searchParams.set("lat", String(latitude));
   url.searchParams.set("lon", String(longitude));
-  const wait = Math.max(0, nextRequestAt - Date.now());
-  nextRequestAt = Date.now() + wait + 1_100; // Public endpoint limit: at most one request per second.
-  if (wait) await new Promise<void>((resolve, reject) => {
-    const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
-    const timer = setTimeout(() => { signal.removeEventListener("abort", onAbort); resolve(); }, wait);
-    signal.addEventListener("abort", onAbort, { once: true });
-    if (signal.aborted) onAbort();
-  });
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(6_000)]);
-  const response = await fetch(url, { headers: { "user-agent": USER_AGENT, "accept-language": "en", accept: "application/json" }, redirect: "error", signal: deadline });
-  if (!response.ok) throw new Error(`Geocoder HTTP ${response.status}.`);
-  const body = await response.text();
-  if (body.length > 16_384) throw new Error("Geocoder response too large.");
-  const data = JSON.parse(body) as ReverseResult;
-  const reading = line(data, latitude, longitude);
+  const data = (await getMapJson(services, url, { nominatim: true, signal })) as ReverseResult;
+  const reading = line(data && typeof data === "object" ? data : {}, latitude, longitude, simulated);
   if (cache.size >= 16) cache.delete(cache.keys().next().value!);
-  cache.set(key, { at: Date.now(), reading });
+  cache.set(key, { at: now, reading });
   return reading;
 }

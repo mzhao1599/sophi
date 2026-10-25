@@ -1,4 +1,4 @@
-import { SCREEN_SHOW_MS, type AppliedScreenSettings, type Cue, type MotionState, type ScreenContent, type ScreenHoldDirection, type ScreenLink, type ScreenState, type ShowCard } from "@walker/contracts";
+import { SCREEN_SHOW_MS, type AppliedScreenSettings, type Cue, type MotionState, type NavigatingScreen, type ScreenContent, type ScreenHoldDirection, type ScreenLink, type ScreenState, type ShowCard } from "@walker/contracts";
 import { captionPages, showingCaptionPages } from "@walker/walker-screen/view";
 import type { HelpScreen, TalkState } from "../bus";
 import type { Cancel, Clock } from "../clock";
@@ -38,8 +38,10 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  *      Stopped or Not started (the motion's own "holding" screen)
  *   7. a caretaker's message: its words while the walker reads it aloud, and for SCREEN_MESSAGE_HOLD_MS after
  *      (shown offline too, when Confirm reads it again)
- *   8. offline, or not set up (unpaired, or the server no longer knows this walker)
- *   9. ambient: the clock, and the alerts in force
+ *   8. walking directions: the Navigator's latest view while a route is on (`navigation` on the bus), offline
+ *      too, since guidance runs on the Pi; everything above still comes first, and the route returns after
+ *   9. offline, or not set up (unpaired, or the server no longer knows this walker)
+ *  10. ambient: the clock, and the alerts in force
  * Why motion sits where it does: an obstacle is the walker's first job, about her body in the next second.
  * A running motion or a fault is next because it is about motors moving near her now: the screen must keep
  * saying what moves and how to stop it, above anything of hers still on screen (any handle press stops it,
@@ -138,6 +140,8 @@ export interface ScreenModel {
   motionEnded: { content: MotionHolding; untilMono: number } | null;
   /** The caretaker's message being read aloud, or read last. */
   message: ScreenMessage | null;
+  /** The route in progress as the Navigator draws it (validated against the contract), or null with no route. */
+  navigation: NavigatingScreen | null;
   /** A card Sophi pulled up for her, until it goes (see `showEndsAt`). */
   showing: ScreenShowing | null;
   /** What the help layer shows (src/help.ts decides it), or null. */
@@ -264,7 +268,8 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
   } else if (model.message && (model.message.spokenMono === null || now < model.message.spokenMono + SCREEN_MESSAGE_HOLD_MS)) {
     if (model.message.spokenMono !== null) soonest.push(model.message.spokenMono + SCREEN_MESSAGE_HOLD_MS);
     under = { state: "message", message_id: model.message.message_id, from_name: model.message.from_name, text: model.message.text };
-  } else if (model.link === "offline") under = { state: "offline" };
+  } else if (model.navigation) under = model.navigation;
+  else if (model.link === "offline") under = { state: "offline" };
   else if (model.link === "unpaired" || model.link === "unauthorized") under = { state: "not_set_up" };
   else under = { state: "ambient", alerts: model.alerts };
 
@@ -297,7 +302,21 @@ export interface ScreenMachineDeps {
  * state, so the page never flashes an in-between screen. The clock is redrawn on the minute.
  */
 export class ScreenMachine {
-  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null, help: null };
+  private model: ScreenModel = {
+    link: "unpaired",
+    talk: "idle",
+    alerts: null,
+    offer: null,
+    answer: null,
+    done: null,
+    obstacle: null,
+    motion: null,
+    motionEnded: null,
+    message: null,
+    showing: null,
+    navigation: null,
+    help: null,
+  };
   private revision = -1;
   private last: ScreenState | null = null;
   private lastKey = "";
@@ -385,6 +404,16 @@ export class ScreenMachine {
   messageSpoken(id: number): void {
     if (this.model.message?.id !== id || this.model.message.spokenMono !== null) return;
     this.model.message.spokenMono = this.deps.clock.monotonic();
+    this.changed();
+  }
+
+  /**
+   * The Navigator's view of the route in progress, about once a second while she walks, or null when it ends. A
+   * Talk press doesn't clear it: the route comes back once her turn is over. Each new position is a new state
+   * (the map moves); the page's scene, and what a screen reader hears, change only with the instruction.
+   */
+  navigation(view: NavigatingScreen | null): void {
+    this.model.navigation = view;
     this.changed();
   }
 
