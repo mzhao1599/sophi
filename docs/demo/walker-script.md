@@ -186,7 +186,7 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 - **A teammate** plays Maya and holds Maya's phone.
 - Both phones are on **cellular**, never a hotspot (Cal Hacks bans them) and not the venue Wi-Fi: phones behind one address share the wrong-code lockout. Each has `/app` on Render open, added to its Home Screen as "Sophi" (not yet tried on an iPhone).
 
-**Before judges arrive:** on the page's Phones card, "Add a phone", "The walker user's own phone", name "Rose", "Get a code". Type the code on Rose's phone ("Link this phone to a walker", "Link this phone"). Her phone is in at once, with three big tiles: My walker, Message Maya, People nearby. A code works once, for 10 minutes.
+**Before judges arrive:** on the page's Phones card, "Add a phone", "The walker user's own phone", name "Rose", "Get a code". Type the code on Rose's phone ("Link this phone to a walker", "Link this phone"). Her phone is in at once, with four big tiles: Get help, My walker, Message Maya, People nearby. A code works once, for 10 minutes.
 
 > "Sophi isn't only for the person on the walker. This is Rose's phone, three big buttons and no typing, and this is Maya's, her caretaker."
 
@@ -203,6 +203,19 @@ The care loop: the person who walks with the walker (Rose) and her caretaker (Ma
 8. Rose opens "People nearby": a dashed "Sample" tag and "Sample people for the demo. This list does not use GPS or anyone's real location."
 
 > "Maya sees whether the walker is on and how its alerts work, never what Rose says to Sophi. Messages are deleted after a day. And the people nearby are sample data, and the screen says so."
+
+**Get help (about 40 s)** †. Rehearsed 3 of 3 on a Mac with the simulator, a local server and live Gemini, phones in a headless browser ([results](../subsystems/help.md#rehearsal-results-2026-10-24-on-a-mac-not-the-real-walker-or-phones)); not yet on the real Pi, real phones or Render. Maya's phone must have Sophi open: there are no push notifications.
+
+9. Hold Talk: **"I've fallen. Please get Maya."** The walker: "I'll ask Maya for help in 8 seconds. Press any button to stop." Its screen counts down from 8.
+10. At zero: "Asking for help.", then "Sent to Maya's phone." Maya holds up her phone: "Rose asked for help", "By asking Sophi, just now." (under 0.2 s after the walker asked, in rehearsal). The walker: "It's showing on Maya's phone."
+11. Maya taps **"I'm on my way"**. The walker: "Maya is on the way." (0.5 to 2 s later), and Rose's phone says so too.
+12. Press **Confirm twice**. The walker: "Press Confirm again to tell Maya you're okay.", then "Okay. Maya will see that you're okay." Maya's phone: "Rose says she's okay."
+
+> "Rose can ask for help three ways: by voice, by holding both handles for two seconds, or with one big button on her phone. The model only starts a countdown she can stop; the walker sends the request itself. Sophi doesn't call 911: it tells her caretaker, and both phones have a Call 911 link."
+
+**If the voice turn is slow or fails:** hold Talk and Confirm together for 2 s (on the simulator, press `h`); the same beat follows from "Asking for help." **Never** tap "Call 911" on stage: it opens the phone's dialer.
+
+**Don't say:** that Sophi detects falls (the walker has no motion sensor), calls 911 or anyone, or reaches a phone whose app is closed.
 
 **Location sharing: Max decides; leave it out by default.** Rose's "My walker" screen has "Share my location with approved caretakers". It starts off, and only her own phone can turn it on. Turned on, the walker sends its latest GPS position to Sophi's server with each report, and Maya's phone shows it under "Walker's location", with a link that opens it in OpenStreetMap (which then gets the position). Separately, asking the walker "Where am I?" or "What's the weather near me?" sends one position to outside services: OpenStreetMap's address lookup (Nominatim) or Open-Meteo. Why leave it out: the GPS had no fix indoors on 2026-10-24, none of this has been checked on the Pi, and it sends a real position off the walker. If it's in, say the location honesty line below.
 
@@ -339,6 +352,7 @@ The notice above the box says where typed words go: Gemini, which may keep a cop
 
 Say these when they come up, in these words or close to them.
 
+- **Asking for help:** "Sophi doesn't call 911 and doesn't detect falls. When Rose asks, it goes to her caretaker's phone, and the walker only says it's showing there once her app has it. There are no push notifications yet, so the app has to be open."
 - **What's simulated:** "This is the simulator on a laptop. Every part marked Simulated is a stand-in, and the page says Simulator for the whole walker." On the real Pi: "The Pi, its buttons, microphone and speaker are real. Anything still marked Simulated is a stand-in."
 - **Who hears and who speaks:** "Google's Gemini hears my voice and writes the answer. Cartesia speaks it, and only Sophi's reply text goes to Cartesia, never my voice. Without Cartesia, the walker speaks with its own voice, and the page says which."
 - **Why judges type:** "Our Gemini key is on the free tier, which is for scripted, made-up lines, and Cartesia's terms allow it to train on what it receives, so only I speak to it. You can type on the page; the notice says where typed words go."

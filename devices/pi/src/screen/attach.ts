@@ -104,6 +104,7 @@ export function attachScreen(deps: ScreenAttachDeps): { machine: ScreenMachine; 
     }
     machine.navigation(parsed.data);
   });
+  on("help", ({ screen }) => machine.help(screen));
   on("zones", ({ zones }) => {
     const simulated = new Map(deps.modules.modules().map((m) => [m.instanceId, m.simulated]));
     machine.zones(zones.map((z) => ({ zone: z.zone, mm: z.mm, quality: z.quality, simulated: simulated.get(z.instanceId) ?? false })));

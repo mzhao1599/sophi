@@ -6,11 +6,12 @@ import { attachScreen, seedScreen, startingSettings } from "../src/screen/attach
 import { ScreenMachine, pageAt, pageMs, pickScreen, type ScreenModel } from "../src/screen/machine";
 import { Bus } from "../src/bus";
 import { FakeClock, boot, captureLogger, flush, makeHarness, type Harness } from "./support/fakes";
+import { lone } from "./support/fakes";
 
 /** Rows D1 to D9 of test/EXPECTED.md ("The walker screen"). Every time comes from a fake clock. */
 
 const settings = startingSettings(undefined, Date.parse("2026-10-24T02:00:00Z"));
-const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, navigation: null };
+const base: ScreenModel = { link: "online", talk: "idle", alerts: ["vibration"], offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, navigation: null, help: null };
 const offer = { proposal_id: "11111111-1111-4111-8111-111111111111", from_cues: ["vibration" as const], cues: ["sound" as const] };
 const name = (model: Partial<ScreenModel>, now = 0) => pickScreen({ ...base, ...model }, now, settings).content.state;
 
@@ -274,7 +275,7 @@ describe("D6: the demo beats, screen state by screen state", () => {
     await talk(h);
     await h.clock.advance(10_000);
     expect(h.states.at(-1)!.screen.state).toBe("model_offer");
-    h.press("confirm");
+    await lone(h);
     await h.clock.advance(SCREEN_DONE_MS);
     // Obstacle: a hand in front of the simulated ToF, then away.
     h.tof!.readings = { front_left: { mm: 300 }, front_right: { mm: 1500 } };
@@ -332,7 +333,7 @@ describe("D6: the demo beats, screen state by screen state", () => {
     await h.clock.advance(10_000);
     const device = h.device()!;
     device.proposals = device.proposals.map((p) => ({ ...p, state: "expired" as const }));
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.states.at(-1)!.screen).toEqual({ state: "done", result: { kind: "nothing_changed" }, change_back: false });
   });
@@ -368,7 +369,7 @@ describe("D7: the screen can never throw into the walker", () => {
     await boot(h);
     await talk(h);
     expect(h.spoken("reply")).toEqual(["Fake cloud: switch?"]);
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.service.configuration?.version).toBe(2);
     expect(h.spoken("confirm_result")).toEqual(["Done. Obstacle alerts now use short sounds."]);
@@ -390,7 +391,7 @@ describe("D16: Done only once the change is in force", () => {
     const client = h.client;
     let release: () => void = () => {};
     client.configuration = () => new Promise((_, reject) => (release = () => reject(new Error("fake fetch failed"))));
-    h.press("confirm");
+    await lone(h);
     await flush();
     // Confirmed on the server, the configuration still being fetched: the offer stays, nothing says Done.
     expect(h.states.at(-1)!.screen.state).toBe("model_offer");
@@ -408,7 +409,7 @@ describe("D16: Done only once the change is in force", () => {
     await boot(h);
     await talk(h);
     await h.clock.advance(10_000);
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(h.names().slice(-2)).toEqual(["model_offer", "done"]);
     expect(h.states.at(-1)!.screen).toEqual({ state: "done", result: { kind: "alerts", cues: ["sound"] }, change_back: false });
@@ -445,7 +446,7 @@ describe("D9: the offer event follows the proposal id, not every heartbeat", () 
     await talk(h);
     await h.clock.advance(20_000); // four heartbeats carrying the same open proposal
     expect(offers.map((p) => p?.cues ?? null)).toEqual([["sound"]]);
-    h.press("confirm");
+    await lone(h);
     await flush();
     expect(offers.map((p) => p?.cues ?? null)).toEqual([["sound"], null]);
   });

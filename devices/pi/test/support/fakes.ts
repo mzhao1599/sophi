@@ -13,7 +13,7 @@ import { ModuleManager } from "../../src/serial/modules";
 import { WalkerService } from "../../src/service";
 import type { MapServices } from "../../src/navigation/osm";
 import type { PositionSource } from "../../src/navigation/position";
-import type { Cue } from "@walker/contracts";
+import { HELP_CHORD_WINDOW_MS, type Cue } from "@walker/contracts";
 import { FakeCloud, FakeCloudClient } from "../../src/sim/fakeCloud";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "../../src/sim/fakeModules";
 import { StateStore } from "../../src/store";
@@ -275,4 +275,16 @@ export async function boot(harness: Harness): Promise<void> {
   harness.service.start();
   await harness.clock.advance(0);
   await flush();
+}
+
+/**
+ * A lone Confirm press on the Pi's GPIO, then the chord window (HELP_CHORD_WINDOW_MS, help.md): a Confirm that
+ * would start something (a proposal, a draft, arming help) acts only once that has passed with no Talk press.
+ * The press is a tap: pressed, then released.
+ */
+export async function lone(harness: { press: (button: ButtonName, edge?: Edge, source?: ButtonSourceKind) => void; clock: FakeClock }): Promise<void> {
+  harness.press("confirm");
+  // A real button is let go: a Confirm left "down" would make a later Talk press a help chord.
+  harness.press("confirm", "released");
+  await harness.clock.advance(HELP_CHORD_WINDOW_MS);
 }

@@ -194,6 +194,28 @@ describe("start_route and stop_route in the turn loop", () => {
     expect(h.spoken()).toContain(LINES.cancelled);
   });
 
+  it("N31: guidance waits while she holds both handles to ask for help, and comes after she lets go", async () => {
+    const h = walker();
+    await boot(h);
+    await ask(h, START_ROUTE);
+    await h.clock.advance(1_000);
+    expect(guidance(h)[0]).toBe(INTRO);
+    h.position.pause();
+    const before = guidance(h).length;
+    h.press("talk", "pressed");
+    await flush();
+    h.press("confirm", "pressed");
+    await flush();
+    h.position.walk(20);
+    await h.clock.advance(1_500);
+    expect(guidance(h).length).toBe(before);
+    h.press("talk", "released");
+    h.press("confirm", "released");
+    await flush();
+    await h.clock.advance(1_000);
+    expect(guidance(h).slice(before).some((line) => line.includes("Lenox Avenue"))).toBe(true);
+  });
+
   it("N18: stop_route ends the route; with none it says so; a second start_route replaces the first", async () => {
     const h = walker();
     await boot(h);

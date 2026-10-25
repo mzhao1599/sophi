@@ -1,4 +1,4 @@
-import type { Cue, MotionState, NavigatingScreen, ProposalView, ScreenAction, ScreenStateName } from "@walker/contracts";
+import type { Cue, MotionState, NavigatingScreen, ProposalView, ScreenAction, ScreenContent, ScreenStateName } from "@walker/contracts";
 import type { ScreenHoldEvent } from "./screen/server";
 import type { ModuleView, ZoneView } from "./serial/modules";
 
@@ -20,12 +20,16 @@ export interface ButtonEvent {
 
 export type TalkState = "idle" | "recording" | "waiting";
 export type LinkState = "unpaired" | "connecting" | "online" | "offline" | "unauthorized";
-export type CueName = "listening" | "done" | "error" | "nothing_to_confirm" | "obstacle";
+export type CueName = "listening" | "done" | "error" | "nothing_to_confirm" | "obstacle" | "help";
 /**
  * What a spoken line was: a model or fake-cloud reply, or one of the Pi's own fixed lines. `guidance` is a
  * walking-directions line (street and place names): never recorded for the page or the server, logged by length.
+ * `help`: a fixed help line (it may hold caretakers' names): never a heartbeat event, logged by length on the Pi.
  */
-export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message" | "guidance";
+export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message" | "guidance" | "help";
+
+/** The help states the walker screen can show (src/help.ts decides them). */
+export type HelpScreen = Extract<ScreenContent, { state: "help_hold" | "help_countdown" | "help" }>;
 
 export interface BusEvents {
   button: ButtonEvent;
@@ -99,6 +103,11 @@ export interface BusEvents {
    * `bus.on("screenHold", (h) => (h.pressed ? lift.holdRefresh(h.atMono) : lift.holdRelease(h.atMono)))`.
    */
   screenHold: ScreenHoldEvent;
+  /**
+   * Asking for help: what the walker screen's help layer shows now (null for nothing), sent only when it changes.
+   * It holds caretakers' names: never log it.
+   */
+  help: { screen: HelpScreen | null };
   /** Simulator only: what the simulated servos saw (never emitted on the Pi). */
   sim: { text: string };
 }

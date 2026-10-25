@@ -1,7 +1,8 @@
 import type { Pool, PoolClient } from "pg";
 import type { ProposalView, WalkerConfiguration, WalkerEventView, WalkerTurnView } from "@walker/contracts";
-import { LOCATION_FIX_MAX_AGE_MS, OFFLINE_AFTER_MS } from "@walker/contracts";
+import { HELP_CLOSED_SHOWN_MS, HELP_OPEN_MAX_MS, HELP_RETENTION_MS, LOCATION_FIX_MAX_AGE_MS, MAX_CIRCLE_MEMBERS, OFFLINE_AFTER_MS } from "@walker/contracts";
 import { WALKER_MIGRATIONS } from "./migrations";
+import { keepIds } from "./store";
 import { decideAnswer, type Answer } from "./rules";
 import type {
   AnswerResult,
@@ -11,6 +12,12 @@ import type {
   ClaimResult,
   DeviceRecord,
   Heartbeat,
+  HelpAnswer,
+  HelpAnswerResult,
+  HelpAsk,
+  HelpAskResult,
+  HelpPersonRecord,
+  HelpRecord,
   InviteClaim,
   InviteClaimResult,
   PairingClaim,
@@ -540,6 +547,97 @@ export class PostgresWalkerStore implements WalkerStore {
     await this.query("delete old circle data", "delete from walker_circle_messages where expires_at <= $1", [now]);
     await this.query("delete old circle data", "delete from walker_circle_members where state = 'waiting' and expires_at < $1", [lapsedBefore]);
     await this.query("delete old location", "update walker_devices set location = null, location_received_at = null where location_received_at < $1", [new Date(now.getTime() - LOCATION_FIX_MAX_AGE_MS)]);
+    await this.query("delete old help requests", "delete from walker_help_requests where created_at <= $1", [new Date(now.getTime() - HELP_RETENTION_MS)]);
+    await this.query("expire help requests", EXPIRE_HELP, [null, now, HELP_OPEN_MAX_MS]);
+  }
+
+  // ---- Help requests. Each step locks the walker's row first, so steps for one walker take turns. ----
+
+  async askForHelp(ask: HelpAsk, now: Date): Promise<HelpAskResult> {
+    if (!UUID.test(ask.device_id)) return { outcome: "not_found" };
+    return this.transaction("ask for help", async (db) => {
+      const { rowCount } = await db.query("select 1 from walker_devices where id = $1 for update", [ask.device_id]);
+      if (rowCount === 0) return { outcome: "not_found" } as const;
+      await db.query(EXPIRE_HELP, [ask.device_id, now, HELP_OPEN_MAX_MS]);
+      const members = await membersIn(db, ask.device_id);
+      if (ask.asked_by_member_id !== null && !members.some((m) => m.id === ask.asked_by_member_id && m.role === "walker_user" && m.state === "member")) {
+        return { outcome: "not_found" } as const;
+      }
+      const { rows: prior } = await db.query<HelpRow>(
+        `select ${HELP_COLUMNS} from walker_help_requests where device_id = $1 and client_help_ids ? $2 limit 1`,
+        [ask.device_id, ask.client_help_id],
+      );
+      if (prior[0]) return { outcome: "existing", help: toHelp(prior[0]) } as const;
+      const { rows: open } = await db.query<HelpRow>(`select ${HELP_COLUMNS} from walker_help_requests where device_id = $1 and closed_at is null`, [ask.device_id]);
+      if (open[0]) {
+        const { rows } = await db.query<HelpRow>(
+          `update walker_help_requests set client_help_ids = $2 where id = $1 returning ${HELP_COLUMNS}`,
+          [open[0].id, JSON.stringify(keepIds(open[0].client_help_ids, ask.client_help_id))],
+        );
+        return { outcome: "existing", help: toHelp(rows[0]!) } as const;
+      }
+      const sentTo = members.filter((m) => m.role === "caregiver" && m.state === "member").map(person);
+      if (sentTo.length === 0) return { outcome: "no_caretaker" } as const;
+      const { rows } = await db.query<HelpRow>(
+        `insert into walker_help_requests (id, device_id, client_help_ids, source, sent_to, created_at) values ($1, $2, $3, $4, $5, $6)
+         returning ${HELP_COLUMNS}`,
+        [ask.help_id, ask.device_id, JSON.stringify([ask.client_help_id]), ask.source, JSON.stringify(sentTo), ask.created_at],
+      );
+      return { outcome: "created", help: toHelp(rows[0]!) } as const;
+    });
+  }
+
+  async answerHelp(deviceId: string, helpId: string, answer: HelpAnswer, now: Date): Promise<HelpAnswerResult> {
+    if (!UUID.test(deviceId) || !UUID.test(helpId)) return { outcome: "not_found" };
+    return this.transaction("answer a help request", async (db) => {
+      await db.query("select 1 from walker_devices where id = $1 for update", [deviceId]);
+      await db.query(EXPIRE_HELP, [deviceId, now, HELP_OPEN_MAX_MS]);
+      const { rows: found } = await db.query<HelpRow>(`select ${HELP_COLUMNS} from walker_help_requests where device_id = $1 and id = $2`, [deviceId, helpId]);
+      const help = found[0] && toHelp(found[0]);
+      if (!help) return { outcome: "not_found" } as const;
+      const members = (await membersIn(db, deviceId)).filter((m) => m.state === "member");
+      const by = answer.member_id === null ? undefined : members.find((m) => m.id === answer.member_id);
+      if (answer.member_id !== null && !by) return { outcome: "not_member" } as const;
+      if (help.closed) return { outcome: "closed", help } as const;
+      if (answer.kind === "coming") {
+        if (!by || help.coming.some((c) => c.member_id === by.id) || help.coming.length >= MAX_CIRCLE_MEMBERS) return { outcome: "unchanged", help } as const;
+        const { rows } = await db.query<HelpRow>(
+          `update walker_help_requests set coming = coming || $3::jsonb where device_id = $1 and id = $2 returning ${HELP_COLUMNS}`,
+          [deviceId, helpId, JSON.stringify([person(by)])],
+        );
+        return { outcome: "answered", help: toHelp(rows[0]!) } as const;
+      }
+      const closer = by ?? members.find((m) => m.role === "walker_user");
+      const { rows } = await db.query<HelpRow>(
+        `update walker_help_requests set closed_at = $3, closed_how = $4, closed_by = $5 where device_id = $1 and id = $2 returning ${HELP_COLUMNS}`,
+        [deviceId, helpId, now, answer.how, closer ? JSON.stringify(person(closer)) : null],
+      );
+      return { outcome: "answered", help: toHelp(rows[0]!) } as const;
+    });
+  }
+
+  async helpOf(deviceId: string, now: Date, shownTo: string | null = null): Promise<HelpRecord | null> {
+    if (!UUID.test(deviceId)) return null;
+    return this.transaction("read help requests", async (db) => {
+      // Reads alone don't lock the walker; adding a phone to shown_to does, like every other write here.
+      if (shownTo !== null) await db.query("select 1 from walker_devices where id = $1 for update", [deviceId]);
+      await db.query(EXPIRE_HELP, [deviceId, now, HELP_OPEN_MAX_MS]);
+      const { rows } = await db.query<HelpRow>(
+        `select ${HELP_COLUMNS} from walker_help_requests where device_id = $1 and (closed_at is null or closed_at > $2)
+         order by (closed_at is null) desc, closed_at desc, seq desc limit 1`,
+        [deviceId, new Date(now.getTime() - HELP_CLOSED_SHOWN_MS)],
+      );
+      const help = rows[0] && toHelp(rows[0]);
+      if (!help) return null;
+      if (shownTo === null || !UUID.test(shownTo) || help.closed || help.shown_to.some((p) => p.member_id === shownTo) || help.shown_to.length >= MAX_CIRCLE_MEMBERS) return help;
+      const viewer = (await membersIn(db, deviceId)).find((m) => m.id === shownTo && m.role === "caregiver" && m.state === "member");
+      if (!viewer) return help;
+      const { rows: updated } = await db.query<HelpRow>(
+        `update walker_help_requests set shown_to = shown_to || $2::jsonb where id = $1 returning ${HELP_COLUMNS}`,
+        [help.help_id, JSON.stringify([person(viewer)])],
+      );
+      return toHelp(updated[0]!);
+    });
   }
 
   private async query<R extends object = object>(action: string, sql: string, values: unknown[]) {
@@ -774,6 +872,54 @@ function toMessage(r: MessageRow): CircleMessageRecord {
     expires_at: r.expires_at.toISOString(),
   };
 }
+
+/**
+ * Closes open help requests past their hour (`expired`, as of the hour's end): one walker's ($1), or every
+ * walker's when $1 is null. $2 is now, $3 HELP_OPEN_MAX_MS.
+ */
+const EXPIRE_HELP = `update walker_help_requests set closed_at = created_at + make_interval(secs => $3::double precision / 1000), closed_how = 'expired'
+  where closed_at is null and ($1::uuid is null or device_id = $1::uuid) and created_at + make_interval(secs => $3::double precision / 1000) <= $2`;
+
+const HELP_COLUMNS = "id, device_id, client_help_ids, source, sent_to, shown_to, coming, created_at, closed_at, closed_how, closed_by";
+interface HelpRow {
+  id: string;
+  device_id: string;
+  client_help_ids: string[];
+  source: HelpRecord["source"];
+  sent_to: HelpPersonRecord[];
+  shown_to: HelpPersonRecord[];
+  coming: HelpPersonRecord[];
+  created_at: Date;
+  closed_at: Date | null;
+  closed_how: NonNullable<HelpRecord["closed"]>["how"] | null;
+  closed_by: HelpPersonRecord | null;
+}
+function toHelp(r: HelpRow): HelpRecord {
+  return {
+    help_id: r.id,
+    device_id: r.device_id,
+    client_help_ids: r.client_help_ids,
+    source: r.source,
+    sent_to: r.sent_to,
+    shown_to: r.shown_to,
+    coming: r.coming,
+    created_at: r.created_at.toISOString(),
+    closed: r.closed_at && r.closed_how ? { at: r.closed_at.toISOString(), how: r.closed_how, by: r.closed_by } : null,
+  };
+}
+
+interface HelpMemberRow {
+  id: string;
+  name: string;
+  role: CircleMemberRecord["role"];
+  state: CircleMemberRecord["state"];
+}
+/** A walker's phones in joining order, as circleOf lists them. */
+async function membersIn(db: PoolClient, deviceId: string): Promise<HelpMemberRow[]> {
+  const { rows } = await db.query<HelpMemberRow>("select id, name, role, state from walker_circle_members where device_id = $1 order by created_at, id", [deviceId]);
+  return rows;
+}
+const person = (m: HelpMemberRow): HelpPersonRecord => ({ member_id: m.id, name: m.name });
 
 interface LineRow {
   event_id: string;

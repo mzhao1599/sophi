@@ -24,6 +24,8 @@ const FAKE_TOOL_LINES: Record<WalkerToolName, string> = {
  *                              queue the FAKE cloud's next answer: `fake reply <text>`, or `fake tool <name>
  *                              [destination]` (it asks the walker for that tool, then says "Fake cloud: " and the
  *                              walker's result). A script with any `fake` step starts with no other fake answers.
+ *   chord 2500                 hold Talk and Confirm on the simulated hand board together for 2,500 ms, then let go
+ *                              (asking for help: HELP_HOLD_MS is 2,000; `chord 1900` lets go early)
  *   # comment
  *
  * `expect` and `absent` look only at events since the last `key` step, so an old event can't satisfy them.
@@ -31,7 +33,9 @@ const FAKE_TOOL_LINES: Record<WalkerToolName, string> = {
  * cue name), haptic (the pattern), config (the version), turn (the outcome), heartbeat (ok or failed),
  * module (`<instance> <health>`), screen (the walker screen's state name, with `--screen`), lift (`<kind> <text>`,
  * with `--lift`: the simulated lift board's state, its injected faults and the hold control; the coordinator's
- * lift requests are `motion lift ...`), motion (`<kind> <text>`, what
+ * lift requests are `motion lift ...`), help (what the help layer shows: `none`, `help_hold`, `help_countdown 8`,
+ * `help sending`, `help sending retrying`, `help not_sent offline`, `help open`, `help open shown coming`,
+ * `help open confirm_okay`, `help closed okay`), motion (`<kind> <text>`, what
  * the motion coordinator did), sim (what the simulated servos saw, with `--arms`) and navigation (the route's
  * phase and next maneuver, `guiding left`, or `none` once no route is on; never its coordinates or names).
  */
@@ -41,11 +45,12 @@ export type ScriptStep =
   | { kind: "absent"; event: keyof BusEvents; match: string; forMs: number; line: number }
   | { kind: "wait"; forMs: number; line: number }
   | { kind: "gps"; action: "at" | "walk" | "off_route" | "pause" | "resume"; numbers: number[]; line: number }
-  | { kind: "fake"; reply: string; tool: WalkerToolCall | null; line: number };
+  | { kind: "fake"; reply: string; tool: WalkerToolCall | null; line: number }
+  | { kind: "chord"; holdMs: number; line: number };
 
 export type CommandStep = Extract<ScriptStep, { kind: "gps" | "fake" }>;
 
-const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen", "lift", "motion", "sim", "navigation"]);
+const EVENTS = new Set<keyof BusEvents>(["spoke", "link", "talk", "mic", "cue", "haptic", "config", "turn", "heartbeat", "module", "screen", "lift", "motion", "sim", "navigation", "help"]);
 const GPS_ARGS = { at: 2, walk: 1, off_route: 1, pause: 0, resume: 0 } as const;
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -76,6 +81,12 @@ export function parseScript(text: string): ScriptStep[] {
       const forMs = Number(rest[0]);
       if (rest.length !== 1 || !Number.isInteger(forMs) || forMs <= 0) throw new Error(`Line ${line}: wait needs a duration in ms.`);
       steps.push({ kind: "wait", forMs, line });
+      return;
+    }
+    if (word === "chord") {
+      const holdMs = Number(rest[0]);
+      if (rest.length !== 1 || !Number.isInteger(holdMs) || holdMs <= 0 || holdMs > 60_000) throw new Error(`Line ${line}: chord needs a hold in ms (1 to 60000).`);
+      steps.push({ kind: "chord", holdMs, line });
       return;
     }
     if (word === "absent") {
@@ -147,8 +158,28 @@ export function eventText<K extends keyof BusEvents>(name: K, payload: BusEvents
       const view = (payload as BusEvents["navigation"]).view;
       return view ? `${view.phase} ${view.maneuver}` : "none";
     }
+    case "help":
+      return helpText((payload as BusEvents["help"]).screen);
     default:
       return "";
+  }
+}
+
+/** The help layer in a few words for scripts and logs: the state and phase, never a name. */
+export function helpText(screen: BusEvents["help"]["screen"]): string {
+  if (!screen) return "none";
+  if (screen.state === "help_hold") return "help_hold";
+  if (screen.state === "help_countdown") return `help_countdown ${screen.seconds_left}`;
+  const h = screen.help;
+  switch (h.phase) {
+    case "sending":
+      return h.retrying ? "help sending retrying" : "help sending";
+    case "not_sent":
+      return `help not_sent ${h.why}`;
+    case "open":
+      return ["help open", h.shown_to.length > 0 ? "shown" : "", h.coming.length > 0 ? "coming" : "", h.confirm_okay ? "confirm_okay" : ""].filter(Boolean).join(" ");
+    case "closed":
+      return `help closed ${h.how}`;
   }
 }
 
@@ -224,6 +255,16 @@ export class ScriptRunner {
         this.cursor = this.seen.length;
         report(`step ${step.line}: key ${step.key}`);
         press(step.key);
+        continue;
+      }
+      if (step.kind === "chord") {
+        // Both buttons down, held, then both up; what follows looks at events from the moment they went down.
+        this.cursor = this.seen.length;
+        report(`step ${step.line}: chord held ${step.holdMs} ms`);
+        press("chord-down");
+        if (advance) await advance(step.holdMs);
+        else await new Promise((resolve) => setTimeout(resolve, step.holdMs));
+        press("chord-up");
         continue;
       }
       if (step.kind === "expect") {

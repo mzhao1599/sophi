@@ -17,8 +17,8 @@ flowchart LR
   Server --> PG[(Postgres: the walker, pairing, turns, GPS)]
 ```
 
-- **The server writes; SpacetimeDB holds the circle.** `CircleService` (services/cloud-api) still checks every cookie, request and consent tick. Its store, `SpacetimeCircleStore`, calls one procedure per store step (`put_invite`, `claim_invite`, `approve_join`, `remove_member`, `save_message`, `circle_of`, `messages_for`, `member_by_secret`, `sweep_circle`, `forget_walker`, `ping`). Each one returns its result as JSON; an expected "no" (a wrong code, a full circle) is a result, never an error.
-- **The phones read live.** Each phone and the owner's page gets a one-hour token from the server and subscribes to its own views: `my_membership`, `my_people`, `my_messages` for a phone, `owner_members`, `owner_invites` for the owner's page. The tables are private; a view only ever returns the caller's own circle, never a cookie hash or a code's digits.
+- **The server writes; SpacetimeDB holds the circle.** `CircleService` (services/cloud-api) still checks every cookie, request and consent tick. Its store, `SpacetimeCircleStore`, calls one procedure per store step (`put_invite`, `claim_invite`, `approve_join`, `remove_member`, `save_message`, `circle_of`, `messages_for`, `member_by_secret`, `sweep_circle`, `forget_walker`, `ping`, and for help requests `ask_for_help`, `answer_help`, `help_of`). Each one returns its result as JSON; an expected "no" (a wrong code, a full circle) is a result, never an error.
+- **The phones read live.** Each phone and the owner's page gets a one-hour token from the server and subscribes to its own views: `my_membership`, `my_people`, `my_messages`, `my_help` (one `{ help_id, rev }` row per help request of its walker; [help](../../docs/subsystems/help.md)) for a phone, `owner_members`, `owner_invites` for the owner's page. The tables are private; a view only ever returns the caller's own circle, never a cookie hash or a code's digits.
 - **Who's who.** The server signs ES256 JWTs and publishes its public key at `/.well-known/openid-configuration` and `/.well-known/jwks.json`. SpacetimeDB checks the signature; the module checks the issuer, the audience `sophi-care` and the subject (`sophi-server`, `member:<id>`, `owner:<id>`). `configure` (run once by whoever published the database) sets the issuer it trusts.
 
 ## Files
@@ -66,7 +66,8 @@ SPACETIME_TEST_SERVER=http://127.0.0.1:3010 pnpm --filter @walker/cloud-api test
 ```
 
 - `test/walker/circle.test.ts` runs its 20 circle cases against `SpacetimeCircleStore` as well as memory and Postgres (each case publishes a fresh database).
-- `test/walker/care-db-views.test.ts` connects real WebSocket clients and checks the views: no other circle's rows, a waiting caretaker's view turning to "member" on the same connection when approved, a message pushed within 2 s, removal emptying the views, the owner's views, and refusals (no token, a token signed with another key, a phone calling a server procedure).
+- `test/walker/help.test.ts` runs the help cases against `SpacetimeCircleStore` too.
+- `test/walker/care-db-views.test.ts` connects real WebSocket clients and checks the views (`my_help` included): no other circle's rows, a waiting caretaker's view turning to "member" on the same connection when approved, a message pushed within 2 s, removal emptying the views, the owner's views, and refusals (no token, a token signed with another key, a phone calling a server procedure).
 
 Without `SPACETIME_TEST_SERVER` both skip with a message.
 
@@ -84,7 +85,7 @@ Without `SPACETIME_TEST_SERVER` both skip with a message.
 
 Switching a running server to SpacetimeDB starts the circle empty: phones linked while the circle was in Postgres join again with new codes.
 
-A changed module is published the same way. `spacetime publish` refuses a change that would need its data deleted unless given `--delete-data`, which empties the circle.
+A changed module is published the same way. The help-request change (2026-10-24) only adds a table, procedures and a view, so it publishes over the existing database without `--delete-data` (checked on a local server: the 2026-10-24 module before help, then this one). Publish it before deploying a server that has the help routes: until then those routes answer `503` on a server with the `SPACETIME_*` settings. `spacetime publish` refuses a change that would need its data deleted unless given `--delete-data`, which empties the circle.
 
 ## Known limits
 

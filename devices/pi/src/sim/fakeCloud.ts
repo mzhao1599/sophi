@@ -5,7 +5,13 @@ import {
   AnswerProposalRequestSchema,
   AnswerProposalResponseSchema,
   ConfigurationResponseSchema,
+  DeviceAskForHelpRequestSchema,
+  DeviceHelpStatusResponseSchema,
   DeviceMessagesResponseSchema,
+  HELP_CLOSED_SHOWN_MS,
+  HELP_COUNTDOWN_MS,
+  HELP_OPEN_MAX_MS,
+  HelpResponseSchema,
   WALKER_MESSAGES_KEPT,
   DeviceTurnRequestSchema,
   HeartbeatRequestSchema,
@@ -19,9 +25,14 @@ import {
   WALKER_SETUP,
   WalkerTurnResponseSchema,
   checkCuesChange,
+  helpNames,
   isOpenProposal,
   zoneViews,
   type AnswerProposalResponse,
+  type DeviceAskForHelpRequest,
+  type HelpClosedHow,
+  type HelpPerson,
+  type HelpView,
   type Cue,
   type DeviceTurnRequest,
   type DeviceSendMessageRequest,
@@ -67,6 +78,11 @@ export interface FakeTurnScript {
   proposeCues?: Cue[];
   /** Makes the turn end with a spoken message draft to this (made-up) caretaker (tests). */
   offerMessage?: { to_name: string; text: string };
+  /**
+   * Makes the turn answer as a voice help request would (the server's fixed line and `ask_for_help: true`), only
+   * on a turn that carries `can_ask_for_help` and with a caretaker in; like the server, otherwise not.
+   */
+  askForHelp?: true;
 }
 
 export class FakeCloudError extends Error {
@@ -74,6 +90,7 @@ export class FakeCloudError extends Error {
     readonly code: WalkerErrorCode,
     message: string,
     readonly proposal?: ProposalView,
+    readonly help?: HelpView,
   ) {
     super(message);
   }
@@ -83,8 +100,22 @@ export class FakeCloudError extends Error {
   }
 
   body() {
-    return { error: { code: this.code, message: this.message, trace_id: "fake", ...(this.proposal ? { proposal: this.proposal } : {}) } };
+    return {
+      error: { code: this.code, message: this.message, trace_id: "fake", ...(this.proposal ? { proposal: this.proposal } : {}), ...(this.help ? { help: this.help } : {}) },
+    };
   }
+}
+
+/** One help request as the fake cloud keeps it (made-up people: no real phone is told). */
+interface FakeHelp {
+  help_id: string;
+  source: HelpView["source"];
+  askedAt: number;
+  sent_to: HelpPerson[];
+  shown_to: HelpPerson[];
+  coming: HelpPerson[];
+  closed: { how: HelpClosedHow; by: HelpPerson | null; at: number } | null;
+  clientIds: Set<string>;
 }
 
 interface FakeDevice {
@@ -103,6 +134,8 @@ interface FakeDevice {
   toolTurns: Map<string, { step: FakeTurnScript; response: WalkerTurnResponse }>;
   /** Every turn request as received, with any clip replaced by its length (privacy tests read these). */
   turnRequests: DeviceTurnRequest[];
+  /** Help requests, oldest first. */
+  help: FakeHelp[];
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -117,6 +150,15 @@ export class FakeCloud {
   speech: Buffer | null = null;
   /** What the heartbeat answers for `location_sharing_enabled` (her phone's choice; tests turn it on). */
   locationSharing = false;
+  /**
+   * The approved caretaker phones in her (made-up) circle, in joining order: "Maya" by default. Empty makes asking
+   * for help answer `409 no_caretaker`.
+   */
+  caretakers: HelpPerson[] = [{ member_id: "00000000-0000-4000-8000-00000000ca01", name: "Maya" }];
+  /** Her own phone, which closes `okay` (null: she has no phone in, so the walker's okay is by nobody named). */
+  herPhone: HelpPerson | null = { member_id: "00000000-0000-4000-8000-00000000ca00", name: "Rose" };
+  /** False makes the help routes answer 404, like an older server. */
+  helpRoutes = true;
 
   constructor(
     private readonly clock: Clock,
@@ -159,6 +201,7 @@ export class FakeCloud {
       messages: [],
       toolTurns: new Map(),
       turnRequests: [],
+      help: [],
     });
     return { device_id: deviceId, credential, configuration };
   }
@@ -228,6 +271,129 @@ export class FakeCloud {
     return { messages: device.messages.slice(-WALKER_MESSAGES_KEPT) };
   }
 
+  // ---- Asking for help (the walker contract's device routes; the phones are made up) ----
+
+  private helpView(help: FakeHelp): HelpView {
+    return {
+      help_id: help.help_id,
+      source: help.source,
+      age_seconds: Math.max(0, Math.floor((this.clock.now() - help.askedAt) / 1000)),
+      sent_to: [...help.sent_to],
+      shown_to: [...help.shown_to],
+      coming: [...help.coming],
+      closed: help.closed ? { how: help.closed.how, by: help.closed.by } : null,
+    };
+  }
+
+  private checkHelpRoutes(): void {
+    if (!this.helpRoutes) throw new FakeCloudError("not_found", "Not found.");
+  }
+
+  /** The open request (closing it `expired` first if HELP_OPEN_MAX_MS has passed), or null. */
+  private openHelp(device: FakeDevice): FakeHelp | null {
+    const latest = device.help.at(-1);
+    if (!latest || latest.closed) return null;
+    if (this.clock.now() - latest.askedAt >= HELP_OPEN_MAX_MS) {
+      latest.closed = { how: "expired", by: null, at: latest.askedAt + HELP_OPEN_MAX_MS };
+      return null;
+    }
+    return latest;
+  }
+
+  /** POST /devices/{id}/help: 201 new, 200 the one open or a repeated client id; 409 no_caretaker. */
+  askForHelp(device: FakeDevice, body: DeviceAskForHelpRequest): { status: 200 | 201; help: HelpView } {
+    this.checkHelpRoutes();
+    const repeated = device.help.find((h) => h.clientIds.has(body.client_help_id));
+    if (repeated) return { status: 200, help: this.helpView(repeated) };
+    const open = this.openHelp(device);
+    if (open) {
+      open.clientIds.add(body.client_help_id);
+      return { status: 200, help: this.helpView(open) };
+    }
+    if (this.caretakers.length === 0) throw new FakeCloudError("no_caretaker", "No caretaker phone is linked to this walker.");
+    const help: FakeHelp = {
+      help_id: randomUUID(),
+      source: body.source,
+      askedAt: this.clock.now(),
+      sent_to: this.caretakers.map((p) => ({ ...p })),
+      shown_to: [],
+      coming: [],
+      closed: null,
+      clientIds: new Set([body.client_help_id]),
+    };
+    device.help.push(help);
+    return { status: 201, help: this.helpView(help) };
+  }
+
+  /** GET /devices/{id}/help: the open one, or the newest closed within HELP_CLOSED_SHOWN_MS, or null. */
+  helpStatus(device: FakeDevice): { help: HelpView | null } {
+    this.checkHelpRoutes();
+    const open = this.openHelp(device);
+    if (open) return { help: this.helpView(open) };
+    const latest = device.help.at(-1);
+    if (latest?.closed && this.clock.now() - latest.closed.at < HELP_CLOSED_SHOWN_MS) return { help: this.helpView(latest) };
+    return { help: null };
+  }
+
+  /** POST /devices/{id}/help/{help_id}/okay: closes it `okay` by her phone (null without one); 409 help_closed. */
+  helpOkay(device: FakeDevice, helpId: string): { help: HelpView } {
+    this.checkHelpRoutes();
+    this.openHelp(device);
+    const help = device.help.find((h) => h.help_id === helpId);
+    if (!help) throw new FakeCloudError("not_found", "Unknown help request.");
+    if (help.closed) throw new FakeCloudError("help_closed", "That help request is already closed.", undefined, this.helpView(help));
+    help.closed = { how: "okay", by: this.herPhone ? { ...this.herPhone } : null, at: this.clock.now() };
+    return { help: this.helpView(help) };
+  }
+
+  private fakeOpenHelp(deviceId: string): FakeHelp {
+    const device = this.devices.get(deviceId);
+    const open = device ? this.openHelp(device) : null;
+    if (!open) throw new Error("No open help request on the fake cloud.");
+    return open;
+  }
+
+  private caretaker(name: string): HelpPerson {
+    return this.caretakers.find((p) => p.name === name) ?? this.caretakers[0] ?? { member_id: "00000000-0000-4000-8000-00000000ca01", name };
+  }
+
+  /** A fake caretaker's app received the open request (the simulator's key; made up, no real phone). */
+  helpShownOn(deviceId: string, name = "Maya"): void {
+    const open = this.fakeOpenHelp(deviceId);
+    const person = this.caretaker(name);
+    if (!open.shown_to.some((p) => p.member_id === person.member_id)) open.shown_to.push({ ...person });
+  }
+
+  /** A fake caretaker answered "I'm on my way" (it also shows on that phone). */
+  helpComing(deviceId: string, name = "Maya"): void {
+    this.helpShownOn(deviceId, name);
+    const open = this.fakeOpenHelp(deviceId);
+    const person = this.caretaker(name);
+    if (!open.coming.some((p) => p.member_id === person.member_id)) open.coming.push({ ...person });
+  }
+
+  /** A fake caretaker answered "I'm with Rose": closes it `with_her`. */
+  helpWithHer(deviceId: string, name = "Maya"): void {
+    const open = this.fakeOpenHelp(deviceId);
+    open.closed = { how: "with_her", by: { ...this.caretaker(name) }, at: this.clock.now() };
+  }
+
+  /** Her own (fake) phone asked for help (`source: phone`). */
+  helpFromPhone(deviceId: string): HelpView {
+    const device = this.devices.get(deviceId);
+    if (!device) throw new FakeCloudError("not_found", "Unknown walker.");
+    const { help } = this.askForHelp(device, { client_help_id: randomUUID(), source: "handles" });
+    const kept = device.help.find((h) => h.help_id === help.help_id)!;
+    kept.source = "phone";
+    return this.helpView(kept);
+  }
+
+  /** Her own (fake) phone said "I'm okay now", or the request expired. */
+  closeHelp(deviceId: string, how: "okay" | "expired"): void {
+    const open = this.fakeOpenHelp(deviceId);
+    open.closed = { how, by: how === "okay" && this.herPhone ? { ...this.herPhone } : null, at: this.clock.now() };
+  }
+
   configuration(device: FakeDevice): { configuration: WalkerConfiguration } {
     return { configuration: this.current(device) };
   }
@@ -282,6 +448,16 @@ export class FakeCloud {
       device.proposals.push(proposal);
     }
     const speech = this.speech ? { mime: "audio/wav" as const, data_base64: this.speech.toString("base64") } : null;
+    // Asking for help by voice, as the server words it (help.md, "The server's voice path"): offered only on a turn
+    // that carries can_ask_for_help, and only with a caretaker in.
+    const asks = step?.askForHelp === true && body.can_ask_for_help === true && this.caretakers.length > 0;
+    const helpReply = step?.askForHelp
+      ? this.caretakers.length === 0
+        ? "No caretaker's phone is linked to this walker, so I can't ask anyone. If you need help now, call 911 from your phone."
+        : asks
+          ? `I'll ask ${helpNames(this.caretakers.map((p) => p.name))} for help in ${HELP_COUNTDOWN_MS / 1000} seconds. Press any button to stop.`
+          : null
+      : null;
     const turn: WalkerTurnView = {
       turn_id: randomUUID(),
       client_turn_id: body.client_turn_id,
@@ -289,6 +465,7 @@ export class FakeCloud {
       heard: null,
       heard_by: null,
       reply:
+        helpReply ??
         step?.reply ??
         `Fake cloud reply ${this.turnCount}: I received a ${seconds} second clip. The real assistant isn't connected in this run.`,
       answered_by: "fixed",
@@ -299,7 +476,7 @@ export class FakeCloud {
     const offer = step?.offerMessage
       ? { message_offer: { client_message_id: randomUUID(), to_member_id: randomUUID(), to_name: step.offerMessage.to_name, text: step.offerMessage.text } }
       : {};
-    return { turn, proposal, speech, status: this.status(device), ...offer };
+    return { turn, proposal, speech, status: this.status(device), ...offer, ...(asks ? { ask_for_help: true as const } : {}) };
   }
 
   /** The first answer of a scripted tool turn: the "I'll check" line and the tool request, with a made-up transcript. */
@@ -500,6 +677,21 @@ export class FakeCloudClient implements CloudClient {
     return this.call("messages", signal, DeviceMessagesResponseSchema, () => this.cloud.messages(this.device()));
   }
 
+  async askForHelp(body: DeviceAskForHelpRequest, signal: AbortSignal) {
+    const response = await this.call("help:ask", signal, HelpResponseSchema, () => ({ help: this.cloud.askForHelp(this.device(), DeviceAskForHelpRequestSchema.parse(body)).help }));
+    return response.help;
+  }
+
+  async helpStatus(signal: AbortSignal) {
+    const response = await this.call("help:status", signal, DeviceHelpStatusResponseSchema, () => this.cloud.helpStatus(this.device()));
+    return response.help;
+  }
+
+  async helpOkay(helpId: string, signal: AbortSignal) {
+    const response = await this.call("help:okay", signal, HelpResponseSchema, () => this.cloud.helpOkay(this.device(), helpId));
+    return response.help;
+  }
+
   answerProposal(proposalId: string, answer: "confirm" | "decline", signal: AbortSignal) {
     return this.call(`answer:${answer}`, signal, AnswerProposalResponseSchema, () => this.cloud.answer(this.device(), proposalId, answer));
   }
@@ -527,7 +719,7 @@ export interface FakeCloudServer {
   close(): Promise<void>;
 }
 
-const DEVICE_PATH = /^\/api\/v1\/devices\/([^/]+)\/(heartbeat|configuration|turns|messages|proposals\/([^/]+))$/;
+const DEVICE_PATH = /^\/api\/v1\/devices\/([^/]+)\/(heartbeat|configuration|turns|messages|help|proposals\/([^/]+)|help\/([^/]+)\/okay)$/;
 
 /** Serves the fake cloud on 127.0.0.1 over plain HTTP (allowed only to this machine), on the contract's device routes. */
 /**
@@ -576,6 +768,12 @@ export async function startFakeCloudServer(cloud: FakeCloud, log: Logger, turnDe
           if (turnDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, turnDelayMs));
           return send(response, 200, answer);
         }
+        if (route === "help" && request.method === "GET") return send(response, 200, DeviceHelpStatusResponseSchema.parse(cloud.helpStatus(device)));
+        if (route === "help" && request.method === "POST") {
+          const asked = cloud.askForHelp(device, parse(DeviceAskForHelpRequestSchema, body, "help request"));
+          return send(response, asked.status, HelpResponseSchema.parse({ help: asked.help }));
+        }
+        if (request.method === "POST" && match[4]) return send(response, 200, HelpResponseSchema.parse(cloud.helpOkay(device, decodeURIComponent(match[4]))));
         if (request.method === "POST" && match[3]) {
           const { answer } = parse(AnswerProposalRequestSchema, body, "answer");
           return send(response, 200, cloud.answer(device, decodeURIComponent(match[3]), answer));
@@ -613,3 +811,4 @@ export async function startFakeCloudServer(cloud: FakeCloud, log: Logger, turnDe
       }),
   };
 }
+

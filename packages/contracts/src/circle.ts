@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CueListSchema, InstructionSchema, ManeuverSchema, NavigationPhaseSchema, PartViewSchema, PlaceNameSchema, SpeechSchema } from "./walker";
+import { CueListSchema, HELP_COUNTDOWN_MS, HelpClosedHowSchema, HelpViewSchema, InstructionSchema, ManeuverSchema, NavigationPhaseSchema, PartViewSchema, PlaceNameSchema, SpeechSchema } from "./walker";
 import { ZoneDistanceSchema, ZoneNameSchema } from "./serial";
 import { MotionFaultCodeSchema, MotionRefusalSchema, confirmPrompt } from "./motion";
 
@@ -619,7 +619,7 @@ export type OwnerPhonesResponse = z.infer<typeof OwnerPhonesResponseSchema>;
  */
 export function caregiverConsentLine(caregiverName: string, walkerUserName: string | null): string {
   const who = walkerUserName ?? "The person who uses this walker";
-  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), and see a recent GPS position only if location sharing is turned on later.`;
+  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), be told when ${walkerUserName ? "she asks" : "they ask"} for help, and see a recent GPS position only if location sharing is turned on later.`;
 }
 
 /** POST /api/v1/walkers/{id}/circle/joins/{member_id}: the owner approves a waiting caretaker. Declining is DELETE on the member. */
@@ -726,6 +726,35 @@ export const LocationSharingRequestSchema = z.union([
 export const LocationSharingResponseSchema = z.strictObject({ enabled: z.boolean() });
 export type LocationSharingRequest = z.infer<typeof LocationSharingRequestSchema>;
 
+// ---- Asking for help (added 2026-10-24, docs/subsystems/help.md) ----
+//
+// She asks her caretakers for help from the walker (both handle buttons held, or by voice after a countdown she
+// can stop) or from her own phone (one big button). It is sent to every approved caretaker phone in the circle,
+// shows on each one whose app is open, and each can answer "I'm on my way". It closes when she says she's okay (her phone, or Confirm twice on the
+// walker), when a caretaker says they're with her, or after HELP_OPEN_MAX_MS. Sophi never calls an emergency
+// number and sends no SMS: it tells the caretaker phones that have the app open (no push notifications yet).
+// The caretaker sees her location only through the existing opt-in (`PhoneWalkerView.location`); asking for
+// help never turns sharing on. The walker never says "emergency" (the screen's calm-wording rule).
+
+// The shared shapes (HelpViewSchema, the HELP_* timings, the device routes' bodies) are in walker.ts, so the
+// walker's error envelope can carry a request. The phone routes are below.
+
+/** POST /api/v1/circle/help, from her own phone only (`not_allowed` from a caretaker). Same rules as the walker's. */
+export const PhoneAskForHelpRequestSchema = z.strictObject({ client_help_id: id });
+export type PhoneAskForHelpRequest = z.infer<typeof PhoneAskForHelpRequestSchema>;
+
+// POST /api/v1/circle/help/{help_id}/coming, no body, a caretaker's phone only: "I'm on my way". Repeating it
+// changes nothing. → HelpResponseSchema; `409 help_closed` once closed. Phone help routes answer errors in the
+// circle envelope (CircleErrorSchema).
+// POST /api/v1/circle/help/{help_id}/okay, no body: from her phone, "I'm okay now" (`okay`); from a caretaker's
+// phone, "I'm with Rose" (`with_her`). → HelpResponseSchema; `409 help_closed` once closed.
+
+/** Names joined the way the walker says them ("Maya", "Maya and Sam", "Maya, Sam and Lee"), for its fixed lines. */
+export function helpNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /**
  * GET /api/v1/circle in the two-phone app, and the answer to POST /api/v1/circle/join. `waiting`: a
  * caretaker's code was right and the owner hasn't approved yet. `no_answer`: it wasn't approved in time
@@ -743,6 +772,11 @@ export const PhoneHomeResponseSchema = z.discriminatedUnion("membership", [
       people: z.array(PhonePersonSchema).max(MAX_CIRCLE_MEMBERS),
       /** The messages to or from this phone still kept, oldest first. */
       messages: z.array(PhoneMessageViewSchema).max(MAX_LIVE_MESSAGES),
+      /**
+       * The walker's open help request, or the newest closed within HELP_CLOSED_SHOWN_MS, or null. On her phone and
+       * on every caretaker's phone (a caretaker joined after she asked sees it too, but isn't in `told`).
+       */
+      help: HelpViewSchema.nullable(),
     })
     .refine((h) => (h.me.role === "caregiver") === (h.walker.parts !== null), {
       message: "A caretaker sees part health; her own phone doesn't.",
@@ -800,6 +834,10 @@ export const CircleErrorCodeSchema = z.enum([
   "message_limit",
   "rate_limited",
   "unavailable",
+  /** Asking for help with no approved caretaker phone in the circle: nobody was told. */
+  "no_caretaker",
+  /** Answering a help request that is already closed; the body carries it as it stands. */
+  "help_closed",
 ]);
 export type CircleErrorCode = z.infer<typeof CircleErrorCodeSchema>;
 
@@ -819,6 +857,8 @@ export const CIRCLE_ERROR_STATUS: Record<CircleErrorCode, number> = {
   message_limit: 409,
   rate_limited: 429,
   unavailable: 503,
+  no_caretaker: 409,
+  help_closed: 409,
 };
 
 export const CircleErrorSchema = z.strictObject({
@@ -832,6 +872,8 @@ export const CircleErrorSchema = z.strictObject({
     suggestion: MemberSuggestionViewSchema.optional(),
     /** `settings_conflict`, on the walker's own routes only. */
     settings: ScreenSettingsSchema.optional(),
+    /** `help_closed`: the help request as it stands. */
+    help: HelpViewSchema.optional(),
   }),
 });
 export type CircleError = z.infer<typeof CircleErrorSchema>;
@@ -1010,10 +1052,56 @@ export const NavigatingScreenSchema = z.strictObject({
   }),
 });
 export type NavigatingScreen = z.infer<typeof NavigatingScreenSchema>;
+// ---- Asking for help on the walker screen (added 2026-10-24, docs/subsystems/help.md) ----
+//
+// The Pi decides; the screen draws. Help needs no touch control: the handles start it, stop a countdown and
+// say "I'm okay", so there is no ScreenAction for it (her phone is the touch path). Calm words only, as everywhere
+// on this screen. While help_hold, help_countdown or an open request shows, help owns Confirm: a pending motion
+// target, a model offer and a message draft are not answered by it (docs/subsystems/help.md, "Confirm during help").
+
+const helpStates = [
+  /** Both handle buttons are down and HELP_HOLD_MS hasn't passed: "Keep holding to ask for help." Letting go sends nothing. */
+  z.strictObject({ state: z.literal("help_hold") }),
+  /** A voice request, counting down: "Asking for help in 8 seconds." "Press any button to stop." */
+  z.strictObject({ state: z.literal("help_countdown"), seconds_left: z.int().min(1).max(Math.ceil(HELP_COUNTDOWN_MS / 1_000)) }),
+  z.strictObject({
+    state: z.literal("help"),
+    help: z.discriminatedUnion("phase", [
+      /** Sent and not yet answered by the server. `retrying`: the last try failed ("No internet yet. Still trying."). */
+      z.strictObject({ phase: z.literal("sending"), retrying: z.boolean() }),
+      /**
+       * Nothing was sent. `no_caretaker`: no caretaker phone is linked. `offline`: HELP_SEND_RETRY_MS of tries
+       * failed. `failed`: the server refused it for another reason.
+       */
+      z.strictObject({ phase: z.literal("not_sent"), why: z.enum(["no_caretaker", "offline", "failed"]) }),
+      /**
+       * The server has it: "Sent to Maya's phone.", then "It's showing on Maya's phone.", then "Maya is on the way."
+       * `confirm_okay`: her first Confirm armed it ("Press Confirm again to tell Maya you're okay.").
+       */
+      z.strictObject({
+        phase: z.literal("open"),
+        /** Names only: the screen never needs member ids. */
+        sent_to: z.array(CircleNameSchema).min(1).max(MAX_CIRCLE_MEMBERS),
+        shown_to: z.array(CircleNameSchema).max(MAX_CIRCLE_MEMBERS),
+        coming: z.array(CircleNameSchema).max(MAX_CIRCLE_MEMBERS),
+        confirm_okay: z.boolean(),
+      }),
+      /** Closed, shown for a while: her okay ("Okay. Maya will see that you're okay."), a caretaker with her (named), or that it ended. */
+      z.strictObject({
+        phase: z.literal("closed"),
+        how: HelpClosedHowSchema,
+        by_name: CircleNameSchema.nullable(),
+        sent_to: z.array(CircleNameSchema).min(1).max(MAX_CIRCLE_MEMBERS),
+      }),
+    ]),
+  }),
+] as const;
 
 /**
  * The one thing on screen, in the Pi's priority order: an obstacle first; then a running motion or a latched
- * motion fault; then her own Talk (listening, thinking, answering); then a pending motion Confirm target; then
+ * motion fault; then her own Talk (listening, thinking, answering); then asking for help (`help_hold`,
+ * `help_countdown`, `help`, added 2026-10-24: while a request is open it stays under her Talk, above everything
+ * below); then a pending motion Confirm target; then
  * today's model offer (it keeps the screen, and Confirm, until settled); then a circle item; then a message
  * notice; then a route in progress (`navigating`, which also stands above `offline`: guidance runs on the Pi);
  * then the clock. (The motion states and their place, added 2026-10-24, are explained in the Pi's
@@ -1107,6 +1195,7 @@ export const ScreenContentSchema = z.discriminatedUnion("state", [
   }),
   z.strictObject({ state: z.literal("my_screen"), view: MyScreenViewSchema }),
   ...motionStates,
+  ...helpStates,
 ]);
 export type ScreenContent = z.infer<typeof ScreenContentSchema>;
 

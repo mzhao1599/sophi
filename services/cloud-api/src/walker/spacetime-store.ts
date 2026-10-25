@@ -4,6 +4,11 @@ import type {
   CircleInviteRecord,
   CircleMemberRecord,
   CircleMessageRecord,
+  HelpAnswer,
+  HelpAnswerResult,
+  HelpAsk,
+  HelpAskResult,
+  HelpRecord,
   InviteClaim,
   InviteClaimResult,
   PutInviteResult,
@@ -103,6 +108,27 @@ export class SpacetimeCircleStore implements WalkerStore {
       if (!(error instanceof CareDbError)) throw error;
       console.warn(`[circle] sweep skipped: ${error.message.slice(0, 120)}`);
     }
+  }
+
+  // ---- Help requests: one procedure per step, each one transaction ----
+
+  async askForHelp(ask: HelpAsk, now: Date): Promise<HelpAskResult> {
+    return this.care.call("ask_for_help", { ...ask, asked_by_member_id: ask.asked_by_member_id ?? "", now: now.toISOString() });
+  }
+
+  async answerHelp(deviceId: string, helpId: string, answer: HelpAnswer, now: Date): Promise<HelpAnswerResult> {
+    return this.care.call("answer_help", {
+      device_id: deviceId,
+      help_id: helpId,
+      kind: answer.kind,
+      how: answer.kind === "close" ? answer.how : "",
+      member_id: answer.member_id ?? "",
+      now: now.toISOString(),
+    });
+  }
+
+  async helpOf(deviceId: string, now: Date, shownTo: string | null = null) {
+    return this.care.call<HelpRecord | null>("help_of", { device_id: deviceId, now: now.toISOString(), shown_to: shownTo ?? "" });
   }
 
   // ---- Where the circle meets the walker's own rows ----

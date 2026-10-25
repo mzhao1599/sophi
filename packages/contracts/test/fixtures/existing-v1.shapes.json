@@ -2808,6 +2808,210 @@
         ]
       }
     },
+    "DeviceAskForHelpRequestSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "client_help_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "handles",
+            "voice"
+          ]
+        }
+      },
+      "required": [
+        "client_help_id",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "DeviceHelpStatusResponseSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "help": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "help_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "handles",
+                    "voice",
+                    "phone"
+                  ]
+                },
+                "age_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400
+                },
+                "sent_to": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "shown_to": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "coming": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "closed": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "okay",
+                            "with_her",
+                            "expired"
+                          ]
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "member_id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 12,
+                                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                                }
+                              },
+                              "required": [
+                                "member_id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "how",
+                        "by"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "help_id",
+                "source",
+                "age_seconds",
+                "sent_to",
+                "shown_to",
+                "coming",
+                "closed"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "help"
+      ],
+      "additionalProperties": false
+    },
     "DeviceSpeechRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -3013,9 +3217,7 @@
                 "enum": [
                   "get_location",
                   "get_distance",
-                  "get_weather",
-                  "start_route",
-                  "stop_route"
+                  "get_weather"
                 ]
               },
               "text": {
@@ -3034,83 +3236,9 @@
         "original_audio": {
           "type": "boolean"
         },
-        "navigation": {
-          "type": "object",
-          "properties": {
-            "route": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "destination": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 100,
-                      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-                    },
-                    "phase": {
-                      "type": "string",
-                      "enum": [
-                        "guiding",
-                        "rerouting",
-                        "off_route",
-                        "no_position",
-                        "arrived"
-                      ]
-                    },
-                    "next": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 120,
-                      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-                    },
-                    "to_next_m": {
-                      "anyOf": [
-                        {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 100000
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "remaining_m": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 100000
-                    },
-                    "remaining_min": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 1000
-                    },
-                    "simulated": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "destination",
-                    "phase",
-                    "next",
-                    "to_next_m",
-                    "remaining_m",
-                    "remaining_min",
-                    "simulated"
-                  ],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "route"
-          ],
-          "additionalProperties": false
+        "can_ask_for_help": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [
@@ -3535,38 +3663,384 @@
       ],
       "additionalProperties": false
     },
-    "InstructionSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 120,
-      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-    },
-    "ManeuverSchema": {
+    "HelpClosedHowSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
       "enum": [
-        "straight",
-        "left",
-        "right",
-        "slight_left",
-        "slight_right",
-        "sharp_left",
-        "sharp_right",
-        "u_turn",
-        "arrive"
+        "okay",
+        "with_her",
+        "expired"
       ]
     },
-    "NavigationPhaseSchema": {
+    "HelpPersonSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "member_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12,
+          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+        }
+      },
+      "required": [
+        "member_id",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "HelpResponseSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "help": {
+          "type": "object",
+          "properties": {
+            "help_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "handles",
+                "voice",
+                "phone"
+              ]
+            },
+            "age_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "sent_to": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "shown_to": {
+              "minItems": 0,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "coming": {
+              "minItems": 0,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "member_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 12,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                  }
+                },
+                "required": [
+                  "member_id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "closed": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "how": {
+                      "type": "string",
+                      "enum": [
+                        "okay",
+                        "with_her",
+                        "expired"
+                      ]
+                    },
+                    "by": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "member_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 12,
+                              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                            }
+                          },
+                          "required": [
+                            "member_id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "how",
+                    "by"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "help_id",
+            "source",
+            "age_seconds",
+            "sent_to",
+            "shown_to",
+            "coming",
+            "closed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "help"
+      ],
+      "additionalProperties": false
+    },
+    "HelpSourceSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
       "enum": [
-        "guiding",
-        "rerouting",
-        "off_route",
-        "no_position",
-        "arrived"
+        "handles",
+        "voice",
+        "phone"
       ]
+    },
+    "HelpViewSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "help_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "handles",
+            "voice",
+            "phone"
+          ]
+        },
+        "age_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "sent_to": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "shown_to": {
+          "minItems": 0,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "coming": {
+          "minItems": 0,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member_id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+              }
+            },
+            "required": [
+              "member_id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "closed": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "how": {
+                  "type": "string",
+                  "enum": [
+                    "okay",
+                    "with_her",
+                    "expired"
+                  ]
+                },
+                "by": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "member_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 12,
+                          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                        }
+                      },
+                      "required": [
+                        "member_id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "how",
+                "by"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "help_id",
+        "source",
+        "age_seconds",
+        "sent_to",
+        "shown_to",
+        "coming",
+        "closed"
+      ],
+      "additionalProperties": false
     },
     "PageTurnRequestSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3781,13 +4255,6 @@
       ],
       "additionalProperties": false
     },
-    "PlaceNameSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 100,
-      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-    },
     "ProposalStateSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string",
@@ -3900,76 +4367,6 @@
         "created_at",
         "expires_at",
         "configuration_version"
-      ],
-      "additionalProperties": false
-    },
-    "RouteDestinationSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 80,
-      "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-    },
-    "RouteSummarySchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "destination": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100,
-          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-        },
-        "phase": {
-          "type": "string",
-          "enum": [
-            "guiding",
-            "rerouting",
-            "off_route",
-            "no_position",
-            "arrived"
-          ]
-        },
-        "next": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 120,
-          "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-        },
-        "to_next_m": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 100000
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "remaining_m": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100000
-        },
-        "remaining_min": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1000
-        },
-        "simulated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "destination",
-        "phase",
-        "next",
-        "to_next_m",
-        "remaining_m",
-        "remaining_min",
-        "simulated"
       ],
       "additionalProperties": false
     },
@@ -4343,7 +4740,9 @@
         "walker_limit",
         "proposal_closed",
         "rate_limited",
-        "unavailable"
+        "unavailable",
+        "no_caretaker",
+        "help_closed"
       ]
     },
     "WalkerErrorSchema": {
@@ -4364,7 +4763,9 @@
                 "walker_limit",
                 "proposal_closed",
                 "rate_limited",
-                "unavailable"
+                "unavailable",
+                "no_caretaker",
+                "help_closed"
               ]
             },
             "message": {
@@ -4473,6 +4874,170 @@
                 "created_at",
                 "expires_at",
                 "configuration_version"
+              ],
+              "additionalProperties": false
+            },
+            "help": {
+              "type": "object",
+              "properties": {
+                "help_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "handles",
+                    "voice",
+                    "phone"
+                  ]
+                },
+                "age_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400
+                },
+                "sent_to": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "shown_to": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "coming": {
+                  "minItems": 0,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "member_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12,
+                        "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                      }
+                    },
+                    "required": [
+                      "member_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "closed": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "how": {
+                          "type": "string",
+                          "enum": [
+                            "okay",
+                            "with_her",
+                            "expired"
+                          ]
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "member_id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 12,
+                                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
+                                }
+                              },
+                              "required": [
+                                "member_id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "how",
+                        "by"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "help_id",
+                "source",
+                "age_seconds",
+                "sent_to",
+                "shown_to",
+                "coming",
+                "closed"
               ],
               "additionalProperties": false
             }
@@ -6312,60 +6877,6 @@
       ],
       "additionalProperties": false
     },
-    "WalkerToolCallSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "enum": [
-                "get_location",
-                "get_distance",
-                "get_weather",
-                "stop_route"
-              ]
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "const": "start_route"
-            },
-            "destination": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 80,
-              "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-            }
-          },
-          "required": [
-            "name",
-            "destination"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "WalkerToolNameSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "string",
-      "enum": [
-        "get_location",
-        "get_distance",
-        "get_weather",
-        "start_route",
-        "stop_route"
-      ]
-    },
     "WalkerToolResultSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -6375,9 +6886,7 @@
           "enum": [
             "get_location",
             "get_distance",
-            "get_weather",
-            "start_route",
-            "stop_route"
+            "get_weather"
           ]
         },
         "text": {
@@ -7185,46 +7694,21 @@
           "additionalProperties": false
         },
         "tool_call": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "enum": [
-                    "get_location",
-                    "get_distance",
-                    "get_weather",
-                    "stop_route"
-                  ]
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "const": "start_route"
-                },
-                "destination": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$"
-                }
-              },
-              "required": [
-                "name",
-                "destination"
-              ],
-              "additionalProperties": false
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "get_location",
+                "get_distance",
+                "get_weather"
+              ]
             }
-          ]
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
         },
         "tool_results": {
           "maxItems": 8,
@@ -7237,9 +7721,7 @@
                 "enum": [
                   "get_location",
                   "get_distance",
-                  "get_weather",
-                  "start_route",
-                  "stop_route"
+                  "get_weather"
                 ]
               },
               "text": {
@@ -7303,6 +7785,10 @@
             "text"
           ],
           "additionalProperties": false
+        },
+        "ask_for_help": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

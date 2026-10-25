@@ -5,6 +5,7 @@ import {
   CircleErrorSchema,
   CircleMessageSchema,
   CreateInviteResponseSchema,
+  HelpResponseSchema,
   OwnerPhonesResponseSchema,
   PRESET_REPLIES,
   PhoneHomeResponseSchema,
@@ -19,6 +20,7 @@ import {
   type CircleErrorCode,
   type CircleInvite,
   type CircleMember,
+  type HelpView,
   type OwnerPhonesResponse,
   type PhoneHomeResponse,
   type PhoneMessageView,
@@ -42,6 +44,10 @@ import type { z } from "zod";
  *                                 { client_message_id, preset, to_member_id } (her phone taps a preset)
  *                                 → 201 { message: PhoneMessageView }
  * - PUT  /api/v1/circle/location-sharing { enabled: true, consent: true } or { enabled: false } → { enabled } (walker user only)
+ * - POST /api/v1/circle/help      { client_help_id } → { help } (her phone only; `409 no_caretaker` when nobody can be told)
+ * - POST /api/v1/circle/help/{help_id}/coming → { help } (a caretaker: "I'm on my way")
+ * - POST /api/v1/circle/help/{help_id}/okay   → { help } (her phone: "I'm okay now"; a caretaker: "I'm with Rose")
+ *                                 Both answer `409 help_closed` with the request as it stands once it is closed.
  * - POST /api/v1/circle/live      → { live: { uri, database, token, expires_at } | null } (SpacetimeDB, careLive.ts)
  * Owner routes (the `walker_owner` cookie):
  * - GET    /api/v1/walkers/{id}/circle                     → OwnerPhonesResponse
@@ -53,7 +59,7 @@ import type { z } from "zod";
  */
 
 export { CIRCLE_MESSAGE_MAX, PRESET_REPLIES, PhonePersonSchema, PhoneRoleSchema, PresetReplyIdSchema };
-export type { PhonePerson, PhoneRole, PresetReplyId };
+export type { HelpView, PhonePerson, PhoneRole, PresetReplyId };
 export const PRESET_ORDER: readonly PresetReplyId[] = PresetReplyIdSchema.options;
 
 /** One line, 1 to CIRCLE_MESSAGE_MAX characters: the contract's message text. */
@@ -78,6 +84,12 @@ export interface PhoneApi {
   sendText(clientMessageId: string, text: string): Promise<PhoneMessage>;
   /** Her phone's one-tap reply to one person. */
   sendPreset(clientMessageId: string, preset: PresetReplyId, toMemberId: string): Promise<PhoneMessage>;
+  /** Her phone asks her caretakers for help. Reusing `clientHelpId` gets the same request back, even once closed. */
+  askForHelp(clientHelpId: string): Promise<HelpView>;
+  /** A caretaker: "I'm on my way". Repeating it changes nothing. */
+  helpComing(helpId: string): Promise<HelpView>;
+  /** Her phone: "I'm okay now"; a caretaker's: "I'm with Rose". Closes it. */
+  helpOkay(helpId: string): Promise<HelpView>;
   /** A live connection to the circle in SpacetimeDB, or null when the server keeps it itself (the fake has none). */
   live?(): Promise<CareLiveAccess | null>;
 }
@@ -104,6 +116,8 @@ export class PhoneApiError extends Error {
     readonly code: PhoneFailure,
     message: string,
     readonly status: number,
+    /** `help_closed`: the help request as it stands, so the screen can show how it closed. */
+    readonly help?: HelpView,
   ) {
     super(message);
   }
@@ -142,7 +156,7 @@ async function circleCall<T>(fetchImpl: typeof fetch, path: string, init: Reques
     if (!parsed.success) {
       throw new PhoneApiError(response.status === 404 ? "not_offered" : "unavailable", "The server's answer wasn't one the app knows.", response.status);
     }
-    throw new PhoneApiError(parsed.data.error.code, parsed.data.error.message, response.status);
+    throw new PhoneApiError(parsed.data.error.code, parsed.data.error.message, response.status, parsed.data.error.help);
   }
   if (!schema) return undefined as T;
   const parsed = schema.safeParse(body);
@@ -166,6 +180,15 @@ export function createPhoneApi(fetchImpl: typeof fetch = (...args) => fetch(...a
     async sendPreset(clientMessageId, preset, toMemberId) {
       const body = post({ client_message_id: clientMessageId, preset, to_member_id: toMemberId });
       return (await circleCall(fetchImpl, `${BASE}/messages`, body, PhoneSendMessageResponseSchema)).message;
+    },
+    async askForHelp(clientHelpId) {
+      return (await circleCall(fetchImpl, `${BASE}/help`, post({ client_help_id: clientHelpId }), HelpResponseSchema)).help;
+    },
+    async helpComing(helpId) {
+      return (await circleCall(fetchImpl, `${BASE}/help/${encodeURIComponent(helpId)}/coming`, { method: "POST" }, HelpResponseSchema)).help;
+    },
+    async helpOkay(helpId) {
+      return (await circleCall(fetchImpl, `${BASE}/help/${encodeURIComponent(helpId)}/okay`, { method: "POST" }, HelpResponseSchema)).help;
     },
     live: () => liveCall(fetchImpl, `${BASE}/live`),
   };

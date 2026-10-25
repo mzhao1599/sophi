@@ -2,9 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { PRODUCT_NAME } from "@/lib/brand";
-import { createPhoneApi, type PhoneApi, type PhoneHome, type PhoneRole } from "@/lib/phoneApi";
-import { createPreviewPhone } from "@/lib/phoneFake";
-import { CANT_REACH, JOIN_NOTICE, codeDigits } from "@/lib/phoneView";
+import { buzz, playHelpTone, unlockAudioOnFirstTap } from "@/lib/helpAlert";
+import { createPhoneApi, type HelpView, type PhoneApi, type PhoneHome, type PhoneRole } from "@/lib/phoneApi";
+import { createPreviewPhone, type DemoCircle, type PreviewOptions } from "@/lib/phoneFake";
+import { CANT_REACH, JOIN_NOTICE, codeDigits, helpArrived, helpChange, helpTitle, herName } from "@/lib/phoneView";
 import { usePhone, type Phone } from "@/lib/usePhone";
 import { MayaPhone } from "./MayaPhone";
 import { RosePhone } from "./RosePhone";
@@ -17,18 +18,24 @@ const HEADING = "app-heading";
 /**
  * The two-phone app at /app. On stage both phones use the real server (`createPhoneApi`). `preview`
  * (development only, `/app?preview=rose` or `?preview=maya`) swaps in the in-memory fake with one phone
- * already linked, and says "Preview" on every screen.
+ * already linked, says "Preview" on every screen, and adds preview controls that drive the fake circle.
  */
-export function PhoneApp({ preview = null }: { preview?: PhoneRole | null }) {
+export function PhoneApp({ preview = null, previewOptions = {} }: { preview?: PhoneRole | null; previewOptions?: PreviewOptions }) {
   const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : createPhoneApi()));
+  const [circle, setCircle] = useState<DemoCircle | null>(null);
+  const { caretakers, location } = previewOptions;
   useEffect(() => {
     if (!preview) return;
     let live = true;
-    void createPreviewPhone(preview).then((p) => live && setApi(p.api));
+    void createPreviewPhone(preview, { caretakers, location }).then((p) => {
+      if (!live) return;
+      setApi(p.api);
+      setCircle(p.circle);
+    });
     return () => {
       live = false;
     };
-  }, [preview]);
+  }, [preview, caretakers, location]);
 
   return (
     <div className={styles.root}>
@@ -37,7 +44,7 @@ export function PhoneApp({ preview = null }: { preview?: PhoneRole | null }) {
           {PREVIEW_LINE}
         </p>
       ) : null}
-      {api ? <Linked api={api} preview={preview !== null} /> : <Frame who={null} preview><Loading /></Frame>}
+      {api ? <Linked api={api} preview={preview !== null} circle={circle} /> : <Frame who={null} preview><Loading /></Frame>}
     </div>
   );
 }
@@ -73,7 +80,7 @@ function Loading() {
 /** Who's holding this phone, in the header: "Rose's phone". */
 const whoLine = (home: PhoneHome | null) => (home?.membership === "member" ? `${home.me.name}'s phone` : null);
 
-function Linked({ api, preview }: { api: PhoneApi; preview: boolean }) {
+function Linked({ api, preview, circle }: { api: PhoneApi; preview: boolean; circle: DemoCircle | null }) {
   const phone = usePhone(api);
   const [announcement, setAnnouncement] = useState({ text: "", n: 0 });
   const announce = (text: string) => setAnnouncement((a) => ({ text, n: a.n + 1 }));
@@ -90,6 +97,40 @@ function Linked({ api, preview }: { api: PhoneApi; preview: boolean }) {
     }
     known.current = new Set(ids);
   }, [home]);
+
+  // A request for help: each change (asked, someone coming, closed) is said once, compared with the last home's
+  // request (`undefined` until the first home, so nothing is said on load). On a caretaker's phone a new request
+  // also plays the tone and vibrates. Focus stays where it is.
+  const lastHelp = useRef<HelpView | null | undefined>(undefined);
+  useEffect(() => {
+    if (home?.membership !== "member") {
+      // Unlinked or waiting: a later link starts fresh, so its first home is a load again (nothing said).
+      lastHelp.current = undefined;
+      return;
+    }
+    const prev = lastHelp.current;
+    lastHelp.current = home.help;
+    if (prev === home.help) return;
+    const line = helpChange(prev, home.help, home);
+    if (line) announce(line);
+    if (home.me.role === "caregiver" && helpArrived(prev, home.help)) {
+      playHelpTone();
+      buzz();
+    }
+  }, [home]);
+
+  // A caretaker's phone: the first tap unlocks audio for the tone, and the tab title says so while a request is open.
+  const caretaker = home?.membership === "member" && home.me.role === "caregiver";
+  useEffect(() => (caretaker ? unlockAudioOnFirstTap() : undefined), [caretaker]);
+  const openTitle = home?.membership === "member" && home.me.role === "caregiver" && home.help && !home.help.closed ? helpTitle(herName(home)) : null;
+  useEffect(() => {
+    if (!openTitle) return;
+    const before = document.title;
+    document.title = openTitle;
+    return () => {
+      document.title = before;
+    };
+  }, [openTitle]);
 
   // The view changing under her (linked, approved, removed) moves focus to the new heading; not on first load.
   const view = home?.membership === "member" ? `member/${home.me.role}` : `${phone.phase}/${home?.membership ?? ""}`;
@@ -112,6 +153,7 @@ function Linked({ api, preview }: { api: PhoneApi; preview: boolean }) {
       {phone.phase === "loading" ? <Loading /> : null}
       {phone.phase === "join" ? <Join phone={phone} /> : null}
       {phone.phase === "home" && home ? <Home phone={phone} home={home} api={api} announce={announce} /> : null}
+      {circle && home?.membership === "member" ? <PreviewControls circle={circle} home={home} refresh={phone.refresh} /> : null}
     </Frame>
   );
 }
@@ -210,6 +252,47 @@ export function Join({ phone }: { phone: Pick<Phone, "join" | "joining" | "notic
           {JOIN_NOTICE}
         </p>
       </form>
+    </section>
+  );
+}
+
+/**
+ * Preview only: buttons that play the other side of a request for help on the fake circle (the walker asks, a
+ * caretaker answers, her walker's Confirm twice, an hour passing). Dashed and labelled, under the app, never on stage.
+ */
+function PreviewControls({ circle, home, refresh }: { circle: DemoCircle; home: Extract<PhoneHome, { membership: "member" }>; refresh(): Promise<void> }) {
+  const [line, setLine] = useState("");
+  const caretakers = home.people.filter((p) => p.role === "caregiver").map((p) => p.name);
+  const do_ = (label: string, act: () => unknown) => () => {
+    try {
+      act();
+      setLine(`Done: ${label}.`);
+    } catch (e) {
+      setLine(`${label}: ${e instanceof Error ? e.message : "failed"}.`);
+    }
+    void refresh();
+  };
+  const controls: [string, () => unknown][] = [
+    ["The walker asks", () => circle.walkerAsks("handles")],
+    ["Asks by voice", () => circle.walkerAsks("voice")],
+    ...caretakers.map((n): [string, () => unknown] => [`${n}: on my way`, () => circle.caretakerAnswers(n, "coming")]),
+    ...caretakers.slice(0, 1).map((n): [string, () => unknown] => [`${n}: with Rose`, () => circle.caretakerAnswers(n, "with_her")]),
+    ["Rose: okay (walker)", () => circle.walkerOkay()],
+    ["An hour passes", () => circle.advance(60 * 60_000)],
+  ];
+  return (
+    <section className={styles.previewControls} aria-labelledby="preview-controls">
+      <h2 id="preview-controls" className={styles.cardTitle}>
+        Preview controls <span className={styles.tag}>Preview</span>
+      </h2>
+      <div className={styles.previewButtons}>
+        {controls.map(([label, act]) => (
+          <button key={label} type="button" className={styles.secondary} onClick={do_(label, act)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className={styles.meta}>{line}</p>
     </section>
   );
 }

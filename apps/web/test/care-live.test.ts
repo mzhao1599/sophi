@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { membershipMoved, withLiveCircle, type PhoneLiveRows } from "@/lib/careLive";
+import { helpRowsKey, membershipMoved, withLiveCircle, type PhoneLiveRows } from "@/lib/careLive";
 import type { PhoneHome } from "@/lib/phoneApi";
 
 /**
@@ -22,6 +22,7 @@ function roseHome(people = [ROSE, MAYA]): PhoneHome {
     walker: { walker_name: "Rose's walker", online: true, simulator: true, alerts: [], parts: null, battery: "not_measured" },
     people: people.map((id) => ({ member_id: id, name: id === ROSE ? "Rose" : id === MAYA ? "Maya" : "Ana", role: id === ROSE ? "walker_user" : "caregiver" })),
     messages: [],
+    help: null,
   } as PhoneHome;
 }
 
@@ -36,6 +37,7 @@ function rows(over: Partial<PhoneLiveRows> = {}): PhoneLiveRows {
       { message_id: "m2", client_message_id: "c2", from_member_id: ROSE, to_member_id: ANA, text: "I'm okay", seq: 9n },
       { message_id: "m1", client_message_id: "c1", from_member_id: ANA, to_member_id: ROSE, text: "Lunch at noon?", seq: 7n },
     ],
+    help: [],
     ...over,
   };
 }
@@ -79,5 +81,27 @@ describe("a phone's live circle", () => {
     const fallback = withLiveCircle(kept, rows({ membership: null, people: [], messages: [] }));
     if (fallback?.membership !== "member") throw new Error("expected a member");
     expect(fallback.people.map((p) => p.name)).toEqual(["Rose"]);
+  });
+});
+
+describe("a phone's live help rows (my_help)", () => {
+  it("keys only on help ids and revisions, and only once my_help is subscribed", () => {
+    const a = rows({ help: [{ help_id: "h1", rev: 3n }] });
+    expect(helpRowsKey(a, false)).toBeNull();
+    expect(helpRowsKey(null, true)).toBeNull();
+    expect(helpRowsKey(rows(), true)).toBe("");
+    expect(helpRowsKey(a, true)).toBe("h1:3");
+    // A revision bump, a new request, or one deleted each changes the key; the same rows in another order don't.
+    expect(helpRowsKey(rows({ help: [{ help_id: "h1", rev: 4n }] }), true)).not.toBe("h1:3");
+    const two = rows({ help: [{ help_id: "h2", rev: 1n }, { help_id: "h1", rev: 3n }] });
+    expect(helpRowsKey(two, true)).toBe(helpRowsKey(rows({ help: [{ help_id: "h1", rev: 3n }, { help_id: "h2", rev: 1n }] }), true));
+    expect(helpRowsKey(two, true)).not.toBe(helpRowsKey(a, true));
+  });
+
+  it("keeps help out of the merged home: the server's help stays", () => {
+    const home = { ...roseHome(), help: null } as PhoneHome;
+    const merged = withLiveCircle(home, rows({ help: [{ help_id: "h1", rev: 1n }] }));
+    if (merged?.membership !== "member") throw new Error("expected a member");
+    expect(merged.help).toBeNull();
   });
 });

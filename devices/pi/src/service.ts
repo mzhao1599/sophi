@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  HELP_CHORD_WINDOW_MS,
   MANIFEST_MAY_LIST_ARMS,
   SERIAL_PROTOCOL_VERSION,
   WALKER_MAX_TOOL_CALLS,
@@ -39,6 +40,7 @@ import {
   ZONE_VALIDITY_MS,
 } from "./constants";
 import { CuePolicy } from "./cues";
+import { WalkerHelp } from "./help";
 import { describeGpsLocation } from "./location";
 import { describeCurrentWeather } from "./weather";
 import type { Logger } from "./log";
@@ -81,7 +83,13 @@ export interface ServiceDeps {
    * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
    * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
    */
-  motion?: { handlePress(event: ButtonEvent): boolean; ownsConfirm(): boolean; requestOffer?(raw: unknown): unknown | null };
+  motion?: {
+    handlePress(event: ButtonEvent): boolean;
+    ownsConfirm(): boolean;
+    /** Help owns Confirm (help.md): withdraw a pending target (a "Let go?" stays) and refuse new ones until false. */
+    helpActive?(active: boolean): void;
+    requestOffer?(raw: unknown): unknown | null;
+  };
   newId?: () => string;
 }
 
@@ -223,6 +231,10 @@ interface PendingTurn {
  * aloud once in its own voice ("Message from Maya. …"), waiting while she talks or a message draft awaits Confirm.
  * What is there at the first answer after start or pairing is not read out (she can still hear the newest again).
  * They are never sent to the page, a model or the voice service, and never logged.
+ *
+ * Asking for help (src/help.ts): every handle edge goes to help first, before the motion coordinator's claim, so
+ * both buttons held is a chord whatever else is happening. A Confirm press that would start something (a proposal,
+ * a message draft, arming "I'm okay") waits HELP_CHORD_WINDOW_MS and is dropped if Talk goes down in it.
  */
 export class WalkerService {
   talk: TalkState = "idle";
@@ -272,6 +284,9 @@ export class WalkerService {
   private guidancePlaying = false;
   /** Answers to her Talk turns queued or playing: guidance waits for them. */
   private answersPlaying = 0;
+  /** A Confirm press waiting out the chord window (it would start something), or null. */
+  private deferredConfirm: Cancel | null = null;
+  private readonly help: WalkerHelp;
   private readonly voice: VoiceQueue;
   private readonly cues: CuePolicy;
   private readonly unsubscribe: Array<() => void> = [];
@@ -312,6 +327,35 @@ export class WalkerService {
       playObstacleSound: () => this.cue("obstacle"),
       cues: () => this.configuration?.cues ?? null,
     });
+    this.help = new WalkerHelp({
+      clock: deps.clock,
+      log: deps.log,
+      bus: deps.bus,
+      cloud: () => this.cloud,
+      say: (text) => this.say(text, "help"),
+      cue: () => this.cue("help"),
+      chordStarted: () => {
+        this.dropRecording();
+        this.voice.stopAll();
+        this.dropDeferredConfirm();
+      },
+      stopVoice: () => this.voice.stopAll(),
+      unauthorized: () => this.setUnauthorized(),
+      ownsConfirmChanged: (owns) => {
+        // While help owns Confirm, a message draft can't be sent by it; the coordinator is told too.
+        if (owns) this.pendingMessage = null;
+        try {
+          this.deps.motion?.helpActive?.(owns);
+        } catch (error) {
+          this.deps.log.error("telling the motion coordinator about help failed", { error: (error as Error).message });
+        }
+      },
+      quiet: () => queueMicrotask(() => {
+        this.readMessages();
+        this.flushGuidance();
+      }),
+      newId: () => this.newId(),
+    });
   }
 
   start(): void {
@@ -321,7 +365,10 @@ export class WalkerService {
       bus.on("button", (event) => this.onButton(event)),
       bus.on("zones", ({ zones }) => this.cues.evaluate(zones)),
       bus.on("moduleDown", ({ module }) => void this.say(moduleDownLine(module), "notice")),
-      bus.on("buttonsLost", (lost) => this.buttonsLost(lost)),
+      bus.on("buttonsLost", (lost) => {
+        this.help.buttonsLost(lost.source, lost.detail);
+        this.buttonsLost(lost);
+      }),
       bus.on("screenPress", ({ action, state }) => this.screenPressed(action, state)),
     );
     void this.say(LINES.boot, "notice");
@@ -343,6 +390,8 @@ export class WalkerService {
     this.voice.stopAll();
     this.pendingMessage = null;
     this.unreadMessages.length = 0;
+    this.dropDeferredConfirm();
+    this.help.stop();
     for (const off of this.unsubscribe) off();
   }
 
@@ -350,7 +399,14 @@ export class WalkerService {
 
   private onButton(event: ButtonEvent): void {
     if (this.stopped) return;
-    if (this.deps.motion?.handlePress(event)) {
+    // Raw edges first (help.md, "The chord, and who owns Confirm"): Talk going down drops a Confirm still waiting
+    // out the chord window, and help sees every edge before the coordinator claims it. The coordinator still sees
+    // every edge (a press stops a running motion at once, chord or not).
+    if (event.button === "talk" && event.edge === "pressed") this.dropDeferredConfirm();
+    const helpUsed = this.help.edge(event);
+    const claimed = this.deps.motion?.handlePress(event) ?? false;
+    if (helpUsed) return;
+    if (claimed) {
       if (event.button === "confirm" && event.edge === "pressed") this.pendingMessage = null;
       return;
     }
@@ -378,8 +434,54 @@ export class WalkerService {
         } else void this.finishRecording();
       }
     } else if (event.edge === "pressed") {
-      void this.confirmPressed(event);
+      this.confirmEdge(event);
     }
+  }
+
+  /**
+   * A Confirm press that would start something (an open proposal, a message draft, arming or closing help) waits
+   * HELP_CHORD_WINDOW_MS, and is dropped if Talk goes down in it (a chord). One that starts nothing (reading her
+   * message again, the "nothing to confirm" sound) acts at once. The simulator keyboard can't make a chord, so it
+   * never waits.
+   */
+  private confirmEdge(event: ButtonEvent): void {
+    const startsSomething = this.help.ownsConfirm() || this.openProposal !== null || this.pendingMessage !== null;
+    if (event.source === "keyboard" || !startsSomething) {
+      void this.confirmPressed(event);
+      return;
+    }
+    this.dropDeferredConfirm();
+    const cancel = this.deps.clock.setTimeout(() => {
+      if (this.deferredConfirm !== cancel) return;
+      this.deferredConfirm = null;
+      void this.confirmPressed(event);
+    }, HELP_CHORD_WINDOW_MS);
+    this.deferredConfirm = cancel;
+  }
+
+  private dropDeferredConfirm(): void {
+    if (!this.deferredConfirm) return;
+    this.deferredConfirm();
+    this.deferredConfirm = null;
+    this.deps.log.info("a Confirm press was part of a chord; it does nothing else");
+  }
+
+  /** Both buttons went down while Talk was recording: that recording is dropped, and no turn is sent. */
+  private dropRecording(): void {
+    const recording = this.recording;
+    if (!recording || this.talk !== "recording") return;
+    this.cancelTalkRelease?.();
+    this.cancelTalkRelease = null;
+    this.recording = null;
+    recording.cancelMax?.();
+    recording.session?.abort();
+    this.setTalk("idle");
+    this.deps.bus.emit("turn", { outcome: "discarded" });
+  }
+
+  /** Something else owns Confirm now (a motion target or motion, or help): a proposal or draft isn't offered. */
+  private confirmTaken(): boolean {
+    return (this.deps.motion?.ownsConfirm() ?? false) || this.help.ownsConfirm();
   }
 
   /**
@@ -527,11 +629,15 @@ export class WalkerService {
       return;
     }
     // The clip exists only in this request body: never written to disk, logged, queued or retried.
+    // Only once GET /help answered 200 in this run: an older server refuses the field on this strict request.
+    const canAsk = this.help.canAskForHelp();
+    const helpField = canAsk ? { can_ask_for_help: true as const } : {};
     const body: DeviceTurnRequest = {
       client_turn_id: this.newId(),
       input: { type: "audio" as const, mime: "audio/wav" as const, data_base64: clip.wav.toString("base64"), duration_ms: clip.durationMs },
       snapshot: this.snapshotIfSensors(),
       ...this.navigationField(),
+      ...helpField,
     };
     clip.wav.fill(0);
     turn.clientTurnId = body.client_turn_id;
@@ -569,14 +675,23 @@ export class WalkerService {
           tool_results: text === null ? prior : [...prior, { name: tool, text }],
           original_audio: true,
           ...this.navigationField(),
+          ...helpField,
         };
       }
       if (!reply) throw new Error("The agent did not answer.");
       if (this.turn !== turn) return;
       this.endTurn(turn);
+      if (reply.ask_for_help === true && canAsk) {
+        // She asked for help by voice: the reply ("I'll ask Maya for help in 8 seconds…"), then the countdown.
+        this.deps.bus.emit("turn", { outcome: "answered" });
+        const wav = reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined;
+        this.deps.log.info("turn answered", { ms: Math.round(this.deps.clock.monotonic() - sentAt), answered_by: reply.turn.answered_by, voice: wav ? "server" : "walker", ask_for_help: true });
+        this.help.voiceAsked(this.sayAnswer(reply.turn.heard, reply.turn.reply, reply.turn.answered_by, "reply", wav));
+        return;
+      }
       if (reply.proposal?.state === "open") {
-        // A motion Confirm target shown first owns Confirm: this proposal is declined, never answered by that press.
-        if (this.deps.motion?.ownsConfirm()) {
+        // A motion Confirm target shown first (or help) owns Confirm: this proposal is declined, never answered by that press.
+        if (this.confirmTaken()) {
           this.deps.log.info("a proposal arrived while a motion Confirm target is pending; declining it");
           this.rememberUnheard(body.client_turn_id);
         } else this.setOpenProposal(reply.proposal);
@@ -594,7 +709,7 @@ export class WalkerService {
         return;
       }
       const message = reply.message_offer;
-      if (message && !this.openProposal && !this.deps.motion?.ownsConfirm()) {
+      if (message && !this.openProposal && !this.confirmTaken()) {
         const pending = { body: { client_message_id: message.client_message_id, to_member_id: message.to_member_id, text: message.text }, toName: message.to_name, ready: false, expiresAt: 0 };
         this.pendingMessage = pending;
         void this.sayAnswer(reply.turn.heard, reply.turn.reply, reply.turn.answered_by, "reply", wav).then(() => {
@@ -722,7 +837,8 @@ export class WalkerService {
   private flushGuidance(): void {
     const navigator = this.navigator;
     if (!navigator || this.stopped || this.guidancePlaying) return;
-    if (this.talk !== "idle" || this.answersPlaying > 0 || this.readingMessage) return;
+    // Help's hold, countdown and sending speak first, like her Talk turn; help's `quiet` flushes again after.
+    if (this.talk !== "idle" || this.answersPlaying > 0 || this.readingMessage || this.help.busy()) return;
     const line = this.introWaiting ?? this.guidanceWaiting;
     if (!line) return;
     const intro = line === this.introWaiting;
@@ -807,8 +923,14 @@ export class WalkerService {
       return;
     }
     if (this.confirmInFlight) return;
-    // Nothing waits for Confirm (motion's claim came first, in onButton): a caretaker's message on screen is read
-    // again; else a route's next instruction; else her newest message. All offline too: they are on the walker.
+    // An open help request owns Confirm: a lone press arms "I'm okay", a second within 30 s closes it.
+    if (this.help.ownsConfirm()) {
+      confirmed();
+      this.help.confirm();
+      return;
+    }
+    // Nothing else waits for Confirm (motion's claim came first, in onButton): a caretaker's message on screen is
+    // read again; else a route's next instruction; else her newest message. All offline too: they are on the walker.
     if (!this.pendingMessage && !this.openProposal) {
       const messageOnScreen = this.latestMessage && (this.readingMessage || this.deps.clock.monotonic() < this.messageHeldUntil);
       if (!messageOnScreen && this.navigator?.active()) {
@@ -959,7 +1081,7 @@ export class WalkerService {
 
   /** Reads the next waiting message aloud, one at a time, only while nothing else of hers needs the walker. */
   private readMessages(): void {
-    if (this.stopped || this.readingMessage || this.talk !== "idle" || this.deps.motion?.ownsConfirm()) return;
+    if (this.stopped || this.readingMessage || this.talk !== "idle" || this.deps.motion?.ownsConfirm() || this.help.busy()) return;
     if (this.pendingMessage && this.deps.clock.monotonic() < this.pendingMessage.expiresAt) return;
     const message = this.unreadMessages.shift();
     if (!message) return;
@@ -1105,12 +1227,13 @@ export class WalkerService {
         if (open && this.unheardTurns.includes(open.client_turn_id)) {
           this.setOpenProposal(null);
           void this.declineCancelled(open, cloud);
-        } else if (this.proposalEpoch === epoch && !(open && this.deps.motion?.ownsConfirm())) {
+        } else if (this.proposalEpoch === epoch && !(open && this.confirmTaken())) {
           // Only if nothing newer (a turn's proposal, a Confirm, a cancel) was learned while this was in flight,
           // and not while a motion Confirm target owns Confirm (it is adopted on a later heartbeat).
           this.setOpenProposal(open);
         }
         void this.fetchMessages(cloud);
+        this.help.poll();
         // Newer is the usual case; a different version (even a lower one) means what is held belongs elsewhere.
         if (response.configuration_version !== this.configuration?.version) await this.fetchConfiguration();
       } catch (error) {
@@ -1196,7 +1319,10 @@ export class WalkerService {
     }
     // A new pairing writes its own configuration 1; take that one rather than an older device's.
     if (current?.device_id !== next.device_id) this.configuration = this.deps.store.readConfiguration();
-    if (current?.device_id !== next.device_id || current?.server_url !== next.server_url) this.forgetMessages();
+    if (current?.device_id !== next.device_id || current?.server_url !== next.server_url) {
+      this.forgetMessages();
+      this.help.reset(true);
+    }
     this.credential = next;
     this.cloud = cloud;
     this.failures = 0;
@@ -1391,6 +1517,7 @@ export class WalkerService {
       this.forgetMessages();
       // Forgotten or unpaired: this walker's route ends with its pairing (offline, it keeps going).
       this.navigator?.stop(state);
+      this.help.reset(state === "unpaired");
     }
     this.deps.bus.emit("link", { state });
   }
