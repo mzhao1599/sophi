@@ -2,7 +2,7 @@
 
 **For:** whoever builds or demos the assistant's `show_on_screen` tool: the cloud assistant (`services/cloud-api/src/walker/`), the Pi service and its screen state machine (`devices/pi`), the walker screen (`packages/walker-screen`) and the shared contract (`packages/contracts`).
 
-**Status (2026-10-24, design):** the contract below is written and tested. Nothing else is built until this line says so.
+**Status (2026-10-24, design):** the contract below is written and tested. The cloud's part is built and tested against a fake model only (see "The cloud"). Nothing else is built until this line says so.
 
 ## What she can do
 
@@ -34,9 +34,15 @@ All in `packages/contracts`, validated on both sides:
 
 ## The cloud (services/cloud-api)
 
-- The model's JSON schema gains `{name: "show_on_screen", view}` with `view` restricted to the turn's `screen.views`; offered only on a spoken walker turn that carries `screen`. The context gains `screen_views` (the list, or none).
-- System prompt: when she asks to see, show or pull up one of those things on the screen, request `show_on_screen` with that view; never say it is on the screen until the tool result says so; a view not in `screen_views` can't be shown, so say so. A page turn asking for it gets "Please use Talk on the walker for that request."
-- The "I'll check" line for the step is "Putting that on your screen." The loop continues like the other device tools, under the same `client_turn_id` and tool budget.
+**Built and tested (2026-10-24), against a fake model.** Not yet run against Gemini, a Pi or a screen. Code: `src/walker/assistant.ts`, `service.ts` and `hedge.ts`; the expected results are in `test/walker/EXPECTED-turns.md` ("Pulling something up on the walker's screen") and the tests in `test/walker/turn.test.ts`.
+
+- **Offered per turn.** The JSON schema sent to the model is built for each turn (`walkerReplyJsonSchema(views)`). It offers `{name: "show_on_screen", view}`, with `view` limited to that turn's `screen.views`, only on a walker turn that carries `screen`. A walker turn without `screen` (an older Pi, or no screen page connected) and every page turn get the schema without it, so the model is never told about a card the walker can't fill. The backup model gets the same views.
+- **Checked again on the server.** The reply parser accepts the contract's `WalkerToolCallSchema`, so the server sees any view the model names and refuses one the turn didn't list: the fixed line "I can't show that on this walker's screen right now." (rule `show_unavailable`), with no `tool_call`. A page turn that asks for it gets "Please use Talk on the walker for that request." (rule `device_tool_only`), as with the other device tools.
+- **Context.** `screen_views` is the turn's list, or `[]` with no screen and on a page turn.
+- **System prompt.** One rule for every turn: when a spoken walker turn asks to see, show, display or pull up the weather, where they are, what the sensors read, their newest message or the walker's parts on the screen, request `show_on_screen` with that view (instead of `get_weather` or `get_location`), only if it's in `screen_views`, and otherwise say it can't be shown right now. Never say something is on the screen until a `show_on_screen` result says so, then answer from it; a message's words aren't in the result and mustn't be invented; on a page turn, ask her to use Talk. The old rules stay, "clear" and "safe" included.
+- **The step.** The response carries `tool_call: {name: "show_on_screen", view}` (it parses with `WalkerToolCallSchema`) and the line "Putting that on your screen.", taken from one `Record<WalkerToolName, string>` so no tool can fall through to another tool's line. Nothing is stored for the step. The loop then runs like the other device tools: the same `client_turn_id`, the same eight-call budget (`tool_limit` past it).
+- **The answer.** After the result, the model's reply is the final answer, stored and spoken. After a sensors card that reply is used even when tagged `obstacles` (the fixed distance line steps aside, since the card's result is the reading she asked about), and the "clear"/"safe" check still reads it and retries once. After a weather card whose result credits Open-Meteo, the server adds " Weather data from Open-Meteo." when the model left it out, as after `get_weather`.
+- **Spoken continuation.** A continuation (`original_audio: true`) now reads to the model as "spoke while holding Talk", not "typed on the walker", so the model doesn't answer a card's result with "use Talk". The same change is on the `navigation` branch.
 
 ## The Pi (devices/pi)
 
@@ -51,7 +57,22 @@ All in `packages/contracts`, validated on both sides:
 
 ## The screen (packages/walker-screen)
 
-One scene per card, measured at 800 by 480 at Largest with the longest allowed strings: the main value large (the temperature, the address, the nearest zone, the message, the part count), its details as lines, a dashed Simulated tag where the data is simulated, the caption line under the card, and a screen-reader announcement of the whole card when it appears. Preview fixtures for each card.
+**Built (2026-10-24).** One scene per card in `screenView` (`src/view.ts`, `showingScene`). The main value is large, its details are lines under it, and each card fits 800 by 480 at every text size with the longest strings the contract allows:
+
+| Card | Main line | Lines | Between the handles | Heard by a screen reader |
+| --- | --- | --- | --- | --- |
+| `weather` | "64°" | "Partly cloudy skies", "Wind 8 mph" (joined as "Partly cloudy skies, wind 8 mph" when room is short); "Near you, from GPS" with a Simulated tag when the position is simulated | "Weather data from Open-Meteo", always | "64 degrees Fahrenheit, partly cloudy skies, wind 8 miles per hour. Weather data from Open-Meteo." |
+| `location` | the address | "Near you, from GPS", Simulated when it is | "© OpenStreetMap contributors" (the address comes from Nominatim) | "Near you, from GPS: 600 Bellevue Avenue, Oakland." |
+| `sensors` | the nearest measured zone, "Front left · 30 cm" (centimetres, as the obstacle screen), or "Not measured" | each zone in the Pi's order, "Front right · Not measured" when unknown, each with its own Simulated tag | nothing | "Sensor readings on screen, updated as they come: front left and front right. Simulated." |
+| `message` | the words, at the message screen's size | "From Maya"; no Confirm hint (the Pi doesn't replay from this card) | nothing | "Maya says: …" |
+| `parts` | "4 parts" | each part's catalog name and health in words (Working, Needs a check, Not working, Not responding), problems first, then simulated parts; a simulated part shows its name and a Simulated tag, never "Working" | nothing | every part and its health, simulated ones said |
+
+- **Never "clear" or "safe".** An unknown zone reads "Not measured" on the line, in the main line when none is measured, and in the "and N more" count.
+- **Fitting.** Sizes come from the measuring helpers in `view.ts` (the height budget per card is written above `showingScene`). The main line takes the largest of the main, message, bold body and bold smallest sizes that leaves room; lines drop to the smallest size before that. Lists (zones, parts) show as many items as fit, then "and N more" with how many of those aren't measured and, unless every item is simulated, how many are simulated. With captions on, the demo's two zones show in full at every text size, but four parts show two and "and 2 more, 1 simulated" (all four with captions off); 16 zones or parts at their longest leave room for one. The sensors card is sized as if every zone read "Not measured" and the nearest were the farthest possible, so a new reading never changes its sizes.
+- **Announced once.** The scene key and the announcement name what the card says, never the caption or the sensors' readings, so a screen reader hears a card when it appears and again only when it is a different card (another zone list, another message, a part's health changing). The readings stay on screen and in Sophi's spoken answer.
+- **Caption.** With captions on, Sophi's current caption page is the last line, at the smallest size under a hairline, so it doesn't read as one of the card's lines. Room for a whole page is kept from the moment the card appears, so the card doesn't move as pages turn or when the answer ends. A page under a card is at most two lines of the smallest size: `SHOWING_CAPTION_CHARS` (75 characters) at every text size. **The Pi pages the reply with `showingCaptionPages(text)` while a card is up**, not `captionPages(text, textSize)` (110 characters at Large is three lines, which left no room for a long address); a longer caption is shortened at a word on screen, never clipped. Captions off: no caption line, and no room kept.
+- **Fixtures.** `showing-*` in `src/fixtures.ts`, illustrative data: each card, a simulated one, captions off, and the longest strings (`-150°` with 40-character conditions and 300 mph wind, a 120-character address, 16 zones with 24-character names, the longest message from the longest name, 16 parts), each at every text size. The web app's `/dev/preview/[screen]` doesn't draw walker-screen fixtures, so nothing changes there.
+- **Proof.** `test/showing.test.ts` (expected results first) checks every card's words, the Simulated tags, never clear or safe, the caption line, that the key and announcement hold through new readings, and every card fixture's estimated height. The screenshot check drew all 207 fixtures, the 42 card ones among them, at 800x480 in headless Chromium with nothing overflowing and every text 7:1 or better (2026-10-24).
 
 ## Privacy
 
