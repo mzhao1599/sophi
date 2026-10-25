@@ -42,6 +42,7 @@ heartbeat every 5 s ◄─► cloud: manifest + snapshot + status events out; co
 - `src/sim/`: the fake cloud, simulated modules, and the simulator itself. `fakeLift.ts` is a SIMULATED lift board (a TypeScript port of the lift firmware's rules) and `liftSim.ts` the `--lift` mode.
 - `src/motion/lift/`: the lift client, driven by the motion coordinator (tested against a simulated lift only); see [its README](src/motion/lift/README.md). Lift lines reach it through `src/serial/modules.ts`: the first `hello` or `lift.hello` on a port decides its parser (`liftPort.ts`).
 - `src/screen/`: the walker screen. `machine.ts` picks the state (a pure `pickScreen` and a small machine with timers), `motion.ts` turns the motion coordinator's state into motion screens, `attach.ts` feeds it from the bus with every listener wrapped, `server.ts` is the local server, `page.tsx` the page it serves (`pageView.tsx` what it draws, `hold.ts` the lift's hold control). See [The walker screen's page](#the-walker-screens-page).
+- `src/camera/`: the live camera for a caretaker's phone: the MJPEG splitter and Huffman tables (`jpeg.ts`), ffmpeg on demand (`capture.ts`) and the cloud loop (`link.ts`). Off unless `WALKER_CAMERA_DEVICE` is set. See [The live camera](#the-live-camera-added-2026-10-24-not-yet-run-on-the-pi-or-its-innomaker-cameras).
 - `src/check/`: `walker check`. Each check is a small function over an injected command runner and file reader (`core.ts`); `system.ts` (OS, clock, power, memory, disk, the service, network, pairing), `devices.ts` (mic, speaker, voice, screen, GPIO, the stop's input), `modules.ts` (the serial boards, through the service's own `openSerialPort` and `ModuleManager`), `lift.ts` (the lift board's lines, read on those ports), `arms.ts` (the servo adapters, through the Feetech driver, PING and READ only), `cameras.ts` (`v4l2-ctl`).
 - `src/constants.ts`: every timing and threshold, each labelled measured or placeholder.
 
@@ -361,6 +362,22 @@ It writes the same four files at the same addresses as the 2026-10-23 reflash (b
 - more than one board is plugged in and `--port` isn't given (it lists them; with exactly one it uses that one and says so).
 
 It looks for esptool as `ESPTOOL`, then `/opt/esptool/bin/esptool` or `esptool.py`, then the `PATH` (the exact file name inside `/opt/esptool` isn't recorded, so this is a guess to check), and uses `write-flash` for esptool 5 or `write_flash` for esptool 4. With more than one board plugged in, `ls -l /dev/serial/by-id/` names each port by its USB serial number; `walker check` shows which id is on which port. If it can't connect, hold the board's BOOT button while it says "Connecting...".
+
+### The live camera (added 2026-10-24; not yet run on the Pi or its InnoMaker cameras)
+
+The walker can send one camera's picture to an approved caretaker's phone in the two-phone app, only while the walker user has camera sharing on from her own phone and only while a caretaker is watching (contract: [`packages/contracts/src/camera.ts`](../../packages/contracts/src/camera.ts)). Code: [`src/camera/`](src/camera/).
+
+- **How it flows.** The Pi keeps one long-held request open, `GET /api/v1/devices/{id}/camera?source=…`, which the server answers at once when a caretaker starts watching (otherwise `wanted: false` after 25 s, and the Pi asks again). Only then does it start ffmpeg, which copies the camera's own MJPEG (`-f v4l2 -input_format mjpeg -c:v copy`, no re-encoding, so the Pi's CPU barely notices). Each new frame is posted to `POST /api/v1/devices/{id}/camera/frames` as `image/jpeg`, one at a time and at most 10 a second; a slow link just skips frames. When the server answers `keep_sending: false` (nobody watching, or sharing turned off), ffmpeg is stopped, so the camera is closed whenever nobody watches.
+- **The frames.** `src/camera/jpeg.ts` splits ffmpeg's output into whole JPEGs by walking each frame's segments (not by searching for the end bytes), drops any over 256 KB, and adds the standard Huffman tables to a frame that has none: UVC cameras often leave them out, and browsers can't show such a frame. Only the newest frame is held, in memory; nothing is written to disk or logged but counts and exit codes.
+- **Failures never reach the walker.** ffmpeg exiting while wanted is restarted after 1 s, doubling to 30 s. No frame for 5 s stops the camera and the Pi waits again. Failing posts are retried every 0.5 s for 10 s, then the camera stops. A failed wait is retried after 2 s, doubling to 30 s. A `401` stops the link until the walker is paired again (it rereads the credential every 5 s). All of these are placeholders, not measured.
+- **Turn it on.** `sudo apt install ffmpeg` (the install script notes it when missing and adds the service user to `video`). Find the camera's stable link with `ls -l /dev/v4l/by-id/` (use the `-video-index0` one; `walker check` lists each camera's formats), then add `WALKER_CAMERA_DEVICE=/dev/v4l/by-id/<link>` to `/etc/steady-walker.env` and restart `steady-walker`. `WALKER_CAMERA_SIZE` (default `640x480`) and `WALKER_CAMERA_FPS` (default 15) must be a size and rate the camera offers as MJPG. `WALKER_CAMERA_DEVICE=test-pattern` sends ffmpeg's generated picture instead, which every phone labels as a test pattern, not a camera.
+- **Checked on a Mac (2026-10-24), not on the Pi:** the unit tests (`test/camera.test.ts`, rows CJ, CC and CL in `test/EXPECTED.md`); the test-pattern capture with the real ffmpeg 8.1.1 (49 frames in 5 s, 20 to 23 KB each at 640 x 480, ffmpeg gone after stop); the link with that capture against a local stand-in server (39 frames posted in about 4 s, 9.98 a second, from a 15 a second source; every posted frame decodes; it stopped on `keep_sending: false`). The Huffman tables were checked against ffmpeg's own: a JPEG encoded with `-huffman default` has all four tables byte for byte the same as ours, and with its tables removed macOS ImageIO refuses it, while with ours inserted ImageIO decodes it to the same pixels as the original. **Not yet:** the v4l2 path on the Pi, the InnoMaker cameras' real MJPEG (whether they omit the tables, their sizes and rates, USB bandwidth with all three open), CPU use on the Pi, and a real phone over the venue network.
+
+To try it on a Mac against the local web server (from "Against the real server on this Mac" above), pair as there, then add `--camera test-pattern` to the simulator:
+
+```bash
+node devices/pi/dist/walker.mjs simulate --server http://localhost:3008 --state ./walker-state --camera test-pattern
+```
 
 ### The network: Ethernet first, Wi-Fi as a backup
 
@@ -815,6 +832,8 @@ Only the real lift can show: whether the TB6600 takes the ESP32's 3.3 V pulses; 
 | `WALKER_LEADER_LEFT_PORT`, `WALKER_LEADER_RIGHT_PORT` | unset | The leader (teaching) arms' adapters, the same way. |
 | `WALKER_STOP_SENSE` | `not_wired` | `gpio:<BCM line>` when the hardware stop's normally closed stop-sense contact is wired to that Pi line, else `not_wired`. Declared by the installer, never inferred. Read by `walker check` today (and by the coordinator, not merged). |
 | `WALKER_GPS_PORT` | unset | Explicit USB serial path for an optional NMEA GPS receiver. The service excludes the same tty from ESP32 scanning. It samples for caregiver sharing after opt-in, or reads once for an explicit spoken location question. |
+| `WALKER_CAMERA_DEVICE` | unset | The live camera: a `/dev/v4l/by-id/...-video-index0` link, or `test-pattern` for ffmpeg's generated picture. Unset: no camera link. Needs ffmpeg. See [The live camera](#the-live-camera-added-2026-10-24-not-yet-run-on-the-pi-or-its-innomaker-cameras). |
+| `WALKER_CAMERA_SIZE`, `WALKER_CAMERA_FPS` | `640x480`, `15` (`10` for `test-pattern`) | What ffmpeg asks the camera for, as MJPG. Placeholders, not checked against our cameras. |
 | `WALKER_GPS_BAUD` | `9600` | GPS serial baud rate. Confirm it from the receiver or bring-up command. |
 | `WALKER_GEOCODER_URL` | Nominatim public reverse endpoint | Nominatim-compatible HTTPS reverse endpoint for user-initiated spoken location lookup. Set another provider before deploying more than one walker. |
 | `WALKER_SCREEN_PORT` | `8740` | The walker screen page's port on 127.0.0.1 (1024 to 65535), or `off` for no screen page. Also read by `walker simulate --screen`. |
@@ -837,6 +856,8 @@ The client ([src/cloud/client.ts](src/cloud/client.ts)) speaks the walker contra
 | Configuration | `GET /api/v1/devices/{id}/configuration` | | `configuration.cues`, reported back as `device_configuration_version` |
 | Turn | `POST /api/v1/devices/{id}/turns` | `{client_turn_id, input: {type: "audio", mime, data_base64, duration_ms}, snapshot}` | `turn.reply`, `speech` (played if present), `proposal` |
 | Answer | `POST /api/v1/devices/{id}/proposals/{proposal_id}` | `{answer: "confirm" or "decline"}` | the proposal's state; `409 proposal_closed` carries it as it stands |
+| Camera wait (only with `WALKER_CAMERA_DEVICE`) | `GET /api/v1/devices/{id}/camera?source=camera\|test_pattern` | | `wanted` (held up to 25 s by the server) |
+| Camera frame | `POST /api/v1/devices/{id}/camera/frames` | the JPEG itself (`image/jpeg`, `x-walker-camera-source` header) | `keep_sending` |
 
 A `401 unauthenticated` from any of them means "pair me again". The real server is pieces 2 and 3, deployed on Render; the simulator's fake cloud stands in for it in tests and Mac runs, so the simulator proves the Pi's side only.
 

@@ -1,3 +1,4 @@
+export * from "./camera";
 export * from "./catalog";
 export * from "./circle";
 export * from "./device";

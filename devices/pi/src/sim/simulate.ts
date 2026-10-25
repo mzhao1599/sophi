@@ -6,6 +6,7 @@ import { FileCapture, macMicCapture, resolveMicFiles, type AudioCapture } from "
 import { MacFileSpeaker, MacLoudSpeaker, writeCueSounds, type Speaker } from "../audio/speech";
 import { toneWav } from "../audio/wav";
 import { Bus } from "../bus";
+import { startCameraLink } from "../camera";
 import { systemClock, withDeadline } from "../clock";
 import { HttpCloudClient, pairWithServer } from "../cloud/client";
 import { createLogger } from "../log";
@@ -47,6 +48,11 @@ export interface SimulateOptions {
   lift?: boolean;
   /** SIMULATED arms: fake servo buses through the real motion coordinator, and a simulated stop switch. */
   arms?: boolean;
+  /**
+   * The live camera, as WALKER_CAMERA_DEVICE: `test-pattern` (ffmpeg's generated picture, labelled so on the
+   * phone) or a /dev video path. Needs --server: the fake cloud has no camera routes.
+   */
+  camera?: string;
 }
 
 /** What the fake cloud says on the simulator's demo path, in order. Every line says it is the fake cloud. */
@@ -225,6 +231,8 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   announce = (text) => service.announce(text);
   proposalOpen = () => service.hasOpenProposal();
   service.start();
+  if (options.camera && !options.server) log.error("--camera needs --server: the fake cloud has no camera routes; the camera stays off");
+  const camera = options.camera && options.server ? startCameraLink({ env: { ...process.env, WALKER_CAMERA_DEVICE: options.camera }, clock, log, store }) : null;
   if (motion) {
     const started = motion.sim.coordinator.start();
     // After the script runner and the coordinator's listeners exist, so both see the lift's first lines.
@@ -391,6 +399,7 @@ export async function simulate(options: SimulateOptions): Promise<number> {
   restoreTty();
   // Against a real cloud the audio folder holds real replies; it goes unless the person asked for it (--out).
   if (options.server && !options.out) rmSync(outDir, { recursive: true, force: true });
+  await camera?.stop();
   motion?.socket.close();
   await motion?.sim.stop();
   lift?.stop();

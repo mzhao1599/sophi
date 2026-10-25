@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { PRODUCT_NAME } from "@/lib/brand";
+import { createCameraApi } from "@/lib/cameraApi";
 import { buzz, playHelpTone, unlockAudioOnFirstTap } from "@/lib/helpAlert";
 import { createPhoneApi, type HelpView, type PhoneApi, type PhoneHome, type PhoneRole } from "@/lib/phoneApi";
 import { createPreviewPhone, type DemoCircle, type PreviewOptions } from "@/lib/phoneFake";
@@ -21,7 +22,7 @@ const HEADING = "app-heading";
  * already linked, says "Preview" on every screen, and adds preview controls that drive the fake circle.
  */
 export function PhoneApp({ preview = null, previewOptions = {} }: { preview?: PhoneRole | null; previewOptions?: PreviewOptions }) {
-  const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : createPhoneApi()));
+  const [api, setApi] = useState<PhoneApi | null>(() => (preview ? null : { ...createPhoneApi(), camera: createCameraApi() }));
   const [circle, setCircle] = useState<DemoCircle | null>(null);
   const { caretakers, location } = previewOptions;
   useEffect(() => {

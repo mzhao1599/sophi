@@ -14,6 +14,7 @@ import {
   statusSentence,
   unseen,
 } from "@/lib/phoneView";
+import { CameraSharing, CameraWatchingLine } from "./CameraCard";
 import { HelpBanner, HelpIcon, RoseHelp } from "./HelpScreens";
 import { NearbySample } from "./NearbySample";
 import styles from "./Phone.module.css";
@@ -86,6 +87,7 @@ export function RosePhone({
 
   return (
     <div className={`${styles.screen} ${styles.fade}`} key={screen}>
+      {api.camera ? <CameraWatchingLine camera={api.camera} /> : null}
       {screen === "home" ? (
         <>
           {home.help ? <HelpBanner help={home.help} /> : null}
@@ -196,6 +198,7 @@ function MyWalker({ home, api, refresh, announce }: { home: PhoneMember; api: Ph
         </button>
         {error ? <p role="alert">{error}</p> : null}
       </section>
+      {api.camera ? <CameraSharing camera={api.camera} announce={announce} /> : null}
       {w.simulator ? <p className={styles.bigNote}>This walker is the simulator, running on a computer.</p> : null}
       <p className={styles.bigNote}>To change your alerts, ask Sophi on the walker.</p>
     </section>

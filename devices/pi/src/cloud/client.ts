@@ -1,5 +1,8 @@
 import {
   AnswerProposalResponseSchema,
+  CAMERA_SOURCE_HEADER,
+  CameraFrameResponseSchema,
+  CameraWaitResponseSchema,
   ConfigurationResponseSchema,
   DeviceHelpStatusResponseSchema,
   DeviceMessagesResponseSchema,
@@ -11,6 +14,7 @@ import {
   WalkerErrorSchema,
   WalkerTurnResponseSchema,
   type AnswerProposalResponse,
+  type CameraSource,
   type DeviceAskForHelpRequest,
   type HelpView,
   type DeviceMessagesResponse,
@@ -36,6 +40,9 @@ export const DEVICE_ROUTES = {
   turns: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/turns`,
   speech: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/speech`,
   messages: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/messages`,
+  /** The live camera (packages/contracts/src/camera.ts): the wait for a viewer, and each frame. */
+  camera: (deviceId: string, source: CameraSource) => `/api/v1/devices/${encodeURIComponent(deviceId)}/camera?source=${source}`,
+  cameraFrames: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/camera/frames`,
   help: (deviceId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/help`,
   helpOkay: (deviceId: string, helpId: string) => `/api/v1/devices/${encodeURIComponent(deviceId)}/help/${encodeURIComponent(helpId)}/okay`,
   proposal: (deviceId: string, proposalId: string) =>
@@ -274,5 +281,59 @@ export class HttpCloudClient implements CloudClient {
       { method: "POST", body: { answer }, credential: this.credential, signal },
       AnswerProposalResponseSchema,
     );
+  }
+}
+
+/** The live camera's two calls, apart from CloudClient: they run in their own loop (src/camera/link.ts). */
+export interface CameraCloud {
+  /** Answers once a caretaker watches, or after the server's wait (CAMERA_WAIT_MS) with `false`. */
+  waitForViewer(source: CameraSource, signal: AbortSignal): Promise<boolean>;
+  /** Posts one JPEG; resolves to whether to keep sending. */
+  sendFrame(jpeg: Buffer, source: CameraSource, signal: AbortSignal): Promise<boolean>;
+}
+
+export class HttpCameraCloud implements CameraCloud {
+  private readonly server: URL;
+
+  constructor(
+    server: string,
+    private readonly deviceId: string,
+    private readonly credential: string,
+  ) {
+    this.server = checkServerUrl(server);
+  }
+
+  async waitForViewer(source: CameraSource, signal: AbortSignal) {
+    const response = await request(this.server, DEVICE_ROUTES.camera(this.deviceId, source), { method: "GET", credential: this.credential, signal }, CameraWaitResponseSchema);
+    return response.wanted;
+  }
+
+  /** The body is the JPEG itself, not JSON, so this call doesn't go through `request`. */
+  async sendFrame(jpeg: Buffer, source: CameraSource, signal: AbortSignal) {
+    let status: number;
+    let text: string;
+    try {
+      const response = await fetch(new URL(DEVICE_ROUTES.cameraFrames(this.deviceId), this.server), {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "image/jpeg", authorization: `Bearer ${this.credential}`, [CAMERA_SOURCE_HEADER]: source },
+        body: new Uint8Array(jpeg),
+        signal,
+        redirect: "error",
+      });
+      status = response.status;
+      text = await response.text();
+    } catch (error) {
+      throw toCloudError(error, signal);
+    }
+    let json: unknown;
+    try {
+      json = text === "" ? undefined : JSON.parse(text);
+    } catch {
+      json = undefined;
+    }
+    if (status < 200 || status > 299) throw errorFromResponse(status, json);
+    const parsed = CameraFrameResponseSchema.safeParse(json);
+    if (!parsed.success) throw new CloudError("bad_response", "Response doesn't match the camera contract.", status);
+    return parsed.data.keep_sending;
   }
 }
