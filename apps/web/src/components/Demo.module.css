@@ -400,6 +400,100 @@
   opacity: 0.3;
 }
 
+/* The microphone beside Send: quiet until pressed, then filled while it listens. */
+.micButton {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  border: 1px solid var(--control-edge);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  transition: transform 160ms var(--ease-out), background-color 200ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+
+.micButton svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.micButton[data-state="listening"] {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-ink);
+}
+
+.micButton[data-state="listening"] svg {
+  fill: currentColor;
+}
+
+.micButton[data-state="listening"]::after {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--danger);
+  border-radius: 50%;
+  animation: listen 1.4s var(--ease-out) infinite;
+  content: "";
+}
+
+@keyframes listen {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .micButton[data-state="listening"]::after {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.micButton[data-state="hearing"] {
+  opacity: 0.6;
+}
+
+.micButton:hover:not([aria-disabled="true"]):not([data-state="listening"]) {
+  background: var(--wash);
+}
+
+.micButton:active:not([aria-disabled="true"]) {
+  transform: scale(0.94);
+}
+
+.micButton[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.quietButton[aria-pressed="true"] {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.voiceStatus {
+  padding: 0 8px;
+  color: var(--text-meta);
+  font-size: 14px;
+}
+
+.voiceStatus:empty {
+  display: none;
+}
+
 .error {
   padding: 0 8px;
   color: var(--danger);

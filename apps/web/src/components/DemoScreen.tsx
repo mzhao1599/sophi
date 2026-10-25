@@ -43,14 +43,16 @@ interface ScreenProps {
   opening: Question;
   /** The model's short name while the agent runs ("Claude"): set, a reply from the fixed questions says so; null otherwise. */
   agentName?: string | null;
+  /** True when the server has Cartesia: the chat offers the microphone and Read aloud. */
+  voice?: boolean;
 }
 
 /** How long the final message has to be read before the walker rises. */
 const SHEET_DELAY_MS = 1200;
 
-export function DemoScreen({ opening, agentName = null, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
+export function DemoScreen({ opening, agentName = null, voice = false, account = null, resumeId = null }: ScreenProps & ScreenAccess) {
   const o = useOnboarding({ notice: account ? "account" : "demo", resumeId });
-  return <DemoView o={o} opening={opening} agentName={agentName} account={account} />;
+  return <DemoView o={o} opening={opening} agentName={agentName} voice={voice} account={account} />;
 }
 
 const FIRST_FRAME = "Your walker starts as just the frame. Tell us what's hard.";
@@ -73,7 +75,7 @@ function chatCaption(states: Record<ModuleId, PartState>): string {
  * beside it draws in what the answers suggest. When the assistant has enough, the walker rises to the
  * middle as a sheet: each module can be opened and switched, then saved and ordered (Stripe test mode).
  */
-export function DemoView({ o, opening, agentName = null, account = null }: { o: Onboarding } & ScreenProps & Pick<ScreenAccess, "account">) {
+export function DemoView({ o, opening, agentName = null, voice = false, account = null }: { o: Onboarding } & ScreenProps & Pick<ScreenAccess, "account">) {
   const s = o.session;
   const recs = s?.recommendations ?? [];
   const review = s?.state === "review" || s?.state === "confirmed";
@@ -220,7 +222,7 @@ export function DemoView({ o, opening, agentName = null, account = null }: { o: 
             <h1 id="headline" className={styles.headline}>
               Let&apos;s build your walker.
             </h1>
-            <Chat o={o} opening={opening} focusRequest={focusRequest} notice={noticeLine(account !== null)} describedBy="notice" agentName={agentName} />
+            <Chat o={o} opening={opening} focusRequest={focusRequest} notice={noticeLine(account !== null)} describedBy="notice" agentName={agentName} voice={voice} />
           </section>
           <div className={styles.preview}>
             <WalkerDiagram
