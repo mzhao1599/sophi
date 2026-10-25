@@ -1047,8 +1047,13 @@ const helpStates = [
         coming: z.array(CircleNameSchema).max(MAX_CIRCLE_MEMBERS),
         confirm_okay: z.boolean(),
       }),
-      /** Closed, shown for a while: her okay, a caretaker with her (named), or that it ended. */
-      z.strictObject({ phase: z.literal("closed"), how: HelpClosedHowSchema, by_name: CircleNameSchema.nullable() }),
+      /** Closed, shown for a while: her okay ("Okay. Maya will see that you're okay."), a caretaker with her (named), or that it ended. */
+      z.strictObject({
+        phase: z.literal("closed"),
+        how: HelpClosedHowSchema,
+        by_name: CircleNameSchema.nullable(),
+        sent_to: z.array(CircleNameSchema).min(1).max(MAX_CIRCLE_MEMBERS),
+      }),
     ]),
   }),
 ] as const;

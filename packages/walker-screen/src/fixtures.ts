@@ -155,10 +155,11 @@ const BASES: Base[] = [
   { name: "help-open-shown-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [...LONGEST_TOLD], coming: [], confirm_okay: false } } },
   { name: "help-open-coming-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [...LONGEST_TOLD], coming: [...LONGEST_TOLD], confirm_okay: false } }, strip: BENCH },
   { name: "help-open-confirm-okay-longest", screen: { state: "help", help: { phase: "open", sent_to: [...LONGEST_TOLD], shown_to: [], coming: [], confirm_okay: true } } },
-  { name: "help-closed-okay", screen: { state: "help", help: { phase: "closed", how: "okay", by_name: "Rose" } }, strip: { simulator: true } },
-  { name: "help-closed-with-her", screen: { state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya" } } },
-  { name: "help-closed-with-her-long", screen: { state: "help", help: { phase: "closed", how: "with_her", by_name: LONG } }, choices: { theme: "dark" } },
-  { name: "help-closed-expired", screen: { state: "help", help: { phase: "closed", how: "expired", by_name: null } } },
+  { name: "help-closed-okay", screen: { state: "help", help: { phase: "closed", how: "okay", by_name: "Rose", sent_to: ["Maya"] } }, strip: { simulator: true } },
+  { name: "help-closed-with-her", screen: { state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya", sent_to: ["Maya"] } } },
+  { name: "help-closed-with-her-long", screen: { state: "help", help: { phase: "closed", how: "with_her", by_name: LONG, sent_to: [LONG] } }, choices: { theme: "dark" } },
+  { name: "help-closed-okay-longest", screen: { state: "help", help: { phase: "closed", how: "okay", by_name: null, sent_to: [...LONGEST_TOLD] } } },
+  { name: "help-closed-expired", screen: { state: "help", help: { phase: "closed", how: "expired", by_name: null, sent_to: ["Maya"] } } },
 ];
 
 export function screenFixtures(): ScreenFixture[] {

@@ -553,7 +553,7 @@ export class WalkerHelp {
         return { state: "help", help: { phase: "open", sent_to: names(view.sent_to), shown_to: names(view.shown_to), coming: names(view.coming), confirm_okay: armed } };
       }
       case "closed":
-        return { state: "help", help: { phase: "closed", how: request.view.closed!.how, by_name: request.view.closed!.by?.name ?? null } };
+        return { state: "help", help: { phase: "closed", how: request.view.closed!.how, by_name: request.view.closed!.by?.name ?? null, sent_to: request.view.sent_to.map((p) => p.name) } };
     }
   }
 

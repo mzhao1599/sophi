@@ -616,8 +616,9 @@ describe("asking for help", () => {
     ok(ScreenStateSchema, state({ state: "help", help: { phase: "not_sent", why: "no_caretaker" } }));
     ok(ScreenStateSchema, state({ state: "help", help: { phase: "open", sent_to: ["Maya"], shown_to: ["Maya"], coming: ["Maya"], confirm_okay: true } }));
     bad(ScreenStateSchema, state({ state: "help", help: { phase: "open", sent_to: [], shown_to: [], coming: [], confirm_okay: false } }));
-    ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya" } }));
-    ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "okay", by_name: null } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya", sent_to: ["Maya"] } }));
+    bad(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "with_her", by_name: "Maya" } }));
+    ok(ScreenStateSchema, state({ state: "help", help: { phase: "closed", how: "okay", by_name: null, sent_to: ["Maya", "Sam"] } }));
     expect(ScreenActionSchema.options.some((a) => /help|okay/.test(a))).toBe(false);
   });
 });

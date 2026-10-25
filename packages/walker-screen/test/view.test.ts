@@ -469,9 +469,10 @@ describe("asking for help (GV rows in devices/pi/test/EXPECTED.md)", () => {
   });
 
   it("GV2: closed, with gender-neutral words", () => {
-    expect(words(help({ phase: "closed", how: "okay", by_name: null }))).toBe("Okay | They'll see that you're okay.");
-    expect(words(help({ phase: "closed", how: "with_her", by_name: "Maya" }))).toBe("Maya says they're with you");
-    expect(words(help({ phase: "closed", how: "expired", by_name: null }))).toBe("Your request for help has ended");
+    expect(words(help({ phase: "closed", how: "okay", by_name: null, sent_to: ["Maya"] }))).toBe("Okay | Maya will see that you're okay.");
+    expect(words(help({ phase: "closed", how: "okay", by_name: "Rose", sent_to: ["Maya", "Sam"] }))).toBe("Okay | Maya and Sam will see that you're okay.");
+    expect(words(help({ phase: "closed", how: "with_her", by_name: "Maya", sent_to: ["Maya"] }))).toBe("Maya says they're with you");
+    expect(words(help({ phase: "closed", how: "expired", by_name: null, sent_to: ["Maya"] }))).toBe("Your request for help has ended");
   });
 
   it("GV2: the spoken lines (shared with the Pi) are the design's table", () => {

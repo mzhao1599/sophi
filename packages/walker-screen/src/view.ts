@@ -572,11 +572,10 @@ function helpScene(content: HelpContent, textSize: TextSize): Scene {
       };
     }
     case "closed": {
-      // The screen's `closed` carries who closed it, not who it was sent to, so "Okay. Maya will see that you're
-      // okay." (spoken) shows here without the names.
       if (help.how === "okay") {
-        const lines = [body("They'll see that you're okay.")];
-        return { key: "help_closed:okay", main: helpMain("Okay", textSize, lines), lines, announce: "Okay. They'll see that you're okay." };
+        const said = HELP_WORDS.closedOkay(help.sent_to);
+        const lines = [namesLine(said.slice("Okay. ".length))];
+        return { key: `help_closed:okay:${help.sent_to.join(",")}`, main: helpMain("Okay", textSize, lines), lines, announce: said };
       }
       const said = help.how === "with_her" && help.by_name ? HELP_WORDS.closedWithHer(help.by_name) : HELP_WORDS.expired;
       return { key: `help_closed:${help.how}:${help.by_name ?? ""}`, main: helpMain(said.slice(0, -1), textSize, []), announce: said };
