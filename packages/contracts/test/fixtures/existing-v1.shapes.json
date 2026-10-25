@@ -3324,7 +3324,7 @@
           "properties": {
             "views": {
               "minItems": 1,
-              "maxItems": 5,
+              "maxItems": 6,
               "type": "array",
               "items": {
                 "type": "string",
@@ -3333,7 +3333,8 @@
                   "location",
                   "sensors",
                   "message",
-                  "parts"
+                  "parts",
+                  "companion"
                 ]
               }
             }
@@ -4772,7 +4773,8 @@
         "location",
         "sensors",
         "message",
-        "parts"
+        "parts",
+        "companion"
       ]
     },
     "SpeechPaceRequestSchema": {
@@ -7455,7 +7457,8 @@
                 "location",
                 "sensors",
                 "message",
-                "parts"
+                "parts",
+                "companion"
               ]
             }
           },
@@ -8352,7 +8355,8 @@
                     "location",
                     "sensors",
                     "message",
-                    "parts"
+                    "parts",
+                    "companion"
                   ]
                 }
               },
@@ -8395,20 +8399,38 @@
           }
         },
         "motion_offer": {
-          "type": "object",
-          "properties": {
-            "preset": {
-              "type": "string",
-              "enum": [
-                "ground",
-                "up"
-              ]
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "preset": {
+                  "type": "string",
+                  "enum": [
+                    "ground",
+                    "up"
+                  ]
+                }
+              },
+              "required": [
+                "preset"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "delta_mm": {
+                  "type": "integer",
+                  "minimum": -800,
+                  "maximum": 800
+                }
+              },
+              "required": [
+                "delta_mm"
+              ],
+              "additionalProperties": false
             }
-          },
-          "required": [
-            "preset"
-          ],
-          "additionalProperties": false
+          ]
         },
         "message_offer": {
           "type": "object",

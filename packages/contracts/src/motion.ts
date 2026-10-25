@@ -1378,7 +1378,7 @@ export function isPreparerAllowed(kind: MotionCommandKind, by: Preparer): boolea
 }
 
 /** An offered lift target is finite and within the nominal rail; installation limits are checked separately. */
-export function offerKeepsToPresets(action: { kind: string; target_mm?: number }, by: Preparer): boolean {
+export function offerKeepsToRail(action: { kind: string; target_mm?: number }, by: Preparer): boolean {
   if (by !== "offer" || action.kind !== "lift.move") return true;
   const height = action.target_mm;
   return typeof height === "number" && Number.isFinite(height) && height >= 0 && height <= LIFT_RAIL_LENGTH_MM;
@@ -1438,8 +1438,8 @@ export const ConfirmTargetSchema = z
     message: "This preparer may not prepare this action.",
     path: ["prepared_by"],
   })
-  .refine((t) => offerKeepsToPresets(t.action, t.prepared_by), {
-    message: "An offer moves the lift only to a named preset.",
+  .refine((t) => offerKeepsToRail(t.action, t.prepared_by), {
+    message: "An offer moves the lift only to a target within the rail.",
     path: ["action"],
   })
   .refine((t) => t.prompt === confirmPrompt(t.title, MOTION_COMMAND_POLICY[t.action.kind].needs_park), {
@@ -1553,8 +1553,8 @@ export const MotionCommandSchema = z
     message: "This preparer may not prepare this command.",
     path: ["prepared_by"],
   })
-  .refine((c) => !("prepared_by" in c) || offerKeepsToPresets(c, c.prepared_by), {
-    message: "An offer moves the lift only to a named preset.",
+  .refine((c) => !("prepared_by" in c) || offerKeepsToRail(c, c.prepared_by), {
+    message: "An offer moves the lift only to a target within the rail.",
     path: ["target_mm"],
   })
   .refine(
