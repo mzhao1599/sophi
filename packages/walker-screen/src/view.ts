@@ -1,5 +1,4 @@
 import {
-  BENCH_MODE_LABEL,
   FAULT_CLEAR_SENTENCE,
   FAULT_SENTENCES,
   MODULE_CATALOG,
@@ -23,7 +22,7 @@ import {
 import {
   MANEUVER_WORD,
   NAV_ARROW_PX,
-  NAV_SIDE_PX,
+  NAV_TOP_PX,
   PHASE_WORDS,
   detailLines,
   distanceWords,
@@ -31,6 +30,7 @@ import {
   minutesLeftWords,
   navColumns,
   navMap,
+  navMapHeight,
   phaseLine,
   streetForLine,
   turnWordPx,
@@ -122,11 +122,7 @@ export interface ScreenView {
   itemId: string | null;
   revision: number;
   settingsVersion: number;
-  /**
-   * `bench`: a dashed "Bench mode" tag (the arms and lift may move with no hardware stop; motion screens say it
-   * in full). Not on the simulator, whose "Simulator" tag takes the room. A spoken lift move runs under the clock
-   * or route screen, not a motion screen, so the tag is the only warning on screen then.
-   */
+  /** Whether motion screens show a concise missing-stop warning. */
   strip: { word: string; shape: PresenceShape; time: string | null; simulator: boolean; bench: boolean };
   /**
    * The main fact: at the main size, at body size for captions, or for a long motion title in bold at the body
@@ -717,7 +713,7 @@ export function promptAfterTitle(title: string, prompt: string): string {
 }
 
 /** The bench label, in full, on every motion screen: there is no hardware stop. */
-const benchLine = (bench: boolean): ViewLine[] => (bench ? [detail(BENCH_MODE_LABEL)] : []);
+const benchLine = (bench: boolean): ViewLine[] => (bench ? [detail("No hardware stop")] : []);
 
 type MotionContent = Extract<ScreenContent, { state: "motion_confirm" | "motion_running" | "motion_holding" | "motion_fault" }>;
 
@@ -840,6 +836,9 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
     announce = `${main}.`;
   }
   const fitted = guiding ? { px: turnWordPx(main, textSize), wraps: false } : phaseLine(main, textSize);
+  // The map fills the screen; her dot goes in the middle of the left column, between the strip and the distance left.
+  const infoLines = info.reduce((n, l) => n + Math.min(l.maxLines ?? 1, detailLines(l.text, textSize)), 0);
+  const focus = { x: 16 + left / 2, y: NAV_TOP_PX + navMapHeight(infoLines) / 2 };
   return {
     key: `navigating:${content.phase}:${content.instruction}`,
     main: { text: main, size: "nav" },
@@ -853,8 +852,7 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
       arrowPx: NAV_ARROW_PX[textSize],
       mainPx: fitted.px,
       mainWraps: fitted.wraps,
-      // The whole display is map, but the instruction card covers the right column: her dot sits mid-left column.
-      map: navMap(content.map, 800, 480, 480, true, sizes.edge + left / 2),
+      map: navMap(content.map, 800, 480, 480, true, focus),
       simulated: content.simulated,
       info,
     },

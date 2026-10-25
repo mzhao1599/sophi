@@ -306,7 +306,9 @@ describe("motion: the arms and the lift", () => {
     expect(asking.left).toEqual({ kind: "hint", word: "Confirm" });
   });
 
-  it("bench mode: a tag in the strip on every screen, and the full label on every motion screen", () => {
+  // The motion screens' short warning (view.ts benchLine); the strip no longer carries a "Bench mode" tag.
+  const BENCH_LINE = "No hardware stop";
+  it('bench mode: "No hardware stop" on every motion screen, and no tag in the strip', () => {
     const motion: ScreenContent[] = [
       { state: "motion_confirm", target: cup, hold: null },
       { state: "motion_confirm", target: raise, hold: "raise" },
@@ -318,17 +320,17 @@ describe("motion: the arms and the lift", () => {
     for (const screen of motion) {
       const v = screenView(state(screen, { strip: benchStrip }));
       expect(v.strip.bench, screen.state).toBe(true);
-      expect(texts(v), screen.state).toContain(BENCH_MODE_LABEL);
-      expect(texts(screenView(state(screen))), screen.state).not.toContain(BENCH_MODE_LABEL);
+      expect(texts(v), screen.state).toContain(BENCH_LINE);
+      expect(texts(screenView(state(screen))), screen.state).not.toContain(BENCH_LINE);
     }
     const ambient = screenView(state({ state: "ambient", alerts: null }, { strip: benchStrip }));
     expect(ambient.strip.bench).toBe(true);
-    expect(texts(ambient)).not.toContain(BENCH_MODE_LABEL);
+    expect(texts(ambient)).not.toContain(BENCH_LINE);
     expect(screenView(state({ state: "listening" }, { strip: benchStrip })).strip).toMatchObject({ time: "7:42", bench: true });
-    // The simulator in bench mode: its "Simulator" tag takes the room; motion screens still say the label.
+    // The simulator in bench mode: its "Simulator" tag takes the room; motion screens still say there is no hardware stop.
     const sim = { ...benchStrip, simulator: true };
     expect(screenView(state({ state: "listening" }, { strip: sim })).strip).toMatchObject({ time: "7:42", simulator: true, bench: false });
-    expect(texts(screenView(state({ state: "motion_running", what: "Bring the cup", lift: null }, { strip: sim })))).toContain(BENCH_MODE_LABEL);
+    expect(texts(screenView(state({ state: "motion_running", what: "Bring the cup", lift: null }, { strip: sim })))).toContain(BENCH_LINE);
   });
 
   it("a long title drops to a smaller bold size so the screen still fits; the words are never cut", () => {
@@ -407,8 +409,8 @@ describe("her circle's states", () => {
 /**
  * Walking directions on the screen (docs/subsystems/navigation.md, "The screen"), rows written before the code:
  * N1 guiding: the maneuver's word, "in 30 m" in bold beside the arrow, the street under it, "750 m to go" and
- *    "about 10 min" on the map, End route on screen (the left handle repeats the instruction), nothing over
- *    either handle; a screen reader hears the whole instruction.
+ *    "about 10 min" under the map, Repeat and End route between the handles, Talk on the right, nothing over the
+ *    left handle; a screen reader hears the whole instruction.
  * N2 the scene (and what a screen reader hears) changes with the instruction or the phase, never as the metres
  *    count down or her dot moves; the map and the distances do change.
  * N3 each phase in words: "Finding the way again", "Can't find the way from here", "Looking for GPS" (with the
@@ -468,7 +470,7 @@ describe("walking directions", () => {
     const arrived = at({ phase: "arrived", maneuver: "arrive", street: null, to_step_m: 0, remaining_m: 0, remaining_min: 0 });
     expect(texts(arrived)).toEqual(["You've arrived", "Lake Merritt Boating Center"]);
     expect(arrived.announce).toBe("You've arrived: Lake Merritt Boating Center.");
-    // End route stays in every phase; Repeat is the left handle's press, not a button (499bdb2).
+    // End route stays in every phase; the left handle repeats the instruction.
     for (const phase of ["rerouting", "off_route", "no_position", "arrived"] as const) {
       expect(buttons(at({ phase })).map((b) => b.action), phase).toEqual(["end_route"]);
     }

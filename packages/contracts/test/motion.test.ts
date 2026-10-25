@@ -500,25 +500,24 @@ describe("Confirm targets", () => {
   });
 
   it("may be prepared only by whoever the action's policy names; the cloud offers skills, poses, lift presets and bounded relative lift moves", () => {
-    // A lift move from an offer goes to a preset's height or to a target the Pi computed from a relative offer
-    // (c8005e1); either way it stays within the nominal rail, and the Pi and lift board enforce the installed soft limits.
-    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_PRESET_HEIGHTS_MM.up } }))).toBe(true);
+    // A lift move from an offer goes to a height on the rail; the Pi computes it and checks the installed soft limits.
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: 300 } }))).toBe(true);
-    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_RAIL_LENGTH_MM } }))).toBe(true);
+    expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_PRESET_HEIGHTS_MM.up } }))).toBe(true);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: LIFT_RAIL_LENGTH_MM + 1 } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "lift.move", target_mm: -1 } }))).toBe(false);
     expect(offerKeepsToRail({ kind: "lift.move", target_mm: Number.NaN }, "offer")).toBe(false);
     expect(offerKeepsToRail({ kind: "lift.move" }, "offer")).toBe(false);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up" } })).toBe(true);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.preset", preset: "up", target_mm: 300 } })).toBe(false);
-    // The cloud sends a signed displacement, never an absolute height, speed or start.
-    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: 20 } })).toBe(true);
-    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: -LIFT_VOICE_TRIAL_MAX_MM } })).toBe(true);
-    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: LIFT_VOICE_TRIAL_MAX_MM + 1 } })).toBe(false);
-    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: 0 } })).toBe(false);
-    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: 2.5 } })).toBe(false);
-    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: 20, target_mm: 300 } })).toBe(false);
     expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.move", target_mm: 300 } })).toBe(false);
+    // A relative offer is a displacement, never a height: whole millimetres, not zero, within LIFT_VOICE_TRIAL_MAX_MM.
+    for (const delta_mm of [20, -20, LIFT_VOICE_TRIAL_MAX_MM, -LIFT_VOICE_TRIAL_MAX_MM]) {
+      expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm } }), String(delta_mm)).toBe(true);
+    }
+    for (const delta_mm of [0, 20.5, LIFT_VOICE_TRIAL_MAX_MM + 1, -LIFT_VOICE_TRIAL_MAX_MM - 1]) {
+      expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm } }), String(delta_mm)).toBe(false);
+    }
+    expect(ok(MotionOfferRequestSchema, { target: { kind: "lift.relative", delta_mm: 20, target_mm: 300 } })).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "offer", action: { kind: "fault.clear" } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "walker_local", action: { kind: "skill.run", skill_id: "tray_pick_handover" } }))).toBe(false);
     expect(ok(ConfirmTargetSchema, target({ prepared_by: "cloud" }))).toBe(false);
@@ -670,7 +669,7 @@ describe("command policy (AGENTS.md rule 8)", () => {
 
   it("lets the cloud's offers name only taught skills, poses and lift presets, and the Pi's own follow-up only let go", () => {
     const by = (who: "offer" | "walker_local") => CONFIRMED_KINDS.filter((k) => isPreparerAllowed(k, who)).sort();
-    // lift.move from an offer: a preset or a Pi-computed relative target within the rail (offerKeepsToRail).
+    // lift.move from an offer: only to a preset (offerKeepsToRail), still behind Confirm and the hold control.
     expect(by("offer")).toEqual(["arm.go_to_pose", "lift.move", "skill.run"]);
     expect(MOTION_COMMAND_POLICY["lift.move"]).toMatchObject({ hold_to_run: true, needs_park: true });
     expect(by("walker_local")).toEqual(["gripper.release"]);
@@ -700,8 +699,9 @@ describe("command policy (AGENTS.md rule 8)", () => {
     expect(MOTION_COMMAND_POLICY["skill.run"].refuses_when).toEqual(expect.arrayContaining(["lift_not_homed", "lift_not_at_height"]));
   });
 
-  it("holds the lift from the screen's hold control, which lets go on every kind of release, or from a local Talk turn's Pi lease", () => {
-    // 58dfc86: a spoken lift.move runs on a Pi-owned lease (no Confirm target, no held control) until it ends or is stopped.
+  it("holds the lift from the screen's hold control (which lets go on every kind of release) or a spoken move's Pi-owned lease", () => {
+    // Since 2026-10-25 a lift move asked for with the local Talk control runs on the Pi's own heartbeat lease;
+    // every other lift move still needs the screen's hold control.
     expect([...HoldSourceSchema.options]).toEqual(["screen_hold_control", "local_voice_request"]);
     for (const event of ["pointerup", "pointercancel", "touchcancel", "blur", "visibilitychange"]) expect(SCREEN_HOLD_RELEASE_EVENTS).toContain(event);
   });

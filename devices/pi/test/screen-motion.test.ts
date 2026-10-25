@@ -122,10 +122,9 @@ describe("D19: motion in the screen's priority", () => {
   const ended = { content: { state: "motion_holding" as const, outcome: "stopped" as const, refusal: null }, untilMono: 4000 };
 
   it("obstacle, running or fault, her own Talk, the pending target, the offer, Done, Stopped, offline, the clock", () => {
+    // A latched fault's page gives way to her own Talk turn (the fault stays latched in the coordinator).
     expect(name({ obstacle, motion: running, talk: "recording" })).toBe("obstacle");
     expect(name({ motion: running, talk: "recording", answer, offer, done, link: "offline" })).toBe("motion_running");
-    // 58dfc86: a fault page yields to her own new Talk turn (the fault stays latched in the coordinator), but
-    // still comes before an offer, Done, offline and the clock.
     expect(name({ motion: faulted, talk: "recording", answer, offer, done, link: "offline" })).toBe("listening");
     expect(name({ motion: faulted, offer, done, link: "offline" })).toBe("motion_fault");
     expect(name({ motion: pending, talk: "recording" })).toBe("listening");
@@ -139,7 +138,7 @@ describe("D19: motion in the screen's priority", () => {
     expect(name({ motionEnded: ended }, 4000)).toBe("ambient");
   });
 
-  it("D27: a running motion, a fault, a pending target and Done, Stopped or Not started all come before a route", () => {
+  it("D27: a running motion, a pending target and Done, Stopped or Not started come before a route; a fault's page gives way to it", () => {
     const navigation: NavigatingScreen = {
       state: "navigating",
       destination: "Lake Merritt Boating Center",
@@ -154,7 +153,6 @@ describe("D19: motion in the screen's priority", () => {
       map: { position: [37.809875, -122.257855], route: [[37.809875, -122.257855], [37.805086, -122.257848]], step_at: null, destination_at: [37.805086, -122.257848] },
     };
     expect(name({ navigation, motion: running })).toBe("motion_running");
-    // 58dfc86: a fault page yields to a route; a running motion and a pending target still come first.
     expect(name({ navigation, motion: faulted })).toBe("navigating");
     expect(name({ navigation, motion: pending })).toBe("motion_confirm");
     expect(name({ navigation, motionEnded: ended })).toBe("motion_holding");
@@ -186,8 +184,8 @@ describe("D19: motion in the screen's priority", () => {
     expect(states.at(-1)!.screen.state).toBe("listening");
     m.talk("idle");
     await flush();
-    // Back underneath: 58dfc86 dropped the "Stopped" page, so the clock comes back at once.
-    expect(states.at(-1)!.screen.state).toBe("ambient");
+    // A stop shows no "Stopped": the clock that was underneath comes back.
+    expect(states.at(-1)!.screen).toEqual({ state: "ambient", alerts: null, companion_code: null });
     m.stop();
   });
 });
@@ -319,7 +317,7 @@ describe("D21: after a motion, Done, Stopped or Not started", () => {
     const completed = motion({ last_command: { command_id: skillActive.command_id, kind: "skill.run", outcome: "completed", at: AT } });
     expect(endedBetween(runningSkill, completed)).toEqual({ state: "motion_holding", outcome: "completed", refusal: null });
     const stopped = motion({ last_command: { command_id: skillActive.command_id, kind: "skill.run", outcome: "stopped", at: AT } });
-    // 58dfc86: a stop returns to whatever is underneath, with no "Stopped" page.
+    // A stop returns to whatever is underneath, so it claims no screen of its own.
     expect(endedBetween(runningSkill, stopped)).toBeNull();
     // Another command's outcome, a fault, or nothing new: nothing is claimed.
     expect(endedBetween(runningSkill, motion({ last_command: { command_id: uuid(99), kind: "skill.run", outcome: "completed", at: AT } }))).toBeNull();
@@ -341,7 +339,7 @@ describe("D21: after a motion, Done, Stopped or Not started", () => {
     expect(endedBetween(pending, motion({ last_command: { command_id: uuid(82), kind: "skill.run", outcome: "refused", refusal: "busy", at: AT } }))).toBeNull();
   });
 
-  it("shows for SCREEN_DONE_MS, then whatever is underneath", async () => {
+  it("Done shows for SCREEN_DONE_MS, then whatever is underneath; a stop goes straight back", async () => {
     const clock = new FakeClock();
     const states: ScreenState[] = [];
     const m = new ScreenMachine({ clock, simulator: false, settings, localTime: () => null, onState: (s) => states.push(s), onError: (e) => { throw e; } });
@@ -359,6 +357,11 @@ describe("D21: after a motion, Done, Stopped or Not started", () => {
     await flush();
     expect(states.at(-1)!.screen.state).toBe("motion_holding");
     await clock.advance(200);
+    expect(states.at(-1)!.screen.state).toBe("ambient");
+    m.motion(motion(movingLift("running")));
+    await flush();
+    m.motion(motion({ last_command: { command_id: uuid(71), kind: "lift.move", outcome: "stopped", at: AT } }));
+    await flush();
     expect(states.at(-1)!.screen.state).toBe("ambient");
     m.stop();
   });

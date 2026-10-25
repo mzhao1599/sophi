@@ -242,7 +242,7 @@ Both are made-up data with one "Sample" tag in the corner, and neither needs a w
 
 **Which safety line to say** depends on the stop:
 - **Hardware stop wired and passed 3 of 3:** "And this red switch cuts the arms' power, whatever the software is doing." †
-- **No hardware stop yet** (today): the Pi must run in bench mode (`WALKER_MOTION_BENCH=no-hardware-stop`), at lower speeds and torque, and every motion screen says "Bench mode: no hardware stop". Say: "There's no hardware stop wired yet, so it runs in bench mode, slower, and the screen says so. My teammate has a hand on the arms' power." †
+- **No hardware stop yet** (today): the Pi must run in bench mode (`WALKER_MOTION_BENCH=no-hardware-stop`), at lower speeds and torque, and every motion screen says "No hardware stop". Say: "There's no hardware stop wired yet, so it runs in bench mode, slower, and the screen says so. My teammate has a hand on the arms' power." †
 
 > "These arms move only when someone at the walker presses Confirm. Not the model, not the phone, not the website." †
 
@@ -311,7 +311,7 @@ Both are made-up data with one "Sample" tag in the corner, and neither needs a w
 
 1. Hold Talk: **"Where am I right now?"** Sophi: "I'll check your GPS location now." then "Your simulated GPS puts you near 451 Lee Street, Oakland, California." † (the address can differ: it is looked up live).
 2. Hold Talk: **"Can you walk me to the Lake Merritt Boating Center?"** Sophi: "Let me find that." and a short line that she found it †. Then the walker, in its own voice: "On the simulated position: Walking to the Lake Merritt Boating Center, about 750 meters. Head west on the path. Directions come from OpenStreetMap and may include steps or curbs." †
-3. **The screen** †: the street map with the route as a thick line and her dot (dashed ring, "Simulated" tag), and on the right the next turn as a big arrow and word ("Left"), "in 30 m" and the street ("Lenox Avenue"). Repeat and End route between the handles.
+3. **The screen** †: the street map with the route as a thick line and her dot (dashed ring, "Simulated" tag), and on the right the next turn as a big arrow and word ("Left"), "in 30 m" and the street ("Lenox Avenue"). End route between the handles (the left handle repeats the instruction).
 4. As the dot moves: "In 30 meters, turn left onto Lenox Avenue." then "Turn left now." †. Press **Confirm**: it says the next instruction again †.
 5. Hold Talk: **"How much farther is it?"** Sophi answers from the route in progress ("About 600 meters left, around 8 minutes.") †, with no lookup.
 6. Tap **End route** on the screen (or hold Talk: "Please stop the directions."): "Directions stopped." and the screen returns to the clock †.
