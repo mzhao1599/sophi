@@ -1,4 +1,4 @@
-import type { AppliedScreenSettings, Cue, MotionState, ScreenContent, ScreenHoldDirection, ScreenLink, ScreenState } from "@walker/contracts";
+import { SCREEN_SHOW_MS, type AppliedScreenSettings, type Cue, type MotionState, type ScreenContent, type ScreenHoldDirection, type ScreenLink, type ScreenState, type ShowCard } from "@walker/contracts";
 import { captionPages } from "@walker/walker-screen/view";
 import type { TalkState } from "../bus";
 import type { Cancel, Clock } from "../clock";
@@ -15,6 +15,7 @@ import {
   SCREEN_ZONES_MIN_MS,
   ZONE_VALIDITY_MS,
 } from "../constants";
+import { roundMm } from "../show";
 import { endedBetween, liftDirection, motionContent, type MotionHolding, type ScreenMotion } from "./motion";
 
 /**
@@ -26,7 +27,8 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  *   1. obstacle: a zone is near (the cue policy's thresholds and hysteresis), and for a short tail after
  *   2. motion she must know about now: something moving (and that any handle button stops it, or that letting
  *      go of the lift stops it), or a latched motion fault (with its clearing target, if one is pending)
- *   3. what she is doing: listening (Talk held), thinking (her turn is with Sophi), then answering (captions)
+ *   3. what she is doing: listening (Talk held), a card Sophi pulled up for her (`showing`, with the answer's
+ *      captions under it), thinking (her turn is with Sophi), then answering (captions)
  *   4. the pending motion Confirm target ("Bring the cup? Park the walker…"), with the lift's hold control
  *   5. Sophi's offer: today's model offer, until it is settled or closes
  *   6. Done / Nothing changed, for a few seconds after Confirm settles an offer; and after a motion, Done,
@@ -45,6 +47,12 @@ import { endedBetween, liftDirection, motionContent, type MotionHolding, type Sc
  * only once her turn is over; a Confirm press in between still answers it.) The target comes before Sophi's
  * offer and Done, which the coordinator never shows together
  * with it (one owner of Confirm at a time).
+ * Why a card sits under listening and over thinking and answering (`show_on_screen`, added 2026-10-24,
+ * docs/subsystems/show-on-screen.md): she asked to see it, so it stays up while Sophi says it's there, and the
+ * answer's current caption page rides under it (`caption`), so captions never vanish under a card. A Talk press
+ * is a new question, so listening comes first and ends the card. An obstacle and motion still come first. It
+ * goes SCREEN_SHOW_MS after the answer has finished playing (or after it was drawn, when no answer was
+ * playing), or when a newer card replaces it.
  * The state is recomputed from these layers whenever one changes, so an interruption (an obstacle, Talk)
  * returns to whatever is still underneath it, with a new revision.
  *
@@ -63,6 +71,24 @@ export interface ScreenZone {
   quality: "valid" | "invalid";
   /** The reading came from a simulated sensor. */
   simulated: boolean;
+  /** When the Pi received the reading (monotonic); a sensors card stops counting it ZONE_VALIDITY_MS later. */
+  receivedMono?: number;
+}
+
+/** One zone on a sensors card: its rounded distance while the reading counts (until `untilMono`), else unknown. */
+export interface ScreenShowZone {
+  zone: string;
+  mm: number | null;
+  simulated: boolean;
+  untilMono: number;
+}
+
+/** A card Sophi pulled up (`show_on_screen`): drawn at `shownMono`; a sensors card keeps its zones live here. */
+export interface ScreenShowing {
+  card: ShowCard;
+  shownMono: number;
+  /** Sensors only: the zones, rebuilt from each new reading while the card is up. */
+  zones: ScreenShowZone[] | null;
 }
 
 export interface ScreenAnswer {
@@ -109,6 +135,8 @@ export interface ScreenModel {
   motionEnded: { content: MotionHolding; untilMono: number } | null;
   /** The caretaker's message being read aloud, or read last. */
   message: ScreenMessage | null;
+  /** A card Sophi pulled up for her, until it goes (see `showEndsAt`). */
+  showing: ScreenShowing | null;
 }
 
 /** How long one caption page shows: its characters at the speaking rate, and never less than the minimum. */
@@ -132,6 +160,29 @@ export function answerEndsAt(answer: ScreenAnswer, pages: readonly string[], cap
   if (answer.spokenMono === null) return null;
   const paged = captions ? answer.startedMono + pages.reduce((sum, p) => sum + pageMs(p), 0) : answer.startedMono;
   return Math.max(answer.spokenMono, paged) + (offerOpen ? 0 : SCREEN_ANSWER_HOLD_MS);
+}
+
+/**
+ * When a card goes on its own: SCREEN_SHOW_MS after the answer finished playing, or after it was drawn if that
+ * was later (no answer, or one that ended before it); null while an answer plays. A Talk press or a newer card
+ * ends it sooner (the machine's inputs).
+ */
+export function showEndsAt(showing: ScreenShowing, answer: ScreenAnswer | null): number | null {
+  if (answer && answer.spokenMono === null) return null;
+  return Math.max(showing.shownMono, answer?.spokenMono ?? Number.NEGATIVE_INFINITY) + SCREEN_SHOW_MS;
+}
+
+/** The card as drawn at `now`: a sensors zone whose reading no longer counts reads unknown. */
+function showContent(showing: ScreenShowing, now: number, soonest: number[]): ShowCard {
+  if (!showing.zones || showing.card.view !== "sensors") return showing.card;
+  return {
+    view: "sensors",
+    zones: showing.zones.map((z) => {
+      const counts = z.mm !== null && now < z.untilMono;
+      if (counts) soonest.push(z.untilMono);
+      return { zone: z.zone, distance: counts ? { status: "measured" as const, mm: z.mm! } : { status: "unknown" as const }, simulated: z.simulated };
+    }),
+  };
 }
 
 /**
@@ -164,19 +215,31 @@ export function pickScreen(model: ScreenModel, now: number, settings: Pick<Appli
     }
   }
 
-  let doing: ScreenContent | null = null;
-  if (model.talk === "recording") doing = { state: "listening" };
-  else if (model.talk === "waiting") doing = { state: "thinking" };
-  else if (model.answer) {
+  // A card she asked for, while its time lasts (a Talk press clears it in the machine).
+  let showEnds: number | null = null;
+  const showLive = model.showing !== null && model.talk !== "recording" && ((showEnds = showEndsAt(model.showing, model.answer)) === null || now < showEnds);
+  if (showLive && showEnds !== null) soonest.push(showEnds);
+
+  // The answer as captions: on the answering screen, or as the caption under a card.
+  let answering: Extract<ScreenContent, { state: "answering" }> | null = null;
+  let caption: string | null = null;
+  if (model.answer && (model.talk === "idle" || showLive)) {
     const pages = captionPages(model.answer.reply, settings.text_size);
     const ends = answerEndsAt(model.answer, pages, settings.captions, model.offer !== null);
     if (ends === null || now < ends) {
       const { page, nextInMs } = pageAt(pages, now - model.answer.startedMono);
       if (settings.captions && nextInMs !== null) soonest.push(now + nextInMs);
       if (ends !== null) soonest.push(ends);
-      doing = { state: "answering", heard: model.answer.heard, reply: model.answer.reply, source: model.answer.source, page: settings.captions ? page : 0 };
+      answering = { state: "answering", heard: model.answer.heard, reply: model.answer.reply, source: model.answer.source, page: settings.captions ? page : 0 };
+      caption = settings.captions ? (pages[page] ?? null) : null;
     }
   }
+
+  let doing: ScreenContent | null = null;
+  if (model.talk === "recording") doing = { state: "listening" };
+  else if (showLive) doing = { state: "showing", card: showContent(model.showing!, now, soonest), caption };
+  else if (model.talk === "waiting") doing = { state: "thinking" };
+  else doing = answering;
 
   let under: ScreenContent;
   if (motion.safety) under = motion.safety;
@@ -225,7 +288,7 @@ export interface ScreenMachineDeps {
  * state, so the page never flashes an in-between screen. The clock is redrawn on the minute.
  */
 export class ScreenMachine {
-  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null };
+  private model: ScreenModel = { link: "unpaired", talk: "idle", alerts: null, offer: null, answer: null, done: null, obstacle: null, motion: null, motionEnded: null, message: null, showing: null };
   private revision = -1;
   private last: ScreenState | null = null;
   private lastKey = "";
@@ -234,6 +297,8 @@ export class ScreenMachine {
   private cancelTimer: Cancel | null = null;
   private timerAt: number | null = null;
   private readonly near = new Map<string, boolean>();
+  /** The last zones reading, by zone: a sensors card starts from it. */
+  private latestZones = new Map<string, ScreenZone>();
   private lastZonesSent = Number.NEGATIVE_INFINITY;
   private cancelZones: Cancel | null = null;
   private cancelStale: Cancel | null = null;
@@ -266,6 +331,7 @@ export class ScreenMachine {
       this.model.answer = null;
       this.model.done = null;
       this.model.message = null;
+      this.model.showing = null;
     }
     this.changed();
   }
@@ -296,6 +362,33 @@ export class ScreenMachine {
     if (this.model.message?.id !== id || this.model.message.spokenMono !== null) return;
     this.model.message.spokenMono = this.deps.clock.monotonic();
     this.changed();
+  }
+
+  /**
+   * A card Sophi pulled up for her (`show_on_screen`), built by the Pi from its own data. A newer card replaces
+   * this one. A sensors card takes each zone's latest reading from here on, so it stays current.
+   */
+  show(card: ShowCard): void {
+    const now = this.deps.clock.monotonic();
+    const zones = card.view === "sensors"
+      ? card.zones.map((z) => this.latestZones.get(z.zone) ? this.showZone(this.latestZones.get(z.zone)!, now) : { zone: z.zone, mm: z.distance.status === "measured" ? z.distance.mm : null, simulated: z.simulated, untilMono: now + ZONE_VALIDITY_MS })
+      : null;
+    this.model.showing = { card, shownMono: now, zones };
+    this.changed();
+  }
+
+  private showZone(zone: ScreenZone, now: number): ScreenShowZone {
+    const counts = zone.quality === "valid" && zone.mm !== null;
+    return { zone: zone.zone, mm: counts ? roundMm(zone.mm!) : null, simulated: zone.simulated, untilMono: counts ? (zone.receivedMono ?? now) + ZONE_VALIDITY_MS : now };
+  }
+
+  /** A sensors card follows each reading: zones it has stay on it (unknown when the reading leaves one out), new ones join. */
+  private followZones(zones: readonly ScreenZone[], now: number): void {
+    const showing = this.model.showing;
+    if (!showing?.zones) return;
+    const next = showing.zones.map((z) => (this.latestZones.has(z.zone) ? this.showZone(this.latestZones.get(z.zone)!, now) : { ...z, mm: null }));
+    for (const zone of zones) if (next.length < 16 && !next.some((z) => z.zone === zone.zone)) next.push(this.showZone(zone, now));
+    showing.zones = next;
   }
 
   offer(proposal: { proposal_id: string; from_cues: Cue[]; cues: Cue[] } | null): void {
@@ -357,6 +450,9 @@ export class ScreenMachine {
    */
   zones(zones: readonly ScreenZone[]): void {
     const now = this.deps.clock.monotonic();
+    this.latestZones = new Map(zones.map((z) => [z.zone, z]));
+    // Under the same throttle as the obstacle screen below, so a steady reading sends no new revision.
+    this.followZones(zones, now);
     const seen = new Set<string>();
     let nearest: ScreenZone | null = null;
     for (const zone of zones) {
@@ -424,6 +520,11 @@ export class ScreenMachine {
     try {
       const now = this.deps.clock.monotonic();
       const settings = this.deps.settings;
+      // A card that has gone stays gone: a later answer never brings it back.
+      if (this.model.showing && this.model.talk !== "recording") {
+        const ends = showEndsAt(this.model.showing, this.model.answer);
+        if (ends !== null && now >= ends) this.model.showing = null;
+      }
       const { content, nextAt } = pickScreen(this.model, now, settings);
       const local = this.deps.localTime();
       // Bench mode is fixed when the coordinator starts, so the last state says it even once it is stale.

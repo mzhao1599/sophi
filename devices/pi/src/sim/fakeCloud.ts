@@ -33,6 +33,7 @@ import {
   type PairDeviceResponse,
   type PartView,
   type ProposalView,
+  type ShowView,
   type WalkerConfiguration,
   type WalkerErrorCode,
   type WalkerEventView,
@@ -53,7 +54,15 @@ import type { Logger } from "../log";
  * and exists to exercise the Pi's side of pairing, heartbeats, configuration, turns and proposals.
  */
 export interface FakeTurnScript {
-  reply: string;
+  /** The reply; without one, a fake-cloud line saying what it received. */
+  reply?: string;
+  /**
+   * Makes the turn ask the walker to `show_on_screen` this view, if the turn's `screen.views` lists it (as the
+   * real server offers only those). The continuation's reply relays the walker's result word for word.
+   */
+  show?: ShowView;
+  /** Tests: ask for `show` even when the turn doesn't list it, as a confused server might. */
+  ignoreViews?: boolean;
   /** Makes the fake open a `cues_change` proposal with these cues. */
   proposeCues?: Cue[];
   /** Makes the turn end with a spoken message draft to this (made-up) caretaker (tests). */
@@ -90,6 +99,8 @@ interface FakeDevice {
   turns: Map<string, { turn: WalkerTurnView; proposal: ProposalView | null; speech: WalkerTurnResponse["speech"] }>;
   /** Messages a (fake) caretaker sent to her phone, oldest first. */
   messages: WalkerIncomingMessage[];
+  /** The newest turn requests as sent (tests), each clip's audio replaced by "(audio)"; at most 20. */
+  turnRequests: DeviceTurnRequest[];
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -142,6 +153,7 @@ export class FakeCloud {
       clips: [],
       turns: new Map(),
       messages: [],
+      turnRequests: [],
     });
     return { device_id: deviceId, credential, configuration };
   }
@@ -215,7 +227,15 @@ export class FakeCloud {
     return { configuration: this.current(device) };
   }
 
+  /** The next walker turn asks to show this view (the simulator's `show-<view>` keys, tests). */
+  queueShow(view: ShowView): void {
+    this.script.unshift({ show: view });
+  }
+
   turn(device: FakeDevice, body: DeviceTurnRequest): WalkerTurnResponse {
+    device.turnRequests.push(body.input.type === "audio" ? { ...body, input: { ...body.input, data_base64: "(audio)" } } : body);
+    device.turnRequests.splice(0, Math.max(0, device.turnRequests.length - 20));
+    if (body.tool_results) return this.toolContinuation(device, body);
     const seen = device.turns.get(body.client_turn_id);
     if (seen) return { ...seen, status: this.status(device) };
     let seconds = 0;
@@ -234,6 +254,24 @@ export class FakeCloud {
     }
     this.turnCount += 1;
     const step = this.script.shift();
+    const speech = this.speech ? { mime: "audio/wav" as const, data_base64: this.speech.toString("base64") } : null;
+    if (step?.show && (step.ignoreViews || body.screen?.views.includes(step.show))) {
+      // The tool step: not stored (the real server stores only the final answer); the continuation answers.
+      const turn: WalkerTurnView = {
+        turn_id: randomUUID(),
+        client_turn_id: body.client_turn_id,
+        source: "walker",
+        // The walker continues a tool turn with this as text. The fake transcribes nothing: this is its own scripted
+        // line, marked as such, and `typed` (text, not a model's transcript) because the contract pairs heard with heard_by.
+        heard: `(fake cloud script) Show me the ${step.show}.`,
+        heard_by: "typed",
+        reply: "Fake cloud: putting that on your screen.",
+        answered_by: "fixed",
+        voiced_by: speech ? "cartesia" : "walker",
+        created_at: this.iso(),
+      };
+      return { turn, proposal: null, speech, status: this.status(device), tool_call: { name: "show_on_screen", view: step.show } };
+    }
     const configuration = this.current(device);
     let proposal: ProposalView | null = null;
     if (step?.proposeCues && checkCuesChange(configuration.cues, step.proposeCues, configuration.selected_module_ids) === null) {
@@ -255,7 +293,6 @@ export class FakeCloud {
       };
       device.proposals.push(proposal);
     }
-    const speech = this.speech ? { mime: "audio/wav" as const, data_base64: this.speech.toString("base64") } : null;
     const turn: WalkerTurnView = {
       turn_id: randomUUID(),
       client_turn_id: body.client_turn_id,
@@ -263,7 +300,7 @@ export class FakeCloud {
       heard: null,
       heard_by: null,
       reply:
-        step?.reply ??
+        (step?.show ? `Fake cloud: this walker didn't offer the ${step.show} view, so I can't show it.` : step?.reply) ??
         `Fake cloud reply ${this.turnCount}: I received a ${seconds} second clip. The real assistant isn't connected in this run.`,
       answered_by: "fixed",
       voiced_by: speech ? "cartesia" : "walker",
@@ -274,6 +311,25 @@ export class FakeCloud {
       ? { message_offer: { client_message_id: randomUUID(), to_member_id: randomUUID(), to_name: step.offerMessage.to_name, text: step.offerMessage.text } }
       : {};
     return { turn, proposal, speech, status: this.status(device), ...offer };
+  }
+
+  /** A tool result came back: the fake answers by relaying the walker's result word for word (it understands nothing). */
+  private toolContinuation(device: FakeDevice, body: DeviceTurnRequest): WalkerTurnResponse {
+    const result = body.tool_results?.at(-1);
+    const speech = this.speech ? { mime: "audio/wav" as const, data_base64: this.speech.toString("base64") } : null;
+    const turn: WalkerTurnView = {
+      turn_id: randomUUID(),
+      client_turn_id: body.client_turn_id,
+      source: "walker",
+      heard: body.input.type === "text" ? body.input.text : null,
+      heard_by: body.input.type === "text" ? "typed" : null,
+      reply: (result ? `Fake cloud: ${result.text}` : "Fake cloud: the walker sent no tool result.").slice(0, 600),
+      answered_by: "fixed",
+      voiced_by: speech ? "cartesia" : "walker",
+      created_at: this.iso(),
+    };
+    device.turns.set(body.client_turn_id, { turn, proposal: null, speech });
+    return { turn, proposal: null, speech, status: this.status(device) };
   }
 
   answer(device: FakeDevice, proposalId: string, answer: "confirm" | "decline"): AnswerProposalResponse {

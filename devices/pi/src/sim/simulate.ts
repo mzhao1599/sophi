@@ -16,6 +16,8 @@ import { localWallTime } from "../screen/machine";
 import { WalkerService } from "../service";
 import { StateStore } from "../store";
 import { FakeCloud, startFakeCloudServer, type FakeCloudServer } from "./fakeCloud";
+import { SIMULATED_LOOKUPS, SimulatedGps } from "./fakeGps";
+import { ShowViewSchema } from "@walker/contracts";
 import { NetworkSwitch, SwitchableCloudClient, type NetworkMode } from "./networkSwitch";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "./fakeModules";
 import { SERVICE_VERSION } from "../version";
@@ -38,6 +40,8 @@ export interface SimulateOptions {
   script?: string;
   /** Also serve the walker screen's page on 127.0.0.1 (WALKER_SCREEN_PORT, default 8740) and print its address. */
   screen?: boolean;
+  /** A SIMULATED GPS receiver and SIMULATED weather and address samples (no internet), for location questions and `show_on_screen`. */
+  gps?: boolean;
   /** A SIMULATED lift board, driven by the real lift client under the real motion coordinator (turns on `arms`). */
   lift?: boolean;
   /** SIMULATED arms: fake servo buses through the real motion coordinator, and a simulated stop switch. */
@@ -58,6 +62,8 @@ const HELP = `Keys: t Talk (press to start, press again to send; a terminal can'
       c Confirm   n hand in front of the ToF   f nothing in front   i invalid reading
       x ToF stops responding / comes back   o network down / up   g network hangs / up (the walker's own requests)
       m a fake caretaker ("Maya") sends a message (fake cloud only)
+      a script's "key show-weather" (or show-location, show-sensors, show-message, show-parts): the next
+        Talk turn asks to show that view on the screen (fake cloud only)
       r fake cloud forgets this walker (401)   p pair again   ? help   q quit`;
 
 class SilentSpeaker implements Speaker {
@@ -210,7 +216,9 @@ export async function simulate(options: SimulateOptions): Promise<number> {
     makeCloud: (credential) =>
       new SwitchableCloudClient(new HttpCloudClient(credential.server_url, credential.device_id, credential.credential), network),
     ...(motion ? { motion: motion.sim.coordinator } : {}),
+    ...(options.gps ? { location: new SimulatedGps(), lookups: SIMULATED_LOOKUPS } : {}),
   });
+  if (options.gps) log.info("SIMULATED GPS receiver: a made-up fix, and sample weather and address that say they are simulated (no internet)");
   announce = (text) => service.announce(text);
   proposalOpen = () => service.hasOpenProposal();
   service.start();
@@ -296,6 +304,13 @@ export async function simulate(options: SimulateOptions): Promise<number> {
       case "q":
         return finish(0);
       default: {
+        const show = /^show-(.+)$/.exec(key)?.[1];
+        const view = show ? ShowViewSchema.safeParse(show) : null;
+        if (view?.success) {
+          if (!fake) return log.warn("the show keys need the fake cloud");
+          fake.queueShow(view.data);
+          return log.info("FAKE cloud: the next Talk turn asks to show this on the screen", { view: view.data });
+        }
         // Lift and arms: a script names the action ("key lift-home", "key torque-on-left"); the keyboard uses
         // LIFT_KEYS and MOTION_KEYS.
         const action = motion?.actions[key] ?? motion?.actions[LIFT_KEYS[key] ?? ""] ?? motion?.actions[MOTION_KEYS[key] ?? ""];

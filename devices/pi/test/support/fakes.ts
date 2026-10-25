@@ -10,7 +10,7 @@ import { CLIP_BYTES_PER_MS, CLIP_MAX_PCM_BYTES } from "../../src/constants";
 import type { Logger } from "../../src/log";
 import { formatFields } from "../../src/log";
 import { ModuleManager } from "../../src/serial/modules";
-import { WalkerService } from "../../src/service";
+import { WalkerService, type ServiceDeps } from "../../src/service";
 import type { Cue } from "@walker/contracts";
 import { FakeCloud, FakeCloudClient } from "../../src/sim/fakeCloud";
 import { SimulatedHand, SimulatedPort, SimulatedTof } from "../../src/sim/fakeModules";
@@ -163,6 +163,9 @@ export interface HarnessOptions {
   cues?: Cue[];
   withHand?: boolean;
   withTof?: boolean;
+  /** A GPS reader and the weather and address lookups its fix goes to (fakes: no test reaches the internet). */
+  location?: ServiceDeps["location"];
+  lookups?: ServiceDeps["lookups"];
 }
 
 /** One walker service on fakes: fake clock, fake mic and speaker, simulated modules and the fake cloud. */
@@ -196,6 +199,8 @@ export function makeHarness(options: HarnessOptions = {}) {
     audioInstanceId: "test-audio",
     coordinatorInstanceId: "sim-coordinator",
     ...(options.gpioButtons ? { gpioButtons: options.gpioButtons } : {}),
+    ...(options.location ? { location: options.location } : {}),
+    ...(options.lookups ? { lookups: options.lookups } : {}),
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, "0")}`,
     makeCloud: (file) => {
       const client = new FakeCloudClient(fake, file.device_id, file.credential);

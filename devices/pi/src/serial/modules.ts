@@ -256,10 +256,18 @@ export class ModuleManager {
 
   /** Zones the Pi may act on now: valid or invalid readings under ZONE_VALIDITY_MS old, from available modules. */
   currentZones(): ZoneView[] {
+    return this.knownZones().filter((zone) => zone.fresh);
+  }
+
+  /**
+   * Every zone heard of since start, in the order first heard, each with whether its latest reading still
+   * counts (under ZONE_VALIDITY_MS old, from a module that isn't unavailable). A stale one reads as unknown.
+   */
+  knownZones(): Array<ZoneView & { fresh: boolean }> {
     const now = this.deps.clock.monotonic();
-    return [...this.zones.values()].filter((zone) => {
+    return [...this.zones.values()].map((zone) => {
       const record = this.records.get(zone.instanceId);
-      return record !== undefined && record.health !== "unavailable" && now - zone.receivedMono < ZONE_VALIDITY_MS;
+      return { ...zone, fresh: record !== undefined && record.health !== "unavailable" && now - zone.receivedMono < ZONE_VALIDITY_MS };
     });
   }
 

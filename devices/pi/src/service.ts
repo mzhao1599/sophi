@@ -10,6 +10,7 @@ import {
   type DeviceSendMessageRequest,
   type ProposalView,
   type SensorSnapshot,
+  type ShowView,
   type WalkerConfiguration,
   type WalkerIncomingMessage,
 } from "@walker/contracts";
@@ -36,8 +37,9 @@ import {
   ZONE_VALIDITY_MS,
 } from "./constants";
 import { CuePolicy } from "./cues";
-import { describeGpsLocation } from "./location";
-import { describeCurrentWeather } from "./weather";
+import { lookUpPlace, type PlaceReading } from "./location";
+import { currentWeather, type WeatherReading } from "./weather";
+import { locationShow, messageShow, notShown, partsShow, sensorsShow, showViews, weatherShow, type ShowOutcome } from "./show";
 import type { Logger } from "./log";
 import { LINES, appliedLine, moduleDownLine, offlineLine } from "./notices";
 import type { ModuleManager } from "./serial/modules";
@@ -61,8 +63,16 @@ export interface ServiceDeps {
   coordinatorInstanceId: string;
   /** The Pi's own GPIO Talk and Confirm buttons, only when the installer declared them wired (never in the simulator). */
   gpioButtons?: { readonly instanceId: string; status(): { health: "ok" | "unavailable"; faults: string[] } };
-  /** Optional GPS reader. Sharing consent enables heartbeat sampling; a location question reads once. */
-  location?: { connected(): boolean; setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; onDemand(signal: AbortSignal): Promise<{ status: "fix"; latitude: number; longitude: number } | { status: "no_fix" | "no_rmc" }>; stop(): void };
+  /**
+   * Optional GPS reader. Sharing consent enables heartbeat sampling; a location question reads once. `simulated`
+   * (the simulator's `--gps`) marks the cards it fills as simulated.
+   */
+  location?: { readonly simulated?: boolean; connected(): boolean; setEnabled(enabled: boolean): void; current(): { latitude: number; longitude: number; age_ms: number } | null; onDemand(signal: AbortSignal): Promise<{ status: "fix"; latitude: number; longitude: number } | { status: "no_fix" | "no_rmc" }>; stop(): void };
+  /**
+   * The weather and address lookups a GPS fix goes to: Open-Meteo and the reverse geocoder unless replaced (the
+   * simulator's labelled samples, tests). The coordinates go only here.
+   */
+  lookups?: { weather(latitude: number, longitude: number, signal: AbortSignal): Promise<WeatherReading>; place(latitude: number, longitude: number, signal: AbortSignal): Promise<PlaceReading> };
   /**
    * The motion coordinator, when arms are configured. It sees every press first: a press that stops motion or
    * accepts a pending motion item is its own, and Talk and Confirm then ignore it.
@@ -243,9 +253,13 @@ export class WalkerService {
   private readonly cues: CuePolicy;
   private readonly unsubscribe: Array<() => void> = [];
   private readonly newId: () => string;
+  private readonly lookups: NonNullable<ServiceDeps["lookups"]>;
+  /** The walker screen, once its server is up: whether a page is connected to draw a card now. */
+  private screen: { connected(): boolean } | null = null;
 
   constructor(private readonly deps: ServiceDeps) {
     this.newId = deps.newId ?? randomUUID;
+    this.lookups = deps.lookups ?? { weather: currentWeather, place: lookUpPlace };
     this.voice = new VoiceQueue(deps.speaker, deps.clock, (error) => this.audioFault("playback_failed", error));
     this.cues = new CuePolicy({
       clock: deps.clock,
@@ -471,6 +485,7 @@ export class WalkerService {
       client_turn_id: this.newId(),
       input: { type: "audio" as const, mime: "audio/wav" as const, data_base64: clip.wav.toString("base64"), duration_ms: clip.durationMs },
       snapshot: this.snapshotIfSensors(),
+      ...this.screenField(),
     };
     clip.wav.fill(0);
     turn.clientTurnId = body.client_turn_id;
@@ -482,17 +497,17 @@ export class WalkerService {
       for (let step = 0; step <= WALKER_MAX_TOOL_CALLS; step++) {
         reply = await withDeadline(this.deps.clock, TURN_DEADLINE_MS, (signal) => cloud.turn(request, signal), turn.abort.signal);
         if (this.turn !== turn) return;
-        const tool = reply.tool_call?.name;
-        if (!tool) break;
+        const call = reply.tool_call;
+        if (!call) break;
+        const tool = call.name;
         const prior = reply.tool_results ?? [];
         if (step === WALKER_MAX_TOOL_CALLS) throw new Error("Tool loop limit reached.");
         if (step === 0) this.sayAnswer(reply.turn.heard, reply.turn.reply, "fixed", "reply", reply.speech ? this.readSpeech(reply.speech.data_base64) : undefined);
-        // TODO(show-on-screen Pi piece): run show_on_screen. This Pi sends no `screen` yet, so the server never offers it.
-        const text = tool === "get_distance" ? null : tool === "show_on_screen" ? "This walker can't show that on its screen yet." : await this.runLocationTool(tool, turn.abort.signal);
+        const text = call.name === "get_distance" ? null : call.name === "show_on_screen" ? await this.runShow(call.view, turn.abort.signal) : await this.runLocationTool(call.name, turn.abort.signal);
         if (this.turn !== turn) return;
         const heard = reply.turn.heard?.trim();
         if (!heard) throw new Error("Tool continuation needs a transcript.");
-        request = { client_turn_id: body.client_turn_id, input: { type: "text", text: heard.slice(0, 500) }, snapshot: this.snapshotIfSensors(), tool_results: text === null ? prior : [...prior, { name: tool, text }], original_audio: true };
+        request = { client_turn_id: body.client_turn_id, input: { type: "text", text: heard.slice(0, 500) }, snapshot: this.snapshotIfSensors(), tool_results: text === null ? prior : [...prior, { name: tool, text }], original_audio: true, ...this.screenField() };
       }
       if (!reply) throw new Error("The agent did not answer.");
       if (this.turn !== turn) return;
@@ -534,22 +549,76 @@ export class WalkerService {
   }
 
   private async runLocationTool(tool: "get_location" | "get_weather", signal: AbortSignal): Promise<string> {
-    let answer: string;
+    const looked = tool === "get_weather" ? await this.lookUp(tool, signal, this.lookups.weather) : await this.lookUp(tool, signal, this.lookups.place);
+    return "reading" in looked ? looked.reading.text : looked.text;
+  }
+
+  /**
+   * One GPS fix, then the weather or the address: the reading, or the sentence saying why there is none.
+   * `quiet` (show_on_screen) leaves the failure out of the log, which then has the view and timing only.
+   */
+  private async lookUp<T>(tool: "get_location" | "get_weather", signal: AbortSignal, lookup: (latitude: number, longitude: number, signal: AbortSignal) => Promise<T>, quiet = false): Promise<{ reading: T } | { text: string }> {
     try {
       const gps = this.deps.location;
-      if (!gps?.connected()) answer = `I can't check ${tool === "get_weather" ? "weather near you" : "your location"} because the GPS receiver is not connected.`;
-      else {
-        const reading = await gps.onDemand(signal);
-        answer = reading.status === "fix"
-          ? await (tool === "get_weather" ? describeCurrentWeather : describeGpsLocation)(reading.latitude, reading.longitude, signal)
-          : "The GPS receiver has no satellite fix yet. Try again outdoors with a view of the sky.";
-      }
+      if (!gps?.connected()) return { text: `I can't check ${tool === "get_weather" ? "weather near you" : "your location"} because the GPS receiver is not connected.` };
+      const fix = await gps.onDemand(signal);
+      if (fix.status !== "fix") return { text: "The GPS receiver has no satellite fix yet. Try again outdoors with a view of the sky." };
+      return { reading: await lookup(fix.latitude, fix.longitude, signal) };
     } catch (error) {
       if (signal.aborted) throw error;
-      this.deps.log.warn(`${tool} lookup failed`, { error: (error as Error).message });
-      answer = tool === "get_weather" ? "I couldn't check the weather right now." : "I found the GPS receiver, but couldn't look up an address right now.";
+      if (!quiet) this.deps.log.warn(`${tool} lookup failed`, { error: (error as Error).message });
+      return { text: tool === "get_weather" ? "I couldn't check the weather right now." : "I found the GPS receiver, but couldn't look up an address right now." };
     }
-    return answer;
+  }
+
+  // ---- Show on screen (docs/subsystems/show-on-screen.md) ----
+
+  /** Lets the walker screen say whether a page is connected; null when it stops (or never started). */
+  setScreen(screen: { connected(): boolean } | null): void {
+    this.screen = screen;
+  }
+
+  /** The views the walker can show now, only while a page is connected to draw them (DeviceTurnRequest.screen). */
+  private screenField(): { screen?: { views: ShowView[] } } {
+    if (!this.screenConnected()) return {};
+    return { screen: { views: showViews({ gps: this.deps.location?.connected() ?? false, sensors: this.hasSensors(), message: this.latestMessage !== null }) } };
+  }
+
+  private screenConnected(): boolean {
+    try {
+      return this.screen?.connected() ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Runs `show_on_screen`: fills the view's card from the walker's own data, puts it on the screen, and returns
+   * the short result for the model. A view it can't fill shows nothing and says why. The log line carries the
+   * view, whether it was shown, and the time it took: never the card (a message's words, her address).
+   */
+  private async runShow(view: ShowView, signal: AbortSignal): Promise<string> {
+    const started = this.deps.clock.monotonic();
+    const simulated = this.deps.location?.simulated ?? false;
+    let outcome: ShowOutcome;
+    if (!this.screenConnected()) outcome = notShown("The walker's screen isn't connected.");
+    else if (view === "weather") {
+      const looked = await this.lookUp("get_weather", signal, this.lookups.weather, true);
+      outcome = "reading" in looked ? weatherShow(looked.reading, simulated) : notShown(looked.text);
+    } else if (view === "location") {
+      const looked = await this.lookUp("get_location", signal, this.lookups.place, true);
+      outcome = "reading" in looked ? locationShow(looked.reading, simulated) : notShown(looked.text);
+    } else if (view === "sensors") {
+      const simulatedBy = new Map(this.deps.modules.modules().map((m) => [m.instanceId, m.simulated]));
+      outcome = sensorsShow(this.deps.modules.knownZones().map((z) => ({ zone: z.zone, mm: z.mm, quality: z.quality, fresh: z.fresh, simulated: simulatedBy.get(z.instanceId) ?? false })));
+    } else if (view === "message") outcome = messageShow(this.latestMessage);
+    else outcome = partsShow(this.manifest());
+    if (signal.aborted) throw signal.reason;
+    // The page may have gone while the lookup ran.
+    if (outcome.card && !this.screenConnected()) outcome = notShown("The walker's screen isn't connected.");
+    if (outcome.card) this.deps.bus.emit("show", { card: outcome.card });
+    this.deps.log.info("show_on_screen", { view, shown: outcome.card !== null, ms: Math.round(this.deps.clock.monotonic() - started) });
+    return outcome.text;
   }
 
   /** The server's voiced reply, if it is a readable 16-bit PCM WAV; otherwise the walker speaks the text itself. */
@@ -1120,7 +1189,11 @@ export class WalkerService {
 
   /** The contract sends null when the walker has no obstacle sensor attached. */
   private snapshotIfSensors(): SensorSnapshot | null {
-    return this.deps.modules.modules().some((module) => module.type === "perception") ? this.snapshot() : null;
+    return this.hasSensors() ? this.snapshot() : null;
+  }
+
+  private hasSensors(): boolean {
+    return this.deps.modules.modules().some((module) => module.type === "perception");
   }
 
   // ---- Output ----
