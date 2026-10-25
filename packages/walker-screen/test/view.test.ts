@@ -127,6 +127,13 @@ describe("the walker's own states", () => {
     expect(v.left).toBeNull();
   });
 
+  it("ambient: the pairing code appears beneath the time", () => {
+    const v = screenView(state({ state: "ambient", alerts: null, companion_code: "123456" }));
+    expect(v.main.text).toBe("7:42");
+    expect(v.lines.map((line) => line.text)).toContain("Pair your app: 123 456");
+    expect(v.lines.map((line) => line.text)).toContain("sophi.work/app");
+  });
+
   it("ambient: no time when the clock never synced", () => {
     const v = screenView(state({ state: "ambient", alerts: null }, { strip: { link: "online", simulator: false, bench_mode: false, clock: null } }));
     expect(texts(v)).toEqual(["Sophi", "Loading…"]);
@@ -419,7 +426,7 @@ describe("walking directions", () => {
   const at = (over: Partial<NavigatingScreen>, size: "large" | "larger" | "largest" = "large") =>
     screenView(state({ ...screen, ...over }, { settings: { ...settings, text_size: size } }));
 
-  it("N1: guiding shows the turn, the distance, the street, what's left, and Repeat and End route", () => {
+  it("N1: guiding shows the turn, the distance, the street, what's left, and End route", () => {
     const v = at({});
     expect(v.main).toEqual({ text: "Left", size: "nav" });
     expect(v.lines).toEqual([
@@ -429,11 +436,10 @@ describe("walking directions", () => {
     expect(v.nav?.info.map((l) => l.text)).toEqual(["750 m to go", "about 10 min"]);
     expect(v.nav).toMatchObject({ turn: "left", simulated: true, columnPx: 280, arrowPx: NAV_ARROW_PX.large, mainPx: NAV_WORD_CAP_PX.large, mainWraps: false });
     expect(buttons(v).map((b) => [b.action, b.label])).toEqual([
-      ["repeat_direction", "Repeat"],
       ["end_route", "End route"],
     ]);
     expect(v.left).toBeNull();
-    expect(v.right).toBe("Talk");
+    expect(v.right).toBeNull();
     expect(v.announce).toBe("Turn left onto Lenox Avenue.");
     // Every other screen has no map.
     expect(screenView(state({ state: "listening" })).nav).toBeNull();

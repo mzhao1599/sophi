@@ -29,11 +29,11 @@ export const NEAR_ENTER_MM = 750;
 /** Placeholder, not measured: a near zone clears only over this distance (hysteresis). */
 export const NEAR_EXIT_MM = 900;
 /** Placeholder, not measured: while a zone stays near, its cue repeats at most this often. */
-export const CUE_REPEAT_MS = 3000;
+export const CUE_REPEAT_MS = 1500;
 /** Placeholder, not measured: a newly near zone cues at most this often, across all zones. */
 export const CUE_MIN_GAP_MS = 1000;
 /** Placeholder, not bench-tested: length of the near_obstacle haptic pattern (the interface doc's example). */
-export const OBSTACLE_HAPTIC_MS = 400;
+export const OBSTACLE_HAPTIC_MS = 1000;
 /**
  * Placeholder, not bench-tested: the buzz a Talk press gives on the hand that pressed it (`recording`).
  * Button feedback, not an obstacle alert; see `pressBuzz` in service.ts.

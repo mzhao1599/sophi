@@ -98,7 +98,7 @@ export function WalkerScreenView({
           ))}
         </div>
         <div className="ws-right">
-          <Hint word={view.right} />
+          {view.right ? <Hint word={view.right} /> : null}
         </div>
       </footer>
       <p className="ws-hidden" aria-live="polite">

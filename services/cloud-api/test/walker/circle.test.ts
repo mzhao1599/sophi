@@ -335,7 +335,7 @@ function describeCircle(name: string, makeHarness: () => Promise<StoreHarness>) 
     it("gives the walker only a caretaker's messages to her phone, newest five, and drops them when the phone goes", async () => {
       const { w, rose, maya } = await twoPhones();
       const device = { kind: "device" as const, credential: w.credential };
-      expect(await walkers.incomingMessages(device, w.deviceId)).toEqual({ messages: [] });
+      expect(await walkers.incomingMessages(device, w.deviceId)).toEqual({ messages: [], companion_code: null });
       await circle.sendMessage(phone(maya.secret), { client_message_id: uuid(), text: "Dinner at six. I'll get you." });
       await circle.sendMessage(phone(rose.secret), { client_message_id: uuid(), preset: "okay", to_member_id: maya.id });
       const first = await walkers.incomingMessages(device, w.deviceId);
@@ -348,12 +348,19 @@ function describeCircle(name: string, makeHarness: () => Promise<StoreHarness>) 
       expect(many.messages.map((m) => m.text)).toEqual(["Note 2", "Note 3", "Note 4", "Note 5", "Note 6"]);
       await expect(walkers.incomingMessages({ kind: "device", credential: "x".repeat(43) }, w.deviceId)).rejects.toThrow();
       await circle.removeMember(owner(w.secret), w.deviceId, maya.id);
-      expect(await walkers.incomingMessages(device, w.deviceId)).toEqual({ messages: [] });
+      expect(await walkers.incomingMessages(device, w.deviceId)).toEqual({ messages: [], companion_code: null });
     });
 
-    it("gives a walker with no phone of hers no messages", async () => {
+    it("gives an unclaimed walker a stable, expiring companion code on its clock", async () => {
       const w = await pairWalker();
-      expect(await walkers.incomingMessages({ kind: "device", credential: w.credential }, w.deviceId)).toEqual({ messages: [] });
+      const caller = { kind: "device" as const, credential: w.credential };
+      const first = await walkers.incomingMessages(caller, w.deviceId);
+      expect(first.messages).toEqual([]);
+      expect(first.companion_code?.code).toMatch(/^\d{6}$/);
+      expect((await walkers.incomingMessages(caller, w.deviceId)).companion_code).toEqual(first.companion_code);
+      const joined = await circle.join(phone(undefined), { code: first.companion_code!.code, consent: { circle_data_notice: true } }, "198.51.100.7");
+      expect(joined.home.membership).toBe("member");
+      expect((await walkers.incomingMessages(caller, w.deviceId)).companion_code).toBeNull();
     });
 
     it("lets the owner decline a waiting caretaker by removing it", async () => {

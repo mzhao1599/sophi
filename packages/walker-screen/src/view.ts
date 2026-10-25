@@ -139,8 +139,8 @@ export interface ScreenView {
   center: { lines: ViewLine[]; buttons: ViewButton[] };
   /** The lift's hold control, between the handles, or null (never shown otherwise). */
   hold: ViewHold | null;
-  /** Over the right handle, always shown: "Talk", or "Stop" while motion runs (a Talk press stops it too). */
-  right: "Talk" | "Stop";
+  /** Over the right handle when relevant; hidden on the full-map route view. */
+  right: "Talk" | "Stop" | null;
   /** What a screen reader hears when the scene changes. */
   announce: string;
   /** Walking directions' map and layout, on `navigating` only. */
@@ -504,22 +504,18 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
     case "ambient": {
       const clock = state.strip.clock ? clockWords(state.strip.clock.local_time) : null;
       const code = content.companion_code;
-      if (code) return {
-        key: `ambient:companion:${code}`,
-        main: { text: `${code.slice(0, 3)} ${code.slice(3)}`, size: "main" },
-        lines: [body("Connect your companion app"), detail("Enter this code at sophi.work/app")],
-        announce: `Companion app code ${code.split("").join(" ")}. Enter it at sophi dot work slash app.`,
-      };
       const name = settings.greeting_name;
       const lines: ViewLine[] = [];
       if (clock) {
         lines.push(body(name ? `${clock.greeting}, ${name}` : clock.day));
         if (name) lines.push(detail(clock.day));
       } else lines.push(body("Loading…"));
+      if (code) lines.push(body(`Pair your app: ${code.slice(0, 3)} ${code.slice(3)}`), detail("sophi.work/app"));
       return {
-        key: "ambient",
+        key: code ? `ambient:companion:${code}` : "ambient",
         main: { text: clock?.time ?? "Sophi", size: "main" },
         lines,
+        announce: code ? `${clock?.time ?? "Sophi"}. Pair your app with code ${code.split("").join(" ")}.` : undefined,
         center: {
           lines: [],
           // TODO(circle piece): the "My screen" button, once it does something (see "offline").
@@ -808,8 +804,8 @@ function motionScene(content: MotionContent, textSize: TextSize, bench: boolean)
 /**
  * The route in progress. The scene key is the phase and the instruction, so the screen cross-fades (and a screen
  * reader hears the whole instruction) only when the next thing to do changes, never as the metres count down;
- * the map and the distances still update with every state. Repeat and End route sit between the handles, and
- * act on the Pi (the service answers `repeat_direction` and `end_route` presses while a route is on).
+ * the map and the distances still update with every state. End route remains on screen; the left handle can
+ * still repeat the next instruction while the route is on.
  */
 function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
   const guiding = content.phase === "guiding";
@@ -843,7 +839,8 @@ function navigatingScene(content: NavigatingScreen, textSize: TextSize): Scene {
     key: `navigating:${content.phase}:${content.instruction}`,
     main: { text: main, size: "nav" },
     lines,
-    center: { buttons: [button("repeat_direction", "Repeat"), button("end_route", "End route")] },
+    center: { buttons: [button("end_route", "End route")] },
+    right: null,
     announce,
     nav: {
       columnPx: left,
@@ -1207,7 +1204,7 @@ export function screenView(state: ScreenState, settings: ScreenSettings = state.
     left,
     center,
     hold,
-    right: s.right ?? "Talk",
+    right: s.right === undefined ? "Talk" : s.right,
     announce: s.announce ?? [s.main.text, ...lines.map((l) => l.text), ...center.lines.map((l) => l.text)].join(". "),
     nav: s.nav ?? null,
   };

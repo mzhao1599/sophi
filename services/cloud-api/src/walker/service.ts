@@ -37,6 +37,9 @@ import {
   ROUTE_TOOLS,
   WALKER_MAX_TOOL_CALLS,
   CIRCLE_MESSAGE_RETENTION_MS,
+  CIRCLE_INVITE_TTL_MS,
+  MAX_CIRCLE_MEMBERS,
+  MAX_OPEN_INVITES,
   MAX_LIVE_MESSAGES,
   DeviceSendMessageRequestSchema,
   type DeviceSendMessageRequest,
@@ -91,6 +94,7 @@ import {
   sha256,
   sweepCircleThrottled,
   type CircleMemberRecord,
+  type CircleInviteRecord,
   type CircleMessageRecord,
   type DeviceRecord,
   type HelpRecord,
@@ -676,10 +680,22 @@ export class WalkerService {
     const device = await this.resolve(caller, deviceId);
     const now = this.now();
     const { members, invites } = await this.store.circleOf(device.device_id, now);
-    const ownInvite = invites.filter((i) => i.role === "walker_user" && Date.parse(i.expires_at) > now.getTime()).at(-1);
-    const companion_code = ownInvite ? { code: ownInvite.code, expires_at: ownInvite.expires_at } : null;
     const her = members.find((m) => m.role === "walker_user" && m.state === "member");
-    if (!her) return { messages: [], companion_code };
+    let ownInvite = invites.find((i) => i.role === "walker_user" && Date.parse(i.expires_at) > now.getTime());
+    if (!her && !ownInvite) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const invite: CircleInviteRecord = storable({
+          invite_id: this.randomId(), device_id: device.device_id, code: this.randomCode(),
+          name: "Sophi owner", role: "walker_user", created_at: now.toISOString(),
+          expires_at: new Date(now.getTime() + CIRCLE_INVITE_TTL_MS).toISOString(),
+        });
+        const result = await this.store.putInvite(invite, { maxOpen: MAX_OPEN_INVITES, maxMembers: MAX_CIRCLE_MEMBERS }, now);
+        if (result === "ok") { ownInvite = invite; break; }
+        if (result !== "code_taken") break;
+      }
+    }
+    const companion_code = ownInvite ? { code: ownInvite.code, expires_at: ownInvite.expires_at } : null;
+    if (!her) return DeviceMessagesResponseSchema.parse({ messages: [], companion_code });
     const caretakers = new Map(members.filter((m) => m.role === "caregiver" && m.state === "member").map((m) => [m.member_id, m.name]));
     const toHer = (await this.store.messagesFor(device.device_id, her.member_id, now)).filter(
       (m) => m.to_member_id === her.member_id && caretakers.has(m.from_member_id),

@@ -15,7 +15,7 @@ describe("WalkerScreenView", () => {
       expect((html.match(/<button/g) ?? []).length, f.name).toBeLessThanOrEqual(3);
       expect(html.includes(">Simulator<"), f.name).toBe(f.state.strip.simulator);
       expect(html, f.name).toContain('aria-live="polite"');
-      expect(html, f.name).toContain(`>${view.right}<`);
+      if (view.right) expect(html, f.name).toContain(`>${view.right}<`);
       // The hold control is drawn exactly when the view has one.
       expect(html.includes("ws-hold"), f.name).toBe(view.hold !== null);
       expect(html.includes(">Bench mode<"), f.name).toBe(f.state.strip.bench_mode && !f.state.strip.simulator);
@@ -52,7 +52,7 @@ describe("WalkerScreenView", () => {
 describe("walking directions", () => {
   const find = (name: string) => screenFixtures().find((f) => f.name === name)!;
 
-  it("draws the map in its column, her dot, the credit, the arrow, and Repeat and End route", () => {
+  it("draws the map in its column, her dot, the credit, the arrow, and End route", () => {
     const view = screenView(find("navigating--large").state);
     const html = renderToStaticMarkup(<WalkerScreenView view={view} />);
     expect(html).toContain('data-layout="navigating"');
@@ -61,7 +61,9 @@ describe("walking directions", () => {
     expect(html).toContain('data-maneuver="left"');
     expect(html).toContain(">Simulated<");
     expect(html).toContain('class="ws-map-me-ring" data-simulated="true"');
-    expect(html).toMatch(/>Repeat<[\s\S]*>End route</);
+    expect(html).toContain(">End route<");
+    expect(html).not.toContain(">Repeat<");
+    expect(html).not.toContain(">Talk<");
     expect(html).toContain('aria-live="polite">Turn left onto Lenox Avenue.<');
     // Without a tile base, the plain background: the route and the dot, and no image at all.
     expect(html).not.toContain("<img");
