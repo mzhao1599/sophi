@@ -75,7 +75,7 @@ Same rules as the server, every answer checked against the contract:
 - **I'm on my way**: "Sending" on the button, `POST …/coming`; then "You said you're on the way." and one announcement "You're on the way."
 - **I'm with Rose**: `POST …/okay`; the card becomes the closed line.
 - `help_closed` (Rose said okay first, or Ana answered): the request from the error is shown closed ("Rose says she's okay."), no error wording, and the screen refreshes.
-- Network failure: "Not sent: can't reach Sophi's server. Try again." under the buttons, and the button is back.
+- Network failure: "Not sent: can't reach Sophi's server. Try again." under the buttons, and the button is back. The line belongs to that state: if the answer got through after all (a slow server), or the request moved on, it goes.
 
 ### Closed (shown while the server still sends it, 5 minutes)
 - `okay`: "Rose says she's okay." (`by: null`, she said it on her walker with no phone of hers in: "Rose said she's okay on her walker.") `with_her` by another caretaker: "Ana is with Rose."; by Maya: "You're with Rose."; `expired`: "Rose's request for help has ended." One announcement of that line when it changes; no tone.

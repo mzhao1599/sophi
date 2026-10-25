@@ -101,7 +101,8 @@ export function HelpBanner({ help }: { help: HelpView }) {
 export function RoseHelp({ home, api, refresh, announce, headingId }: { home: PhoneMember; api: PhoneApi; refresh(): Promise<void>; announce(text: string): void; headingId: string }) {
   const names = caretakerNames(home);
   const [busy, setBusy] = useState<"asking" | "okay" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // A failure line belongs to the view it happened in (see the caretaker's card).
+  const [failed, setError] = useState<{ line: string; view: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
   // The answer to her own tap, shown until the home that follows it arrives.
   const [answer, setAnswer] = useState<HelpView | null>(null);
@@ -117,6 +118,7 @@ export function RoseHelp({ home, api, refresh, announce, headingId }: { home: Ph
   const open = help && !help.closed ? help : null;
   const view = open ? (confirming ? "confirm" : "open") : "ask";
   useKeepFocus(view, box, heading);
+  const error = failed?.view === `${view}/${help?.help_id ?? ""}` ? failed.line : null;
 
   // Her own taps move focus: to the question, back to "I'm okay now", or to the heading of what the screen became.
   const focusNext = useRef<"question" | "okay" | "heading" | null>(null);
@@ -147,7 +149,7 @@ export function RoseHelp({ home, api, refresh, announce, headingId }: { home: Ph
         await refresh();
       } else {
         const line = helpSendError(code);
-        setError(line);
+        setError({ line, view: `${view}/${help?.help_id ?? ""}` });
         announce(line);
         if (code === "no_caretaker") await refresh();
       }
@@ -244,15 +246,19 @@ const NO_PINS: readonly MapPin[] = [];
  */
 export function MayaHelpCard({ home, api, refresh, announce }: { home: PhoneMember; api: PhoneApi; refresh(): Promise<void>; announce(text: string): void }) {
   const [busy, setBusy] = useState<"coming" | "with_her" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // A failure line belongs to the state it happened in: once the request moves on (her answer got through after
+  // all, or it closed), the line goes.
+  const [failed, setError] = useState<{ line: string; view: string } | null>(null);
   const [answer, setAnswer] = useState<HelpView | null>(null);
   const box = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const help = answer ?? home.help;
   const meId = home.me.member_id;
   const coming = !!help && help.coming.some((p) => p.member_id === meId);
-  useKeepFocus(help ? `${help.help_id}/${help.closed ? "closed" : coming ? "coming" : "open"}` : "none", box, heading);
+  const view = help ? `${help.help_id}/${help.closed ? "closed" : coming ? "coming" : "open"}` : "none";
+  useKeepFocus(view, box, heading);
   if (!help) return null;
+  const error = failed?.view === view ? failed.line : null;
 
   const her = herName(home);
   const w = home.walker;
@@ -270,7 +276,7 @@ export function MayaHelpCard({ home, api, refresh, announce }: { home: PhoneMemb
         await refresh();
       } else {
         const line = helpSendError(failure(e));
-        setError(line);
+        setError({ line, view });
         announce(line);
       }
     } finally {
