@@ -101,19 +101,19 @@ After the last answer the engine says "Here's your walker." The greeting recorde
 | Deleted by | **Delete my answers** (now); the `delete-expired-onboarding-sessions` `pg_cron` job every 5 minutes; the server also refuses an expired session | **Delete my answers** while unfinished; **Delete setup** in Your setups (the setup and its session); **Delete my account** there, which deletes the auth user and so every row; the same job for unfinished ones |
 | Access | Server only, by token hash | The owner, through row-level security |
 
-With the onboarding agent on, answers are also sent to the model provider (Anthropic or Google), whatever the store; see below.
+With the onboarding agent on, answers are also sent to Anthropic, whatever the store; see below.
 
 ## Onboarding agent
 
-**Turning it on.** Set these on the server (for the web app, in `apps/web/.env.local`, which git ignores; see `apps/web/.env.example`):
+**Turning it on.** It runs whenever the server has `ANTHROPIC_API_KEY` (for the web app, in `apps/web/.env.local`, which git ignores; see `apps/web/.env.example`; on Render, in the dashboard, where the walker assistant uses the same key):
 
 | Variable | Meaning |
 | --- | --- |
-| `ONBOARDING_ENGINE` | `deterministic` (default) or `agent` |
-| `ANTHROPIC_API_KEY` | Claude's key, needed for `agent`. Without it the deterministic engine runs, exactly as before, and the server logs a warning. |
+| `ANTHROPIC_API_KEY` | Claude's key. Set: the agent runs. Unset, empty or `none`: the deterministic engine runs, exactly as before. |
+| `ONBOARDING_ENGINE` | Optional. Unset or empty: as above. `deterministic` forces the fixed questions even with a key. `agent` asks for the agent and logs a warning when there's no key. Any other value logs a warning and runs the fixed questions. |
 | `ONBOARDING_AGENT_MODEL` | Optional. Overrides `DEFAULT_AGENT_MODEL`. The model must support structured output and the effort setting. |
 
-The key is read only on the server. The browser never sees it, and the first screen's notice names who reads the answers and who may keep them (`agentNoticeClause`: "Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy"). **Open before a public demo:** once sent, answers are outside this server, and **Delete my answers** can't recall them. How long Anthropic keeps API inputs depends on the account's terms, which haven't been checked here yet; confirm them and say so on the first screen. A person's mobility needs can reveal disability, so until then use the agent only with scripted, fictional answers (a rehearsed demo).
+The key is read only on the server. The browser never sees it, and the line under the text box, on screen before anyone types, names who reads the answers and who may keep them (`agentNoticeClause`: "Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy"). **Still open:** the agent is on at sophi.work from 2026-10-25, so anyone typing there sends their words to Anthropic. Once sent, answers are outside this server, and **Delete my answers** can't recall them. How long Anthropic keeps API inputs depends on the account's terms, which haven't been checked here yet; confirm them and say so on the page. A person's mobility needs can reveal disability, and the page no longer asks people to leave out names and medical details, so the rehearsed demo uses only scripted, fictional answers.
 
 **What the model does, and what it doesn't.** For a `text` or `answer` turn, one model call gets the rules (the system prompt, cached on Claude) and a JSON document describing the turn: the current question, the chosen options, the user's typed words, the facts so far and each topic's status. It returns, as schema-checked JSON:
 
@@ -130,7 +130,7 @@ Chosen options, recommendations (`recommend.ts`), the robot arms' "consider only
 
 **Logs.** One line per agent turn: `[onboarding-agent] outcome=agent|fallback attempts=N reason=… ms=…`. No user words, ids or keys.
 
-**Request settings.** In `anthropic.ts`: effort `low`, since a turn is a short conversational step and has to finish in a few seconds; adaptive thinking is the model's default; `max_tokens` 4096; one SDK retry. A model override that doesn't start with `claude-` logs a warning at startup. Measured on 2026-10-24 (rehearsal, laptop only): 1.9 to 5.1 s a turn, median 2.5 s, no fallbacks over 39 turns. These are starting values to tune from a live run.
+**Request settings.** In `anthropic.ts`: effort `low`, since a turn is a short conversational step and has to finish in a few seconds; adaptive thinking is the model's default; `max_tokens` 4096; one SDK retry. A model override that doesn't start with `claude-` logs a warning at startup. Measured on 2026-10-24 (rehearsal, laptop only): 1.9 to 5.1 s a turn, median 2.5 s, no fallbacks over 39 turns. Measured again on 2026-10-25 on `claude-opus-5-5` (`REHEARSE_PROVIDER=anthropic`, 3 runs of the three paths, laptop only): 9 of 9 paths passed, 39 model turns, no fallbacks, 1.9 to 4.5 s a turn, median 2.2 s; one turn needed the retry (4.5 s). Render's own latency to Anthropic hasn't been measured.
 
 ## Walker store
 

@@ -429,6 +429,11 @@
   gap: 4px;
 }
 
+/* With no notice line (a guest with the fixed questions), Skip stays at the right. */
+.foot > .quiet:only-child {
+  margin-left: auto;
+}
+
 .quietButton {
   min-height: var(--target);
   padding: 0 8px;

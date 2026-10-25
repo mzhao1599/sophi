@@ -256,7 +256,7 @@ export function Chat({
               setLocalError(null);
               setText(e.target.value);
             }}
-            aria-describedby={error ? `${describedBy} ${errorId}` : describedBy}
+            aria-describedby={[notice ? describedBy : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
           />
           <button type="submit" className={styles.sendButton} aria-label="Send" aria-disabled={!canSend || undefined}>
             <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -272,9 +272,11 @@ export function Chat({
         ) : null}
 
         <div className={styles.foot}>
-          <p id={describedBy} className={styles.notice}>
-            {notice}
-          </p>
+          {notice ? (
+            <p id={describedBy} className={styles.notice}>
+              {notice}
+            </p>
+          ) : null}
           {question ? (
             <div className={styles.quiet}>
               <button type="button" className={styles.quietButton} aria-disabled={sending || undefined} onClick={() => void skip()}>

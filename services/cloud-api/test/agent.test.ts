@@ -652,10 +652,11 @@ describe("Anthropic model client", () => {
 });
 
 describe("engine selection", () => {
-  it("uses the agent only when asked for and a key is present", () => {
+  it("uses the agent whenever a key is present, unless told to use the fixed questions", () => {
     const warnings: string[] = [];
     const warn = (m: string) => warnings.push(m);
     expect(engineFromEnv({}, warn).kind).toBe("deterministic");
+    expect(engineFromEnv({ ANTHROPIC_API_KEY: "sk-test" }, warn).kind).toBe("agent");
     expect(engineFromEnv({ ONBOARDING_ENGINE: "deterministic", ANTHROPIC_API_KEY: "sk-test" }, warn).kind).toBe("deterministic");
     expect(engineFromEnv({ ONBOARDING_ENGINE: "agent" }, warn).kind).toBe("deterministic");
     expect(engineFromEnv({ ONBOARDING_ENGINE: "llm", ANTHROPIC_API_KEY: "sk-test" }, warn).kind).toBe("deterministic");

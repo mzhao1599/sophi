@@ -31,7 +31,7 @@ describe("the agent engine reaches the provider it names", () => {
   });
 
   it("words the notice clause", () => {
-    expect(agentNoticeClause("anthropic")).toBe("Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy");
+    expect(agentNoticeClause("anthropic")).toBe("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy");
   });
 
   it("warns when the model override isn't a Claude model", () => {
@@ -54,10 +54,29 @@ describe("agent provider selection", () => {
     expect(select({ ANTHROPIC_API_KEY: "a-key" })).toEqual({ kind: "agent", warnings: [] });
   });
 
+  it("runs the agent by default when the key is set, and the fixed questions without one", () => {
+    const warnings: string[] = [];
+    const warn = (m: string) => warnings.push(m);
+    expect(engineFromEnv({ ANTHROPIC_API_KEY: "a-key" }, warn).kind).toBe("agent");
+    expect(engineFromEnv({ ONBOARDING_ENGINE: "  ", ANTHROPIC_API_KEY: "a-key" }, warn).kind).toBe("agent");
+    expect(engineFromEnv({}, warn).kind).toBe("deterministic");
+    expect(engineFromEnv({ ANTHROPIC_API_KEY: "none" }, warn).kind).toBe("deterministic");
+    expect(warnings).toEqual([]);
+  });
+
+  it("runs the fixed questions when told to, even with a key", () => {
+    const warnings: string[] = [];
+    expect(engineFromEnv({ ONBOARDING_ENGINE: "deterministic", ANTHROPIC_API_KEY: "a-key" }, (m) => warnings.push(m)).kind).toBe("deterministic");
+    expect(agentProviderFromEnv({ ONBOARDING_ENGINE: "deterministic", ANTHROPIC_API_KEY: "a-key" })).toBeNull();
+    expect(warnings).toEqual([]);
+  });
+
   it("names the provider the agent runs with, for the first screen's notice", () => {
     expect(agentProviderFromEnv({ ONBOARDING_ENGINE: "agent", ANTHROPIC_API_KEY: "a" })).toBe("anthropic");
+    expect(agentProviderFromEnv({ ANTHROPIC_API_KEY: "a" })).toBe("anthropic");
     expect(agentProviderFromEnv({ ONBOARDING_ENGINE: "agent" })).toBeNull();
-    expect(agentProviderFromEnv({ ANTHROPIC_API_KEY: "a" })).toBeNull();
+    expect(agentProviderFromEnv({ ANTHROPIC_API_KEY: "none" })).toBeNull();
+    expect(agentProviderFromEnv({ ONBOARDING_ENGINE: "magic", ANTHROPIC_API_KEY: "a" })).toBeNull();
   });
 
   it("falls back to the deterministic engine, with a warning, without a key", () => {

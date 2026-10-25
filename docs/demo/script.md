@@ -57,7 +57,7 @@ If the assistant asks the questions in a different order, type the line that mat
 - **The moment to retell:** "She typed one sentence, the walker drew itself, and every suggested part could say why it was there, in her own words." Two beats carry it: the parts arriving one at a time after the first line (0:10), and the panel that quotes her words back (1:33).
 - **The ending:** by 2:01 every one of Sophi's seven parts is on screen in its true state: the frame and everything she chose on, Voice marked "You Said No"†, and location sharing "Not Available Yet"†. The success page then ends on her drawn walker.
 - **When the presenter stops talking:** three planned silences, each about 3 seconds. After the first Enter, let the walker draw. When "Your walker"† rises to centre stage, let it land. On the success page, stop and let the judges read it.
-- **Who it's aimed at:** Microsoft's "Built for the Real World" judges first. The real-world points are made by the demo itself: no diagnosis asked, the person's "no" is respected and shown, the line under the text box says who reads her words and asks her to leave out names and medical details before she types, each reply says who read it, it keeps working when the model doesn't answer, it works without a mouse, and it is honest about what is a prototype.
+- **Who it's aimed at:** Microsoft's "Built for the Real World" judges first. The real-world points are made by the demo itself: no diagnosis asked, the person's "no" is respected and shown, the line under the text box says who reads her words before she types, each reply says who read it, it keeps working when the model doesn't answer, it works without a mouse, and it is honest about what is a prototype.
 
 ## The persona: Wren
 
@@ -118,7 +118,7 @@ Before you start: the page is open at localhost, fresh (no answers), and L1 is a
 
 **0:23 to 0:36. Name it, and say where her words go**
 
-> "This is Sophi. The line under the box says her answers are kept temporarily for this setup, Anthropic's Claude reads them and Anthropic may keep a copy, and it asks her to leave out names and medical details. Each reply says who read it."
+> "This is Sophi. The line under the box says Anthropic's Claude reads her answers, and Anthropic may keep a copy. Wren is made up, so nothing real goes with them. Each reply says who read it."
 
 1. Point at the name in the header, Sophi†, then at the line under the text box†, then at "Read by Claude"†.
 
@@ -258,9 +258,9 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
 
 ## Judge Q&A
 
-**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†; the line under the text box says only that they're "kept temporarily for this setup"†. With the agent on, each answer is also sent to Anthropic's API, and that line names Anthropic and says Anthropic may keep a copy, before anyone types. Once sent, deleting here can't recall it from Anthropic. That's why the demo uses a made-up persona and the line ends "Please leave out names and medical details."†
+**1. What happens to what I type?** Answers are deleted an hour after the last change, or right away with "Start Over"†. Each answer is also sent to Anthropic's API, and the line under the text box says so before anyone types: "Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy."† Once sent, deleting here can't recall it from Anthropic. That's why the demo uses a made-up persona.
 
-**2. Does Google use it?** [Fill in from the setup checklist.] If the key's project is on Google's paid tier: Google doesn't use it to improve its products, and keeps it for a limited time to check for abuse. If it's on the free tier: Google can use it to improve its products, people may review it, and the terms say not to send sensitive or personal information. That's why the laptop only gets Wren's made-up lines. On the phone link tonight, no model runs, so nothing typed there goes to Google.
+**2. Does Anthropic use it?** [Fill in from the setup checklist, step 8.] Say only what Anthropic's terms for this key's account say about keeping and using API inputs; until someone has read them, say "we haven't checked Anthropic's retention terms for this key yet, so the laptop only gets Wren's made-up lines."
 
 **3. Why don't you let the model choose the modules?** Because a suggestion about a mobility aid should be explainable and the same every time. The model only reads the person's words as a fixed list of needs, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement. It never picks a module. Fixed rules turn needs into suggestions, each with a reason that quotes the person's words, and the most experimental parts (the robot arms and the arm lift) are never switched on by default. If the model fails, the same rules still run, and the note under the reply says so.
 
@@ -294,7 +294,7 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    pnpm install
    ```
 
-2. **Settings.** `apps/web/.env.local` (git-ignored) needs `ONBOARDING_ENGINE=agent`, `ANTHROPIC_API_KEY` and a Stripe test key in `STRIPE_SECRET_KEY` (`sk_test_…`). Check the names without showing any value, and never open the file on a mirrored screen:
+2. **Settings.** `apps/web/.env.local` (git-ignored) needs `ANTHROPIC_API_KEY` (with it the agent runs; `ONBOARDING_ENGINE` must be absent or `agent`, since `deterministic` turns it off) and a Stripe test key in `STRIPE_SECRET_KEY` (`sk_test_…`). Check the names without showing any value, and never open the file on a mirrored screen:
 
    ```bash
    sed 's/=.*//' apps/web/.env.local
@@ -332,14 +332,14 @@ Say these when they come up, in these words or close to them. AGENTS.md is the s
    NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= SUPABASE_SECRET_KEY= pnpm --filter @walker/web exec next dev --port 3004
    ```
 
-7. **Engine check.** The header says Sophi†. The line under the text box† must include "Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy"†. After the first answer, the reply shows "Read by Claude"† and the terminal prints `[onboarding-agent] outcome=agent …`. If the notice doesn't name Anthropic, the deterministic engine is running: fix `.env.local`, rebuild and restart, and don't mention Claude.
-8. **Free-tier check.** Ask the key's owner whether its Google Cloud project has billing on, and write the answer into Q&A 2.
+7. **Engine check.** The header says Sophi†. The line under the text box† must read "Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy."† After the first answer, the reply shows "Read by Claude"† and the terminal prints `[onboarding-agent] outcome=agent …`. If there's no line under the text box, the deterministic engine is running: fix `.env.local`, rebuild and restart, and don't mention Claude.
+8. **Terms check.** Read what Anthropic's terms for the key's account say about keeping and using API inputs, and write the answer into Q&A 2.
 9. **Run it through once.** Run the whole 3-minute script once, end to end, including the test payment and the success page. This checks Claude and Stripe on the venue network (and, in development mode, compiles every page). Then reset (step 13).
 10. **Browser.** Use a separate browser profile with no saved data, so Stripe's email field can't autofill a real address. Close every other tab: email, chat, Messages, password managers, other localhost tabs (another project may use ports 3000 to 3003; the only localhost tab should be this demo on port 3004), any editor showing `.env.local`, and the vercel.app tab. Turn on Do Not Disturb.
 11. **Projector zoom.** Zoom with Cmd+= to 110% or 125%. If the walker drops below the chat or the layout looks cramped, zoom out one step (Cmd+-). If mirroring sets the laptop to 1024 by 768, stay at 100%. Check this on the projector, since the redesigned layout's breakpoints weren't measured for this script.
 12. **Stripe test card,** on a sticky note: `4242 4242 4242 4242`, `12/34`, `123`, `Wren Demo`, `94720`, `demo@example.com`. It's Stripe's public test card, not a secret.
 13. **Reset between judges.** On the success page, press "Set up another walker"†: it deletes the answers and returns to a fresh first frame in one press. Anywhere else, press "Start Over"† in the header. Check the chat is empty and the walker is a bare frame, then type L1 into the box without sending it.
-14. **Phone link for judges:** <https://assistive-walker.vercel.app>. The laptop can't open it (see Umbrella below), so check it on a phone on mobile data before judges arrive. It runs the built-in questions tonight: check that its notice doesn't mention Google. It keeps sessions in one server's memory, so a session can occasionally be lost: reload and start again. There's no QR code on the page, so put a printed QR card for the link on the table.
+14. **Phone link for judges:** <https://assistive-walker.vercel.app>. The laptop can't open it (see Umbrella below), so check it on a phone on mobile data before judges arrive. Check the line under its text box: if it names Anthropic's Claude, the agent runs there and anything a judge types goes to Anthropic; if there's no line, the built-in questions run. It keeps sessions in one server's memory, so a session can occasionally be lost: reload and start again. There's no QR code on the page, so put a printed QR card for the link on the table.
 15. **Fallbacks.**
     - **No Wi-Fi:** the deterministic engine needs no internet. Restart with it so turns don't wait for the model's deadline: put `ONBOARDING_ENGINE=deterministic` at the front of the step 5 command (no rebuild needed). Stripe needs the internet, so without it stop at "Saved"† and show the order on a phone instead. Phone hotspots are banned at Cal Hacks; a cable from the venue's hardline switch (requested in the Cal Hacks app, picked up at the Hardware Checkout window) can bring back the internet, through an adapter if the laptop has no Ethernet port.
     - **The agent is slow:** each turn falls back to the fixed questions after 15 seconds on its own, and the note under the reply says so. If turns take more than about 5 seconds, restart with `ONBOARDING_ENGINE=deterministic` as above; the same lines give the same walker. While the dots show, say the next spoken line.

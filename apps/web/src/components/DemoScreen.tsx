@@ -43,7 +43,7 @@ interface ScreenProps {
   opening: Question;
   /**
    * When the server runs the onboarding agent, the notice's clause naming who reads the answers and who
-   * may keep them ("Anthropic's Claude reads them to choose each question, and Anthropic may keep a copy");
+   * may keep them ("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy");
    * null with the deterministic engine.
    */
   agentNotice?: string | null;

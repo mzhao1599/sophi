@@ -30,14 +30,15 @@ export const SKIP_REPLY = "Skip";
 export const SKIP_REST_REPLY = "Show me my walker";
 
 /**
- * The one line under the text box that says where answers go, who else reads them, and what to leave
- * out. Sending the first answer starts on it. `agentNotice` is the agent's clause ("Anthropic's Claude
- * reads them to choose each question, and Anthropic may keep a copy"), null with the fixed questions.
+ * The line under the text box, on screen before the first send: that answers are saved to the account
+ * when signed in, and who else reads them when the agent runs. `agentNotice` is the agent's clause
+ * ("Anthropic's Claude reads your answers to choose each question, and Anthropic may keep a copy"),
+ * null with the fixed questions. Empty for a guest with the fixed questions: nothing leaves the setup,
+ * so the page shows no line.
  */
 export function noticeLine(agentNotice: string | null, signedIn: boolean): string {
-  const where = signedIn ? "Your answers are saved to your account." : "Your answers are kept temporarily for this setup.";
-  const model = agentNotice ? ` ${agentNotice}.` : "";
-  return `${where}${model} Please leave out names and medical details.`;
+  const parts = [signedIn ? "Your answers are saved to your account." : null, agentNotice ? `${agentNotice}.` : null];
+  return parts.filter(Boolean).join(" ");
 }
 
 /**

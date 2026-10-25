@@ -40,6 +40,11 @@ services:
         sync: false
       - key: SPACETIME_JWT_PRIVATE_KEY
         sync: false
+      # The onboarding page's questions come from Claude, with the same ANTHROPIC_API_KEY. This is also the
+      # default whenever the key is set; written here so a missing key logs a warning. `deterministic` forces
+      # the fixed questions.
+      - key: ONBOARDING_ENGINE
+        value: agent
       # One instance, so the onboarding page's in-memory sessions work here too.
       - key: ONBOARDING_ALLOW_MEMORY_STORE
         value: "true"
