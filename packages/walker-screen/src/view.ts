@@ -513,7 +513,7 @@ function scene(content: ScreenContent, settings: ScreenSettings, state: ScreenSt
       if (clock) {
         lines.push(body(name ? `${clock.greeting}, ${name}` : clock.day));
         if (name) lines.push(detail(clock.day));
-      } else if (name) lines.push(body(`Hello, ${name}`));
+      } else lines.push(body("Loading…"));
       return {
         key: "ambient",
         main: { text: clock?.time ?? "Sophi", size: "main" },

@@ -12,7 +12,7 @@ What the walker's own 800x480 screen draws: a pure `screenView(state, settings?)
 | `src/fonts/` | Atkinson Hyperlegible Next (Google Fonts' latin and latin-ext subsets, variable weight) and its SIL Open Font License, `OFL.txt` |
 | `src/fixtures.ts` | Every state at every text size, the walker's own first, with the demo's names and the longest names the contract allows; motion with the longest titles, fault and refusal sentences, and the simulator's strip; each card Sophi pulls up, simulated and with the longest strings |
 
-The idle screen shows the time and greeting without repeating the configured alert modes. Answer captions show the reply and, when available, what the walker heard; they do not show the model or reply source. Alert details still appear when Sophi proposes or confirms a change to those settings.
+The idle screen shows “Sophi” and “Loading…” until the Pi confirms its clock; then it shows the time and greeting without repeating the configured alert modes. Answer captions show the reply and, when available, what the walker heard; they do not show the model or reply source. Alert details still appear when Sophi proposes or confirms a change to those settings.
 
 Rules it keeps (from the screen research): text only in colours of 7:1 or better (the map's "© OpenStreetMap contributors" credit is the one text under 40 px: 16 px, 7:1 on its own card); every colour also a shape and a word (filled, hollow or dashed dot; "Simulator" and "Simulated" dashed tags); nothing moves while idle; no blur, slide or pulse; no emergency wording ("clear it", the instruction to clear a motion fault, is the one use of "clear"); at most 3 buttons of at least 20 mm.
 

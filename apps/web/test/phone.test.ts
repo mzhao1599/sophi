@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { APP_MANIFEST } from "@/lib/appManifest";
+import { readFileSync } from "node:fs";
+import { APP_MANIFEST, IPHONE_SCREENS, STARTUP_IMAGES } from "@/lib/appManifest";
 import {
   SAMPLE_AREA,
   SAMPLE_CARETAKERS,
@@ -288,5 +289,27 @@ describe("the Home Screen manifest", () => {
   it("installs only /app, standalone, as Sophi", () => {
     expect(APP_MANIFEST).toMatchObject({ name: "Sophi", start_url: "/app", scope: "/app", display: "standalone", theme_color: "#f1f4f2" });
     expect(APP_MANIFEST.icons.map((i) => i.sizes)).toContain("512x512");
+    expect(APP_MANIFEST.icons.filter((i) => i.purpose === "maskable").map((i) => i.sizes)).toEqual(["512x512"]);
+  });
+
+  // A PNG's width and height sit at bytes 16 to 24 of its header.
+  const pngSize = (url: string) => {
+    const b = readFileSync(new URL(`../public${url}`, import.meta.url));
+    return `${b.readUInt32BE(16)}x${b.readUInt32BE(20)}`;
+  };
+
+  it("has every icon it names, at the size it says", () => {
+    for (const icon of APP_MANIFEST.icons) expect(pngSize(icon.src), icon.src).toBe(icon.sizes);
+    expect(pngSize("/app-icons/apple-touch-icon.png")).toBe("180x180");
+  });
+
+  it("has a light and a dark startup image for each iPhone screen, at its pixel size", () => {
+    expect(STARTUP_IMAGES).toHaveLength(IPHONE_SCREENS.length * 2);
+    for (const s of IPHONE_SCREENS) {
+      const screen = `(device-width: ${s.width}px) and (device-height: ${s.height}px) and (-webkit-device-pixel-ratio: ${s.ratio})`;
+      const images = STARTUP_IMAGES.filter((i) => i.media.startsWith(screen));
+      expect(images.map((i) => /prefers-color-scheme: (\w+)/.exec(i.media)?.[1])).toEqual(["light", "dark"]);
+      for (const i of images) expect(pngSize(i.url), i.url).toBe(`${s.width * s.ratio}x${s.height * s.ratio}`);
+    }
   });
 });

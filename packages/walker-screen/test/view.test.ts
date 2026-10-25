@@ -129,7 +129,7 @@ describe("the walker's own states", () => {
 
   it("ambient: no time when the clock never synced", () => {
     const v = screenView(state({ state: "ambient", alerts: null }, { strip: { link: "online", simulator: false, bench_mode: false, clock: null } }));
-    expect(v.main.text).toBe("Sophi");
+    expect(texts(v)).toEqual(["Sophi", "Loading…"]);
     expect(texts(v).join(" ")).not.toMatch(/\d:\d\d/);
   });
 
