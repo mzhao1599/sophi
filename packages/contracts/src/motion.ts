@@ -252,8 +252,8 @@ export const LiftMicrostepsSchema = z.literal([1, 2, 4, 8, 16, 32]);
 /** Named lift requests only. The no-switch demo uses a journaled estimated origin; production needs a measured home. */
 export const LiftPresetSchema = z.enum(["ground", "up"]);
 export type LiftPreset = z.infer<typeof LiftPresetSchema>;
-/** Requested demo positions: 700 mm apart. Physical travel and step scale remain unverified. */
-export const LIFT_PRESET_HEIGHTS_MM: Readonly<Record<LiftPreset, number>> = { ground: 5, up: 705 };
+/** Requested demo positions: 600 mm apart. Physical travel and step scale remain unverified. */
+export const LIFT_PRESET_HEIGHTS_MM: Readonly<Record<LiftPreset, number>> = { ground: 5, up: 605 };
 
 /**
  * Hard ceilings no lift configuration may exceed, whatever is measured later; the configuration's own limits
