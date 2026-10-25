@@ -11,6 +11,7 @@ import {
   type ProposalView,
   type SensorSnapshot,
   type WalkerConfiguration,
+  type WalkerIncomingMessage,
 } from "@walker/contracts";
 import type { AudioCapture, CaptureSession, Clip } from "./audio/capture";
 import type { Speaker, Utterance } from "./audio/speech";
@@ -27,6 +28,7 @@ import {
   HEARTBEAT_DEADLINE_MS,
   HEARTBEAT_INTERVAL_MS,
   LOCAL_LINE_REPEAT_MS,
+  MESSAGES_RETRY_MS,
   OFFLINE_AFTER_FAILED_HEARTBEATS,
   SPEECH_LINE_MAX_MS,
   TALK_PRESS_HAPTIC_MS,
@@ -193,8 +195,13 @@ interface PendingTurn {
  * release so a quick re-press continues the same recording; after the turn is sent, a press while waiting
  * cancels. A press while a reply is playing stops it and starts listening. The simulator keyboard only
  * presses, so a second press sends. Confirm answers the open proposal by id; with none it plays the
- * "nothing to confirm" sound. The Pi
+ * "nothing to confirm" sound, or reads her newest message again when she has one. The Pi
  * never judges a proposal's expiry by its own clock: the server says whether it is still open.
+ *
+ * Messages: after each heartbeat the walker asks for her newest messages from caretakers and reads each new one
+ * aloud once in its own voice ("Message from Maya. …"), waiting while she talks or a message draft awaits Confirm.
+ * What is there at the first answer after start or pairing is not read out (she can still hear the newest again).
+ * They are never sent to the page, a model or the voice service, and never logged.
  */
 export class WalkerService {
   talk: TalkState = "idle";
@@ -222,6 +229,15 @@ export class WalkerService {
   private cancelHeartbeat: Cancel | null = null;
   private stopped = false;
   private locationSharingEnabled = false;
+  /** Message ids already read aloud or there at the first answer; null until that first answer. */
+  private messagesSeen: Set<string> | null = null;
+  private readonly unreadMessages: WalkerIncomingMessage[] = [];
+  /** The newest message, which a Confirm press with nothing to confirm reads again; null once it is deleted. */
+  private latestMessage: WalkerIncomingMessage | null = null;
+  private readingMessage = false;
+  private messagesInFlight = false;
+  private messagesRetryAt = 0;
+  private messageCount = 0;
   private readonly audioFaults = new Set<string>();
   private readonly voice: VoiceQueue;
   private readonly cues: CuePolicy;
@@ -266,6 +282,7 @@ export class WalkerService {
     this.turn?.abort.abort(new CancelledError("Service stopped."));
     this.voice.stopAll();
     this.pendingMessage = null;
+    this.unreadMessages.length = 0;
     for (const off of this.unsubscribe) off();
   }
 
@@ -608,6 +625,15 @@ export class WalkerService {
       return;
     }
     if (this.confirmInFlight) return;
+    // Nothing waits for Confirm: it reads her newest message again (offline too: the words are on the walker).
+    if (!this.pendingMessage && !this.openProposal && this.latestMessage) {
+      confirmed();
+      if (!this.readingMessage) {
+        this.unreadMessages.unshift(this.latestMessage);
+        this.readMessages();
+      }
+      return;
+    }
     if (this.link !== "online" || !this.cloud) {
       const line = this.link === "offline" ? LINES.offlineNoSettings : this.localLine();
       void this.say(line ?? LINES.connecting, "local_reply");
@@ -701,6 +727,70 @@ export class WalkerService {
     if (proposal?.state === "open") this.pendingMessage = null;
     this.proposalEpoch += 1;
     if (changed) this.deps.bus.emit("offer", { proposal });
+  }
+
+  // ---- Her messages ----
+
+  /** Asks for her newest messages (after a heartbeat that succeeded) and queues the new ones to be read aloud. */
+  private async fetchMessages(cloud: CloudClient): Promise<void> {
+    const now = this.deps.clock.monotonic();
+    if (this.messagesInFlight || now < this.messagesRetryAt) return;
+    this.messagesInFlight = true;
+    try {
+      const { messages } = await withDeadline(this.deps.clock, HEARTBEAT_DEADLINE_MS, (signal) => cloud.incomingMessages(signal));
+      if (cloud !== this.cloud || this.stopped) return;
+      const first = this.messagesSeen === null;
+      const live = new Set(messages.map((m) => m.message_id));
+      // Ids the server no longer sends are forgotten; a deleted message never comes back.
+      const seen = new Set([...(this.messagesSeen ?? [])].filter((id) => live.has(id)));
+      for (const message of messages) {
+        if (seen.has(message.message_id)) continue;
+        seen.add(message.message_id);
+        if (!first) this.unreadMessages.push(message);
+      }
+      this.messagesSeen = seen;
+      // A message deleted on the server (24 hours, or a phone removed) is no longer read or heard again.
+      for (let i = this.unreadMessages.length - 1; i >= 0; i -= 1) if (!live.has(this.unreadMessages[i]!.message_id)) this.unreadMessages.splice(i, 1);
+      if (first) this.latestMessage = messages.at(-1) ?? null;
+      else if (this.latestMessage && !live.has(this.latestMessage.message_id)) this.latestMessage = null;
+      this.readMessages();
+    } catch (error) {
+      const kind = classifyError(error);
+      // The network is the heartbeat's business; anything else (an older server answers 404) waits a minute.
+      if (kind !== "timeout" && kind !== "unreachable" && kind !== "cancelled") {
+        this.messagesRetryAt = now + MESSAGES_RETRY_MS;
+        this.deps.log.warn("couldn't fetch messages; trying again in a minute", { kind });
+      }
+    } finally {
+      this.messagesInFlight = false;
+    }
+  }
+
+  /** Reads the next waiting message aloud, one at a time, only while nothing else of hers needs the walker. */
+  private readMessages(): void {
+    if (this.stopped || this.readingMessage || this.talk !== "idle" || this.deps.motion?.ownsConfirm()) return;
+    if (this.pendingMessage && this.deps.clock.monotonic() < this.pendingMessage.expiresAt) return;
+    const message = this.unreadMessages.shift();
+    if (!message) return;
+    this.readingMessage = true;
+    this.latestMessage = message;
+    const id = (this.messageCount += 1);
+    const spoken = this.say(messageLine(message), "message", undefined, () =>
+      this.deps.bus.emit("circleMessage", { id, message_id: message.message_id, from_name: message.from_name, text: message.text }),
+    );
+    void spoken.then(() => {
+      this.deps.bus.emit("circleMessageSpoken", { id });
+      this.readingMessage = false;
+      this.readMessages();
+    });
+  }
+
+  /** Forgets every message (unpaired, or the credential changed): another walker's messages are never read. */
+  private forgetMessages(): void {
+    this.messagesSeen = null;
+    this.unreadMessages.length = 0;
+    this.latestMessage = null;
+    this.messagesRetryAt = 0;
   }
 
   // ---- For the walker screen (the screen's listeners are wrapped: none of these can throw back here) ----
@@ -820,6 +910,7 @@ export class WalkerService {
           // and not while a motion Confirm target owns Confirm (it is adopted on a later heartbeat).
           this.setOpenProposal(open);
         }
+        void this.fetchMessages(cloud);
         // Newer is the usual case; a different version (even a lower one) means what is held belongs elsewhere.
         if (response.configuration_version !== this.configuration?.version) await this.fetchConfiguration();
       } catch (error) {
@@ -905,6 +996,7 @@ export class WalkerService {
     }
     // A new pairing writes its own configuration 1; take that one rather than an older device's.
     if (current?.device_id !== next.device_id) this.configuration = this.deps.store.readConfiguration();
+    if (current?.device_id !== next.device_id || current?.server_url !== next.server_url) this.forgetMessages();
     this.credential = next;
     this.cloud = cloud;
     this.failures = 0;
@@ -1080,6 +1172,8 @@ export class WalkerService {
     if (this.talk === state) return;
     this.talk = state;
     this.deps.bus.emit("talk", { state });
+    // After the code that set it idle has queued her reply (or a message draft), so a waiting message comes after.
+    if (state === "idle") queueMicrotask(() => this.readMessages());
   }
 
   private setLink(state: LinkState): void {
@@ -1089,6 +1183,12 @@ export class WalkerService {
       this.locationSharingEnabled = false;
       this.deps.location?.setEnabled(false);
     }
+    if (state === "unpaired" || state === "unauthorized") this.forgetMessages();
     this.deps.bus.emit("link", { state });
   }
+}
+
+/** How the walker reads a caretaker's message: who it is from, then the words exactly as sent. */
+export function messageLine(message: Pick<WalkerIncomingMessage, "from_name" | "text">): string {
+  return `Message from ${message.from_name}. ${message.text}`;
 }

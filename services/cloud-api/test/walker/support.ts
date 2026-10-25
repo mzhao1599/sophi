@@ -1,6 +1,11 @@
+import { execFile } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Pool } from "pg";
 import type { CapabilityManifest, ProposalView, SensorSnapshot, WalkerTurnView } from "@walker/contracts";
-import { MemoryWalkerStore, PostgresWalkerStore, type WalkerStore } from "../../src";
+import { CareDbClient, MemoryWalkerStore, PostgresWalkerStore, SpacetimeCircleStore, careDbDiscovery, careDbJwks, type CareDbConfig, type WalkerStore } from "../../src";
 
 /**
  * Test helpers for the walker store and service. The Postgres tests run when WALKER_TEST_DATABASE_URL
@@ -84,6 +89,83 @@ export async function postgresHarness(url: string): Promise<StoreHarness> {
 }
 
 export const SKIP_POSTGRES = "Skipping the walker Postgres tests: set WALKER_TEST_DATABASE_URL to a local cluster.";
+
+/**
+ * SPACETIME_TEST_SERVER: a local SpacetimeDB server (`spacetime start --listen-addr 127.0.0.1:3010`), for the
+ * circle on SpacetimeDB (SpacetimeCircleStore). Each test gets its own database, published from the module's
+ * bundle by the `spacetime` CLI, and a JWT issuer on a local port that the server fetches keys from.
+ */
+export const spacetimeTestServer: string | null = (() => {
+  const url = process.env.SPACETIME_TEST_SERVER?.trim();
+  if (!url) return null;
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname)) {
+    throw new Error("SPACETIME_TEST_SERVER must be a local server: the tests publish and delete databases.");
+  }
+  return url.replace(/\/+$/, "");
+})();
+
+export const SKIP_SPACETIME = "Skipping the circle's SpacetimeDB tests: set SPACETIME_TEST_SERVER to a local `spacetime start`.";
+
+const run = promisify(execFile);
+const CARE_DB_DIR = fileURLToPath(new URL("../../../care-db", import.meta.url));
+const CARE_TABLES = ["circle_member", "circle_invite", "circle_message", "join_try", "session"];
+
+export async function spacetimeHarness(server: string): Promise<StoreHarness> {
+  const spacetime = (...args: string[]) => run("spacetime", args, { cwd: CARE_DB_DIR, maxBuffer: 16 * 1024 * 1024 });
+  await spacetime("build", "-p", CARE_DB_DIR);
+  const bundle = `${CARE_DB_DIR}/dist/bundle.js`;
+
+  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const issuerServer: Server = createServer((req, res) => {
+    const body = req.url === "/.well-known/openid-configuration" ? careDbDiscovery(config) : req.url === "/.well-known/jwks.json" ? careDbJwks(config) : null;
+    res.statusCode = body ? 200 : 404;
+    res.setHeader("content-type", "application/json");
+    res.end(body ? JSON.stringify(body) : "");
+  });
+  await new Promise<void>((resolve) => issuerServer.listen(0, "127.0.0.1", resolve));
+  const address = issuerServer.address();
+  if (!address || typeof address === "string") throw new Error("The test issuer has no port.");
+  const jwk = privateKey.export({ format: "jwk" });
+  const config: CareDbConfig = {
+    uri: server,
+    database: "",
+    issuer: `http://127.0.0.1:${address.port}`,
+    privateKey,
+    kid: createHash("sha256").update(`${jwk.x}.${jwk.y}`).digest("hex").slice(0, 16),
+  };
+
+  const prefix = `care-test-${crypto.randomUUID().slice(0, 8)}`;
+  let n = 0;
+  let database = "";
+  let base = new MemoryWalkerStore();
+  let store: WalkerStore = base;
+
+  async function drop(name: string) {
+    if (name) await spacetime("delete", "-s", server, name, "-y").catch(() => {});
+  }
+
+  return {
+    name: "spacetime",
+    store: () => store,
+    reset: async () => {
+      const old = database;
+      database = `${prefix}-${++n}`;
+      await spacetime("publish", "-s", server, "-j", bundle, database, "-y");
+      await spacetime("call", "-s", server, database, "configure", JSON.stringify(config.issuer), JSON.stringify("sophi-care"));
+      base = new MemoryWalkerStore();
+      store = new SpacetimeCircleStore(base, new CareDbClient({ ...config, database }));
+      await drop(old);
+    },
+    dump: async () => {
+      const parts = await Promise.all(CARE_TABLES.map((t) => spacetime("sql", "-s", server, database, `SELECT * FROM ${t}`).then((r) => r.stdout)));
+      return [JSON.stringify(base, (_key, value) => (value instanceof Map ? [...value.entries()] : value)), ...parts].join("\n");
+    },
+    close: async () => {
+      await drop(database);
+      await new Promise<void>((resolve) => issuerServer.close(() => resolve()));
+    },
+  };
+}
 
 export const T0 = Date.parse("2026-10-23T09:00:00.000Z");
 

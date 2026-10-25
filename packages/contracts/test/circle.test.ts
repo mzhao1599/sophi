@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   AddPhoneRequestSchema,
+  DeviceMessagesResponseSchema,
+  WALKER_MESSAGES_KEPT,
   ApproveJoinRequestSchema,
   OwnerPhonesResponseSchema,
   PRESET_REPLIES,
@@ -463,7 +465,7 @@ describe("the two-phone app", () => {
     bad(ApproveJoinRequestSchema, { consent: { walker_user_agreed: false } });
     bad(ApproveJoinRequestSchema, {});
     expect(caregiverConsentLine("Maya", "Rose")).toBe(
-      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her, and see a recent GPS position only if location sharing is turned on later.",
+      "Rose agreed that Maya can see whether the walker is on, its part health and alerts, exchange short messages with her (the walker reads Maya's messages aloud), and see a recent GPS position only if location sharing is turned on later.",
     );
     expect(caregiverConsentLine("Maya", null)).toMatch(/^The person who uses this walker agreed that Maya/);
   });
@@ -508,5 +510,19 @@ describe("the two-phone app", () => {
       joins: [{ member_id: maya.member_id, name: "Maya", role: "caregiver", expires_at: T5 }],
     });
     bad(OwnerPhonesResponseSchema, { members: [], invites: [], joins: [{ member_id: rose.member_id, name: "Rose", role: "walker_user", expires_at: T5 }] });
+  });
+});
+
+describe("the walker's incoming messages (GET /devices/{id}/messages)", () => {
+  const message = (n: number, text = "Dinner at six. I'll get you.") => ({ message_id: uuid(n), from_name: "Maya", text });
+
+  it("carries at most WALKER_MESSAGES_KEPT messages, each once, with a name and one short line and nothing else", () => {
+    ok(DeviceMessagesResponseSchema, { messages: [] });
+    ok(DeviceMessagesResponseSchema, { messages: Array.from({ length: WALKER_MESSAGES_KEPT }, (_, i) => message(i + 1)) });
+    bad(DeviceMessagesResponseSchema, { messages: Array.from({ length: WALKER_MESSAGES_KEPT + 1 }, (_, i) => message(i + 1)) });
+    bad(DeviceMessagesResponseSchema, { messages: [message(1), message(1)] });
+    bad(DeviceMessagesResponseSchema, { messages: [message(1, "two\nlines")] });
+    bad(DeviceMessagesResponseSchema, { messages: [message(1, "x".repeat(31))] });
+    bad(DeviceMessagesResponseSchema, { messages: [{ ...message(1), from_member_id: uuid(9) }] });
   });
 });

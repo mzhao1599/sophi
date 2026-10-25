@@ -239,6 +239,11 @@ export interface WalkerStore extends CircleStore {
   recordHeartbeat(deviceId: string, heartbeat: Heartbeat): Promise<void>;
   /** Recheck the approved walker user's membership at write time; disabling clears the fix atomically. */
   setLocationSharing(deviceId: string, memberId: string, enabled: boolean): Promise<boolean>;
+  /**
+   * Sets the walker's sharing and erases its fix, with no membership check: for a store whose circle lives
+   * elsewhere (SpacetimeCircleStore), which checks her membership there first. False if there's no such walker.
+   */
+  writeLocationSharing(deviceId: string, enabled: boolean): Promise<boolean>;
   currentConfiguration(deviceId: string): Promise<WalkerConfiguration>;
   /** Marks the open proposal expired if it is past its expiry or the walker is offline at `now`. */
   expireProposals(deviceId: string, now: Date): Promise<void>;
@@ -399,6 +404,12 @@ export class MemoryWalkerStore implements WalkerStore {
   async setLocationSharing(deviceId: string, memberId: string, enabled: boolean) {
     const d = this.device(deviceId);
     if (!d.members.some((m) => m.member_id === memberId && m.role === "walker_user" && m.state === "member")) return false;
+    return this.writeLocationSharing(deviceId, enabled);
+  }
+
+  async writeLocationSharing(deviceId: string, enabled: boolean) {
+    const d = this.devices.get(deviceId);
+    if (!d) return false;
     d.location_sharing_enabled = enabled;
     // A new opt-in must wait for a new fix; revocation erases the previous one immediately.
     d.location = null;

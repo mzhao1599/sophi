@@ -1,6 +1,7 @@
 import {
   ApproveJoinResponseSchema,
   CIRCLE_MESSAGE_MAX,
+  CareLiveResponseSchema,
   CircleErrorSchema,
   CircleMessageSchema,
   CreateInviteResponseSchema,
@@ -14,6 +15,7 @@ import {
   PhoneSendMessageResponseSchema,
   PhoneWalkerViewSchema,
   PresetReplyIdSchema,
+  type CareLiveAccess,
   type CircleErrorCode,
   type CircleInvite,
   type CircleMember,
@@ -40,11 +42,13 @@ import type { z } from "zod";
  *                                 { client_message_id, preset, to_member_id } (her phone taps a preset)
  *                                 → 201 { message: PhoneMessageView }
  * - PUT  /api/v1/circle/location-sharing { enabled: true, consent: true } or { enabled: false } → { enabled } (walker user only)
+ * - POST /api/v1/circle/live      → { live: { uri, database, token, expires_at } | null } (SpacetimeDB, careLive.ts)
  * Owner routes (the `walker_owner` cookie):
  * - GET    /api/v1/walkers/{id}/circle                     → OwnerPhonesResponse
  * - POST   /api/v1/walkers/{id}/circle/invites             { name, role } → 201 { invite }
  * - POST   /api/v1/walkers/{id}/circle/joins/{member_id}   { consent: { walker_user_agreed: true } } → { member }
  * - DELETE /api/v1/walkers/{id}/circle/members/{member_id} → 204
+ * - POST   /api/v1/walkers/{id}/circle/live                → { live } as above
  * Errors are `CircleErrorSchema` bodies.
  */
 
@@ -74,6 +78,8 @@ export interface PhoneApi {
   sendText(clientMessageId: string, text: string): Promise<PhoneMessage>;
   /** Her phone's one-tap reply to one person. */
   sendPreset(clientMessageId: string, preset: PresetReplyId, toMemberId: string): Promise<PhoneMessage>;
+  /** A live connection to the circle in SpacetimeDB, or null when the server keeps it itself (the fake has none). */
+  live?(): Promise<CareLiveAccess | null>;
 }
 
 /** What the owner's page asks about the phones linked to one walker. */
@@ -86,6 +92,8 @@ export interface OwnerPhonesApi {
   approve(deviceId: string, memberId: string): Promise<CircleMember>;
   /** Removes a phone, or declines a waiting one. Its messages are deleted at once. */
   remove(deviceId: string, memberId: string): Promise<void>;
+  /** As PhoneApi.live, for this walker's circle. */
+  live?(deviceId: string): Promise<CareLiveAccess | null>;
 }
 
 /** `network`: no answer at all. `not_offered`: a plain 404, a server without these routes yet. */
@@ -159,7 +167,18 @@ export function createPhoneApi(fetchImpl: typeof fetch = (...args) => fetch(...a
       const body = post({ client_message_id: clientMessageId, preset, to_member_id: toMemberId });
       return (await circleCall(fetchImpl, `${BASE}/messages`, body, PhoneSendMessageResponseSchema)).message;
     },
+    live: () => liveCall(fetchImpl, `${BASE}/live`),
   };
+}
+
+/** A server without the live route (`not_offered`) just has no live updates. */
+async function liveCall(fetchImpl: typeof fetch, path: string): Promise<CareLiveAccess | null> {
+  try {
+    return (await circleCall(fetchImpl, path, post({}), CareLiveResponseSchema)).live;
+  } catch (error) {
+    if (error instanceof PhoneApiError && error.code === "not_offered") return null;
+    throw error;
+  }
 }
 
 export function createOwnerPhonesApi(fetchImpl: typeof fetch = (...args) => fetch(...args)): OwnerPhonesApi {
@@ -176,5 +195,6 @@ export function createOwnerPhonesApi(fetchImpl: typeof fetch = (...args) => fetc
     async remove(deviceId, memberId) {
       await circleCall(fetchImpl, `${circle(deviceId)}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" }, null);
     },
+    live: (deviceId) => liveCall(fetchImpl, `${circle(deviceId)}/live`),
   };
 }

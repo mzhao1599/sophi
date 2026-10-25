@@ -1,11 +1,12 @@
-import { CueSchema, LiftPresetSchema, MODULE_CATALOG, WALKER_MAX_TOOL_CALLS, type ModuleId, type WalkerStatusView, type WalkerToolResult } from "@walker/contracts";
+import { CueSchema, LiftPresetSchema, MODULE_CATALOG, WALKER_MAX_TOOL_CALLS, type ModuleId, type WalkerModel, type WalkerStatusView, type WalkerToolResult } from "@walker/contracts";
 import { z } from "zod";
 import type { AgentFailure, AgentModel, AgentReply, AgentRequest } from "../onboarding/agent";
 import { CUE_WORDS, SIMULATED_ALL_PARTS, readingAge } from "./lines";
 
 /**
- * The walker assistant's model step: one Gemini structured-output call per attempt, with the person's
- * voice clip inline when they spoke. The model reads the walker's status and their words and returns a transcript, a
+ * The walker assistant's model step: one structured-output call per attempt. Spoken turns go to Gemini,
+ * with the person's voice clip inline; typed turns go to Claude when the server has a Claude key
+ * (config.ts), otherwise to Gemini too. The model reads the walker's status and their words and returns a transcript, a
  * reply, the topics it touched and at most one suggested cues change. It decides nothing else: the
  * service applies the rules (lines.ts and service.ts), opens any proposal, and only a person's Confirm
  * changes the walker. A reply that breaks the shape, or one that says "clear" or "safe" (saysClearOrSafe),
@@ -135,12 +136,17 @@ export function walkerContext(status: WalkerStatusView, source: "walker" | "page
   });
 }
 
-/** `model` names the model that answered (or, on a failure, the one whose failure is reported), for logs. */
+/**
+ * `model` names the model that answered (or, on a failure, the one whose failure is reported), for logs;
+ * `provider` is its family, for the page's labels.
+ */
 export type AssistantResult =
-  | { ok: true; reply: WalkerReply; attempts: number; ms: number; model?: string }
-  | { ok: false; reason: AgentFailure; attempts: number; ms: number; model?: string };
+  | { ok: true; reply: WalkerReply; attempts: number; ms: number; model?: string; provider?: WalkerModel }
+  | { ok: false; reason: AgentFailure; attempts: number; ms: number; model?: string; provider?: WalkerModel };
 
 export interface WalkerAssistant {
+  /** The model family that answers, so the page can name it before the answer comes back. */
+  readonly provider?: WalkerModel;
   /**
    * `timeoutMs` shortens the deadline when the turn has less time left than WALKER_TIMEOUT_MS. `signal`
    * cancels the attempt early (the hedge cancels the model it didn't use).
@@ -204,8 +210,9 @@ function deadline<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-export function createWalkerAssistant({ model, name, timeoutMs = WALKER_TIMEOUT_MS }: { model: AgentModel; name?: string; timeoutMs?: number }): WalkerAssistant {
+export function createWalkerAssistant({ model, name, provider, timeoutMs = WALKER_TIMEOUT_MS }: { model: AgentModel; name?: string; provider?: WalkerModel; timeoutMs?: number }): WalkerAssistant {
   return {
+    provider,
     async reply(status, source, words, now, limitMs = timeoutMs, cancel, toolResults = [], recipients = []) {
       const started = Date.now();
       const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, limitMs)));
@@ -223,7 +230,7 @@ export function createWalkerAssistant({ model, name, timeoutMs = WALKER_TIMEOUT_
         attempts++;
         try {
           const reply = parseReply(await deadline(model.generate(request, signal), signal));
-          return { ok: true, reply, attempts, ms: Date.now() - started, model: name };
+          return { ok: true, reply, attempts, ms: Date.now() - started, model: name, provider };
         } catch (error) {
           if (!(error instanceof RejectedReply)) {
             reason = signal.aborted ? "timeout" : "model_error";
@@ -234,7 +241,7 @@ export function createWalkerAssistant({ model, name, timeoutMs = WALKER_TIMEOUT_
           request = { ...request, retry: error.note };
         }
       }
-      return { ok: false, reason, attempts, ms: Date.now() - started, model: name };
+      return { ok: false, reason, attempts, ms: Date.now() - started, model: name, provider };
     },
   };
 }

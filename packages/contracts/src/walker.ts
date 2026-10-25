@@ -505,6 +505,13 @@ export type PairingCodeResponse = z.infer<typeof PairingCodeResponseSchema>;
 // or turn views, which the Pi parses strictly. It holds no one's words: only kinds, codes and timings. It
 // lives in server memory, so a restart empties it; the page then draws only what the status view shows.
 
+/**
+ * The model family behind a turn, for the page's labels: "claude" (Anthropic's Claude, typed turns when the
+ * server has a Claude key) or "gemini" (Google's Gemini: every spoken turn, and typed ones without Claude).
+ */
+export const WalkerModelSchema = z.enum(["claude", "gemini"]);
+export type WalkerModel = z.infer<typeof WalkerModelSchema>;
+
 /** A turn the server is working on right now: set once the clip or text is accepted, cleared when it ends however it ends. */
 export const WalkerTurnInFlightSchema = z.strictObject({
   client_turn_id: id,
@@ -515,6 +522,8 @@ export const WalkerTurnInFlightSchema = z.strictObject({
   clip_ms: z.int().min(0).nullable(),
   /** "hearing": waiting for the model; "voicing": waiting for Cartesia's audio. */
   stage: z.enum(["hearing", "voicing"]),
+  /** The model the server asked: Claude reads typed turns when it is set up, Gemini hears spoken ones. null: none. Optional for servers from before 2026-10-24. */
+  model: WalkerModelSchema.nullable().optional(),
 });
 export type WalkerTurnInFlight = z.infer<typeof WalkerTurnInFlightSchema>;
 
@@ -528,6 +537,8 @@ export const WalkerTurnTraceSchema = z.strictObject({
   clip_ms: z.int().min(0).nullable(),
   /** False when no model call was made (no model configured): the page then draws no model step. */
   model_ran: z.boolean(),
+  /** Which model ran (see WalkerModelSchema); null when none did. Optional for servers from before 2026-10-24. */
+  model: WalkerModelSchema.nullable().optional(),
   model_ms: z.int().min(0).nullable(),
   /** The rule that decided the reply, as a code ("arms", "offline", "cues_alerts_off", "model_error", …); null when the model's own words were used. */
   rule: z.string().min(1).max(40).nullable(),

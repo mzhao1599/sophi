@@ -37,7 +37,7 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 | B5 | Talk pressed while a reply is being spoken | Speech stops and a new recording starts. |
 | B6 | Keyboard (simulator): Talk, Talk | First press starts recording, the second press sends. A terminal can't see key release, so no release events exist. |
 | B7 | Online, open proposal, Confirm pressed | One `confirm` answer for that proposal id. The answer's proposal is `confirmed` with `configuration_version` 2: configuration 2 is fetched and saved, the "done" cue plays, "Done. Obstacle alerts now use short sounds." is spoken, and the next heartbeat's manifest reports version 2. |
-| B8 | No open proposal, Confirm pressed | "nothing to confirm" cue and the status line "Nothing to confirm." (a `local_reply` event). No request. |
+| B8 | No open proposal and no message of hers to hear again, Confirm pressed | "nothing to confirm" cue and the status line "Nothing to confirm." (a `local_reply` event). No request. (With a message, see CM6.) |
 | B9 | Confirm pressed while recording | Ignored: no request, recording continues. |
 | B10 | Confirm pressed twice quickly | One request. |
 | B11 | Confirm answered `409 proposal_closed` with the proposal `expired`, `superseded` or `declined`, or `404` *(contract)* | The "nothing to confirm" cue and status line; the Pi forgets that proposal. Configuration unchanged. (The Pi never judges expiry by its own clock.) |
@@ -58,6 +58,25 @@ All numbers marked *placeholder* are not measured. They live in `src/constants.t
 | B26 | A GPIO press or a simulator keyboard press *(press buzz)* | No haptic: the Pi's header buttons and the keyboard have no motor. |
 | B27 | A press from a hand that can't buzz (no `haptic` in its hello, a haptic fault, not `ok`) or whose port is busy *(press buzz)* | No haptic and no error; the sounds, the recording and the turn are unchanged. |
 | B28 | Press buzz and obstacle alerts *(press buzz)* | The press buzz plays whatever the obstacle cue setting is (also with `cues: ["sound"]`): it is button feedback, not an obstacle alert. It doesn't count as one: a near zone right after a press still gets its own `near_obstacle` buzz, and with `cues: ["sound"]` still only the obstacle sound. |
+
+## Her messages (`src/service.ts`, added 2026-10-24)
+
+A caretaker's message to her phone, read aloud by the walker (`test/messages.test.ts`, fake clock and fake cloud). The words are someone's own: never on the page, in a model or voice-service request, or in a log line.
+
+| Id | Situation | Expected |
+| --- | --- | --- |
+| CM1 | Messages already there at the first messages answer after start or pairing | None is read aloud. Confirm with nothing to confirm reads the newest one (CM6). |
+| CM2 | A new message arrives (the fetch after a heartbeat that succeeded) | Spoken once, in the walker's own voice: "Message from Maya. Dinner at six. I'll get you." (kind `message`). No heartbeat event carries its words, and no turn or speech request is made. |
+| CM3 | The same message in later answers | Not read again. |
+| CM4 | A message arrives while Talk is held or her turn is waiting | Read only once Talk is idle, after the reply. |
+| CM5 | A message arrives while a spoken message draft waits for Confirm | Read once the draft is sent, cleared or past its 30 s. |
+| CM6 | Confirm pressed with nothing to confirm and a message of hers | The newest message is read again, the same line; offline too. No request, no "nothing to confirm" cue, and a hand that can buzz gets `confirmation`. A press while a message is being read does nothing more. |
+| CM7 | Confirm pressed with an open proposal and a message | The proposal is answered (B7); no message is read. |
+| CM8 | A message the server no longer sends (deleted after 24 hours, or a phone removed) | Not read if still waiting; not heard again (Confirm then says nothing to confirm). |
+| CM9 | The server has no messages route (an older one answers 404) | One warning ("couldn't fetch messages"), asked again after 60 s (*placeholder*); heartbeats, turns and Confirm are unaffected. A network failure is left to the heartbeat (no warning, no wait). |
+| CM10 | The walker is unpaired, gets a 401, or is paired to another walker | Every message is forgotten: none is read or heard again, and the next walker's first answer is CM1. |
+| CM11 | Talk pressed while a message is being read | The message stops and listening starts (B5); Confirm reads it again afterwards. |
+| CM12 | A `message` line in the logs *(the logging rule)* | Logged by length only on the Pi ("(29 characters)"), like a reply. |
 
 ## Serial (shared fixtures in `packages/contracts/test/fixtures/`)
 
@@ -250,7 +269,7 @@ Run with bash on a temporary boot folder (copies of Raspberry Pi OS's stock `con
 
 ## The walker screen (`src/screen/`, added 2026-10-24)
 
-The walker's own screen states and motion (the arms and the lift) only: the circle's (suggestions, joins, messages, My screen) come with the circle feed. Rows D1 to D9 run on a fake clock (`test/screen.test.ts`), D10 to D13 on a real socket on 127.0.0.1 (`test/screen-server.test.ts`); D19 to D23 likewise (`test/screen-motion.test.ts`, `test/screen-server.test.ts`, `test/screen-hold.test.tsx`). D14 and D15 are runs with headless Chromium at 800x480, not in the test suite (the README's "The walker screen's page" says how). Timings marked *placeholder* are in `src/constants.ts`.
+The walker's own screen states, motion (the arms and the lift) and a caretaker's message as it is read aloud: the circle's other states (suggestions, joins, the "message waiting" notice, My screen) come with the circle feed. Rows D1 to D9 run on a fake clock (`test/screen.test.ts`), D10 to D13 on a real socket on 127.0.0.1 (`test/screen-server.test.ts`); D19 to D23 likewise (`test/screen-motion.test.ts`, `test/screen-server.test.ts`, `test/screen-hold.test.tsx`). D14 and D15 are runs with headless Chromium at 800x480, not in the test suite (the README's "The walker screen's page" says how). Timings marked *placeholder* are in `src/constants.ts`.
 
 | Id | Situation | Expected |
 | --- | --- | --- |
@@ -277,6 +296,8 @@ The walker's own screen states and motion (the arms and the lift) only: the circ
 | D21 | A motion ends, or its press is refused | The running motion gone and the coordinator's last command is that motion's id: Done (completed) or Stopped (stopped) for 4 s (SCREEN_DONE_MS). The pending target gone and the last command a new refusal of that kind: Not started, with the refusal. A fault, an unmatched id or a refused prepare shows none of these. |
 | D22 | `POST /screen/hold` | Token, Host and Origin as D11 (403, 421, 421), and nothing reaches the bus. Only a `ScreenHold` (400 otherwise). Each message is stamped with the Pi's monotonic time on receipt; the page's `at` never changes that stamp. "Still held" counts only while a stream is open and the state last sent shows the hold control; otherwise 409 and a release. A "still held" whose `at` is not after the page's last release is dropped (409, nothing sent). A stream closing and the server closing are releases. Every refresh that counts is one `screenHold` event, in order. |
 | D23 | The page's hold control (`HoldControl`, fake timers and events) | Pressing does nothing unless the control is shown. Held: "still held" at once, then every 50 ms (a quarter of HOLD_CONTROL_REFRESH_MS). Each of pointerup, pointercancel, touchend, touchcancel, blur (window), visibilitychange (document) and keyup sends exactly one release and stops the refreshes. So do the control leaving the screen and the stream dropping. The confirm screen turning into the running one, with the control still shown, doesn't let go. The page draws no hold control on any screen without a lift target, and draws one on the lift's confirm and running screens. |
+| D25 | A caretaker's message read aloud *(added 2026-10-24)* | `message` with its words and "From Maya" from the moment it starts playing until 20 s (*placeholder*) after it has played, then whatever is underneath. Priority: under her own Talk, the answer, a motion target, Sophi's offer and Done; over offline (so a Confirm replay offline shows it) and the clock. A new Talk press drops it. The view names "Confirm" over the left handle and says "Press Confirm to hear it again."; no touch button. |
+| D26 | The message heard again on Confirm | The same screen again, its 20 s starting from the end of that reading. |
 | D24 | The real page in headless Chromium against the real server *(run, not in the suite)* | Holding the control with the mouse sends a refresh about every 50 ms, each reaching the bus as `screenHold` with the Pi's time; lifting the mouse, blurring the window and the stream dropping each send one release. |
 
 ## The lift adapter (`src/motion/lift/`, added 2026-10-24)

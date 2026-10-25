@@ -619,7 +619,7 @@ export type OwnerPhonesResponse = z.infer<typeof OwnerPhonesResponseSchema>;
  */
 export function caregiverConsentLine(caregiverName: string, walkerUserName: string | null): string {
   const who = walkerUserName ?? "The person who uses this walker";
-  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"}, and see a recent GPS position only if location sharing is turned on later.`;
+  return `${who} agreed that ${caregiverName} can see whether the walker is on, its part health and alerts, exchange short messages with ${walkerUserName ? "her" : "them"} (the walker reads ${caregiverName}'s messages aloud), and see a recent GPS position only if location sharing is turned on later.`;
 }
 
 /** POST /api/v1/walkers/{id}/circle/joins/{member_id}: the owner approves a waiting caretaker. Declining is DELETE on the member. */
@@ -656,6 +656,30 @@ export const DeviceSendMessageRequestSchema = z.strictObject({
 });
 export type DeviceSendMessageRequest = z.infer<typeof DeviceSendMessageRequestSchema>;
 export const DeviceSendMessageResponseSchema = z.strictObject({ sent: z.literal(true) });
+
+/** How many of her newest incoming messages the walker is sent; it reads new ones aloud and replays the newest. */
+export const WALKER_MESSAGES_KEPT = 5;
+
+/** A caretaker's message to her phone, as her walker hears it: no member ids, no times, no read state. */
+export const WalkerIncomingMessageSchema = z.strictObject({
+  message_id: id,
+  from_name: CircleNameSchema,
+  text: CircleMessageSchema.shape.text,
+});
+export type WalkerIncomingMessage = z.infer<typeof WalkerIncomingMessageSchema>;
+
+/**
+ * GET /api/v1/devices/{id}/messages (the walker's Bearer credential): the newest WALKER_MESSAGES_KEPT messages an
+ * approved caretaker sent to her phone that haven't been deleted, oldest first. Empty when she has no phone in.
+ * A message deleted on the server (24 hours, or a phone removed) drops out of the next answer.
+ */
+export const DeviceMessagesResponseSchema = z.strictObject({
+  messages: z
+    .array(WalkerIncomingMessageSchema)
+    .max(WALKER_MESSAGES_KEPT)
+    .refine((m) => new Set(m.map((x) => x.message_id)).size === m.length, "Each message_id appears once."),
+});
+export type DeviceMessagesResponse = z.infer<typeof DeviceMessagesResponseSchema>;
 
 /** A message between the phones, as either phone sees it: no times and no read state. */
 export const PhoneMessageViewSchema = z.strictObject({
@@ -726,6 +750,23 @@ export const PhoneHomeResponseSchema = z.discriminatedUnion("membership", [
     }),
 ]);
 export type PhoneHomeResponse = z.infer<typeof PhoneHomeResponseSchema>;
+
+// ---- Live updates from SpacetimeDB (docs/interfaces.md, "The care circle on SpacetimeDB") ----
+
+/**
+ * Where a phone or the owner's page connects for live updates, with its own short-lived token. `live: null`
+ * when this server keeps the circle itself (no SpacetimeDB settings): the page then keeps polling.
+ */
+export const CareLiveAccessSchema = z.strictObject({
+  uri: z.url(),
+  database: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+  token: z.string().min(1),
+  expires_at: z.iso.datetime(),
+});
+export type CareLiveAccess = z.infer<typeof CareLiveAccessSchema>;
+
+export const CareLiveResponseSchema = z.strictObject({ live: CareLiveAccessSchema.nullable() });
+export type CareLiveResponse = z.infer<typeof CareLiveResponseSchema>;
 
 // ---- Errors ----
 

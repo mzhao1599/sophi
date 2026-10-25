@@ -29,7 +29,7 @@ export function createAnthropicModel({ apiKey, model = DEFAULT_AGENT_MODEL, fetc
           // A short conversational step, so low effort: it keeps a turn to a few seconds.
           output_config: { effort: "low", format: { type: "json_schema", schema } },
           // If the model declines for policy reasons, the API tries its default fallback model in the same call.
-          betas: ["server-side-fallback-2026-10-23"],
+          betas: ["server-side-fallback-2026-07-01"],
           fallbacks: "default",
           // The rules and question bank are the same on every turn, so they are cached.
           system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],

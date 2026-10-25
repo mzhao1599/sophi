@@ -36,6 +36,9 @@ import {
   MAX_LIVE_MESSAGES,
   DeviceSendMessageRequestSchema,
   type DeviceSendMessageRequest,
+  DeviceMessagesResponseSchema,
+  type DeviceMessagesResponse,
+  WALKER_MESSAGES_KEPT,
 } from "@walker/contracts";
 import type { ActivityLog, FlightHandle } from "./activity";
 import { WALKER_TIMEOUT_MS, type AssistantResult, type WalkerAssistant, type Words } from "./assistant";
@@ -55,7 +58,10 @@ import {
 } from "./lines";
 import { isWav16kMono, wav16kMonoMs, type WalkerVoice } from "./speech";
 import { buildStatusView } from "./status";
-import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+import { SECRET_PATTERN, newSecret, sha256, sweepCircleThrottled, type CircleMemberRecord, type CircleMessageRecord, type DeviceRecord, type WalkerStore } from "./store";
+
+/** How long a turn waits for the circle's people before going on without them. */
+const CIRCLE_FOR_TURN_MS = 1_500;
 
 const LOCATION_LOOKUP_LINE = "I'll check your GPS location now.";
 const WEATHER_LOOKUP_LINE = "I'll check the weather near you now.";
@@ -100,6 +106,8 @@ export interface WalkerServiceOptions {
   blocked?: string;
   /** The model step for turns; without one, every turn gets a fixed line. */
   assistant?: WalkerAssistant | null;
+  /** The model step for typed turns (Claude, when set up); without one, typed turns use `assistant`. */
+  typed?: WalkerAssistant | null;
   /** Sophi's spoken voice for walker turns; without one, the walker speaks replies itself. */
   voice?: WalkerVoice | null;
   /** One event per turn, for the log: ids, outcomes and timings, never words. */
@@ -168,6 +176,7 @@ export class WalkerService {
   private readonly randomCode: () => string;
   private readonly blocked: string | undefined;
   private readonly assistant: WalkerAssistant | null;
+  private readonly typed: WalkerAssistant | null;
   private readonly voice: WalkerVoice | null;
   private readonly onTurn: (event: TurnEvent) => void;
   private readonly turnBudgetMs: number;
@@ -183,6 +192,7 @@ export class WalkerService {
     this.randomCode = options.randomCode ?? (() => String(randomInt(0, 1_000_000)).padStart(6, "0"));
     this.blocked = options.blocked;
     this.assistant = options.assistant ?? null;
+    this.typed = options.typed ?? null;
     this.voice = options.voice ?? null;
     this.onTurn = options.onTurn ?? logTurn;
     this.turnBudgetMs = options.turnBudgetMs ?? TURN_BUDGET_MS;
@@ -348,12 +358,22 @@ export class WalkerService {
 
     const now = this.now();
     // Accepted: the page's companion shows it until it ends, however it ends.
-    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs });
+    const flight = this.activity?.begin(device.device_id, { client_turn_id: request.client_turn_id, input: input.type, since: now.toISOString(), clip_ms: clipMs, model: this.assistantFor(request)?.provider ?? null });
     try {
       return await this.answerTurn(device, source, request, now, started, left, clipMs, flight);
     } finally {
       flight?.end();
     }
+  }
+
+  /**
+   * Who answers this turn. Typed by the person (text with no original_audio): `typed` when set up, so
+   * Claude. Spoken, or the text continuation of a spoken turn after a tool: `assistant`, so Gemini, which
+   * heard the clip. One turn never switches model halfway.
+   */
+  private assistantFor(request: DeviceTurnRequest | PageTurnRequest): WalkerAssistant | null {
+    const typed = request.input.type === "text" && !("original_audio" in request && request.original_audio);
+    return typed && this.typed ? this.typed : this.assistant;
   }
 
   private async answerTurn(
@@ -370,13 +390,14 @@ export class WalkerService {
     // A walker's turn carries the snapshot it has at that moment, received now: it replaces the heartbeat's for this turn.
     const seen = "snapshot" in request ? { ...device, snapshot: request.snapshot, snapshot_received_at: request.snapshot ? now.toISOString() : null } : device;
     const status = await this.status(seen);
-    const { members } = await this.store.circleOf(device.device_id, now);
+    const members = await this.circleForTurn(device.device_id, now);
     const recipients = members.filter((m) => m.state === "member" && m.role === "caregiver").map((m) => ({ member_id: m.member_id, name: m.name }));
     const words: Words = input.type === "text" ? { type: "text", text: input.text } : { type: "audio", data_base64: input.data_base64 };
     const toolResults: WalkerToolResult[] = "tool_results" in request
       ? (request.tool_results ?? []).map((r) => r.name === "get_distance" ? { name: r.name, text: distanceLine(status) } : r)
       : [];
-    const result = this.assistant ? await this.assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients) : null;
+    const assistant = this.assistantFor(request);
+    const result = assistant ? await assistant.reply(status, source, words, now, Math.min(WALKER_TIMEOUT_MS, left()), undefined, toolResults, recipients) : null;
 
     const toolCall = result?.ok && !result.reply.topics.includes("arms") && !result.reply.cues_change && (input.type === "text" || result.reply.transcript.length > 0) ? result.reply.tool_call : null;
     const tool = toolCall?.name;
@@ -481,6 +502,7 @@ export class WalkerService {
         input: input.type,
         clip_ms: clipMs,
         model_ran: event.attempts > 0,
+        model: event.attempts > 0 ? (result?.provider ?? null) : null,
         model_ms: event.attempts > 0 ? event.model_ms : null,
         rule: event.reason,
         answered_by: event.answered_by,
@@ -518,6 +540,25 @@ export class WalkerService {
     const saved = await this.store.saveMessage(record, MAX_LIVE_MESSAGES, now);
     if (!saved || saved === "cleared") throw new WalkerError("invalid_request", "This message can no longer be sent.");
     return { sent: true };
+  }
+
+  /**
+   * For the paired Pi, after each heartbeat: the newest messages an approved caretaker sent to her phone, which
+   * her walker reads aloud in its own voice. Never sent to a model or the voice service, and never logged.
+   */
+  async incomingMessages(caller: DeviceCaller, deviceId: string): Promise<DeviceMessagesResponse> {
+    const device = await this.resolve(caller, deviceId);
+    const now = this.now();
+    const { members } = await this.store.circleOf(device.device_id, now);
+    const her = members.find((m) => m.role === "walker_user" && m.state === "member");
+    if (!her) return { messages: [] };
+    const caretakers = new Map(members.filter((m) => m.role === "caregiver" && m.state === "member").map((m) => [m.member_id, m.name]));
+    const toHer = (await this.store.messagesFor(device.device_id, her.member_id, now)).filter(
+      (m) => m.to_member_id === her.member_id && caretakers.has(m.from_member_id),
+    );
+    return DeviceMessagesResponseSchema.parse({
+      messages: toHer.slice(-WALKER_MESSAGES_KEPT).map((m) => ({ message_id: m.message_id, from_name: caretakers.get(m.from_member_id), text: m.text })),
+    });
   }
 
   /** Confirm or decline by id, from the walker's Confirm button or the page. The first answer wins. */
@@ -579,6 +620,27 @@ export class WalkerService {
   }
 
   /** The walker's history sweep, then the circle's (at most once a minute; always at server start). */
+
+  /**
+   * The circle for one turn's recipients. A turn never fails, and never waits more than CIRCLE_FOR_TURN_MS,
+   * because of the circle (it may live in SpacetimeDB, apart from the walker): without it the turn just has
+   * no one to message.
+   */
+  private async circleForTurn(deviceId: string, now: Date): Promise<CircleMemberRecord[]> {
+    // Only a circle kept apart from the walker (SpacetimeCircleStore, found by shape) gets the deadline and the
+    // fallback; with the walker's own store, the turn reads its circle as before.
+    if (!("pingCare" in this.store)) return (await this.store.circleOf(deviceId, now)).members;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("circle_timeout")), CIRCLE_FOR_TURN_MS)));
+      return (await Promise.race([this.store.circleOf(deviceId, now), late])).members;
+    } catch (error) {
+      console.warn(`[walker] turn without the circle (${error instanceof Error ? error.message.slice(0, 80) : "unknown"})`);
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   private async sweep(now: Date, atStart = false) {
     await this.store.sweep(now, new Date(now.getTime() - WALKER_HISTORY_RETENTION_MS), new Date(now.getTime() - PAIRING_LOCK_WINDOW_MS));
     await sweepCircleThrottled(this.store, now, atStart);

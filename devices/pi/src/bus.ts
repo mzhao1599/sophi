@@ -22,7 +22,7 @@ export type TalkState = "idle" | "recording" | "waiting";
 export type LinkState = "unpaired" | "connecting" | "online" | "offline" | "unauthorized";
 export type CueName = "listening" | "done" | "error" | "nothing_to_confirm" | "obstacle";
 /** What a spoken line was: a model or fake-cloud reply, or one of the Pi's own fixed lines. */
-export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result";
+export type SpeechKind = "reply" | "notice" | "local_reply" | "confirm_result" | "message";
 
 export interface BusEvents {
   button: ButtonEvent;
@@ -49,6 +49,13 @@ export interface BusEvents {
   answer: { id: number; heard: string | null; reply: string; source: "model" | "fixed" | "walker" };
   /** That answer finished playing, or was stopped. */
   answerSpoken: { id: number };
+  /**
+   * A caretaker's message to her, as the walker starts reading it aloud (new, or heard again on Confirm). It holds
+   * someone's words: never log it, never send it to the page or a model.
+   */
+  circleMessage: { id: number; message_id: string; from_name: string; text: string };
+  /** That message finished playing, or was stopped. */
+  circleMessageSpoken: { id: number };
   /** The open proposal changed (another id, or none). A heartbeat repeating the same one sends nothing. */
   offer: { proposal: ProposalView | null };
   /**

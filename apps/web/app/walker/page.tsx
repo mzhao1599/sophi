@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { WalkerScreen } from "@/components/WalkerScreen";
+import { walkerTypedModel } from "@/server/walker";
 
 export const metadata: Metadata = { title: "Your walker" };
 
@@ -10,5 +11,6 @@ export const metadata: Metadata = { title: "Your walker" };
  */
 export default async function WalkerPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { fake } = await searchParams;
-  return <WalkerScreen fake={process.env.NODE_ENV !== "production" && fake !== undefined} />;
+  // Read on the server: who reads typed words here (Claude, Gemini or none), for the notice. No key reaches the page.
+  return <WalkerScreen fake={process.env.NODE_ENV !== "production" && fake !== undefined} typedBy={walkerTypedModel()} />;
 }

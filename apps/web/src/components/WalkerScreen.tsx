@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { WalkerStatusView } from "@walker/contracts";
+import type { WalkerModel, WalkerStatusView } from "@walker/contracts";
 import { PRODUCT_NAME } from "@/lib/brand";
 import { useNow } from "@/lib/useNow";
 import { useWalkerPage, type WalkerPage } from "@/lib/useWalkerPage";
@@ -39,9 +39,10 @@ const HEADING_ID = "walker-heading";
 /**
  * "Your walker": the owner's live view of a paired walker, separate from the onboarding demo on `/`.
  * With `fake` (development only, `/walker?fake=1`), a typed fake of the page API stands in for the
- * server, and a banner says so on every screen.
+ * server, and a banner says so on every screen. `typedBy` is who reads typed words on this server, for
+ * the notice above the text box.
  */
-export function WalkerScreen({ fake = false }: { fake?: boolean }) {
+export function WalkerScreen({ fake = false, typedBy = null }: { fake?: boolean; typedBy?: WalkerModel | null }) {
   const [{ api, controls }] = useState<{ api: WalkerPageApi; controls: FakeWalkerControls | null }>(() =>
     fake ? createFakeWalker() : { api: createWalkerApi(), controls: null },
   );
@@ -110,7 +111,7 @@ export function WalkerScreen({ fake = false }: { fake?: boolean }) {
         </p>
         {page.phase === "loading" ? <Loading page={page} /> : null}
         {page.phase === "none" || (adding && walker) ? <Connect page={page} back={adding && walker ? { name: walker.name, go: () => setAdding(false) } : null} /> : null}
-        {page.phase === "paired" && walker && !adding ? <Paired page={page} walker={walker} phones={phones} /> : null}
+        {page.phase === "paired" && walker && !adding ? <Paired page={page} walker={walker} phones={phones} typedBy={typedBy} /> : null}
       </main>
 
       {walker ? (
@@ -257,7 +258,7 @@ function NotLive({ page }: { page: WalkerPage }) {
   return <p className={styles.stale}>Can&apos;t reach Sophi&apos;s server.{ago}</p>;
 }
 
-function Paired({ page, walker, phones }: { page: WalkerPage; walker: WalkerStatusView; phones: OwnerPhonesApi }) {
+function Paired({ page, walker, phones, typedBy }: { page: WalkerPage; walker: WalkerStatusView; phones: OwnerPhonesApi; typedBy: WalkerModel | null }) {
   const rows = useMemo(() => partRows(walker.parts), [walker.parts]);
   const caption = useMemo(() => drawingCaption(rows), [rows]);
   const now = useNow(1000);
@@ -291,7 +292,7 @@ function Paired({ page, walker, phones }: { page: WalkerPage; walker: WalkerStat
       </div>
 
       <div className={styles.talk}>
-        <WalkerConversation page={page} walker={walker} />
+        <WalkerConversation page={page} walker={walker} typedBy={typedBy} />
       </div>
 
       <BehindTheScenes page={page} walker={walker} />

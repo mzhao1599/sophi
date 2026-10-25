@@ -1,17 +1,22 @@
 import { Pool } from "pg";
+import type { WalkerModel } from "@walker/contracts";
+import { DEFAULT_AGENT_MODEL as DEFAULT_CLAUDE_MODEL, createAnthropicModel } from "../onboarding/anthropic";
 import { DEFAULT_GEMINI_MODEL, createGeminiModel, geminiModelName, thinkingFor } from "../onboarding/gemini";
 import { ActivityLog } from "./activity";
 import { WALKER_TIMEOUT_MS, createWalkerAssistant, type WalkerAssistant } from "./assistant";
 import { createHedgedAssistant } from "./hedge";
+import { CareDbClient, careDbConfigFromEnv, type CareDbConfig } from "./care-db";
 import { PostgresWalkerStore } from "./postgres-store";
+import { SpacetimeCircleStore } from "./spacetime-store";
 import { createCartesiaVoice, type WalkerVoice } from "./speech";
 import { MemoryWalkerStore, type WalkerStore } from "./store";
 
 /** Where walkers are kept, chosen by walkerBackendFromEnv. */
 export type WalkerBackend =
-  | { kind: "postgres" | "memory"; store: WalkerStore; blocked?: undefined }
+  /** `care`: the circle lives in SpacetimeDB (SpacetimeCircleStore), with these settings. */
+  | { kind: "postgres" | "memory"; store: WalkerStore; blocked?: undefined; care?: CareDbConfig }
   /** Production without a database: every walker route answers 503 with `blocked`. */
-  | { kind: "off"; store: WalkerStore; blocked: string };
+  | { kind: "off"; store: WalkerStore; blocked: string; care?: undefined };
 
 /**
  * Chooses the walker store from the server's environment:
@@ -20,8 +25,18 @@ export type WalkerBackend =
  * - Not set, outside production: the in-memory store, for local runs.
  * - Not set in production (such as the Vercel onboarding site): walkers are off, because a paired
  *   walker's credential must survive a restart. Onboarding is unaffected.
+ *
+ * With the four SPACETIME_* settings as well (careDbConfigFromEnv), the circle moves to SpacetimeDB and the
+ * rest stays where it is (SpacetimeCircleStore).
  */
 export function walkerBackendFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void = console.warn): WalkerBackend {
+  const backend = baseBackendFromEnv(env, warn);
+  const care = careDbConfigFromEnv(env, warn);
+  if (!care || backend.kind === "off") return backend;
+  return { kind: backend.kind, store: new SpacetimeCircleStore(backend.store, new CareDbClient(care)), care };
+}
+
+function baseBackendFromEnv(env: Record<string, string | undefined>, warn: (message: string) => void): WalkerBackend {
   const url = env.DATABASE_URL?.trim();
   if (url) {
     // Render's free Postgres has no connection pooler, so keep this small.
@@ -81,36 +96,65 @@ export function walkerModelsFromEnv(env: Record<string, string | undefined>): Wa
 
 /** The walker assistant for these models: one model, or the main one with its backup. */
 export function createWalkerAssistantFor(apiKey: string, models: WalkerModels, fetch?: typeof globalThis.fetch): WalkerAssistant {
-  const main = createWalkerAssistant({ model: createGeminiModel({ apiKey, model: models.main, fetch }), name: models.main });
+  const main = createWalkerAssistant({ model: createGeminiModel({ apiKey, model: models.main, fetch }), name: models.main, provider: "gemini" });
   if (!models.backup) return main;
-  const backup = createWalkerAssistant({ model: createGeminiModel({ apiKey, model: models.backup, thinking: backupThinkingFor(models.backup), fetch }), name: models.backup });
+  const backup = createWalkerAssistant({ model: createGeminiModel({ apiKey, model: models.backup, thinking: backupThinkingFor(models.backup), fetch }), name: models.backup, provider: "gemini" });
   return createHedgedAssistant({ main, backup, backupAfterMs: models.backupAfterMs });
 }
 
+/** Claude for typed walker turns: one model, no backup, the same prompt, rules and deadline as Gemini's. */
+export function createClaudeWalkerAssistant(apiKey: string, model: string = DEFAULT_CLAUDE_MODEL, fetch?: typeof globalThis.fetch): WalkerAssistant {
+  return createWalkerAssistant({ model: createAnthropicModel({ apiKey, model, fetch }), name: model, provider: "claude" });
+}
+
+const setting = (env: Record<string, string | undefined>, name: string) => {
+  const value = env[name]?.trim();
+  return value && value.toLowerCase() !== "none" ? value : undefined;
+};
+
+/**
+ * Claude for typed turns, when ANTHROPIC_API_KEY is set and WALKER_TYPED_PROVIDER isn't "gemini";
+ * WALKER_TYPED_MODEL overrides the model (default: onboarding's Claude default). null: typed turns go
+ * to Gemini like spoken ones. Spoken turns always stay on Gemini, which hears the clip itself.
+ */
+export function walkerTypedAssistantFromEnv(env: Record<string, string | undefined>): WalkerAssistant | null {
+  const key = setting(env, "ANTHROPIC_API_KEY");
+  if (!key || env.WALKER_TYPED_PROVIDER?.trim().toLowerCase() === "gemini") return null;
+  return createClaudeWalkerAssistant(key, setting(env, "WALKER_TYPED_MODEL"));
+}
+
+/** Who reads typed turns with this environment, for the page's notice: Claude, Gemini, or no model (fixed replies). */
+export function walkerTypedModelFromEnv(env: Record<string, string | undefined>): WalkerModel | null {
+  if (walkerTypedAssistantFromEnv(env)) return "claude";
+  return setting(env, "GEMINI_API_KEY") ? "gemini" : null;
+}
+
 export interface WalkerAgent {
+  /** Spoken turns, and typed ones when `typed` is null: Gemini. */
   assistant: WalkerAssistant | null;
+  /** Typed turns: Claude, or null to use `assistant`. */
+  typed: WalkerAssistant | null;
   voice: WalkerVoice | null;
 }
 
 /**
  * The walker assistant's model and voice from the server's environment:
  *
- * - GEMINI_API_KEY: the walker always uses Gemini, whatever ONBOARDING_AGENT_PROVIDER says, because
- *   voice turns need audio input. The models come from walkerModelsFromEnv: the main one
+ * - GEMINI_API_KEY: spoken turns always use Gemini, whatever ONBOARDING_AGENT_PROVIDER says, because
+ *   they need audio input. The models come from walkerModelsFromEnv: the main one
  *   (WALKER_DEFAULT_MODEL) and a backup asked alongside it (WALKER_BACKUP_MODEL); onboarding's model is
- *   set separately. Without the key every turn gets a fixed line, marked as such.
+ *   set separately. Without the key every spoken turn gets a fixed line, marked as such.
+ * - ANTHROPIC_API_KEY: typed turns use Claude (walkerTypedAssistantFromEnv). Without it they use Gemini.
  * - CARTESIA_API_KEY: Sophi's spoken voice (CARTESIA_VOICE_ID optionally picks another stock voice).
  *   Without it (or set to "none"), the walker speaks replies with its own voice.
  */
 export function walkerAgentFromEnv(env: Record<string, string | undefined>): WalkerAgent {
-  const set = (name: string) => {
-    const value = env[name]?.trim();
-    return value && value.toLowerCase() !== "none" ? value : undefined;
-  };
+  const set = (name: string) => setting(env, name);
   const gemini = set("GEMINI_API_KEY");
   const cartesia = set("CARTESIA_API_KEY");
   return {
     assistant: gemini ? createWalkerAssistantFor(gemini, walkerModelsFromEnv(env)) : null,
+    typed: walkerTypedAssistantFromEnv(env),
     voice: cartesia ? createCartesiaVoice({ apiKey: cartesia, voiceId: set("CARTESIA_VOICE_ID") }) : null,
   };
 }

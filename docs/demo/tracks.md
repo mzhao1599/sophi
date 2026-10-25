@@ -27,6 +27,7 @@ Nothing below presents a planned part as working; each cut that needs a planned 
 | MLH: Commit Fellowship | Free, plus a supplemental form | [Commit Fellowship](#mlh-commit-fellowship-free-plus-a-form) |
 | Meta: Bringing People Closer Together with AI | Small: framing, and the phones on stage | [Meta](#meta-bringing-people-closer-together-with-ai-small) |
 | MLH: Best Domain Name from GoDaddy Registry, and Best .Tech Domain Name | Small: register a domain for each, point them at Render | [Domains](#mlh-the-two-domain-name-categories-small) |
+| Spacetime: core real-time backend | Built and live on Render 2026-10-24: the care circle on SpacetimeDB | [Spacetime](#spacetime-the-care-circle-on-spacetimedb-added-2026-10-24) |
 
 ## Before submitting (all tracks)
 
@@ -56,6 +57,7 @@ For the Devpost text. Cal Hacks runs October 23 to 25, 2026. Everything here was
 - **Taught arm skills and "Let go?"** (#80): record a movement with the teaching arm, replay it after a Confirm press, and open the gripper only when the person holding the object presses Confirm, even after a fault. Tested only against simulated servos; the demo's tray task hasn't been taught.
 - **The lift wired into the motion coordinator** (#85): a lift target is prepared at the terminal and starts only on a handle Confirm press while someone holds the screen's hold control and both arms are folded; letting go, any handle press, the stop switch or any fault stops it, and it never moves without the hardware stop. Tested on a Mac against the simulated lift board and simulated servos, including the demo's lift flow in real time 3 of 3; it has never talked to the real lift.
 - **The walker demo script for the screen, the phones and the arms** (#83). Documentation only.
+- **The care circle on SpacetimeDB** (branch `spacetime-care-loop`, 2026-10-24): the phones, codes, approvals and messages in a SpacetimeDB module (`services/care-db`), the server calling its procedures, and the phones and the owner's page getting each change pushed live. Tested against a local SpacetimeDB 2.13 (the 20 circle tests, 6 WebSocket view tests) and in a production build with Postgres, two phones and the owner's page in one browser, 3 of 3. Published to Maincloud as `sophi-care` and live on Render since 2026-10-24 (three Render runs in a row); not yet on real iPhones.
 - **Test fixes after direct pushes to `main`** (#78, #81, #82, #84): the tests and shape snapshots caught up with Cooper's pushes for opt-in GPS sharing, the location and distance tools, the weather tool and the walker's tool loop. Tests only; those features' own testing isn't recorded on this page.
 
 Before the event (2026-10-23 to the morning of 2026-10-23): the website and its Stripe test checkout, the onboarding agent, the walker assistant and its server on Render, the "Your walker" page and its "Behind the scenes" panel, the Pi service and its simulator, the ESP32 firmware, and the Pi's first run on 2026-10-23.
@@ -172,7 +174,7 @@ Use step 2 only if the walker is running and was rehearsed that day. Use step 3 
 
 ### Notice wording
 
-- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types: "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker."
+- **The "Your walker" page** (built, in [`walkerView.ts`](../../apps/web/src/lib/walkerView.ts)) says before anyone types, when the server has a Claude key: "What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker." Without a Claude key it names only Gemini, as before.
 - **A card on the walker** (printed, for the table): "Only the presenter talks to this walker. What's said goes to Google's Gemini, and Sophi's replies are spoken by Cartesia from their text; both may keep a copy. Want to try it? Type on the screen, and leave out names and health details."
 - **Said aloud at the Talk beat:** "Sophi's answer is in Cartesia's voice. Only the answer's text goes to Cartesia, never the speaker's voice."
 
@@ -201,12 +203,16 @@ Demo first, then the why. The beats and their exact lines are in the walker scri
 
 **What Claude does in Sophi:** the onboarding agent was built for Claude first (`services/cloud-api/src/onboarding/anthropic.ts`: Claude Opus 5.5 at low effort, one structured-output call per turn, the server-side refusal fallback on). It reads the person's words as a fixed list of needs, picks the next topic from a fixed list and words the question, and writes a one-line acknowledgement. It never picks a module.
 
+Since 2026-10-24 Claude also answers questions typed to the walker on the "Your walker" page (`services/cloud-api/src/walker/config.ts`, `walkerTypedAssistantFromEnv`), under the same rules as Gemini: the server words every offer, only a Confirm press changes the walker, and "clear" or "safe" in a reply is retried. Spoken questions stay on Gemini, which hears the clip itself; Claude's API takes no audio. "Behind the scenes" names the model that ran each turn, from the server's own record.
+
 **Where it could go wrong, and what Sophi does about it:** the model could misread a need (each part's panel quotes the words it came from, and every switch stays with the person); it could fail or be slow (a 15-second deadline, then the fixed questions, with a note saying so); it could be steered by what someone types (her words are passed as data, and fixed rules choose modules); and people's words leave the laptop (the notice names who reads them before anyone types).
 
-**Status:** the adapter is built and tested with stub models only. It has never run live, because there is no Claude key on the demo laptop.
+**Status:** the key went into `apps/web/.env.local` on 2026-10-24. The first live run failed every turn in about 0.2 seconds: the adapter sent the beta header `server-side-fallback-2026-10-23`, which the API rejects. `fallbacks: "default"` needs `server-side-fallback-2026-07-01`, which fixed it. Measured on 2026-10-24 (rehearsal, real Claude Opus 5.5, laptop only): 3 runs, 9 of 9 paths passed, 39 model turns, no fallbacks, 1.9 to 5.1 seconds a turn, median 2.5 seconds. Steps 3 and 4 below haven't been done yet, and it hasn't run on Render.
+
+**Typed walker turns on Claude, measured 2026-10-24** (the live walker suite, `WALKER_LIVE=1 WALKER_LIVE_MODES=text pnpm --filter @walker/cloud-api walker-live`, typed lines sent through the page as people type them, real Claude Opus 5.5, laptop only, no voice): 3 runs of beats 2 to 5 plus three fresh wordings and the all-parts-simulated check, every check passed, 15 turns all answered by Claude, 1.7 to 3.8 seconds a turn, median 2.2 seconds; one turn needed its one retry. Beat 3 typed on the page is answered by the server from the sensors ("The obstacle sensors read front: 64 centimetres…"), not in the model's words, by design. Then the whole suite, typed and spoken together (`WALKER_LIVE=1 pnpm --filter @walker/cloud-api walker-live`, same day, laptop only, synthetic voice from `say`, no Cartesia): every check passed on 3 runs of each. Typed on Claude: 15 turns, 1.8 to 2.9 seconds. Spoken on Gemini: 15 turns, 2.0 to 8.1 seconds; the slow ones are the obstacle questions, which take two server requests (Gemini asks for get_distance, the walker continues, Gemini answers from the reading: 5.9 to 8.1 seconds for both together, in-process times), and one of them was answered by the backup model. All 30 turns: median 2.3 seconds. Not yet run on Render, the Pi or the page in a browser.
 
 **To switch the demo to Claude (Max pastes the key):**
-1. Put `ANTHROPIC_API_KEY` and `ONBOARDING_AGENT_PROVIDER=anthropic` in `apps/web/.env.local`.
+1. Put `ANTHROPIC_API_KEY`, `ONBOARDING_AGENT_PROVIDER=anthropic` and `ONBOARDING_ENGINE=agent` in `apps/web/.env.local`.
 2. Rehearse: `REHEARSE_PROVIDER=anthropic pnpm --filter @walker/cloud-api rehearse`. It must pass every path on all 3 runs with every reply from the model, as Gemini did.
 3. Rebuild and start as in the script's setup checklist. The notice must name "Anthropic's Claude", and each reply must say "Read by Claude". Mention Claude only after that check.
 4. Check Anthropic's current commercial terms on retention and training, and update judge Q&A 1 and 2 in the script to match.
@@ -320,13 +326,30 @@ These are two different registries, so entering both means two names, for exampl
 
 **Max's steps:** pick the names (short, with "sophi" in them), register each with MLH's codes, and add both to the `steady-walker` service on Render as custom domains, following Render's instructions for the DNS records. Then open the website at each name once before submitting. Every link in the demo keeps working at the Render address too.
 
+### Spacetime: the care circle on SpacetimeDB (added 2026-10-24)
+
+**What they ask** (Cal Hacks prize page, read 2026-10-24): projects "where Spacetime is the core real-time backend, especially anything with live shared state, multiplayer interaction, or instant sync between users/agents/systems", naming chat and community apps and multi-user tools; "the main thing we'd want is for Spacetime to be meaningfully used, not just added on the side." Prizes: 1st 2,048 USD, 2nd 1,024 USD, 3rd 512 USD.
+
+**The line:** "Rose's family and her caretaker share one live circle. Every join, approval and message is a SpacetimeDB transaction, and it reaches the other phones the moment it commits."
+
+**What Sophi shows:** the care loop on two phones and the owner's page (the Microsoft cut's step 3), with the timing visible: Maya types her code, and the owner's page shows "Maya is waiting to join." at once; the owner ticks Rose's consent line and approves, and Maya's phone leaves "Waiting for the family to approve" by itself; Maya's message appears on Rose's phone as she sends it, and Rose's one-tap reply on Maya's. Then show the code: the module (`services/care-db/src/index.ts`), its per-phone views, and the dashboard at <https://spacetimedb.com/sophi-care>.
+
+**What SpacetimeDB does here, exactly** (say it this way): it holds the circle's state (phones, codes, waiting caretakers, messages, wrong-code tries); each change runs in it as one transaction (the server calls one procedure per step); and each phone subscribes to its own views, which SpacetimeDB keeps current. The server still checks the cookies and the consent, and the walker's own data (pairing, turns, GPS) stays in Postgres.
+
+**Honest limits to say if asked:**
+- Writes go through Sophi's server, which checks who may do what before calling SpacetimeDB; the phones read live from SpacetimeDB.
+- Measured on Render with Maincloud (2026-10-24, three runs in a row, Rose's phone in a browser, Maya and the owner as scripts with their own cookies and a real SpacetimeDB connection): approval reached Maya's open connection in 166 to 178 ms; Maya's message showed on Rose's screen in 456 to 458 ms when Rose's last poll was seconds earlier (787 ms in the run where a poll coincided, so that one may have come by the poll); Rose's reply reached Maya in 286 to 318 ms; removal emptied Maya's views in 150 to 272 ms. Say "under half a second", not "instant".
+- The phones are in one browser for that check, not two real iPhones yet (the same rule as the Microsoft cut's step 3).
+
+**Status (2026-10-24):** on Render. The four `SPACETIME_*` settings are set, `main` is deployed (`45433f7`), `GET /api/v1/health` shows `care_db: "ok"`, and the two-phone path passed three times in a row on Render, with nothing of the test walkers left in Maincloud. Phones linked before the switch join again with new codes. Render's auto-deploy didn't fire for the merges after the service was reconnected to `mzhao1599/sophi`; until that's fixed, deploy each merge by hand (Manual Deploy, Deploy latest commit). Still not done: real iPhones.
+
 ### Watch: Armadin, Elastic, AfterQuery and Annapurna Labs
 
 Their criteria say "Coming soon!". Check them at the event. For Armadin's Best Security Hack: if the criteria are general, the story is Sophi's guardrails (the model offers an action only by id, the server or the Pi writes every word, a person confirms on the walker, and webpages, model output and typed words are data, never instructions); if they want an attack or a security tool, skip.
 
 ### Skipped, and why
 
-- **A sponsor's product would have to become core, which means new work off the demo path:** Spacetime (SpacetimeDB must be "the core real-time backend"; moving the care loop's shared state onto it is a backend rewrite), Creao's AI-First Disruptor and Team Empowerment (criteria only on Creao's community page), Convex, Moss, Bitdeer AI, Factory (Droid must "do real work in the running product"), Fetch.ai, Apify and Bright Data (live public web data must be essential), Atlassian (both its tracks require building "a Forge app for one or more Atlassian products", per its rules document, read 2026-10-24), and MLH's Tiger Data, Vultr, Snowflake, Backboard, Auth0, DigitalOcean and MongoDB Atlas.
+- **A sponsor's product would have to become core, which means new work off the demo path:** Creao's AI-First Disruptor and Team Empowerment (criteria only on Creao's community page), Convex, Moss, Bitdeer AI, Factory (Droid must "do real work in the running product"), Fetch.ai, Apify and Bright Data (live public web data must be essential), Atlassian (both its tracks require building "a Forge app for one or more Atlassian products", per its rules document, read 2026-10-24), and MLH's Tiger Data, Vultr, Snowflake, Backboard, Auth0, DigitalOcean and MongoDB Atlas.
 - **Conflicts with the plan:** MLH's ElevenLabs (Sophi's voice is Cartesia, entered above; a second voice provider just for a prize would muddy that entry) and MLH's Presage (camera-based heart rate, breathing and emotion: sensitive health data that Sophi's consent rules keep out, and not on the demo path).
 - **Finance, payments or crypto, which Sophi isn't:** Hyphenate, CRS, Capital One's Nessie, Coinbase's x402, MLH's Solana.
 - **Requires a tool used to build the project, which Sophi wasn't built with:** Mana, Notability, Figma in the Workflow, SpaceXAI (built with Cursor, using Grok's Imagine or Voice API), and MLH's SpaceXSI A-Team raffle (Cursor and Grok Bot in the workflow).
