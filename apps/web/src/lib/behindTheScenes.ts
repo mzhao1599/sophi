@@ -2,6 +2,7 @@ import {
   sameCues,
   type ProposalView,
   type WalkerActivityView,
+  type WalkerModel,
   type WalkerStatusView,
   type WalkerTurnInFlight,
   type WalkerTurnTrace,
@@ -36,7 +37,7 @@ export type StageState = "done" | "live" | "end";
 
 export interface Stage {
   id: StageId;
-  /** The short name on the drawing ("Gemini"). */
+  /** The short name on the drawing ("Gemini", "Claude"). */
   label: string;
   /** The measured figure or fact under it ("2.1 s"). */
   figure: string;
@@ -101,9 +102,18 @@ function modelFailed(rule: string, ms: number | null): { figure: string; spoken:
 
 const FIXED_REPLY_CODES = new Set(["timeout", "model_error", "refusal", "invalid_reply", "no_model"]);
 
-/** The rule that decided the reply, in plain words. */
-export function ruleWords(rule: string | null, proposalOpened: boolean): string {
-  if (rule === null) return proposalOpened ? "Change allowed" : "Gemini's own words";
+/**
+ * The model's short name, from what the server said ran. A trace or in-flight entry without the field
+ * comes from a server older than 2026-10-24, which only had Gemini; null means no model, so no name.
+ */
+export function modelName(model: WalkerModel | null | undefined): string {
+  if (model === "claude") return "Claude";
+  return model === "gemini" || model === undefined ? "Gemini" : "The model";
+}
+
+/** The rule that decided the reply, in plain words. `name` is the model that answered ("Gemini", "Claude"). */
+export function ruleWords(rule: string | null, proposalOpened: boolean, name = "Gemini"): string {
+  if (rule === null) return proposalOpened ? "Change allowed" : `${name}'s own words`;
   switch (rule) {
     case "arms":
       return "Fixed line: no robot arms";
@@ -139,12 +149,12 @@ function sentStage(source: Source, input: "audio" | "text", clipMs: number | nul
   return { id: "sent", label, figure: "typed", state: "done", sentence: `${who} a typed question.` };
 }
 
-function modelStage(input: "audio" | "text", rule: string | null, modelMs: number | null): Stage {
+function modelStage(input: "audio" | "text", rule: string | null, modelMs: number | null, name: string): Stage {
   const failed = rule !== null ? modelFailed(rule, modelMs) : null;
-  if (failed) return { id: "model", label: "Gemini", figure: failed.figure, state: "done", sentence: `Gemini ${failed.spoken}.` };
+  if (failed) return { id: "model", label: name, figure: failed.figure, state: "done", sentence: `${name} ${failed.spoken}.` };
   const how = input === "audio" ? "heard the clip and wrote an answer" : "read the question and wrote an answer";
-  if (modelMs === null) return { id: "model", label: "Gemini", figure: "ran", state: "done", sentence: `Gemini ${how}.` };
-  return { id: "model", label: "Gemini", figure: formatMs(modelMs), state: "done", sentence: `Gemini ${how} in ${spokenMs(modelMs)}.` };
+  if (modelMs === null) return { id: "model", label: name, figure: "ran", state: "done", sentence: `${name} ${how}.` };
+  return { id: "model", label: name, figure: formatMs(modelMs), state: "done", sentence: `${name} ${how} in ${spokenMs(modelMs)}.` };
 }
 
 function rulesStage(words: string): Stage {
@@ -221,7 +231,10 @@ function inFlightStages(f: WalkerTurnInFlight, ownTurnId: string | null): Stage[
   const source: Source = f.client_turn_id === ownTurnId ? "page" : f.input === "audio" ? "walker" : "unknown";
   const sent = sentStage(source, f.input, f.clip_ms);
   if (f.stage === "hearing") {
-    return [sent, { id: "model", label: "Hearing", figure: "Waiting for Gemini…", state: "live", sentence: "The server is waiting for Gemini." }];
+    // Gemini hears a clip; a typed question is read, by Claude when the server has it.
+    const name = modelName(f.model);
+    const who = name === "The model" ? "the model" : name;
+    return [sent, { id: "model", label: f.input === "audio" ? "Hearing" : "Reading", figure: `Waiting for ${who}…`, state: "live", sentence: `The server is waiting for ${who}.` }];
   }
   return [
     sent,
@@ -232,8 +245,9 @@ function inFlightStages(f: WalkerTurnInFlight, ownTurnId: string | null): Stage[
 
 function tracedStages(turn: WalkerTurnView, t: WalkerTurnTrace): Stage[] {
   const stages: Stage[] = [sentStage(turn.source, t.input, t.clip_ms)];
-  if (t.model_ran) stages.push(modelStage(t.input, t.rule, t.model_ms));
-  stages.push(rulesStage(ruleWords(t.rule, t.proposal_opened)), replyStage(t.proposal_opened, turn.source));
+  const name = modelName(t.model);
+  if (t.model_ran) stages.push(modelStage(t.input, t.rule, t.model_ms, name));
+  stages.push(rulesStage(ruleWords(t.rule, t.proposal_opened, name)), replyStage(t.proposal_opened, turn.source));
   if (t.voiced_by) stages.push(voiceStage(t.voiced_by, t.voice_ms));
   return stages;
 }
@@ -241,9 +255,11 @@ function tracedStages(turn: WalkerTurnView, t: WalkerTurnTrace): Stage[] {
 /** Only what the status view proves: no clip length, no times, no rule code. */
 function statusStages(turn: WalkerTurnView, offerKnown: boolean): Stage[] {
   const input = turn.heard_by === "typed" ? "text" : "audio";
+  // Without a trace the page can't tell which model read a typed question, so it doesn't name one.
+  const name = input === "audio" ? "Gemini" : "The model";
   const stages: Stage[] = [sentStage(turn.source, input, null)];
-  if (turn.heard_by === "gemini" || turn.answered_by === "model") stages.push(modelStage(input, null, null));
-  stages.push(rulesStage(turn.answered_by === "fixed" ? "Fixed reply" : offerKnown ? "Change allowed" : "Gemini's own words"), replyStage(offerKnown, turn.source));
+  if (turn.heard_by === "gemini" || turn.answered_by === "model") stages.push(modelStage(input, null, null, name));
+  stages.push(rulesStage(turn.answered_by === "fixed" ? "Fixed reply" : offerKnown ? "Change allowed" : `${name}'s own words`), replyStage(offerKnown, turn.source));
   if (turn.voiced_by) stages.push(voiceStage(turn.voiced_by, null));
   return stages;
 }

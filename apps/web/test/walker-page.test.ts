@@ -12,7 +12,7 @@ import { createFakeWalker } from "@/lib/walkerFake";
 import {
   CONNECTION_BACK,
   OUT_OF_TIME,
-  TYPED_NOTICE,
+  typedNotice,
   ZONE_MAX_SHOWN_AGE_MS,
   announcements,
   appliedState,
@@ -371,9 +371,15 @@ describe("errors in plain words", () => {
     expect(errorMessage("pairing_locked")).toBe("Too many wrong codes were tried from this network. Wait 10 minutes, then get a new code.");
   });
 
-  it("keeps the typed-words notice exactly as written", () => {
-    expect(TYPED_NOTICE).toBe(
+  it("keeps the typed-words notice exactly as written, naming who reads typed words", () => {
+    expect(typedNotice("gemini")).toBe(
       "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
+    );
+    expect(typedNotice("claude")).toBe(
+      "What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
+    );
+    expect(typedNotice(null)).toBe(
+      "No model reads what you type here: Sophi answers with fixed replies. The text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.",
     );
   });
 });

@@ -23,8 +23,11 @@ services:
         fromDatabase:
           name: steady-walker-db
           property: connectionString
-      # The walker assistant's model (Gemini) and voice (Cartesia). Entered by Max in the dashboard.
+      # The walker assistant's models (Gemini hears spoken turns; Claude reads typed ones when its key is
+      # set, otherwise Gemini does) and voice (Cartesia). Entered by Max in the dashboard.
       - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: CARTESIA_API_KEY
         sync: false

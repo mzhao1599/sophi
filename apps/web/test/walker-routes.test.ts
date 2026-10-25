@@ -72,7 +72,7 @@ const store = new MemoryWalkerStore();
 beforeAll(() => {
   shared.__walkerBackend = { kind: "memory", store };
   // No model or voice in these tests, whatever the shell has: turns get the fixed line.
-  shared.__walkerAgent = { assistant: null, voice: null };
+  shared.__walkerAgent = { assistant: null, typed: null, voice: null };
 });
 
 /** A 16 kHz mono 16-bit WAV of silence. */

@@ -10,6 +10,7 @@ import {
   type ProposalView,
   type WalkerErrorCode,
   type WalkerEventView,
+  type WalkerModel,
   type WalkerStatusView,
   type WalkerTurnView,
   type ZoneView,
@@ -22,9 +23,19 @@ import {
  * `apps/web/test/walker-page.EXPECTED.md`.
  */
 
-/** Shown above the text box before anyone types. */
-export const TYPED_NOTICE =
-  "Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.";
+const NOTICE_END = "Please don't type names or health details. Each message is deleted an hour after it's sent, or right away with Forget this walker.";
+
+/**
+ * Shown above the text box before anyone types. `typedBy` is who reads typed words on this server
+ * (walkerTypedModelFromEnv): Claude, Gemini, or no model. Spoken words always go to Gemini.
+ */
+export function typedNotice(typedBy: WalkerModel | null): string {
+  if (typedBy === "claude") {
+    return `What you type goes to Anthropic's Claude, and what's said to the walker goes to Google's Gemini; both may keep a copy. The text of Sophi's spoken replies goes to Cartesia. ${NOTICE_END}`;
+  }
+  if (typedBy === "gemini") return `Your words go to Google's Gemini, which may keep a copy, and the text of Sophi's spoken replies goes to Cartesia. ${NOTICE_END}`;
+  return `No model reads what you type here: Sophi answers with fixed replies. The text of Sophi's spoken replies goes to Cartesia. ${NOTICE_END}`;
+}
 
 /** How often the page asks for the walker's status while the tab is visible. */
 export const POLL_MS = 1_500;
